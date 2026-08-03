@@ -230,8 +230,10 @@ choice in the runtime configuration file.
 
 On Apple silicon, current WhisperKit CLIs expose a local `serve` mode. Local
 Flow starts it on a random `127.0.0.1` port during warmup and reuses the loaded
-Core ML model. If an older CLI does not support `serve`, transcription falls
-back to the compatible one-shot command rather than becoming unavailable.
+Core ML model. The first startup may take up to five minutes while Core ML
+compiles a newly downloaded model. If an older CLI does not support `serve`,
+transcription falls back to the compatible one-shot command rather than
+becoming unavailable.
 
 To force Handy from the environment:
 
@@ -267,6 +269,7 @@ uv run localflow-server
 | `LOCALFLOW_WHISPER_MODEL` | base model path | base model path | Fallback `whisper.cpp` model |
 | `LOCALFLOW_WHISPERKIT_BINARY` | `whisperkit-cli` | unavailable | WhisperKit executable |
 | `LOCALFLOW_RETENTION_HOURS` | `24` | `24` | Failed-session retry retention |
+| `LOCALFLOW_TRANSCRIPTION_QUEUE_WAIT_SECONDS` | `300` | `300` | How long a transcription waits for the single local-engine slot |
 | `LOCALFLOW_DELETE_SUCCESSFUL_AUDIO` | `true` | `true` | Delete source/normalized audio after success |
 
 Compose-specific variables live in `server/.env`:

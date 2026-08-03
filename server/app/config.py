@@ -44,6 +44,7 @@ class Settings:
     retention_hours: int = 24
     delete_successful_audio: bool = True
     maximum_concurrent_transcriptions: int = 1
+    transcription_queue_wait_seconds: int = 300
 
     def resolved_models_dir(self) -> Path:
         return self.models_dir if self.models_dir is not None else self.data_dir / "models"
@@ -107,6 +108,9 @@ class Settings:
             bind_host=os.environ.get("LOCALFLOW_BIND_HOST", "0.0.0.0"),
             port=int(os.environ.get("LOCALFLOW_PORT", "8765")),
             retention_hours=int(os.environ.get("LOCALFLOW_RETENTION_HOURS", "24")),
+            transcription_queue_wait_seconds=int(
+                os.environ.get("LOCALFLOW_TRANSCRIPTION_QUEUE_WAIT_SECONDS", "300")
+            ),
             delete_successful_audio=os.environ.get(
                 "LOCALFLOW_DELETE_SUCCESSFUL_AUDIO", "true"
             ).lower()

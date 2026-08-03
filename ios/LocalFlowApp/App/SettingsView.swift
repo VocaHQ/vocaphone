@@ -3,6 +3,7 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(RecordingCoordinator.self) private var coordinator
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("gatewayURL") private var gatewayURL = ""
     @AppStorage(GatewayStatusPreferences.healthMessageKey)
     private var healthMessage = "Not tested"
@@ -32,6 +33,7 @@ struct SettingsView: View {
     @State private var token = ""
     @State private var isTestingGateway = false
     @State private var isShowingPairingScanner = false
+    @State private var showsKeyboardSetup = false
 
     var body: some View {
         List {
@@ -45,13 +47,23 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .task { token = (try? KeychainStore.loadToken()) ?? "" }
+        .task {
+            token = (try? KeychainStore.loadToken()) ?? ""
+            coordinator.refreshMicrophonePermission()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            coordinator.refreshMicrophonePermission()
+        }
         .sheet(isPresented: $isShowingPairingScanner) {
             PairingScannerView(
                 paired: applyPairing,
                 unavailable: handleScannerUnavailable
             )
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showsKeyboardSetup) {
+            KeyboardSetupGuide(verify: coordinator.refreshMicrophonePermission)
         }
         .onChange(of: gatewayURL) {
             healthMessage = "Not tested"
@@ -242,17 +254,36 @@ struct SettingsView: View {
 
     private var permissionsSection: some View {
         Section("Permissions") {
-            Button("Request microphone permission") {
-                coordinator.requestMicrophonePermission()
+            LabeledContent("Microphone") {
+                switch coordinator.microphonePermissionState {
+                case .granted:
+                    Label("Allowed", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .notDetermined:
+                    Text("Not requested")
+                        .foregroundStyle(.secondary)
+                case .denied:
+                    Text("Off")
+                        .foregroundStyle(.red)
+                }
             }
-            Button("Open Keyboard Settings") {
-                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                UIApplication.shared.open(url)
+            switch coordinator.microphonePermissionState {
+            case .notDetermined:
+                Button("Allow microphone") {
+                    coordinator.requestMicrophonePermission()
+                }
+            case .denied:
+                Button("Open Local Flow Settings") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            case .granted:
+                EmptyView()
             }
+            Button("Show keyboard setup steps") { showsKeyboardSetup = true }
             Text(
-                "Enable Local Flow under Keyboards and allow Full Access. "
-                    + "Full Access is used only for shared session state and communication "
-                    + "with your configured gateway."
+                "Full Access is managed under Settings → General → Keyboard → Keyboards. "
+                    + "It is used only for shared session state and communication with your configured gateway."
             )
             .font(.footnote)
             .foregroundStyle(.secondary)

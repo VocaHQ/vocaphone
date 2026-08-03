@@ -28,6 +28,12 @@ class _PersistentServerUnavailable(Exception):
     """The installed CLI cannot start or reach its persistent local server."""
 
 
+# Core ML may compile a newly downloaded model before it accepts its first
+# connection. Sixty seconds routinely pushed WhisperKit into the much slower
+# one-shot fallback on an otherwise healthy Apple-silicon Mac.
+_SERVER_START_TIMEOUT_SECONDS = 300
+
+
 class WhisperKitEngine:
     """Persistent Apple-silicon WhisperKit adapter with a legacy CLI fallback."""
 
@@ -217,7 +223,7 @@ def _start_server(binary: str, model_path: Path) -> _WhisperKitServer:
         stderr=subprocess.DEVNULL,
     )
     server = _WhisperKitServer(process=process, port=port)
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + _SERVER_START_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise _PersistentServerUnavailable(

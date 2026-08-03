@@ -101,7 +101,10 @@ struct GatewayClient: Sendable {
     func finish(sessionID: UUID) async throws -> GatewaySession {
         var request = URLRequest(url: endpoint("v1/sessions/\(sessionID.uuidString.lowercased())/finish"))
         request.httpMethod = "POST"
-        request.timeoutInterval = 90
+        // Core ML engines deliberately process one recording at a time. Allow
+        // room for a queued recording plus its own inference rather than
+        // turning a normal wait into an avoidable retry.
+        request.timeoutInterval = 540
         return try await perform(request, as: GatewaySession.self)
     }
 

@@ -1,6 +1,45 @@
+import AVFAudio
 import Foundation
 import SwiftUI
 import UIKit
+
+enum MicrophonePermissionState: Equatable, Sendable {
+    case notDetermined
+    case denied
+    case granted
+
+    init(_ permission: AVAudioApplication.recordPermission) {
+        switch permission {
+        case .undetermined:
+            self = .notDetermined
+        case .denied:
+            self = .denied
+        case .granted:
+            self = .granted
+        @unknown default:
+            self = .denied
+        }
+    }
+
+    var setupDetail: String {
+        switch self {
+        case .notDetermined:
+            "Local Flow needs the microphone in this app to record your dictation."
+        case .denied:
+            "Microphone access is off. Turn it on in Local Flow's Settings, then return here."
+        case .granted:
+            "Local Flow can record on this iPhone."
+        }
+    }
+
+    var actionTitle: String? {
+        switch self {
+        case .notDetermined: "Allow microphone"
+        case .denied: "Open Local Flow Settings"
+        case .granted: nil
+        }
+    }
+}
 
 @MainActor
 @Observable
@@ -9,6 +48,7 @@ final class RecordingCoordinator {
     private(set) var message: String?
     private(set) var quickDictationExpiresAt: Date?
     private(set) var currentMicrophoneName: String?
+    private(set) var microphonePermissionState: MicrophonePermissionState
     /// Kept separate from `activeRecord` so a level update several times a
     /// second invalidates only the views that draw the meter.
     private(set) var meterLevel: Float = 0
@@ -50,7 +90,7 @@ final class RecordingCoordinator {
         !recorder.isRecording && startingSessionID == nil
     }
     var microphonePermissionGranted: Bool {
-        recorder.recordPermission == .granted
+        microphonePermissionState == .granted
     }
 
     /// Setup progress the app cannot otherwise observe: iOS exposes no API for
@@ -79,6 +119,7 @@ final class RecordingCoordinator {
         // marker behind. The new app process is not warm until it arms audio.
         try? store.clearQuickDictationAvailability()
         recorder.microphonePreference = KeyboardPreferences.microphonePreference
+        microphonePermissionState = MicrophonePermissionState(recorder.recordPermission)
         recorder.onMeter = { [weak self] level in self?.persistMeter(level) }
         recorder.onMaximumDuration = { [weak self] in self?.requestFinish() }
         recorder.onInputRouteChanged = { [weak self] inputName in
@@ -115,8 +156,16 @@ final class RecordingCoordinator {
     }
 
     func requestMicrophonePermission() {
+        refreshMicrophonePermission()
+        guard microphonePermissionState == .notDetermined else {
+            message = microphonePermissionState == .granted
+                ? "Microphone access is already allowed."
+                : "Microphone access is off. Open Local Flow Settings to allow it."
+            return
+        }
         recorder.requestPermission { [weak self] granted in
             guard let self else { return }
+            self.refreshMicrophonePermission()
             if granted {
                 self.message = "Microphone permission granted."
                 if KeyboardPreferences.quickDictationEnabled {
@@ -126,6 +175,10 @@ final class RecordingCoordinator {
                 self.message = "Microphone permission denied."
             }
         }
+    }
+
+    func refreshMicrophonePermission() {
+        microphonePermissionState = MicrophonePermissionState(recorder.recordPermission)
     }
 
     func prepareQuickDictationIfEnabled() {
@@ -292,8 +345,8 @@ final class RecordingCoordinator {
     nonisolated func pruneSharedStorage() {
         let store = SharedStore.shared
         Task.detached(priority: .utility) {
-            try? store.pruneSessions()
-            try? store.pruneOrphanedAudio()
+            _ = try? store.pruneSessions()
+            _ = try? store.pruneOrphanedAudio()
         }
     }
 

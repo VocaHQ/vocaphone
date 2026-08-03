@@ -14,6 +14,8 @@ struct ContentView: View {
     @State private var keyboardStatus: KeyboardStatus?
     @State private var keyboardStepDetail = ContentView.keyboardSetupHint
     @State private var testText = ""
+    @State private var showsSettings = false
+    @State private var showsKeyboardSetup = false
 
     private static let keyboardSetupHint =
         "Enable Local Flow under Settings › General › Keyboards and allow Full "
@@ -23,7 +25,7 @@ struct ContentView: View {
         NavigationStack {
             List {
                 if !isSetupComplete {
-                    SetupChecklistView(steps: setupSteps, recheck: reloadKeyboardStatus)
+                    SetupChecklistView(steps: setupSteps, recheck: recheckSetup)
                 }
                 sessionSection
                 transcriptSection
@@ -40,17 +42,21 @@ struct ContentView: View {
                     .accessibilityLabel("Settings")
                 }
             }
+            .navigationDestination(isPresented: $showsSettings) {
+                SettingsView()
+            }
             .task {
-                reloadKeyboardStatus()
+                await recheckSetup()
                 await coordinator.recoverRecentSession()
                 coordinator.prepareQuickDictationIfEnabled()
-                await coordinator.refreshGatewayHealth()
             }
             .onChange(of: scenePhase) { previousPhase, currentPhase in
                 guard previousPhase != .active, currentPhase == .active else { return }
-                reloadKeyboardStatus()
-                Task { await coordinator.refreshGatewayHealth() }
+                Task { await recheckSetup() }
             }
+        }
+        .sheet(isPresented: $showsKeyboardSetup) {
+            KeyboardSetupGuide(verify: verifyKeyboardAccess)
         }
         .overlay {
             if showsKeyboardReturnGuide {
@@ -75,21 +81,25 @@ struct ContentView: View {
                 detail: gatewayEngineReady
                     ? "Gateway, token, and model are ready."
                     : "Add the gateway URL and pairing token in Settings, then tap Save and test.",
-                isComplete: gatewayEngineReady
+                isComplete: gatewayEngineReady,
+                actionTitle: "Set up gateway",
+                action: { showsSettings = true }
             ),
             SetupStep(
                 id: "microphone",
                 title: "Allow microphone access",
-                detail: coordinator.microphonePermissionGranted
-                    ? "Local Flow can record on this iPhone."
-                    : "Recording happens in this app; the keyboard only receives the transcript.",
-                isComplete: coordinator.microphonePermissionGranted
+                detail: coordinator.microphonePermissionState.setupDetail,
+                isComplete: coordinator.microphonePermissionGranted,
+                actionTitle: coordinator.microphonePermissionState.actionTitle,
+                action: microphoneSetupAction
             ),
             SetupStep(
                 id: "keyboard",
                 title: "Add the keyboard with Full Access",
                 detail: keyboardStepDetail,
-                isComplete: keyboardStatus?.hasFullAccess == true
+                isComplete: keyboardStatus?.hasFullAccess == true,
+                actionTitle: "Set up keyboard access",
+                action: { showsKeyboardSetup = true }
             ),
         ]
     }
@@ -101,12 +111,41 @@ struct ContentView: View {
     /// Date formatting is comparatively expensive and `body` re-evaluates
     /// often, so the string is built when the status actually changes.
     private func reloadKeyboardStatus() {
+        coordinator.refreshMicrophonePermission()
         let status = coordinator.keyboardStatus()
         keyboardStatus = status
-        keyboardStepDetail = status.map {
-            let seen = $0.lastSeenAt.formatted(date: .abbreviated, time: .shortened)
-            return "Keyboard last active \(seen)."
-        } ?? Self.keyboardSetupHint
+        switch status {
+        case let .some(status) where status.hasFullAccess:
+            let seen = status.lastSeenAt.formatted(date: .abbreviated, time: .shortened)
+            keyboardStepDetail = "Keyboard ready. Last opened \(seen)."
+        case .some:
+            keyboardStepDetail =
+                "The keyboard was added, but Full Access is still off. Enable it, then open the Local Flow keyboard once."
+        case .none:
+            keyboardStepDetail = Self.keyboardSetupHint
+        }
+    }
+
+    private func recheckSetup() async {
+        reloadKeyboardStatus()
+        await coordinator.refreshGatewayHealth()
+        reloadKeyboardStatus()
+    }
+
+    private func verifyKeyboardAccess() {
+        Task { await recheckSetup() }
+    }
+
+    private func microphoneSetupAction() {
+        switch coordinator.microphonePermissionState {
+        case .notDetermined:
+            coordinator.requestMicrophonePermission()
+        case .denied:
+            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+            UIApplication.shared.open(url)
+        case .granted:
+            break
+        }
     }
 
     // MARK: - Sections
@@ -345,5 +384,108 @@ private struct KeyboardReturnGuide: View {
                 arrowOffset = 18
             }
         }
+    }
+}
+
+struct KeyboardSetupGuide: View {
+    @Environment(\.dismiss) private var dismiss
+    let verify: () -> Void
+    @State private var copiedSettingsPath = false
+
+    private let settingsPath =
+        "Settings → General → Keyboard → Keyboards → Local Flow → Allow Full Access"
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Label(
+                        "The Local Flow keyboard can insert your transcript into any text field. It asks the Local Flow app to record because iOS does not allow keyboards to use the microphone.",
+                        systemImage: "keyboard.chevron.compact.down"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+
+                Section("Add Local Flow") {
+                    setupRow(
+                        number: 1,
+                        title: "Open the Settings app",
+                        detail: "Apple does not provide a public link apps can use to open this specific screen."
+                    )
+                    setupRow(
+                        number: 2,
+                        title: "Go to General → Keyboard → Keyboards",
+                        detail: "Choose Add New Keyboard…"
+                    )
+                    setupRow(
+                        number: 3,
+                        title: "Choose Local Flow",
+                        detail: "Then tap Local Flow in the keyboard list and turn on Allow Full Access."
+                    )
+                }
+
+                Section {
+                    Button {
+                        UIPasteboard.general.string = settingsPath
+                        copiedSettingsPath = true
+                    } label: {
+                        Label(
+                            copiedSettingsPath ? "Settings path copied" : "Copy Settings path",
+                            systemImage: copiedSettingsPath ? "checkmark" : "doc.on.doc"
+                        )
+                    }
+                    Text(settingsPath)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                } header: {
+                    Text("Make it quicker")
+                } footer: {
+                    Text("After enabling Full Access, open Local Flow in any text field once so the app can confirm it.")
+                }
+
+                Section("Why Full Access?") {
+                    Text(
+                        "It lets the keyboard use the shared Local Flow session and send recordings to only the gateway you configure. The keyboard itself never records audio."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Button("I’ve enabled Full Access") {
+                        verify()
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .navigationTitle("Set up keyboard")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func setupRow(number: Int, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(number)")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(.tint, in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -198,13 +198,16 @@ class TranscriptionService:
     async def _acquire_transcription_slot(self) -> None:
         self.metrics.queued()
         try:
-            await asyncio.wait_for(self._transcription_slots.acquire(), timeout=0.05)
+            await asyncio.wait_for(
+                self._transcription_slots.acquire(),
+                timeout=self.settings.transcription_queue_wait_seconds,
+            )
         except TimeoutError as error:
             self.metrics.rejected()
             raise APIProblem(
                 503,
                 "engine_overloaded",
-                "The local transcription engine is busy.",
+                "The local transcription queue is full. Try again in a moment.",
                 recoverable=True,
             ) from error
         except BaseException:
