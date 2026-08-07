@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pytest import MonkeyPatch, CaptureFixture
+from pytest import CaptureFixture, MonkeyPatch
 
 from app.config import Settings, format_host_port, local_webui_url
 
@@ -110,9 +110,7 @@ def test_refuses_to_mint_when_legacy_data_exists_without_token(
         Settings.from_env()
 
 
-def test_fresh_install_still_mints_a_token(
-    tmp_path: Path, monkeypatch: MonkeyPatch
-) -> None:
+def test_fresh_install_still_mints_a_token(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     home = _isolate_home(monkeypatch, tmp_path)
 
     settings = Settings.from_env()

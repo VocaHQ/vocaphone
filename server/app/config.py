@@ -160,9 +160,7 @@ def _legacy_token_candidates() -> list[tuple[str, str]]:
     env_token = os.environ.get("LOCALFLOW_TOKEN", "").strip()
     if env_token:
         candidates.append(("LOCALFLOW_TOKEN", env_token))
-    legacy_file = Path(
-        os.environ.get("LOCALFLOW_TOKEN_FILE", str(LEGACY_TOKEN_FILE))
-    ).expanduser()
+    legacy_file = Path(os.environ.get("LOCALFLOW_TOKEN_FILE", str(LEGACY_TOKEN_FILE))).expanduser()
     if legacy_file.is_file():
         file_token = legacy_file.read_text(encoding="utf-8").strip()
         if file_token:
