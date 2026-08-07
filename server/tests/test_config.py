@@ -118,3 +118,56 @@ def test_fresh_install_still_mints_a_token(tmp_path: Path, monkeypatch: MonkeyPa
     token_file = home / ".config" / "vocaphone" / "token"
     assert len(settings.token) >= 32
     assert token_file.read_text(encoding="utf-8").strip() == settings.token
+
+
+def test_replaces_empty_destination_token_with_legacy(
+    tmp_path: Path, monkeypatch: MonkeyPatch, capsys: CaptureFixture[str]
+) -> None:
+    home = _isolate_home(monkeypatch, tmp_path)
+    legacy_dir = home / ".config" / "localflow"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "token").write_text(
+        "legacy-token-with-at-least-thirty-two-chars\n", encoding="utf-8"
+    )
+    destination = home / ".config" / "vocaphone" / "token"
+    destination.parent.mkdir(parents=True)
+    destination.write_text("\n", encoding="utf-8")
+
+    settings = Settings.from_env()
+
+    assert settings.token == "legacy-token-with-at-least-thirty-two-chars"
+    assert destination.read_text(encoding="utf-8").strip() == settings.token
+    assert "migrated Local Flow bootstrap token" in capsys.readouterr().err
+
+
+def test_migrate_rejects_conflicting_nonempty_destination(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    from app.config import _persist_migrated_token
+
+    home = _isolate_home(monkeypatch, tmp_path)
+    destination = home / ".config" / "vocaphone" / "token"
+    destination.parent.mkdir(parents=True)
+    destination.write_text("other-token-with-at-least-thirty-two-chars\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="different bootstrap token"):
+        _persist_migrated_token(
+            destination,
+            "legacy-token-with-at-least-thirty-two-chars",
+            "LOCALFLOW_TOKEN",
+        )
+
+
+def test_migrate_accepts_matching_destination_token(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    from app.config import _persist_migrated_token
+
+    home = _isolate_home(monkeypatch, tmp_path)
+    destination = home / ".config" / "vocaphone" / "token"
+    destination.parent.mkdir(parents=True)
+    token = "legacy-token-with-at-least-thirty-two-chars"
+    destination.write_text(token + "\n", encoding="utf-8")
+
+    _persist_migrated_token(destination, token, "LOCALFLOW_TOKEN")
+    assert destination.read_text(encoding="utf-8").strip() == token

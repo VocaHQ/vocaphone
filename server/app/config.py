@@ -176,19 +176,49 @@ def _write_token_file(token_file: Path, token: str) -> None:
         handle.write(token + "\n")
 
 
+def _token_conflict_error(token_file: Path, source: str) -> RuntimeError:
+    return RuntimeError(
+        f"{token_file} already contains a different bootstrap token than the "
+        f"Local Flow source ({source}). Remove the conflicting file or unset "
+        "LOCALFLOW_TOKEN / remove ~/.config/localflow/token, then retry so "
+        f"paired phones keep the secret they already hold. See {MIGRATION_DOCS}"
+    )
+
+
+def _persist_migrated_token(token_file: Path, token: str, source: str) -> None:
+    """Write a migrated token, replacing an empty destination if needed."""
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.parent.chmod(0o700)
+    if token_file.is_file():
+        existing = token_file.read_text(encoding="utf-8").strip()
+        if existing == token:
+            return
+        if existing:
+            raise _token_conflict_error(token_file, source)
+        token_file.write_text(token + "\n", encoding="utf-8")
+        token_file.chmod(0o600)
+        return
+    try:
+        _write_token_file(token_file, token)
+    except FileExistsError:
+        # Another process created the destination between our checks.
+        existing = token_file.read_text(encoding="utf-8").strip()
+        if existing == token:
+            return
+        if not existing:
+            token_file.write_text(token + "\n", encoding="utf-8")
+            token_file.chmod(0o600)
+            return
+        raise _token_conflict_error(token_file, source) from None
+
+
 def _resolve_or_migrate_token(token_file: Path) -> str:
     """Prefer a one-time Local Flow token migration over minting a new secret."""
     legacy = _legacy_token_candidates()
     if legacy:
         source, token = legacy[0]
         try:
-            _write_token_file(token_file, token)
-        except FileExistsError:
-            # Another process created the destination between our checks.
-            existing = token_file.read_text(encoding="utf-8").strip()
-            if existing:
-                return existing
-            raise
+            _persist_migrated_token(token_file, token, source)
         except OSError as exc:
             raise RuntimeError(
                 "Found a Local Flow bootstrap token at "
