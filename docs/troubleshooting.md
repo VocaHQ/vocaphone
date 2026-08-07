@@ -98,8 +98,8 @@ report `Metal/Core ML` and the active model should start with `whisperkit:`.
 Current WhisperKit builds stay resident behind a random
 loopback-only service; after gateway startup, `ps` should show a
 `whisperkit-cli serve` child process. Restart the gateway after upgrading
-WhisperKit so warmup can start the service. If `serve` is unavailable, Local
-Flow deliberately falls back to the slower compatible one-shot CLI.
+WhisperKit so warmup can start the service. If `serve` is unavailable, vocaphone
+deliberately falls back to the slower compatible one-shot CLI.
 
 Use the Test tab's three-run benchmark. It reports warm runs 2 and 3 separately
 from the first model-load run. If normalization is small but inference is slow,

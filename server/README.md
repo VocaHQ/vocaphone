@@ -312,8 +312,8 @@ WebUI and `PUT /v1/admin/config` reject a selection the host cannot run with
 `422 invalid_engine` rather than persisting a broken choice. `auto` skips them
 on every other host.
 
-On Apple silicon, current WhisperKit CLIs expose a local `serve` mode. Local
-Flow starts it on a random `127.0.0.1` port during warmup and reuses the loaded
+On Apple silicon, current WhisperKit CLIs expose a local `serve` mode. vocaphone
+starts it on a random `127.0.0.1` port during warmup and reuses the loaded
 Core ML model. If an older CLI does not support `serve`, transcription falls
 back to the compatible one-shot command rather than becoming unavailable.
 
