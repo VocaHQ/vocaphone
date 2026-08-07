@@ -95,7 +95,8 @@ def test_warns_about_unmigrated_legacy_data_dir(
 
     err = capsys.readouterr().err
     assert "Local Flow data still exists" in err
-    assert str(legacy_data) in err
+    assert "~/.local/share/localflow" in err
+    assert str(home) not in err
 
 
 def test_refuses_to_mint_when_legacy_data_exists_without_token(
@@ -106,8 +107,10 @@ def test_refuses_to_mint_when_legacy_data_exists_without_token(
     legacy_data.mkdir(parents=True)
     (legacy_data / "sessions.sqlite3").write_text("x", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="no vocaphone bootstrap token"):
+    with pytest.raises(RuntimeError, match="no vocaphone bootstrap token") as raised:
         Settings.from_env()
+    assert "~/.local/share/localflow" in str(raised.value)
+    assert str(home) not in str(raised.value)
 
 
 def test_fresh_install_still_mints_a_token(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
@@ -171,3 +174,69 @@ def test_migrate_accepts_matching_destination_token(
 
     _persist_migrated_token(destination, token, "LOCALFLOW_TOKEN")
     assert destination.read_text(encoding="utf-8").strip() == token
+
+
+def test_migrates_legacy_config_over_empty_destination(
+    tmp_path: Path, monkeypatch: MonkeyPatch, capsys: CaptureFixture[str]
+) -> None:
+    home = _isolate_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("VOCAPHONE_TOKEN", "test-" + ("x" * 48))
+    legacy_config = home / ".config" / "localflow" / "config.json"
+    legacy_config.parent.mkdir(parents=True)
+    legacy_config.write_text('{"engine":"sherpa-onnx"}', encoding="utf-8")
+    destination = home / ".config" / "vocaphone" / "config.json"
+    destination.parent.mkdir(parents=True)
+    destination.write_text("\n", encoding="utf-8")
+
+    settings = Settings.from_env()
+
+    assert settings.config_path.read_text(encoding="utf-8") == '{"engine":"sherpa-onnx"}'
+    assert "migrated Local Flow config" in capsys.readouterr().err
+
+
+def test_honours_xdg_dirs_for_legacy_layout(
+    tmp_path: Path, monkeypatch: MonkeyPatch, capsys: CaptureFixture[str]
+) -> None:
+    _isolate_home(monkeypatch, tmp_path)
+    config_home = tmp_path / "xdg-config"
+    data_home = tmp_path / "xdg-data"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    legacy_token = config_home / "localflow" / "token"
+    legacy_token.parent.mkdir(parents=True)
+    legacy_token.write_text("xdg-legacy-token-with-at-least-thirty-two\n", encoding="utf-8")
+    (data_home / "localflow" / "models").mkdir(parents=True)
+    (data_home / "localflow" / "models" / "keep.txt").write_text("x", encoding="utf-8")
+
+    settings = Settings.from_env()
+
+    assert settings.token == "xdg-legacy-token-with-at-least-thirty-two"
+    assert (config_home / "vocaphone" / "token").is_file()
+    err = capsys.readouterr().err
+    assert "migrated Local Flow bootstrap token" in err
+    assert "Local Flow data still exists" in err
+
+
+def test_whitespace_only_vocaphone_token_env_is_ignored(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    home = _isolate_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("VOCAPHONE_TOKEN", "   \n\t  ")
+    legacy_dir = home / ".config" / "localflow"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "token").write_text(
+        "legacy-token-with-at-least-thirty-two-chars\n", encoding="utf-8"
+    )
+
+    settings = Settings.from_env()
+
+    assert settings.token == "legacy-token-with-at-least-thirty-two-chars"
+
+
+def test_cli_token_from_env_strips_whitespace(monkeypatch: MonkeyPatch) -> None:
+    from app.cli import _token_from_env
+
+    monkeypatch.setenv("VOCAPHONE_TOKEN", "   ")
+    assert _token_from_env() is False
+    monkeypatch.setenv("VOCAPHONE_TOKEN", "real-token-with-at-least-thirty-two-chars")
+    assert _token_from_env() is True

@@ -37,7 +37,7 @@ def serve() -> None:
 def _token_from_env() -> bool:
     import os
 
-    return bool(os.environ.get("VOCAPHONE_TOKEN"))
+    return bool(os.environ.get("VOCAPHONE_TOKEN", "").strip())
 
 
 def status() -> None:

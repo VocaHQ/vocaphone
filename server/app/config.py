@@ -9,9 +9,6 @@ from pathlib import Path
 
 DEFAULT_HANDY_FALLBACK_MODEL = "handy-computer/whisper-base-gguf/whisper-base-Q8_0.gguf"
 WILDCARD_BIND_HOSTS = frozenset({"0.0.0.0", "::"})
-LEGACY_TOKEN_FILE = Path("~/.config/localflow/token")
-LEGACY_CONFIG_FILE = Path("~/.config/localflow/config.json")
-LEGACY_DATA_DIR = Path("~/.local/share/localflow")
 MIGRATION_DOCS = (
     "https://github.com/VocaHQ/vocaphone/blob/main/docs/deployment.md"
     "#migrating-from-the-local-flow-working-name-v030"
@@ -31,6 +28,35 @@ def local_webui_url(host: str, port: int) -> str:
     elif host == "::":
         host = "::1"
     return f"http://{format_host_port(host, port)}/"
+
+
+def _xdg_config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser()
+
+
+def _xdg_data_home() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME", "~/.local/share")).expanduser()
+
+
+def _legacy_token_file() -> Path:
+    return _xdg_config_home() / "localflow" / "token"
+
+
+def _legacy_config_file() -> Path:
+    return _xdg_config_home() / "localflow" / "config.json"
+
+
+def _legacy_data_dir() -> Path:
+    return _xdg_data_home() / "localflow"
+
+
+def _display_path(path: Path | str) -> str:
+    """Render paths with `~` instead of an absolute home prefix for operators."""
+    text = str(path)
+    home = str(Path.home())
+    if home and (text == home or text.startswith(home + os.sep)):
+        return "~" + text[len(home) :]
+    return text
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +92,7 @@ class Settings:
         token_file = Path(
             os.environ.get(
                 "VOCAPHONE_TOKEN_FILE",
-                "~/.config/vocaphone/token",
+                str(_xdg_config_home() / "vocaphone" / "token"),
             )
         ).expanduser()
         token = os.environ.get("VOCAPHONE_TOKEN", "").strip()
@@ -80,14 +106,14 @@ class Settings:
                 "~/.config/vocaphone/token with mode 600."
             )
         data_dir = Path(
-            os.environ.get("VOCAPHONE_DATA_DIR", "~/.local/share/vocaphone")
+            os.environ.get("VOCAPHONE_DATA_DIR", str(_xdg_data_home() / "vocaphone"))
         ).expanduser()
         if "VOCAPHONE_DATA_DIR" not in os.environ:
             _warn_unmigrated_legacy_data(data_dir)
         config_path = Path(
             os.environ.get(
                 "VOCAPHONE_CONFIG_FILE",
-                "~/.config/vocaphone/config.json",
+                str(_xdg_config_home() / "vocaphone" / "config.json"),
             )
         ).expanduser()
         if "VOCAPHONE_CONFIG_FILE" not in os.environ:
@@ -160,11 +186,13 @@ def _legacy_token_candidates() -> list[tuple[str, str]]:
     env_token = os.environ.get("LOCALFLOW_TOKEN", "").strip()
     if env_token:
         candidates.append(("LOCALFLOW_TOKEN", env_token))
-    legacy_file = Path(os.environ.get("LOCALFLOW_TOKEN_FILE", str(LEGACY_TOKEN_FILE))).expanduser()
+    legacy_file = Path(
+        os.environ.get("LOCALFLOW_TOKEN_FILE", str(_legacy_token_file()))
+    ).expanduser()
     if legacy_file.is_file():
         file_token = legacy_file.read_text(encoding="utf-8").strip()
         if file_token:
-            candidates.append((str(legacy_file), file_token))
+            candidates.append((_display_path(legacy_file), file_token))
     return candidates
 
 
@@ -178,8 +206,8 @@ def _write_token_file(token_file: Path, token: str) -> None:
 
 def _token_conflict_error(token_file: Path, source: str) -> RuntimeError:
     return RuntimeError(
-        f"{token_file} already contains a different bootstrap token than the "
-        f"Local Flow source ({source}). Remove the conflicting file or unset "
+        f"{_display_path(token_file)} already contains a different bootstrap token "
+        f"than the Local Flow source ({source}). Remove the conflicting file or unset "
         "LOCALFLOW_TOKEN / remove ~/.config/localflow/token, then retry so "
         f"paired phones keep the secret they already hold. See {MIGRATION_DOCS}"
     )
@@ -222,22 +250,22 @@ def _resolve_or_migrate_token(token_file: Path) -> str:
         except OSError as exc:
             raise RuntimeError(
                 "Found a Local Flow bootstrap token at "
-                f"{source} but could not write {token_file}: {exc}. "
+                f"{source} but could not write {_display_path(token_file)}: {exc}. "
                 f"Copy it manually, then restart. See {MIGRATION_DOCS}"
             ) from exc
         print(
             "vocaphone: migrated Local Flow bootstrap token from "
-            f"{source} to {token_file}. Paired phones keep working. "
+            f"{source} to {_display_path(token_file)}. Paired phones keep working. "
             f"See {MIGRATION_DOCS}",
             file=sys.stderr,
         )
         return token
 
-    legacy_data = LEGACY_DATA_DIR.expanduser()
+    legacy_data = _legacy_data_dir()
     if legacy_data.is_dir() and any(legacy_data.iterdir()):
         raise RuntimeError(
             "Found Local Flow data at "
-            f"{legacy_data} but no vocaphone bootstrap token. "
+            f"{_display_path(legacy_data)} but no vocaphone bootstrap token. "
             "Copy ~/.config/localflow/token to ~/.config/vocaphone/token "
             f"(or set VOCAPHONE_TOKEN) before starting the gateway so paired "
             f"phones are not locked out. See {MIGRATION_DOCS}"
@@ -246,10 +274,10 @@ def _resolve_or_migrate_token(token_file: Path) -> str:
 
 
 def _migrate_legacy_config_file(config_path: Path) -> None:
-    if config_path.is_file():
+    if config_path.is_file() and config_path.read_text(encoding="utf-8").strip():
         return
-    legacy = LEGACY_CONFIG_FILE.expanduser()
-    if not legacy.is_file():
+    legacy = _legacy_config_file()
+    if not legacy.is_file() or not legacy.read_text(encoding="utf-8").strip():
         return
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -258,14 +286,16 @@ def _migrate_legacy_config_file(config_path: Path) -> None:
         config_path.chmod(0o600)
     except OSError as exc:
         print(
-            f"vocaphone: could not migrate {legacy} to {config_path}: {exc}. "
+            "vocaphone: could not migrate "
+            f"{_display_path(legacy)} to {_display_path(config_path)}: {exc}. "
             f"Copy it manually if you need the previous WebUI settings. "
             f"See {MIGRATION_DOCS}",
             file=sys.stderr,
         )
         return
     print(
-        f"vocaphone: migrated Local Flow config from {legacy} to {config_path}. "
+        "vocaphone: migrated Local Flow config from "
+        f"{_display_path(legacy)} to {_display_path(config_path)}. "
         f"See {MIGRATION_DOCS}",
         file=sys.stderr,
     )
@@ -274,12 +304,13 @@ def _migrate_legacy_config_file(config_path: Path) -> None:
 def _warn_unmigrated_legacy_data(data_dir: Path) -> None:
     if data_dir.exists():
         return
-    legacy = LEGACY_DATA_DIR.expanduser()
+    legacy = _legacy_data_dir()
     if not legacy.is_dir() or not any(legacy.iterdir()):
         return
     print(
-        f"vocaphone: Local Flow data still exists at {legacy}. "
-        f"Move or copy it to {data_dir} (and rename any "
+        "vocaphone: Local Flow data still exists at "
+        f"{_display_path(legacy)}. "
+        f"Move or copy it to {_display_path(data_dir)} (and rename any "
         ".localflow-model.json markers to .vocaphone-model.json) to keep "
         f"downloaded models and session history. See {MIGRATION_DOCS}",
         file=sys.stderr,
