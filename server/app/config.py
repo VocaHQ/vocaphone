@@ -38,6 +38,22 @@ def _xdg_data_home() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME", "~/.local/share")).expanduser()
 
 
+def _env_path(name: str, default: Path) -> Path:
+    """Resolve a path env var, treating missing/blank values as the default."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return default
+    return Path(value).expanduser()
+
+
+def _default_token_file() -> Path:
+    return _xdg_config_home() / "vocaphone" / "token"
+
+
+def _default_config_file() -> Path:
+    return _xdg_config_home() / "vocaphone" / "config.json"
+
+
 def _legacy_token_file() -> Path:
     return _xdg_config_home() / "localflow" / "token"
 
@@ -74,6 +90,7 @@ class Settings:
     whisperkit_binary: str = "whisperkit-cli"
     models_dir: Path | None = None
     config_path: Path = Path("~/.config/vocaphone/config.json")
+    token_file: Path = Path("~/.config/vocaphone/token")
     bind_host: str = "0.0.0.0"
     port: int = 8765
     maximum_upload_bytes: int = 25 * 1024 * 1024
@@ -86,15 +103,14 @@ class Settings:
     def resolved_models_dir(self) -> Path:
         return self.models_dir if self.models_dir is not None else self.data_dir / "models"
 
+    @property
+    def token_file_display(self) -> str:
+        return _display_path(self.token_file)
+
     @classmethod
     def from_env(cls) -> Settings:
         _warn_ignored_legacy_env()
-        token_file = Path(
-            os.environ.get(
-                "VOCAPHONE_TOKEN_FILE",
-                str(_xdg_config_home() / "vocaphone" / "token"),
-            )
-        ).expanduser()
+        token_file = _env_path("VOCAPHONE_TOKEN_FILE", _default_token_file())
         token = os.environ.get("VOCAPHONE_TOKEN", "").strip()
         if not token and token_file.is_file():
             token = token_file.read_text(encoding="utf-8").strip()
@@ -103,20 +119,19 @@ class Settings:
         if len(token) < 32:
             raise RuntimeError(
                 "Set VOCAPHONE_TOKEN to at least 32 characters or create "
-                "~/.config/vocaphone/token with mode 600."
+                f"{_display_path(token_file)} with mode 600."
             )
-        data_dir = Path(
-            os.environ.get("VOCAPHONE_DATA_DIR", str(_xdg_data_home() / "vocaphone"))
-        ).expanduser()
-        if "VOCAPHONE_DATA_DIR" not in os.environ:
+        data_dir = _env_path("VOCAPHONE_DATA_DIR", _xdg_data_home() / "vocaphone")
+        if (
+            "VOCAPHONE_DATA_DIR" not in os.environ
+            or not os.environ.get("VOCAPHONE_DATA_DIR", "").strip()
+        ):
             _warn_unmigrated_legacy_data(data_dir)
-        config_path = Path(
-            os.environ.get(
-                "VOCAPHONE_CONFIG_FILE",
-                str(_xdg_config_home() / "vocaphone" / "config.json"),
-            )
-        ).expanduser()
-        if "VOCAPHONE_CONFIG_FILE" not in os.environ:
+        config_path = _env_path("VOCAPHONE_CONFIG_FILE", _default_config_file())
+        if (
+            "VOCAPHONE_CONFIG_FILE" not in os.environ
+            or not os.environ.get("VOCAPHONE_CONFIG_FILE", "").strip()
+        ):
             _migrate_legacy_config_file(config_path)
         return cls(
             token=token,
@@ -152,6 +167,7 @@ class Settings:
                 os.environ.get("VOCAPHONE_MODELS_DIR", str(data_dir / "models"))
             ).expanduser(),
             config_path=config_path,
+            token_file=token_file,
             bind_host=os.environ.get("VOCAPHONE_BIND_HOST", "0.0.0.0"),
             port=int(os.environ.get("VOCAPHONE_PORT", "8765")),
             retention_hours=int(os.environ.get("VOCAPHONE_RETENTION_HOURS", "24")),
@@ -186,9 +202,7 @@ def _legacy_token_candidates() -> list[tuple[str, str]]:
     env_token = os.environ.get("LOCALFLOW_TOKEN", "").strip()
     if env_token:
         candidates.append(("LOCALFLOW_TOKEN", env_token))
-    legacy_file = Path(
-        os.environ.get("LOCALFLOW_TOKEN_FILE", str(_legacy_token_file()))
-    ).expanduser()
+    legacy_file = _env_path("LOCALFLOW_TOKEN_FILE", _legacy_token_file())
     if legacy_file.is_file():
         file_token = legacy_file.read_text(encoding="utf-8").strip()
         if file_token:
@@ -208,7 +222,7 @@ def _token_conflict_error(token_file: Path, source: str) -> RuntimeError:
     return RuntimeError(
         f"{_display_path(token_file)} already contains a different bootstrap token "
         f"than the Local Flow source ({source}). Remove the conflicting file or unset "
-        "LOCALFLOW_TOKEN / remove ~/.config/localflow/token, then retry so "
+        f"LOCALFLOW_TOKEN / remove {_display_path(_legacy_token_file())}, then retry so "
         f"paired phones keep the secret they already hold. See {MIGRATION_DOCS}"
     )
 
@@ -266,7 +280,7 @@ def _resolve_or_migrate_token(token_file: Path) -> str:
         raise RuntimeError(
             "Found Local Flow data at "
             f"{_display_path(legacy_data)} but no vocaphone bootstrap token. "
-            "Copy ~/.config/localflow/token to ~/.config/vocaphone/token "
+            f"Copy {_display_path(_legacy_token_file())} to {_display_path(token_file)} "
             f"(or set VOCAPHONE_TOKEN) before starting the gateway so paired "
             f"phones are not locked out. See {MIGRATION_DOCS}"
         )

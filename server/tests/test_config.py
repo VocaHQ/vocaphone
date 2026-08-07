@@ -240,3 +240,37 @@ def test_cli_token_from_env_strips_whitespace(monkeypatch: MonkeyPatch) -> None:
     assert _token_from_env() is False
     monkeypatch.setenv("VOCAPHONE_TOKEN", "real-token-with-at-least-thirty-two-chars")
     assert _token_from_env() is True
+
+
+def test_empty_localflow_token_file_env_falls_back_to_xdg(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    home = _isolate_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCALFLOW_TOKEN_FILE", "")
+    legacy_dir = home / ".config" / "localflow"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "token").write_text(
+        "legacy-token-with-at-least-thirty-two-chars\n", encoding="utf-8"
+    )
+
+    settings = Settings.from_env()
+
+    assert settings.token == "legacy-token-with-at-least-thirty-two-chars"
+
+
+def test_refuse_message_uses_resolved_token_paths(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    from app.config import _display_path
+
+    home = _isolate_home(monkeypatch, tmp_path)
+    custom_token = home / "custom" / "gateway.token"
+    monkeypatch.setenv("VOCAPHONE_TOKEN_FILE", str(custom_token))
+    legacy_data = home / ".local" / "share" / "localflow"
+    legacy_data.mkdir(parents=True)
+    (legacy_data / "sessions.sqlite3").write_text("x", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="no vocaphone bootstrap token") as raised:
+        Settings.from_env()
+    message = str(raised.value)
+    assert _display_path(custom_token) in message
+    assert "~/.config/localflow/token" in message
+    assert str(home) not in message
