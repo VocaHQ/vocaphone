@@ -67,20 +67,21 @@ cd server
 uv run vocaphone-status
 ```
 
-For a native VocaMac setup, check that the app is installed, that
-`whisperkit-cli` is on `PATH`, and that the model VocaMac selected finished
-downloading. An interrupted download leaves the variant folder in place with
-empty Core ML components, and the gateway skips it:
+For a native VocaMac setup, check that the app is installed and its selected
+model is reported as downloaded and supported:
 
 ```sh
-test -d /Applications/VocaMac.app
-command -v whisperkit-cli
+test -x /Applications/VocaMac.app/Contents/MacOS/VocaMac
 defaults read com.vocamac.app vocamac.selectedModelSize
-du -sh ~/Library/Application\ Support/VocaMac/models/models/argmaxinc/whisperkit-coreml/*
+/Applications/VocaMac.app/Contents/MacOS/VocaMac --list-models --json
 ```
 
-A folder of a few kilobytes is an incomplete download — re-download that model
-in VocaMac's Models tab.
+The selected entry must have `"selected":true`, `"downloaded":true`, and
+`"supported":true`. Current builds can run WhisperKit, Parakeet, Apple Speech,
+and specialized ONNX selections through the headless interface. An older build
+without `--list-models` can use only complete VocaMac WhisperKit downloads and
+also requires `whisperkit-cli` on `PATH`; update VocaMac to follow other model
+families.
 
 With `VOCAPHONE_ENGINE=whisper.cpp`, also check
 `$VOCAPHONE_WHISPER_BINARY` and `$VOCAPHONE_WHISPER_MODEL`.

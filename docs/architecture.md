@@ -65,12 +65,14 @@ engines that can identify model files also expose best-effort warmup.
 `HandyEngine` can reuse Handy's selected downloaded model, `WhisperKitEngine`
 runs Core ML folders through one managed loopback-only WhisperKit service on
 Apple silicon, and `WhisperCppEngine` is the portable CLI fallback.
-`VocaMacEngine` covers the other optional desktop app: VocaMac exposes no
-headless transcription command, so instead of driving the app it reads the model
-chosen in VocaMac's preferences, rejects incomplete downloads the way VocaMac's
-own asset check does, and hands the Core ML folder and VocaMac's tokenizers to
-`WhisperKitEngine`. Both desktop apps are optional and Mac-only — Handy needs
-macOS, VocaMac needs Apple silicon — so `app/system.py` holds one table of
+`VocaMacEngine` covers the other optional desktop app. Current VocaMac builds
+expose a one-shot headless interface backed by their internal multi-engine
+router, so the gateway follows the app's selected WhisperKit, FluidAudio
+Parakeet, Apple Speech, or sherpa-onnx model without opening or disturbing its
+GUI. A side-effect-free executable capability check keeps older builds on the
+original complete-WhisperKit-folder compatibility path rather than launching an
+old GUI with an unknown flag. Both desktop apps are optional and Mac-only —
+Handy needs macOS, VocaMac needs Apple silicon — so `app/system.py` holds one table of
 per-engine host requirements that drives the WebUI picker contents, the label
 shown beside each engine, and the `422` rejection when a host cannot run the
 selected engine. The service

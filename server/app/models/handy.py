@@ -29,13 +29,17 @@ class HandyEngine:
             or Path("~/Library/Application Support/com.pais.handy/settings_store.json").expanduser()
         )
         self.huggingface_cache = huggingface_cache or Path("~/.cache/huggingface/hub").expanduser()
-        self.model = model or self._read_selected_model()
+        # An explicit model pins the adapter. Without one, follow Handy's
+        # persisted selection so changing models in the app takes effect without
+        # rebuilding or restarting the vocaphone gateway.
+        self.model = model
         self.fallback_model = fallback_model
 
     async def health(self) -> EngineHealth:
+        app_selected_model = self._selected_model()
         available_models = self._downloaded_models()
         selected_model = (
-            available_models[0] if available_models else self.model or "no-model-selected"
+            available_models[0] if available_models else app_selected_model or "no-model-selected"
         )
         ready = self.binary.is_file() and os.access(self.binary, os.X_OK) and bool(available_models)
         return EngineHealth(
@@ -101,10 +105,14 @@ class HandyEngine:
 
     def _downloaded_models(self) -> list[str]:
         models: list[str] = []
-        for model in (self.model, self.fallback_model):
+        selected_model = self._selected_model()
+        for model in (selected_model, self.fallback_model):
             if model and model not in models and self._model_is_downloaded(model):
                 models.append(model)
         return models
+
+    def _selected_model(self) -> str | None:
+        return self.model or self._read_selected_model()
 
     def _read_selected_model(self) -> str | None:
         try:

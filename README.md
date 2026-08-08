@@ -105,8 +105,9 @@ limits, Android accessibility consent, and what the bubble will never touch
   silence detection, retention cleanup, and stable error responses
 - VocaMac, Handy, WhisperKit, Apple-native MLX Audio, persistent `sherpa-onnx`
   and `faster-whisper`, multilingual Moonshine, and `whisper.cpp` adapters.
-  The VocaMac and Handy desktop apps are optional, Mac-only, and reuse the
-  models they already downloaded
+  The optional Mac-only VocaMac and Handy adapters follow the model currently
+  selected in each desktop app; current VocaMac builds expose WhisperKit,
+  Parakeet, Apple Speech, and specialized ONNX selections headlessly
 - A 58-model catalog spanning Whisper, Parakeet, SenseVoice, Moonshine, GigaAM,
   Canary, Qwen3-ASR, Granite Speech, and Dolphin (40 Eastern
   languages, including Hindi, Bengali, Tamil and Urdu), filterable by the
