@@ -1,17 +1,17 @@
 :root {
-  --bg: #0a0d13;
-  --panel: rgba(23, 27, 36, 0.94);
-  --panel-strong: #11151d;
-  --panel-border: #29303d;
-  --text: #e8eaf0;
-  --muted: #9ea8b8;
-  --accent: #6c94ff;
-  --accent-hover: #567fe8;
-  --ok: #3fb96f;
-  --warn: #e0b040;
-  --error: #e05c5c;
-  --radius: 14px;
-  --shadow: 0 18px 50px rgba(0, 0, 0, 0.2);
+  --bg: #111315;
+  --panel: #1a1d20;
+  --panel-strong: #15181b;
+  --panel-border: #303438;
+  --text: #f2f2f2;
+  --muted: #a9afb5;
+  --accent: #0a84ff;
+  --accent-hover: #0071e3;
+  --ok: #30a46c;
+  --warn: #c98a17;
+  --error: #d84c4c;
+  --radius: 10px;
+  --shadow: none;
 }
 
 * { box-sizing: border-box; }
@@ -19,9 +19,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 15% -10%, rgba(73, 111, 210, 0.18), transparent 34rem),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-size: 15px;
@@ -60,7 +58,7 @@ header {
   justify-content: space-between;
   padding: 18px max(24px, calc((100vw - 1120px) / 2 + 24px));
   border-bottom: 1px solid var(--panel-border);
-  background: rgba(10, 13, 19, 0.78);
+  background: var(--bg);
 }
 
 .brand { display: flex; align-items: center; gap: 12px; }
@@ -89,8 +87,7 @@ header {
   z-index: 20;
   padding: 10px max(24px, calc((100vw - 1120px) / 2 + 24px)) 0;
   border-bottom: 1px solid var(--panel-border);
-  background: rgba(10, 13, 19, 0.92);
-  backdrop-filter: blur(16px);
+  background: var(--bg);
 }
 .tab {
   background: none;
@@ -188,8 +185,8 @@ main { max-width: 1120px; margin: 0 auto; padding: 24px 24px 60px; }
   min-width: 0;
   padding: 15px;
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.025), transparent 68%);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
 }
 .metric-card.success, .metric-card.complete { border-color: rgba(63, 185, 111, 0.35); }
 .metric-card.failure, .metric-card.failed { border-color: rgba(224, 92, 92, 0.45); }
@@ -238,8 +235,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 24px 24px 60px; }
   border-radius: calc(var(--radius) + 2px);
   padding: 22px 24px;
   margin-bottom: 16px;
-  background: linear-gradient(135deg, rgba(108, 148, 255, 0.13), var(--panel));
-  box-shadow: var(--shadow);
+  background: var(--panel);
 }
 .status-hero.ready { border-color: rgba(63, 185, 111, 0.48); }
 .status-hero.attention { border-color: rgba(224, 176, 64, 0.55); }
@@ -391,8 +387,8 @@ button.no-margin { margin-left: 0; }
   flex-direction: column;
   min-height: 245px;
   border: 1px solid var(--panel-border);
-  border-radius: 13px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.02), transparent 55%);
+  border-radius: var(--radius);
+  background: var(--panel);
   padding: 16px;
 }
 .model-card[data-state="installed"] { border-color: rgba(63, 185, 111, 0.38); }
