@@ -247,19 +247,32 @@ def android_background() -> str:
 
 # --- outputs ----------------------------------------------------------------
 
+# Every path here is inside *this* repository. The gateway favicon used to be in
+# this dict as `server/app/webui/favicon.svg`, and it cannot be any more: `server/`
+# is the VocaHQ/vocagateway submodule, so writing there made a routine
+# `generate.py` run dirty a second repository as a side effect. Nothing in
+# vocaphone's `git status` shows it, so the honest failure mode was to regenerate,
+# commit here, and silently leave the favicon behind in an uncommitted submodule.
+# It is `--favicon` now: same drawing, but you have to ask for it. See
+# `gateway_favicon`.
 SVGS: dict[str, object] = {
     "assets/vocaphone-logo.svg": logo,
     "assets/vocaphone-mark.svg": glyph,
     "assets/vocaphone-app-icon.svg": app_icon,
-    # server/ is the VocaHQ/vocagateway submodule, so this one writes into
-    # *another repository's* working tree: regenerating here leaves the submodule
-    # dirty, and the change has to be committed and PR'd over there. The gateway
-    # keeps the neutral disc rather than the brand field, because the WebUI draws
-    # it small against its own dark chrome.
-    "server/app/webui/favicon.svg": lambda: logo("#ECECEC", colour="#171717"),
     "android/app/src/main/res/drawable/ic_launcher_foreground.xml": android_foreground,
     "android/app/src/main/res/drawable/ic_launcher_background.xml": android_background,
 }
+
+
+def gateway_favicon() -> str:
+    """The gateway WebUI's favicon, which belongs to VocaHQ/vocagateway.
+
+    Kept here because the geometry and the palette are here, and a second copy of
+    the generator in the gateway repo would be the worse duplication. The gateway
+    takes a neutral disc rather than the brand field: it draws the mark small
+    against its own dark chrome, where a green disc reads as a smudge of colour.
+    """
+    return logo("#ECECEC", colour="#171717")
 
 # (path, svg-producer, pixel size, opaque). App Store Connect rejects an icon
 # that carries an alpha channel, so the primary icon and the Play listing icon
@@ -285,6 +298,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--png", action="store_true",
                     help="also re-rasterise the PNGs (needs cairosvg)")
+    ap.add_argument("--favicon", metavar="PATH", type=pathlib.Path,
+                    help="also write the gateway favicon to PATH, e.g. "
+                         "server/app/webui/favicon.svg -- that file belongs to "
+                         "VocaHQ/vocagateway and has to be committed there")
     args = ap.parse_args()
 
     repo = ROOT.parent
@@ -293,6 +310,13 @@ def main() -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(producer())
         print(f"wrote {rel}")
+
+    # Taken as given rather than resolved against the repo root, because the
+    # whole point of the flag is that the destination is somewhere else.
+    if args.favicon is not None:
+        args.favicon.parent.mkdir(parents=True, exist_ok=True)
+        args.favicon.write_text(gateway_favicon())
+        print(f"wrote {args.favicon} -- vocagateway's file, commit it there")
 
     if not args.png:
         print("\nSVGs only. Pass --png to re-rasterise (needs cairosvg).")

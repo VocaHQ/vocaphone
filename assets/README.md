@@ -69,7 +69,31 @@ The apps pair `Brand` with `#77D0B2` on dark surfaces; see the Compose theme in
 | `vocaphone-play-store-512.png` | Play Console listing icon |
 | `../ios/VocaPhoneApp/Assets.xcassets/AppIcon.appiconset/` | iOS app icon |
 | `../android/app/src/main/res/drawable/ic_launcher_*.xml` | Android adaptive icon |
-| `../server/app/webui/favicon.svg` | gateway WebUI and API docs |
+
+Every path above is inside this repository. Nothing here writes outside it.
+
+### The gateway favicon lives in another repository
+
+`server/` is the [VocaHQ/vocagateway](https://github.com/VocaHQ/vocagateway)
+submodule, so `app/webui/favicon.svg` is *its* file, committed and reviewed
+there. This generator still draws it — the geometry and the palette are here, and
+a second copy of the generator in the gateway repo would be the worse
+duplication — but only when you ask:
+
+```sh
+python3 assets/generate.py --favicon server/app/webui/favicon.svg
+cd server && git switch -c chore/refresh-favicon && git commit -am 'chore: refresh the favicon'
+```
+
+It used to be an ordinary entry in `SVGS`, which meant a routine run dirtied a
+second repository as a side effect — and vocaphone's own `git status` says
+nothing about it, so the easy mistake was to regenerate, commit here, and leave
+the favicon behind uncommitted in the submodule. Refreshing it is now a
+deliberate act with its own PR.
+
+The gateway takes a neutral disc rather than the brand field: it draws the mark
+small against its own dark chrome, where a green disc reads as a smudge of
+colour.
 
 The app icons are full-bleed squares rather than the round badge: iOS applies
 its own squircle mask and Android its own adaptive-icon mask, so a circle
