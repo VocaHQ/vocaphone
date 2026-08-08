@@ -31,10 +31,9 @@ any size.
 | Token | Value | Use |
 | --- | --- | --- |
 | Navy | `#070F1C` | the mark |
-| Teal | `#34BCAE` | gradient, top |
-| Green | `#4DBA64` | gradient, bottom |
+| Brand | `#0F6B57` | flat app-icon field and primary action |
 
-The gradient is a plain vertical linear gradient, top to bottom.
+The palette intentionally uses a single flat brand colour rather than a gradient.
 
 ## Outputs
 

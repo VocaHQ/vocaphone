@@ -3,45 +3,30 @@ import UIKit
 /// Concrete colours for the bar, resolved eagerly for one appearance exactly as
 /// the key colours are, so a dark field inside a light app still gets a dark bar.
 extension KeyboardPalette {
-    /// Two stops per accent. A flat fill reads as a stock system control; the
-    /// slight hue travel is what makes the primary button look deliberate.
-    func gradient(for accent: DictationAccent) -> [UIColor] {
+    /// One calm, solid accent per state. The bar needs a clear action colour,
+    /// not decorative colour travel.
+    func color(for accent: DictationAccent) -> UIColor {
         switch accent {
         case .brand:
-            isDark
-                ? [rgb(0.36, 0.54, 1), rgb(0.55, 0.47, 1)]
-                : [rgb(0.16, 0.42, 0.96), rgb(0.42, 0.35, 0.95)]
+            .systemBlue
         case .handoff:
-            isDark
-                ? [rgb(0.51, 0.47, 1), rgb(0.68, 0.45, 0.99)]
-                : [rgb(0.35, 0.33, 0.87), rgb(0.53, 0.34, 0.93)]
+            isDark ? rgb(0.64, 0.69, 0.98) : rgb(0.31, 0.36, 0.75)
         case .listening:
-            isDark
-                ? [rgb(1, 0.34, 0.4), rgb(1, 0.42, 0.62)]
-                : [rgb(0.93, 0.2, 0.29), rgb(0.97, 0.32, 0.52)]
+            isDark ? rgb(1, 0.45, 0.44) : rgb(0.82, 0.18, 0.19)
         case .working:
-            isDark
-                ? [rgb(1, 0.62, 0.24), rgb(1, 0.76, 0.29)]
-                : [rgb(0.96, 0.51, 0.09), rgb(0.98, 0.68, 0.18)]
+            isDark ? rgb(1, 0.72, 0.38) : rgb(0.72, 0.39, 0.05)
         case .ready:
-            isDark
-                ? [rgb(0.19, 0.82, 0.5), rgb(0.16, 0.83, 0.71)]
-                : [rgb(0.09, 0.68, 0.4), rgb(0.1, 0.72, 0.6)]
+            isDark ? rgb(0.43, 0.82, 0.61) : rgb(0.08, 0.5, 0.32)
         case .alert:
-            isDark
-                ? [rgb(1, 0.36, 0.36), rgb(1, 0.47, 0.34)]
-                : [rgb(0.87, 0.19, 0.22), rgb(0.94, 0.33, 0.24)]
+            isDark ? rgb(1, 0.48, 0.43) : rgb(0.72, 0.19, 0.15)
         case .locked:
-            isDark
-                ? [rgb(0.45, 0.46, 0.51), rgb(0.53, 0.54, 0.59)]
-                : [rgb(0.53, 0.54, 0.58), rgb(0.61, 0.62, 0.66)]
+            isDark ? rgb(0.58, 0.6, 0.63) : rgb(0.43, 0.45, 0.48)
         }
     }
 
-    /// The single colour used for the status dot, the waveform and any accented
-    /// text — the gradient's first stop, which is its most saturated end.
+    /// The single colour used for stateful controls, the dot, and waveform.
     func tint(for accent: DictationAccent) -> UIColor {
-        gradient(for: accent)[0]
+        color(for: accent)
     }
 
     var barBackground: UIColor {

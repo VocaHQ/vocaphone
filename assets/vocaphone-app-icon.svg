@@ -1,11 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="vocaphone">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#34BCAE"/>
-      <stop offset="1" stop-color="#4DBA64"/>
-    </linearGradient>
-  </defs>
-  <rect width="1024" height="1024" fill="url(#g)"/>
+  <rect width="1024" height="1024" fill="#0F6B57"/>
   <g transform="translate(42.691 46.799) scale(2.053868)">
     <path d="M 164 127 A 65 65 0 0 1 294 127 L 294 224 A 65 65 0 0 1 164 224 Z" fill="#070F1C"/>
     <path d="M 144.87 202.02 A 87 87 0 1 0 312.13 202.02" fill="none" stroke="#070F1C" stroke-width="18" stroke-linecap="round"/>
