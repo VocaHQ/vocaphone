@@ -45,7 +45,7 @@ final class DictationBarView: UIView {
 
     private let actionStack = UIStackView()
     private let secondaryStack = UIStackView()
-    private let primaryButton = GradientButton()
+    private let primaryButton = FlatButton()
     private var secondaryButtons: [UIButton] = []
     private var secondaryActions: [DictationAction] = []
 
@@ -450,7 +450,7 @@ final class DictationBarView: UIView {
         let tint = palette.tint(for: accent)
         // Standalone sublayers animate their colour implicitly; the bar's own
         // backing layer does not, so its border is animated by hand.
-        primaryButton.fillColors = palette.gradient(for: accent)
+        primaryButton.fillColor = tint
         indicator.color = tint
         waveform.color = tint
         crossfade(timerLabel, animated: animated) { self.timerLabel.textColor = tint }

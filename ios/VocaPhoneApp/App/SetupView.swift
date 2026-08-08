@@ -65,6 +65,8 @@ struct SetupView: View {
     private var introSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
+                BrandMark(size: 36)
+                    .padding(.bottom, 2)
                 Text("Dictate into any app")
                     .font(.title3.bold())
                 Text(
