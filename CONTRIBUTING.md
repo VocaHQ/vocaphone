@@ -49,6 +49,33 @@ just doctor              # what each application's toolchain is missing
 it reports all three toolchains and never fails, because nobody has all of them
 installed at once.
 
+### Gateway submodule pin (dev vs ship)
+
+The parent repository records a fixed `server/` SHA so clones and release builds
+are reproducible. That pin is what CI and shipped apps use.
+
+For day-to-day gateway work you can move the **local** checkout to the tip of
+`main` without changing what this repo ships:
+
+```sh
+just server-pin-status   # pin vs working tree vs origin/main
+just server-sync         # git submodule update --remote server (main tip)
+just server install      # after a sync, if dependencies moved
+just server run
+```
+
+`server-sync` only updates your working tree. It does **not** commit a new pin.
+When this repo should adopt a newer gateway (or a release tag), do it on purpose:
+
+```sh
+just server-sync         # or: cd server && git fetch --tags && git checkout vX.Y.Z
+git add server
+git commit -m "build: pin vocagateway to <sha or tag>"
+```
+
+Phone-only work can leave the recorded pin alone. Shipping builds must never run
+`server-sync` in CI; they check out the committed pin only.
+
 ### direnv (optional)
 
 [direnv](https://direnv.net) is set up but not required; every command in this

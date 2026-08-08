@@ -165,8 +165,19 @@ git clone --recurse-submodules https://github.com/VocaHQ/vocaphone.git
 git submodule update --init --recursive
 ```
 
+This repository records a fixed gateway commit (the pin) for reproducible
+clones and releases. For local development you can follow `main` without
+shipping that tip until you intentionally bump the pin:
+
+```sh
+just server-pin-status   # pin vs working tree vs origin/main
+just server-sync         # move server/ to the tip of main (local only)
+```
+
 Gateway CI, releases, and deep ops docs run in the vocagateway repository.
 Phone-side docs below still use `cd server` against the submodule checkout.
+See [CONTRIBUTING.md](CONTRIBUTING.md#gateway-submodule-pin-dev-vs-ship) for pin
+bumps and release tags.
 
 ## Quick start
 
@@ -383,6 +394,8 @@ the root or from inside the application directory:
 ```sh
 just ci               # all three applications, skipping absent toolchains
 just server test      # gateway: lint, types, dependency audit, tests, Compose
+just server-sync      # optional: local server/ → tip of main (does not commit)
+just server-pin-status
 just ios ci           # iOS: regenerate the project, build, run unit tests
 just android ci       # Android: assemble, unit tests, lint, Room schema
 just doctor           # what each toolchain is still missing
