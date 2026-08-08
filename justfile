@@ -7,6 +7,9 @@
 #   just server run             # the same recipe, from anywhere in the repo
 #   just --list server          # that app's recipes on their own
 #
+# server/ is the VocaHQ/vocaserver git submodule. Init it before server recipes:
+#   git submodule update --init --recursive
+#
 # Recipes here are the cross-cutting ones: they fan out over all three.
 
 mod android
@@ -28,7 +31,9 @@ ci:
     just_bin='{{ just_executable() }}'
 
     echo "==> server"
-    if command -v uv >/dev/null 2>&1; then
+    if [ ! -f server/justfile ]; then
+        echo "skipped  server submodule not checked out (git submodule update --init)"
+    elif command -v uv >/dev/null 2>&1; then
         # The gateway follows the django-modern-rest convention, where `test`
         # is the run-everything recipe and `unit` is just pytest.
         "${just_bin}" server::test || status=1
