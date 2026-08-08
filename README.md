@@ -351,6 +351,12 @@ accessibility disclosure, and the supported gateway address forms.
 
 ## Build and test
 
+Optional: with [direnv](https://direnv.net) installed, `direnv allow` once after
+cloning puts the gateway virtualenv and the Android SDK's `platform-tools` on
+`PATH` and exports `ANDROID_HOME`, so the `uv run` prefixes and the
+`ANDROID_HOME` export below become unnecessary. Everything works without it —
+see [CONTRIBUTING.md](CONTRIBUTING.md#direnv-optional).
+
 Gateway checks:
 
 ```sh

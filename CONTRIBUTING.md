@@ -28,6 +28,31 @@ are available.
 - Never commit microphone recordings, bearer tokens, signing material, tailnet
   hostnames, local database files, or Apple provisioning profiles.
 
+### direnv (optional)
+
+[direnv](https://direnv.net) is set up but not required; every command in this
+repository works without it. With direnv installed, run `direnv allow` once
+after cloning. The checked-in `.envrc` then puts the gateway virtualenv and the
+Android SDK's `platform-tools` on `PATH`, so `pytest`, `ruff` and `adb` work
+without `uv run` or a full path, and exports `ANDROID_HOME`.
+
+Machine-specific settings belong in `.envrc.local`, which is gitignored and
+sourced automatically:
+
+```sh
+export VOCAPHONE_SIM='iPhone 17 Pro'   # which simulator ios/justfile uses
+export ANDROID_SERIAL=emulator-5554    # which device android/justfile targets
+```
+
+`.envrc` deliberately does not load `server/.env`. That file holds the Compose
+bearer token, and the gateway reads `VOCAPHONE_TOKEN` straight from the
+environment, so exporting it would make a natively run gateway serve the
+container's token instead of the one in `~/.config/vocaphone/token` — silently,
+because both are valid. Compose reads that file by itself. For the same reason,
+only the repository-root `.envrc` is tracked; any nested one is gitignored,
+since the quickest way to make `server/.envrc` is to copy `server/.env` into
+it, secret and all.
+
 ## Required checks
 
 Run the gateway checks:
