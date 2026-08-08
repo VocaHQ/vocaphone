@@ -10,11 +10,15 @@
 # server/ is the VocaHQ/vocaserver git submodule. Init it before server recipes:
 #   git submodule update --init --recursive
 #
+# mod? makes the module optional so a clone without submodules can still run
+# `just`, `just ios …`, `just android …`, and `just doctor`. Required `mod`
+# would fail at parse time before any recipe (including the ci skip) can run.
+#
 # Recipes here are the cross-cutting ones: they fan out over all three.
 
 mod android
 mod ios
-mod server
+mod? server
 
 # List the modules and the cross-cutting recipes.
 default:
@@ -66,8 +70,18 @@ doctor:
     # Swift on is a fact, not a fault. Each application's own `just doctor` is
     # the one that fails when something it needs is missing.
     set -uo pipefail
-    for app in server android ios; do
+    just_bin='{{ just_executable() }}'
+    if [ -f server/justfile ]; then
+        echo "==> server"
+        "${just_bin}" server::doctor || true
+        echo
+    else
+        echo "==> server"
+        echo "skipped  server submodule not checked out (git submodule update --init)"
+        echo
+    fi
+    for app in android ios; do
         echo "==> ${app}"
-        '{{ just_executable() }}' "${app}::doctor" || true
+        "${just_bin}" "${app}::doctor" || true
         echo
     done
