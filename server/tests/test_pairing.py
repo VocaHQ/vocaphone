@@ -11,6 +11,7 @@ from app.pairing import (
     is_ambient_lan_address,
     normalize_gateway_input,
     primary_gateway_base_url,
+    qr_ascii_for_payload,
     qr_svg_for_payload,
 )
 
@@ -80,6 +81,19 @@ def test_qr_svg_contains_path_and_is_svg() -> None:
     assert svg.lstrip().startswith("<?xml") or "<svg" in svg
     assert "path" in svg.lower() or "rect" in svg.lower()
     assert len(svg) > 200
+
+
+def test_qr_ascii_is_multiline_and_dense() -> None:
+    payload = encode_pairing_payload(
+        "http://192.168.1.75:8765",
+        "test-token-with-at-least-thirty-two-characters",
+    )
+    ascii_qr = qr_ascii_for_payload(payload)
+    lines = [line for line in ascii_qr.splitlines() if line.strip()]
+    assert len(lines) >= 10
+    assert len(ascii_qr) > 200
+    # Half-block / full-block glyphs from qrcode.print_ascii(invert=True).
+    assert any(ch in ascii_qr for ch in ("█", "▀", "▄", "#", "*"))
 
 
 def test_primary_gateway_base_url_prefers_override(monkeypatch: pytest.MonkeyPatch) -> None:

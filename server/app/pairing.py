@@ -255,3 +255,21 @@ def qr_svg_for_payload(payload: str, *, box_size: int = 6, border: int = 2) -> s
     image = qr.make_image()
     svg = image.to_string(encoding="unicode")
     return str(svg)
+
+
+def qr_ascii_for_payload(payload: str, *, border: int = 1, invert: bool = True) -> str:
+    """Return a terminal-scannable ASCII QR for *payload* (no Pillow)."""
+    import io
+
+    import qrcode
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        border=border,
+    )
+    qr.add_data(payload)
+    qr.make(fit=True)
+    buffer = io.StringIO()
+    qr.print_ascii(out=buffer, invert=invert)
+    return buffer.getvalue()
