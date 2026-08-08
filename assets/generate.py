@@ -29,6 +29,7 @@ import pathlib
 
 NAVY = "#070F1C"    # the mark
 BRAND = "#0F6B57"   # flat, restrained action colour
+WEBUI_ACCENT = "#0A84FF"
 
 # --- geometry, in the 460-unit space of the source avatar --------------------
 
@@ -117,12 +118,12 @@ def mark_svg(colour: str = NAVY, indent: str = "  ") -> str:
 # --- documents --------------------------------------------------------------
 
 
-def logo() -> str:
+def logo(background: str = BRAND) -> str:
     """Round badge on a flat disc."""
     d = DISC
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 460" '
             f'width="460" height="460" role="img" aria-label="vocaphone">\n'
-            f'  <circle cx="{d["cx"]:g}" cy="{d["cy"]:g}" r="{d["r"]:g}" fill="{BRAND}"/>\n'
+            f'  <circle cx="{d["cx"]:g}" cy="{d["cy"]:g}" r="{d["r"]:g}" fill="{background}"/>\n'
             f'{mark_svg()}\n'
             f'</svg>\n')
 
@@ -215,7 +216,7 @@ SVGS: dict[str, object] = {
     "assets/vocaphone-logo.svg": logo,
     "assets/vocaphone-mark.svg": glyph,
     "assets/vocaphone-app-icon.svg": app_icon,
-    "server/app/webui/favicon.svg": logo,
+    "server/app/webui/favicon.svg": lambda: logo(WEBUI_ACCENT),
     "android/app/src/main/res/drawable/ic_launcher_foreground.xml": android_foreground,
     "android/app/src/main/res/drawable/ic_launcher_background.xml": android_background,
 }
