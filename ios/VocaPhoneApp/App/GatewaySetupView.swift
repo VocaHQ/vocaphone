@@ -102,25 +102,21 @@ struct GatewaySetupView: View {
 
     private var statusSection: some View {
         Section("Status") {
-            Label(
-                healthMessage,
-                systemImage: gatewayEngineReady
-                    ? "checkmark.circle.fill"
-                    : "exclamationmark.circle"
-            )
-            .font(.subheadline)
-            .foregroundStyle(gatewayEngineReady ? .green : .secondary)
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(gatewayEngineReady ? Color.brand : .secondary)
+                    .frame(width: 8, height: 8)
+                Text(healthMessage)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
 
             if !gatewayEngine.isEmpty {
-                VStack(alignment: .leading, spacing: 7) {
-                    Label("Transcription model", systemImage: "cpu")
-                        .font(.subheadline.weight(.semibold))
+                LabeledContent("Model") {
                     Text(gatewayEngine)
                         .font(.footnote.monospaced())
                         .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .accessibilityElement(children: .combine)
             }
         }
     }

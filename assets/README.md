@@ -24,16 +24,39 @@ arcs are *elliptical*, not circular — their radius falls from 165.6 to about
 never quite lands. The yoke, by contrast, is a true circle.
 
 The reconstruction renders within 1% of the source at 460px and stays sharp at
-any size.
+any size. `_paths("both")` and `mark_box("both")` still produce it, and
+`mark_box("both")` is worth keeping honest: it returns exactly the 349×329 box
+the reconstruction was measured to.
+
+### What ships is four arcs, not six
+
+The shipped mark drops the outer arc pair (`SHIPPED_ARCS = "inner"`). Six arcs
+is faithful to the avatar and wrong for an icon: the outer pair sits nearest the
+edge, blurs first, and costs the microphone about 20% of its drawn size to make
+room for. At 22px — a settings row, a notification — the six-arc mark collapses
+into a smudge, and the mic is what has to survive.
+
+So the avatar remains the source of the geometry, and the icon is a deliberate
+simplification of it rather than a reproduction.
 
 ## Colours
 
 | Token | Value | Use |
 | --- | --- | --- |
-| Navy | `#070F1C` | the mark |
-| Brand | `#0F6B57` | flat app-icon field and primary action |
+| Brand | `#0F6B57` | the flat field, and the primary action in every app |
+| Ink | `#0B1A15` | the mark on a light ground |
+| Light | `#F2F6F2` | the mark on the brand field |
 
-The palette intentionally uses a single flat brand colour rather than a gradient.
+The palette intentionally uses a single flat brand colour rather than a
+gradient, and the mark is **light on that field, never dark**. Navy `#070F1C`
+on `#0F6B57` — what this used to be — puts two dark colours against each other:
+they differ by a few percent of lightness, so the arcs vanish first and then the
+yoke. `Ink` is for light grounds only, and it is a green-biased near-black
+rather than the old navy so that the mark sits in the same palette as the apps
+drawn around it.
+
+The apps pair `Brand` with `#77D0B2` on dark surfaces; see the Compose theme in
+`android/…/ui/theme/Theme.kt` and `BrandPalette.swift` on iOS.
 
 ## Outputs
 

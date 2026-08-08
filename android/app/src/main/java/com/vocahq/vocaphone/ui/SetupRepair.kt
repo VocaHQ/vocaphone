@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
  * repair route here before this compiles, rather than silently going missing.
  */
 @Composable
-fun SetupRepairCard(
+fun SetupRepair(
     status: SetupStatus,
     onOpenGateway: () -> Unit,
     onAcceptDisclosure: () -> Unit,
@@ -54,7 +54,7 @@ fun SetupRepairCard(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (rows.isNotEmpty()) {
-            SectionCard(
+            Section(
                 title = if (missing.size == 1) {
                     "One thing needs fixing"
                 } else {
@@ -120,11 +120,11 @@ fun SetupRepairCard(
         }
 
         if (SetupStep.DISCLOSURE in missing) {
-            AccessibilityDisclosureCard(accepted = false, onAccept = onAcceptDisclosure)
+            AccessibilityDisclosure(accepted = false, onAccept = onAcceptDisclosure)
         }
 
         if (status.restrictedSettingsGuidance) {
-            RestrictedSettingsCard(
+            RestrictedSettingsHelp(
                 onOpenAccessibilitySettings = { context.openAccessibilitySettings() },
                 onOpenAppInfo = { context.openAppSettings() },
             )

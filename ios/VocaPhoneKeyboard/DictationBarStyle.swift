@@ -7,16 +7,20 @@ extension KeyboardPalette {
     /// not decorative colour travel.
     func color(for accent: DictationAccent) -> UIColor {
         switch accent {
-        case .brand:
-            .systemBlue
+        // `.brand` is the resting state and `.ready` is a finished one; they are
+        // never on screen together, and both are the product saying "fine". They
+        // share the brand colour rather than being two greens a shade apart --
+        // the titles ("Ready to dictate", "Transcript ready") carry the
+        // difference. `.brand` was `.systemBlue`, which matched nothing else the
+        // product draws.
+        case .brand, .ready:
+            BrandPalette.accent(isDark: isDark)
         case .handoff:
             isDark ? rgb(0.64, 0.69, 0.98) : rgb(0.31, 0.36, 0.75)
         case .listening:
             isDark ? rgb(1, 0.45, 0.44) : rgb(0.82, 0.18, 0.19)
         case .working:
             isDark ? rgb(1, 0.72, 0.38) : rgb(0.72, 0.39, 0.05)
-        case .ready:
-            isDark ? rgb(0.43, 0.82, 0.61) : rgb(0.08, 0.5, 0.32)
         case .alert:
             isDark ? rgb(1, 0.48, 0.43) : rgb(0.72, 0.19, 0.15)
         case .locked:
@@ -27,6 +31,24 @@ extension KeyboardPalette {
     /// The single colour used for stateful controls, the dot, and waveform.
     func tint(for accent: DictationAccent) -> UIColor {
         color(for: accent)
+    }
+
+    /// The label colour a filled control can actually carry.
+    ///
+    /// Every dark-appearance accent here is a light pastel, so the hardcoded
+    /// white title this replaces sat at roughly 2:1 against its own fill, and
+    /// the brand mint made that plain. Deciding from the fill's luminance fixes
+    /// every accent at once and keeps holding when one of them changes. The
+    /// threshold is a black-or-white decision rather than a contrast
+    /// measurement, which is all this has to get right.
+    func labelColor(on fill: UIColor) -> UIColor {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard fill.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return .white }
+        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        return luminance > 0.6 ? UIColor(white: 0.08, alpha: 1) : .white
     }
 
     var barBackground: UIColor {

@@ -75,7 +75,7 @@ private fun HistoryRow(
     val timestamp = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
         .format(Date(record.createdAt))
 
-    SectionCard(
+    Section(
         title = timestamp,
         supporting = buildString {
             append(TranscriptionLanguage.fromWire(record.language).displayName)
