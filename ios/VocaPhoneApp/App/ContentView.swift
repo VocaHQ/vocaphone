@@ -27,6 +27,10 @@ struct ContentView: View {
             }
             .navigationTitle("vocaphone")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    BrandMark(size: 24)
+                        .accessibilityHidden(true)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
                         SettingsView()
@@ -219,6 +223,19 @@ struct ContentView: View {
     }
 }
 
+struct BrandMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image("BrandMark")
+            .resizable()
+            .renderingMode(.template)
+            .foregroundStyle(.blue)
+            .scaledToFit()
+            .frame(width: size, height: size)
+    }
+}
+
 /// The level updates several times a second. Keeping it in a leaf view means
 /// only this redraws, instead of every screen observing the coordinator.
 struct RecordingMeter: View {
@@ -261,15 +278,8 @@ private struct KeyboardReturnGuide: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(uiColor: .systemBackground),
-                    Color(uiColor: .secondarySystemBackground),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea()
 
             VStack(spacing: 18) {
                 HStack(spacing: 8) {

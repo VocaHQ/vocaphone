@@ -9,6 +9,7 @@ struct VocaPhoneApp: App {
         WindowGroup {
             ContentView()
                 .environment(coordinator)
+                .tint(.blue)
                 .onOpenURL { coordinator.handleDeepLink($0) }
                 .onAppear { KeyboardPreferences.containingAppIsForeground = true }
                 .onChange(of: scenePhase) { _, phase in
