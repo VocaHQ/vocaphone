@@ -7,6 +7,7 @@ import pytest
 from app.pairing import (
     PAIRING_VERSION,
     decode_pairing_payload,
+    default_pairing_url,
     encode_pairing_payload,
     is_ambient_lan_address,
     normalize_gateway_input,
@@ -99,6 +100,37 @@ def test_qr_ascii_is_multiline_and_dense() -> None:
 def test_primary_gateway_base_url_prefers_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VOCAPHONE_PUBLIC_URL", "http://homelab.example:8765")
     assert primary_gateway_base_url(8765) == "http://homelab.example:8765"
+
+
+def test_default_pairing_url_prefers_saved_non_ambient_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VOCAPHONE_PUBLIC_URL", "http://192.168.1.20:8765")
+    assert (
+        default_pairing_url(8765, saved_pairing_url="https://dictation.example.com")
+        == "https://dictation.example.com"
+    )
+
+
+def test_default_pairing_url_drops_stale_ambient_lan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VOCAPHONE_PUBLIC_URL", "http://192.168.9.9:8765")
+    # 10.0.0.1 is ambient LAN and not in discovered set (override is the only hit).
+    assert (
+        default_pairing_url(8765, saved_pairing_url="http://10.0.0.1:8765")
+        == "http://192.168.9.9:8765"
+    )
+
+
+def test_default_pairing_url_keeps_live_ambient_lan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VOCAPHONE_PUBLIC_URL", "http://192.168.1.20:8765")
+    assert (
+        default_pairing_url(8765, saved_pairing_url="http://192.168.1.20:8765")
+        == "http://192.168.1.20:8765"
+    )
 
 
 def test_normalize_gateway_input_adds_scheme_and_default_port() -> None:
