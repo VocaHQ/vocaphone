@@ -1,7 +1,7 @@
 # Gateway deployment
 
 The headless gateway is maintained in
-[VocaHQ/vocaserver](https://github.com/VocaHQ/vocaserver) and is checked out here
+[VocaHQ/vocagateway](https://github.com/VocaHQ/vocagateway) and is checked out here
 as the `server/` git submodule.
 
 Canonical guides (after `git submodule update --init --recursive`):

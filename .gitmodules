@@ -1,4 +1,4 @@
 [submodule "server"]
 	path = server
-	url = https://github.com/VocaHQ/vocaserver.git
+	url = https://github.com/VocaHQ/vocagateway.git
 	branch = main

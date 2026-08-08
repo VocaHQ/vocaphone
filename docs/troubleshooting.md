@@ -3,7 +3,7 @@
 Phone client issues are covered below. Gateway, model, Docker, and network
 failures for the transcription server are documented in
 [server/docs/troubleshooting.md](../server/docs/troubleshooting.md) (the
-[vocaserver](https://github.com/VocaHQ/vocaserver) submodule).
+[vocagateway](https://github.com/VocaHQ/vocagateway) submodule).
 
 
 ## Keyboard is missing

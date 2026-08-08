@@ -7,8 +7,8 @@ Thanks for trying vocaphone. Use this guide to get help without opening the wron
 1. Confirm you are on the latest `main` commit (or a released build, when those exist).
 2. Read [docs/troubleshooting.md](docs/troubleshooting.md) for common setup and runtime failures.
 3. Check [docs/device-setup.md](docs/device-setup.md) for iOS keyboard / Android bubble setup.
-4. Check [docs/deployment.md](docs/deployment.md) (and the [vocaserver](https://github.com/VocaHQ/vocaserver) guides it links) for gateway, Docker, Tailscale, and HTTPS setup.
-5. Search [existing issues](https://github.com/VocaHQ/vocaphone/issues) for the same problem. Gateway-only bugs often belong on [vocaserver issues](https://github.com/VocaHQ/vocaserver/issues).
+4. Check [docs/deployment.md](docs/deployment.md) (and the [vocagateway](https://github.com/VocaHQ/vocagateway) guides it links) for gateway, Docker, Tailscale, and HTTPS setup.
+5. Search [existing issues](https://github.com/VocaHQ/vocaphone/issues) for the same problem. Gateway-only bugs often belong on [vocagateway issues](https://github.com/VocaHQ/vocagateway/issues).
 
 ## Where to get help
 

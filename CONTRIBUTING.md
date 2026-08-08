@@ -23,14 +23,14 @@ are available.
 
 - Clone with submodules: `git clone --recurse-submodules …` (or
   `git submodule update --init --recursive` on an existing clone). The gateway
-  is the [vocaserver](https://github.com/VocaHQ/vocaserver) submodule at
+  is the [vocagateway](https://github.com/VocaHQ/vocagateway) submodule at
   `server/`.
 - Install [`just`](https://just.systems), Xcode, XcodeGen, `uv`, and FFmpeg.
 - For Android work, install a recent Android Studio / SDK and JDK 17+.
 - Run `just ios gen` after changing `ios/project.yml`, and commit the
   regenerated project. The other iOS recipes regenerate it for you; this one
   matters because CI fails when the checked-in project is stale.
-- Gateway-only changes belong in vocaserver (open the PR there, then bump the
+- Gateway-only changes belong in vocagateway (open the PR there, then bump the
   submodule pin here if this repo needs the new revision).
 - Never commit microphone recordings, bearer tokens, signing material, tailnet
   hostnames, local database files, or Apple provisioning profiles.
@@ -90,7 +90,7 @@ just android ci       # assembles, unit tests, lint, Room schema freshness
 is absent, which is what a contributor with only one platform installed wants.
 
 iOS/Android recipes match the workflows in `.github/workflows/`. Gateway quality
-and container CI run in vocaserver; use `just server test` / `just server image`
+and container CI run in vocagateway; use `just server test` / `just server image`
 against the submodule when you change the pin or work on the gateway itself.
 
 When changing documentation, check local links and commands against the current

@@ -7,7 +7,7 @@
 #   just server run             # the same recipe, from anywhere in the repo
 #   just --list server          # that app's recipes on their own
 #
-# server/ is the VocaHQ/vocaserver git submodule. Init it before server recipes:
+# server/ is the VocaHQ/vocagateway git submodule. Init it before server recipes:
 #   git submodule update --init --recursive
 #
 # mod? makes the module optional so a clone without submodules can still run

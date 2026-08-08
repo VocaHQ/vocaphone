@@ -155,7 +155,7 @@ operational commands.
 
 ## Repository layout note
 
-The headless gateway lives in [VocaHQ/vocaserver](https://github.com/VocaHQ/vocaserver)
+The headless gateway lives in [VocaHQ/vocagateway](https://github.com/VocaHQ/vocagateway)
 and is vendored here as the `server/` git submodule so the phone clients and
 future desktop apps share one implementation. Clone with submodules:
 
@@ -165,7 +165,7 @@ git clone --recurse-submodules https://github.com/VocaHQ/vocaphone.git
 git submodule update --init --recursive
 ```
 
-Gateway CI, releases, and deep ops docs run in the vocaserver repository.
+Gateway CI, releases, and deep ops docs run in the vocagateway repository.
 Phone-side docs below still use `cd server` against the submodule checkout.
 
 ## Quick start
@@ -389,7 +389,7 @@ just doctor           # what each toolchain is still missing
 ```
 
 iOS and Android CI live in this repository. Gateway quality and container
-builds run in [vocaserver](https://github.com/VocaHQ/vocaserver); `just server
+builds run in [vocagateway](https://github.com/VocaHQ/vocagateway); `just server
 test` still exercises the submodule checkout locally. `just --list` shows the
 rest — running the
 apps (`just ios run`,
@@ -412,7 +412,7 @@ physical-device verification.
 ```text
 ios/                    Swift app, keyboard, Live Activity, shared state, tests
 android/                Kotlin app, dictation bubble, accessibility service, tests
-server/                 Git submodule → VocaHQ/vocaserver (gateway + WebUI)
+server/                 Git submodule → VocaHQ/vocagateway (gateway + WebUI)
 docs/                   Phone architecture, device setup, privacy, decisions
 Plan.md                 Original implementation plan and acceptance criteria
 Plan-Android.md         Android implementation plan and acceptance criteria
@@ -423,7 +423,7 @@ Plan-Android.md         Android implementation plan and acceptance criteria
 | Guide | Covers |
 | --- | --- |
 | [Android client](android/README.md) | Building the APK, guided setup, the dictation bubble, and accessibility disclosure |
-| [Gateway reference](server/README.md) | Native service, Compose, models, configuration, health, and CLI commands ([vocaserver](https://github.com/VocaHQ/vocaserver)) |
+| [Gateway reference](server/README.md) | Native service, Compose, models, configuration, health, and CLI commands ([vocagateway](https://github.com/VocaHQ/vocagateway)) |
 | [Deployment](server/docs/deployment.md) | Native-vs-Docker performance, startup, upgrades, persistence, and backups |
 | [Device setup](docs/device-setup.md) | Apple signing, keyboard installation, and physical-device acceptance |
 | [Tailscale](server/docs/tailscale.md) | Private HTTPS ingress for the gateway |

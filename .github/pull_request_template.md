@@ -7,7 +7,7 @@
 
 - [ ] `just ios ci` (or note why not)
 - [ ] `just android ci` (or note why not)
-- [ ] Gateway changes: PR against [vocaserver](https://github.com/VocaHQ/vocaserver) and submodule pin updated here if needed
+- [ ] Gateway changes: PR against [vocagateway](https://github.com/VocaHQ/vocagateway) and submodule pin updated here if needed
 - [ ] Physical-device test, if keyboard, microphone, background audio, or insertion changed
 
 ## Privacy and security
