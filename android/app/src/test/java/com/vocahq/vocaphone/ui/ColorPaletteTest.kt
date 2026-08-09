@@ -36,7 +36,6 @@ class ColorPaletteTest {
     @Test
     fun theResourcePaletteMatchesTheComposeDarkScheme() {
         val expected = mapOf(
-            "surface_dark" to VocaPhoneDarkColors.surface,
             "on_surface_dark" to VocaPhoneDarkColors.onSurface,
             "brand_dark" to VocaPhoneDarkColors.primary,
             "on_brand_dark" to VocaPhoneDarkColors.onPrimary,
@@ -59,8 +58,8 @@ class ColorPaletteTest {
         val chip = resource("bubble_chip")
         assertEquals("bubble_chip is not 95% opaque", "F2", chip.take(2))
         assertEquals(
-            "bubble_chip is no longer the dark surface",
-            resource("surface_dark").drop(2),
+            "bubble_chip is no longer the Compose dark surface",
+            VocaPhoneDarkColors.surface.hex().drop(2),
             chip.drop(2),
         )
     }
