@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.Color
  * it draws the *unfinished* half of the setup checklist — the icons that most
  * need to be seen were the ones that could not be.
  */
-private val VocaPhoneLightColors = lightColorScheme(
+internal val VocaPhoneLightColors = lightColorScheme(
     primary = Color(0xFF0F6B57),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFD5E9E1),
@@ -42,7 +42,7 @@ private val VocaPhoneLightColors = lightColorScheme(
     error = Color(0xFFB3261E),
 )
 
-private val VocaPhoneDarkColors = darkColorScheme(
+internal val VocaPhoneDarkColors = darkColorScheme(
     primary = Color(0xFF77D0B2),
     onPrimary = Color(0xFF003827),
     primaryContainer = Color(0xFF0A4D3B),

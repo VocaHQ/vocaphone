@@ -23,8 +23,9 @@ enum BrandPalette {
     /// top of it has to be dark — see ``ink``.
     static let dark = UIColor(red: 0x77 / 255, green: 0xD0 / 255, blue: 0xB2 / 255, alpha: 1)
 
-    /// `#00382A`, for text and glyphs sitting *on* ``dark``.
-    static let ink = UIColor(red: 0x00 / 255, green: 0x38 / 255, blue: 0x2A / 255, alpha: 1)
+    /// `#003827`, for text and glyphs sitting *on* ``dark``. Same value as the
+    /// Compose theme's dark `onPrimary`; `ColorPaletteTest` on Android pins it.
+    static let ink = UIColor(red: 0x00 / 255, green: 0x38 / 255, blue: 0x27 / 255, alpha: 1)
 
     /// Resolves per appearance, which is what almost every caller wants.
     static let accent = UIColor { traits in
