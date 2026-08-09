@@ -7,5 +7,11 @@
     <string name="ime_finish">Finish</string>
     <string name="ime_cancel">Cancel</string>
     <string name="ime_open_app">Open VocaPhone</string>
+    <string name="ime_switch">Switch keyboard</string>
+    <string name="ime_status_default">Tap to dictate</string>
+    <string name="ime_status_unavailable">Dictation is unavailable in password or non-text fields.</string>
+    <string name="ime_status_setup">Open VocaPhone to finish setup.</string>
+    <string name="ime_elapsed">%1$d seconds</string>
+    <string name="ime_audio_level">Microphone level</string>
 
 </resources>
