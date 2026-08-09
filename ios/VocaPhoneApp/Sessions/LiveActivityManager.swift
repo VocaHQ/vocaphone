@@ -1,5 +1,7 @@
 import ActivityKit
 import Foundation
+import os
+import UIKit
 
 @MainActor
 final class LiveActivityManager: @unchecked Sendable {
@@ -12,13 +14,44 @@ final class LiveActivityManager: @unchecked Sendable {
     private var transitionGeneration = 0
     private var pendingStandbyTask: Task<Void, Never>?
     private var activityMutationTask: Task<Void, Never>?
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private var isAppExiting = false
+    private let logger = Logger(
+        subsystem: "com.vocahq.vocaphone",
+        category: "LiveActivity"
+    )
 
-    private init() {}
+    private init() {
+        let center = NotificationCenter.default
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: UIScene.didDisconnectNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.endBeforeProcessExit(reason: "scene disconnected")
+                }
+            }
+        )
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: UIApplication.willTerminateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.endBeforeProcessExit(reason: "app terminating")
+                }
+            }
+        )
+    }
 
     /// Keeps a branded Live Activity in the Dynamic Island while Quick
     /// Dictation owns the microphone in standby. If a recording is still being
     /// processed, remember the request and return to Ready after it finishes.
     func startStandby(expiresAt: Date) {
+        isAppExiting = false
         standbyRequested = true
         standbyExpiresAt = expiresAt
         guard activeSessionID == nil else { return }
@@ -57,6 +90,7 @@ final class LiveActivityManager: @unchecked Sendable {
     func start(sessionID: UUID) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
+        isAppExiting = false
         standbyRequested = false
         standbyExpiresAt = nil
         activeSessionID = sessionID.uuidString
@@ -219,9 +253,56 @@ final class LiveActivityManager: @unchecked Sendable {
         _ mutation: @escaping @MainActor @Sendable () async -> Void
     ) {
         let precedingMutation = activityMutationTask
-        activityMutationTask = Task { @MainActor in
+        activityMutationTask = Task { @MainActor [weak self] in
             await precedingMutation?.value
+            guard let self, !Task.isCancelled, !self.isAppExiting else { return }
             await mutation()
         }
+    }
+
+    /// A Live Activity belongs to the system and otherwise survives its app.
+    /// Scene disconnection is the force-quit signal for a scene-based app; the
+    /// termination notification is a fallback while background audio keeps the
+    /// process running. ActivityKit's end operation is asynchronous, so briefly
+    /// servicing the main run loop gives it time to reach the system before iOS
+    /// tears down this process.
+    private func endBeforeProcessExit(reason: String) {
+        guard !isAppExiting else { return }
+        isAppExiting = true
+        standbyRequested = false
+        standbyExpiresAt = nil
+        activeSessionID = nil
+        recordingStartedAt = nil
+        beginTransition()
+        activityMutationTask?.cancel()
+        activityMutationTask = nil
+        try? SharedStore.shared.clearQuickDictationAvailability()
+        KeyboardPreferences.containingAppIsForeground = false
+
+        let activities = Activity<VocaPhoneActivityAttributes>.activities
+        guard !activities.isEmpty else { return }
+
+        logger.info("Ending \(activities.count) Live Activities before \(reason, privacy: .public)")
+        let content = ActivityContent(
+            state: VocaPhoneActivityAttributes.ContentState(
+                status: "VocaPhone closed",
+                canFinish: false,
+                phase: .finished
+            ),
+            staleDate: nil
+        )
+        Task { @MainActor in
+            for activity in Activity<VocaPhoneActivityAttributes>.activities {
+                await activity.end(content, dismissalPolicy: .immediate)
+            }
+        }
+
+        let deadline = Date().addingTimeInterval(0.75)
+        while Date() < deadline {
+            RunLoop.current.run(
+                until: min(deadline, Date().addingTimeInterval(0.01))
+            )
+        }
+        logger.info("Finished the exit dismissal window")
     }
 }
