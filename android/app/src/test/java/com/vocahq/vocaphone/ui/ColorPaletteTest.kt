@@ -66,27 +66,31 @@ class ColorPaletteTest {
     }
 
     /**
-     * The bubble floats over other apps on a near-black chip, so every colour it
-     * draws has to carry against that chip, and every glyph against its own fill.
-     * A white glyph on the mint idle fill — which is what the layout used to
-     * hardcode — is 1.8:1.
+     * The bubble floats over other apps, so every colour it draws has to carry
+     * against its own chip and every glyph against its own fill. A white glyph on
+     * the mint idle fill — which is what the layout used to hardcode — is 1.8:1.
+     *
+     * Both the chip and the dismiss glyph are translucent, so the numbers are
+     * measured on the *composited* colours rather than the literals, and the chip
+     * is composited over white: it is 95% opaque, so a white app behind it is the
+     * worst case for everything light drawn on top.
      */
     @Test
-    fun everyBubbleColourCarriesAgainstWhatIsBehindIt() {
-        val chip = resource("bubble_chip").drop(2)
+    fun everyBubbleColourCarriesOverTheBrightestAppBehindIt() {
+        val chip = over(resource("bubble_chip"), background = "FFFFFF")
+        val dismiss = over(resource("bubble_secondary_icon"), background = chip)
+        val micFill = resource("brand_dark").drop(2)
+        val recordingFill = resource("bubble_recording").drop(2)
+
         val pairs = listOf(
             Triple("mic fill on the chip", resource("brand_dark") to chip, 3.0),
             Triple("recording fill on the chip", resource("bubble_recording") to chip, 3.0),
             Triple("status text on the chip", resource("on_surface_dark") to chip, 4.5),
-            Triple("dismiss glyph on the chip", "FFB0B1AF" to chip, 3.0),
-            Triple(
-                "idle glyph on the mic fill",
-                resource("on_brand_dark") to resource("brand_dark").drop(2),
-                3.0,
-            ),
+            Triple("dismiss glyph on the chip", dismiss to chip, 3.0),
+            Triple("idle glyph on the mic fill", resource("on_brand_dark") to micFill, 3.0),
             Triple(
                 "recording glyph on the recording fill",
-                resource("bubble_recording_icon") to resource("bubble_recording").drop(2),
+                resource("bubble_recording_icon") to recordingFill,
                 3.0,
             ),
         )
@@ -97,6 +101,15 @@ class ColorPaletteTest {
                 "$what is %.2f:1, below %.1f:1".format(measured, minimum),
                 measured >= minimum,
             )
+        }
+    }
+
+    /** Flattens an #AARRGGBB resource onto an opaque RRGGBB background. */
+    private fun over(argb: String, background: String): String {
+        val alpha = argb.take(2).toInt(16) / 255.0
+        return (0..2).joinToString("") { index ->
+            val channel = { hex: String -> hex.takeLast(6).substring(index * 2, index * 2 + 2).toInt(16) }
+            "%02X".format(Math.round(alpha * channel(argb) + (1 - alpha) * channel(background)))
         }
     }
 
