@@ -16,8 +16,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:ellipsize="end"
+        android:accessibilityLiveRegion="polite"
+        android:importantForAccessibility="yes"
         android:maxLines="1"
-        android:text="Tap to dictate"
+        android:text="@string/ime_status_default"
         android:textColor="@color/keyboard_on_surface"
         android:textSize="14sp" />
 
@@ -37,6 +39,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:ellipsize="end"
+        android:importantForAccessibility="yes"
         android:maxLines="2"
         android:textColor="@color/keyboard_on_surface"
         android:textSize="13sp"
@@ -63,13 +66,15 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Dictate" />
+            android:minHeight="48dp"
+            android:text="@string/ime_dictate" />
 
         <Button
             android:id="@+id/ime_switch"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
-            android:text="Switch keyboard" />
+            android:minHeight="48dp"
+            android:text="@string/ime_switch" />
     </LinearLayout>
 </LinearLayout>

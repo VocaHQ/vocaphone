@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Feasibility-spike keyboard for system-wide dictation.
+ * VocaPhone's system-wide dictation keyboard.
  *
  * This service deliberately stays small. It proves the important platform path:
  * the keyboard owns the focused InputConnection, while the existing dictation
@@ -85,6 +85,7 @@ class VocaPhoneInputMethodService : InputMethodService(), TranscriptInserter {
     }
 
     override fun onFinishInput() {
+        cancelOwnedDictation("editor_finished")
         // The InputConnection belongs to the editor that just lost focus. Do not
         // leave its input type eligible while Android is transitioning elsewhere.
         currentInputType = 0
@@ -92,12 +93,13 @@ class VocaPhoneInputMethodService : InputMethodService(), TranscriptInserter {
         super.onFinishInput()
     }
 
+    override fun onUnbindInput() {
+        cancelOwnedDictation("input_unbound")
+        super.onUnbindInput()
+    }
+
     override fun onDestroy() {
-        if (startedImeDictation && lastState.phase.isBusy) {
-            // Switching away from VocaPhone must not leave its microphone session
-            // alive after the keyboard that owns it has gone away.
-            container.dictation.cancel()
-        }
+        cancelOwnedDictation("keyboard_destroyed")
         if (container.dictation.imeInserter === this) {
             container.dictation.imeInserter = null
         }
@@ -136,11 +138,17 @@ class VocaPhoneInputMethodService : InputMethodService(), TranscriptInserter {
 
     private fun toggleDictation() {
         when {
-            !ImeInputPolicy.acceptsDictation(currentInputType) -> render(lastState)
-            lastState.phase == DictationPhase.LISTENING ->
+            !ImeInputPolicy.acceptsDictation(currentInputType) -> {
+                container.diagnostics.recordAction("input_rejected", DictationSource.IME.name)
+                render(lastState)
+            }
+            lastState.phase == DictationPhase.LISTENING -> {
+                container.diagnostics.recordAction("finish", DictationSource.IME.name)
                 DictationService.send(this, DictationService.ACTION_FINISH)
-            lastState.phase.isBusy ->
+            }
+            lastState.phase.isBusy -> {
                 DictationService.send(this, DictationService.ACTION_CANCEL)
+            }
             lastState.phase == DictationPhase.PERMISSION_REPAIR -> openCompanion()
             lastState.phase == DictationPhase.FAILED -> openCompanion()
             else -> {
@@ -148,6 +156,15 @@ class VocaPhoneInputMethodService : InputMethodService(), TranscriptInserter {
                 DictationService.start(this, DictationSource.IME)
             }
         }
+    }
+
+    private fun cancelOwnedDictation(reason: String) {
+        if (!startedImeDictation || !lastState.phase.isBusy) return
+        container.diagnostics.recordAction(reason, DictationSource.IME.name)
+        startedImeDictation = false
+        // The editor connection is no longer safe to use after this lifecycle
+        // callback, so cancel capture rather than allowing a stale insertion.
+        container.dictation.cancel()
     }
 
     private fun openCompanion() {
@@ -161,8 +178,8 @@ class VocaPhoneInputMethodService : InputMethodService(), TranscriptInserter {
 
         val accepted = ImeInputPolicy.acceptsDictation(currentInputType)
         statusView?.text = when {
-            !accepted -> "Dictation is unavailable in password or non-text fields."
-            state.phase == DictationPhase.PERMISSION_REPAIR -> "Open VocaPhone to finish setup."
+            !accepted -> getString(R.string.ime_status_unavailable)
+            state.phase == DictationPhase.PERMISSION_REPAIR -> getString(R.string.ime_status_setup)
             else -> state.statusText
         }
         val recording = state.isRecording
@@ -171,12 +188,18 @@ class VocaPhoneInputMethodService : InputMethodService(), TranscriptInserter {
             visibility = if (recording && state.partialTranscript.isNotEmpty()) View.VISIBLE else View.GONE
         }
         elapsedView?.apply {
-            text = if (recording) "${state.recordedMillis / 1000}s" else ""
+            text = if (recording) {
+                getString(R.string.ime_elapsed, state.recordedMillis / 1000)
+            } else {
+                ""
+            }
             visibility = if (recording) View.VISIBLE else View.GONE
+            contentDescription = if (recording) text else null
         }
         progressView?.apply {
             progress = (state.level.coerceIn(0f, 1f) * 100).toInt()
             visibility = if (recording) View.VISIBLE else View.GONE
+            contentDescription = if (recording) getString(R.string.ime_audio_level) else null
         }
         dictateButton?.apply {
             isEnabled = accepted && state.phase !in setOf(

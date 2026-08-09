@@ -3,7 +3,7 @@ package com.vocahq.vocaphone.core
 import android.text.InputType
 
 /**
- * The editor fields into which the experimental keyboard may offer dictation.
+ * The editor fields into which the VocaPhone keyboard may offer dictation.
  *
  * The IME can see an EditorInfo without reading the field contents. Keeping this
  * gate limited to ordinary text fields prevents the keyboard from presenting a
