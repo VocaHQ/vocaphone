@@ -216,7 +216,7 @@ final class DictationBarView: UIView {
         primaryButton.accessibilityHint = button.hint
         guard changed || primaryButton.configuration == nil else { return }
         let titleSize = metrics.titleFontSize
-        let labelColor = palette.labelColor(on: palette.tint(for: accent))
+        let labelColor = palette.labelColor(for: accent, enabled: button.isEnabled)
         let update = { [primaryButton] in
             var configuration = UIButton.Configuration.plain()
             configuration.title = button.title

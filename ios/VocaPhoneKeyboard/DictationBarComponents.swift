@@ -340,7 +340,9 @@ final class FlatButton: UIButton {
     }
 
     private func applyFill() {
-        backgroundColor = isEnabled ? fillColor : fillColor.withAlphaComponent(0.55)
+        backgroundColor = isEnabled
+            ? fillColor
+            : fillColor.withAlphaComponent(KeyboardPalette.disabledFillAlpha)
         layer.shadowColor = fillColor.cgColor
         layer.shadowOpacity = isEnabled ? 0.16 : 0
     }

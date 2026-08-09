@@ -55,12 +55,18 @@ struct SettingsView: View {
                 GatewaySetupView()
             } label: {
                 LabeledContent {
-                    // A dot, not a filled icon with a caption beside it: the row
-                    // already names what is ready.
-                    Circle()
-                        .fill(gatewayEngineReady ? Color.brand : .orange)
-                        .frame(width: 8, height: 8)
-                        .accessibilityLabel(gatewayEngineReady ? "Ready" : "Not ready")
+                    // The dot and the word, not one or the other. A bare `Circle`
+                    // is not an accessibility element in SwiftUI, so the label on
+                    // it was not reliably announced — and it left colour as the
+                    // only carrier of readiness, which a red/green deficiency
+                    // reads as no signal at all.
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(gatewayEngineReady ? Color.brand : .orange)
+                            .frame(width: 7, height: 7)
+                        Text(gatewayEngineReady ? "Ready" : "Not ready")
+                    }
+                    .accessibilityElement(children: .combine)
                 } label: {
                     Text("Transcription gateway")
                     Text(gatewayURL.isEmpty ? healthMessage : gatewayURL)
