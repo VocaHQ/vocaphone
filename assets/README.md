@@ -39,6 +39,23 @@ into a smudge, and the mic is what has to survive.
 So the avatar remains the source of the geometry, and the icon is a deliberate
 simplification of it rather than a reproduction.
 
+## The rules are checked, not remembered
+
+```sh
+python3 assets/generate.py --check     # also part of the root `just ci`
+```
+
+It asserts what the assets are supposed to satisfy: every variant's mark clears
+3:1 against the ground it is drawn on, the shipped mark draws four arcs and the
+six-arc reconstruction still measures 349×329, and the adaptive icon's mark fits
+inside Android's guaranteed-visible circle.
+
+The contrast rule earns its keep. The shared org pack in
+[VocaHQ/vocahq](https://github.com/VocaHQ/vocahq/tree/main/web/assets/brand)
+grew `-dark` variants that put the ink mark back on the brand field at **2.78:1**
+— slightly worse than the navy icon this replaced (2.98:1), and the same mistake.
+`--check` catches that shape of regression.
+
 ## Colours
 
 | Token | Value | Use |

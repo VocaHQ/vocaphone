@@ -294,8 +294,80 @@ PNGS: list[tuple[str, object, int, bool]] = [
 ]
 
 
+# --- brand rules ------------------------------------------------------------
+
+
+def _relative_luminance(colour: str) -> float:
+    """WCAG relative luminance. Channels have to be linearised first."""
+    value = colour.lstrip("#")
+    channels = []
+    for index in range(3):
+        raw = int(value[index * 2:index * 2 + 2], 16) / 255
+        channels.append(raw / 12.92 if raw <= 0.03928 else ((raw + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def contrast(first: str, second: str) -> float:
+    a, b = _relative_luminance(first), _relative_luminance(second)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+# Mark against the ground it is drawn on, for every variant this file emits. 3:1
+# is the WCAG floor for a graphic, and the rule exists because the icon this
+# replaced was navy on the brand field at 2.98:1 -- a smudge at the size an icon
+# is actually seen. Dark-on-brand is the specific mistake to keep out.
+MARK_ON_GROUND = [
+    ("logo badge", LIGHT, BRAND),
+    ("app icon", LIGHT, BRAND),
+    ("gateway favicon", "#171717", "#ECECEC"),
+]
+
+
+def check() -> list[str]:
+    """Assert the brand rules the shipped assets are supposed to satisfy.
+
+    Returns a list of failures, empty when everything holds. This is what makes
+    the guideline testable rather than remembered: it would have caught the
+    dark-variant regression in the shared org pack, where the mark went back to
+    ink on the brand field at 2.78:1.
+    """
+    failures = []
+
+    for name, mark, ground in MARK_ON_GROUND:
+        measured = contrast(mark, ground)
+        if measured < 3.0:
+            failures.append(f"{name}: mark {mark} on {ground} is {measured:.2f}:1, below 3:1")
+
+    # The shipped mark is the four-arc simplification; see README.md. Six is the
+    # avatar reconstruction and must stay reachable, and must stay 349x329.
+    shipped, full = len(_paths()), len(_paths("both"))
+    if shipped != 6:
+        failures.append(f"shipped mark draws {shipped} paths, expected 6 (four arcs)")
+    if full != 8:
+        failures.append(f"six-arc mark draws {full} paths, expected 8")
+    box = mark_box("both")
+    if box != (349.2, 329.0, 228.5, 226.5):
+        failures.append(f"the avatar reconstruction's box moved: {box}")
+
+    # The mark has to fit Android's guaranteed-visible circle.
+    width, height, _, _ = mark_box()
+    scale = (ANDROID_VISIBLE * ICON_MARK_FRACTION) / max(width, height)
+    diagonal = math.hypot(width * scale, height * scale)
+    if diagonal > ANDROID_VISIBLE:
+        failures.append(
+            f"the adaptive icon's mark is {diagonal:.1f}dp diagonal, "
+            f"outside the {ANDROID_VISIBLE:g}dp visible circle"
+        )
+
+    if INK == "#070F1C":
+        failures.append("INK is still the old blue-biased navy")
+    return failures
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--check", action="store_true",
+                    help="verify the brand rules and exit; writes nothing")
     ap.add_argument("--png", action="store_true",
                     help="also re-rasterise the PNGs (needs cairosvg)")
     ap.add_argument("--favicon", metavar="PATH", type=pathlib.Path,
@@ -303,6 +375,15 @@ def main() -> None:
                          "server/app/webui/favicon.svg -- that file belongs to "
                          "VocaHQ/vocagateway and has to be committed there")
     args = ap.parse_args()
+
+    if args.check:
+        failures = check()
+        for failure in failures:
+            print(f"FAIL  {failure}")
+        if failures:
+            raise SystemExit(1)
+        print("brand rules hold")
+        return
 
     repo = ROOT.parent
     for rel, producer in SVGS.items():
