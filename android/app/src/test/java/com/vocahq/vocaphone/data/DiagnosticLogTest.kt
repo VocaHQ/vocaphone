@@ -18,12 +18,14 @@ class DiagnosticLogTest {
             )
 
             log.recordState("LISTENING", "IME")
+            log.recordError("settings", "IME")
             log.recordError("https://token@homelab.example:8765", "IME")
             log.recordAction("transcript=never persist this", "IME")
 
             val output = log.read()
             assertTrue(output.contains("ts=1234"))
             assertTrue(output.contains("event=state value=LISTENING source=IME"))
+            assertTrue(output.contains("event=error value=settings source=IME"))
             assertTrue(output.contains("event=error value=unknown source=IME"))
             assertTrue(output.contains("event=action value=unknown source=IME"))
             assertFalse(output.contains("homelab"))

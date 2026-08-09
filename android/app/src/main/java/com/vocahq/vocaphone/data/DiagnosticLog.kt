@@ -90,7 +90,7 @@ class DiagnosticLog(
         const val MAX_VALUE_LENGTH = 64
         val EVENTS = setOf("state", "error", "action")
         val SOURCES = setOf("IME", "COMPANION_APP", "none")
-        val ERROR_CATEGORIES = setOf("audio", "gateway", "insertion", "setup", "unknown")
+        val ERROR_CATEGORIES = setOf("audio", "gateway", "insertion", "settings", "setup", "unknown")
         val ACTIONS = setOf(
             "start",
             "cancel",
