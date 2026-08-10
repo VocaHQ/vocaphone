@@ -593,14 +593,12 @@ final class LocalModelManager {
             try Task.checkCancellation()
             let generation = await progressTracker.beginFile(expectedBytes: expectedBytes)
             let delegate = FileDownloadDelegate { [weak self] bytesWritten in
-                Task { [weak self] in
+                Task { @MainActor [weak self] in
                     guard let value = await progressTracker.updateFile(
                         bytesWritten: bytesWritten,
                         generation: generation
                     ) else { return }
-                    await MainActor.run {
-                        self?.progress = value
-                    }
+                    self?.progress = value
                 }
             }
             let configuration = URLSessionConfiguration.default
