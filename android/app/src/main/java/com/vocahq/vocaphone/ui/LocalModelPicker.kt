@@ -14,7 +14,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -48,6 +51,7 @@ fun LocalModelPicker(
     }
     val installedModels = usable.filter { it.id in state.downloaded }
     val availableModels = usable.filter { it.id !in state.downloaded }
+    var availableModelsExpanded by remember { mutableStateOf(false) }
 
     if (usable.isEmpty()) {
         Text(
@@ -72,24 +76,38 @@ fun LocalModelPicker(
         )
     }
 
-    ModelSectionHeading("Available models")
     if (availableModels.isEmpty()) {
+        ModelSectionHeading("Available models")
         Text(
             "All compatible models are installed.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     } else {
-        ModelRows(
-            models = availableModels,
-            state = state,
-            selectedModelId = selectedModelId,
-            recommendedModelId = recommended.id,
-            onSelect = onSelect,
-            onDownload = onDownload,
-            onCancelDownload = onCancelDownload,
-            onDelete = onDelete,
+        ModelSectionToggle(
+            title = "Available models",
+            count = availableModels.size,
+            expanded = availableModelsExpanded,
+            onToggle = { availableModelsExpanded = !availableModelsExpanded },
         )
+        if (availableModelsExpanded) {
+            ModelRows(
+                models = availableModels,
+                state = state,
+                selectedModelId = selectedModelId,
+                recommendedModelId = recommended.id,
+                onSelect = onSelect,
+                onDownload = onDownload,
+                onCancelDownload = onCancelDownload,
+                onDelete = onDelete,
+            )
+        } else {
+            Text(
+                "${availableModels.size} compatible model${if (availableModels.size == 1) "" else "s"} available to download.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 
     state.message?.let {
@@ -109,6 +127,34 @@ private fun ModelSectionHeading(title: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 4.dp),
     )
+}
+
+@Composable
+private fun ModelSectionToggle(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "$title ($count)",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        TextButton(
+            onClick = onToggle,
+            contentPadding = PaddingValues(horizontal = 0.dp),
+        ) {
+            Text(if (expanded) "Hide" else "Show")
+        }
+    }
 }
 
 @Composable
