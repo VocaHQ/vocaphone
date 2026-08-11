@@ -260,9 +260,11 @@ jobs:
             cd "$assets"
             sha256sum "$out" > SHA256SUMS.txt
           )
-          echo "apk_name=$out" >> "$GITHUB_OUTPUT"
-          echo "apk_size=$(du -h "$assets/$out" | cut -f1)" >> "$GITHUB_OUTPUT"
-          echo "apk_sha=$(cut -d' ' -f1 "$assets/SHA256SUMS.txt")" >> "$GITHUB_OUTPUT"
+          {
+            echo "apk_name=$out"
+            echo "apk_size=$(du -h "$assets/$out" | cut -f1)"
+            echo "apk_sha=$(cut -d' ' -f1 "$assets/SHA256SUMS.txt")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload Android APK
         id: upload
@@ -383,6 +385,7 @@ jobs:
             -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" \
             "$KEYCHAIN_PATH"
+          # shellcheck disable=SC2046 # security prints one quoted path per line
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
@@ -491,9 +494,11 @@ jobs:
             cd "$GITHUB_WORKSPACE/pr-assets"
             shasum -a 256 "$out" | awk '{print $1 "  " $2}' > SHA256SUMS.txt
           )
-          echo "ipa_name=$out" >> "$GITHUB_OUTPUT"
-          echo "ipa_size=$(du -h "$GITHUB_WORKSPACE/pr-assets/$out" | cut -f1)" >> "$GITHUB_OUTPUT"
-          echo "ipa_sha=$(awk '{print $1}' "$GITHUB_WORKSPACE/pr-assets/SHA256SUMS.txt")" >> "$GITHUB_OUTPUT"
+          {
+            echo "ipa_name=$out"
+            echo "ipa_size=$(du -h "$GITHUB_WORKSPACE/pr-assets/$out" | cut -f1)"
+            echo "ipa_sha=$(awk '{print $1}' "$GITHUB_WORKSPACE/pr-assets/SHA256SUMS.txt")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload iOS IPA
         id: upload
