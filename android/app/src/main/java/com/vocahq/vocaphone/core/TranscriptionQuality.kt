@@ -29,7 +29,7 @@ enum class TranscriptionQuality(val storedValue: String) {
         get() = when (this) {
             FAST -> "Quickest result. Skips the retries that rescue a hard passage."
             BALANCED -> "Beam search where it is cheap, and a retry when a window looks wrong."
-            ACCURATE -> "Widest search on every model. Noticeably slower on older phones."
+            ACCURATE -> "Wider search for difficult speech. Can be 2–3× slower on older phones."
         }
 
     /**
@@ -37,12 +37,13 @@ enum class TranscriptionQuality(val storedValue: String) {
      *
      * Beam search is the standard accuracy win over greedy, and also the
      * standard way to make decoding take twice as long, so only Accurate asks
-     * for it. Five matches whisper's own default width.
+     * for it. Three keeps most of the accuracy benefit without making a
+     * constrained phone pay for five decoder passes per token.
      */
     val whisperBeamSize: Int
         get() = when (this) {
             FAST, BALANCED -> 0
-            ACCURATE -> 5
+            ACCURATE -> 3
         }
 
     /**

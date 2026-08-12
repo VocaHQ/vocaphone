@@ -11,18 +11,21 @@ struct TranscriptStylerTests {
         #expect(TranscriptStyler.apply(source, style: .excited) == "Hello there! How are you!")
     }
 
-    /// The case that made plumbing the detected language back from the on-device
-    /// engines worth doing: "auto" can only guess from the text, and
-    /// unpunctuated Devanagari looks exactly like Latin to that guess.
-    @Test func anUnpunctuatedScriptNeedsTheDetectedLanguageNotAuto() {
+    @Test func automaticLanguageRecognizesUnpunctuatedDandaScripts() {
         let hindi = "मैं कल बाजार जाऊंगा"
         #expect(TranscriptStyler.apply(hindi, style: .formal, language: "hi") == "मैं कल बाजार जाऊंगा।")
-        #expect(TranscriptStyler.apply(hindi, style: .formal, language: "auto") == "मैं कल बाजार जाऊंगा.")
-        // Once the model has punctuated it, sniffing the text is enough.
+        #expect(TranscriptStyler.apply(hindi, style: .formal, language: "auto") == "मैं कल बाजार जाऊंगा।")
+        #expect(TranscriptStyler.apply("আমি কাল যাব", style: .formal, language: "auto") == "আমি কাল যাব।")
+        #expect(TranscriptStyler.apply("ਮੈਂ ਕੱਲ੍ਹ ਜਾਵਾਂਗਾ", style: .formal, language: "auto") == "ਮੈਂ ਕੱਲ੍ਹ ਜਾਵਾਂਗਾ।")
+    }
+
+    @Test func hindiNormalizesSentenceDotsWithoutTouchingProtectedDotsOrEllipses() {
         #expect(
             TranscriptStyler.apply(
-                "मैं कल बाजार जाऊंगा। वह ठीक है", style: .formal, language: "auto"
-            ) == "मैं कल बाजार जाऊंगा। वह ठीक है।"
+                "मूल्य 22.5 है. U.S. टीम example.com देखें... ठीक है.",
+                style: .formal,
+                language: "auto"
+            ) == "मूल्य 22.5 है। U.S. टीम example.com देखें... ठीक है।"
         )
     }
 

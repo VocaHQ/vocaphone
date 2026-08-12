@@ -197,9 +197,18 @@ object LocalModelCatalog {
 
     fun find(id: String): LocalModelDescriptor? = all.firstOrNull { it.id == id }
 
-    fun recommended(totalRamGB: Long): LocalModelDescriptor = when {
-        totalRamGB >= 12 -> find("large-v3-turbo")
-        totalRamGB >= 6 -> find("large-v3-turbo-q5_0")
+    /**
+     * A model fitting in RAM does not mean the CPU can transcribe with it at an
+     * interactive speed. Older high-RAM phones report no media performance
+     * class, so keep their default conservative while leaving every model that
+     * fits available as an explicit choice.
+     */
+    fun recommended(
+        totalRamGB: Long,
+        mediaPerformanceClass: Int = Build.VERSION.MEDIA_PERFORMANCE_CLASS,
+    ): LocalModelDescriptor = when {
+        totalRamGB >= 12 && mediaPerformanceClass >= 34 -> find("large-v3-turbo")
+        totalRamGB >= 6 && mediaPerformanceClass >= 31 -> find("large-v3-turbo-q5_0")
         totalRamGB >= 4 -> find("small-q5_1")
         totalRamGB >= 3 -> find("base-q5_1")
         else -> find("tiny-q5_1")

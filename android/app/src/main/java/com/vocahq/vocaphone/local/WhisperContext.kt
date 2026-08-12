@@ -65,7 +65,15 @@ internal class WhisperContext private constructor(private var pointer: Long) {
 
 internal object WhisperCpuConfig {
     val preferredThreadCount: Int
-        get() = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(2, 6)
+        get() = whisperThreadCount(Runtime.getRuntime().availableProcessors())
+
+    /**
+     * Four is a conservative ceiling for sustained work on heterogeneous phone
+     * CPUs. Asking for six can recruit slower cores and add heat during a real
+     * dictation, especially while beam search is active.
+     */
+    internal fun whisperThreadCount(availableProcessors: Int): Int =
+        (availableProcessors - 2).coerceIn(2, 4)
 
     /** sherpa uses ONNX Runtime's pool; fewer sustained workers avoid POCO-class thermal throttling. */
     val preferredSherpaThreadCount: Int

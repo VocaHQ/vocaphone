@@ -350,7 +350,7 @@ class LocalModelManager(
         // so one gain covers all of it.
         return decodePrepared(
             SpeechAudioConditioning.condition(samples),
-            model.id,
+            model,
             resolved,
             quality,
             vocabulary,
@@ -367,12 +367,17 @@ class LocalModelManager(
         withContext(Dispatchers.IO) { LocalModelIntegrity.verifySizes(model, directory) }
 
         engineMutex.withLock {
-            // Quality only invalidates a sherpa engine; whisper takes its search
-            // parameters per call, so reloading a multi-gigabyte model because
-            // the user moved a segmented control would be pure waste.
-            val qualityChanged = model.engine == LocalModelEngine.SHERPA_ONNX &&
-                loadedQuality != quality
-            if (loadedModelID != model.id || loadedLanguage != resolvedLanguage || qualityChanged) {
+            if (
+                shouldReloadLocalEngine(
+                    engine = model.engine,
+                    loadedModelID = loadedModelID,
+                    requestedModelID = model.id,
+                    loadedLanguage = loadedLanguage,
+                    requestedLanguage = resolvedLanguage,
+                    loadedQuality = loadedQuality,
+                    requestedQuality = quality,
+                )
+            ) {
                 releaseEngines()
                 _state.value = _state.value.copy(preparing = model.displayName)
                 try {
@@ -403,12 +408,15 @@ class LocalModelManager(
 
     private suspend fun decodePrepared(
         samples: FloatArray,
-        modelID: String,
+        model: LocalModelDescriptor,
         resolvedLanguage: String,
         quality: TranscriptionQuality,
         vocabulary: String,
     ): LocalTranscription = engineMutex.withLock {
-        check(loadedModelID == modelID && loadedLanguage == resolvedLanguage) {
+        check(
+            loadedModelID == model.id &&
+                (model.engine == LocalModelEngine.WHISPER || loadedLanguage == resolvedLanguage),
+        ) {
             "Local transcription engine changed before inference started"
         }
         sherpaRecognizer?.let { recognizer ->
@@ -478,4 +486,23 @@ class LocalModelManager(
             return samples
         }
     }
+}
+
+/**
+ * Whisper receives language, quality, and vocabulary with each decode; none of
+ * them change the loaded native context. Sherpa bakes language and quality into
+ * its recognizer and must rebuild when either changes.
+ */
+internal fun shouldReloadLocalEngine(
+    engine: LocalModelEngine,
+    loadedModelID: String?,
+    requestedModelID: String,
+    loadedLanguage: String?,
+    requestedLanguage: String,
+    loadedQuality: TranscriptionQuality?,
+    requestedQuality: TranscriptionQuality,
+): Boolean {
+    if (loadedModelID != requestedModelID) return true
+    return engine == LocalModelEngine.SHERPA_ONNX &&
+        (loadedLanguage != requestedLanguage || loadedQuality != requestedQuality)
 }
