@@ -167,6 +167,10 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .onChange(of: transcriptionQualityRawValue) { _, _ in reloadLocalEngine() }
+            if let loading = coordinator.localModels.loadingMessage {
+                Text(loading).foregroundStyle(.secondary)
+            }
         } header: {
             Text("On-device accuracy")
         } footer: {
@@ -228,6 +232,25 @@ struct SettingsView: View {
 
     private var selectedTranscriptionQuality: TranscriptionQuality {
         TranscriptionQuality.fromStored(transcriptionQualityRawValue)
+    }
+
+    /// A sherpa engine has its decoding method baked in, so changing the
+    /// accuracy rebuilds it. Doing that here means it happens while the user is
+    /// still on this screen rather than in front of the next dictation. Best
+    /// effort: the dictation that follows attempts the same load and reports
+    /// whatever went wrong where the user is looking.
+    private func reloadLocalEngine() {
+        guard LocalTranscriptionPreferences.enabled,
+              let descriptor = LocalModelCatalog.descriptor(
+                  for: LocalTranscriptionPreferences.modelIdentifier
+              )
+        else { return }
+        Task { @MainActor in
+            try? await coordinator.localModels.prepare(
+                descriptor,
+                language: KeyboardPreferences.effectiveTranscriptionLanguage.rawValue
+            )
+        }
     }
 
     /// The selected on-device model when it cannot take a vocabulary, so the

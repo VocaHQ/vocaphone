@@ -24,6 +24,7 @@ internal class WhisperLib {
         /**
          * @param beamSize a beam search width, or zero for greedy sampling.
          * @param prompt vocabulary to bias the decoder toward; empty for none.
+         * @return zero on success, or whisper's own negative status on failure.
          */
         external fun fullTranscribe(
             contextPtr: Long,
@@ -33,7 +34,7 @@ internal class WhisperLib {
             beamSize: Int,
             temperatureFallback: Boolean,
             prompt: String,
-        )
+        ): Int
         /** The language actually decoded, or empty when the model reported none. */
         external fun getDetectedLanguage(contextPtr: Long): String
 

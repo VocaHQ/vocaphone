@@ -20,7 +20,7 @@ internal class WhisperContext private constructor(private var pointer: Long) {
     ): LocalTranscription =
         withContext(scope.coroutineContext) {
             check(pointer != 0L) { "Whisper context has been released" }
-            WhisperLib.fullTranscribe(
+            val status = WhisperLib.fullTranscribe(
                 pointer,
                 WhisperCpuConfig.preferredThreadCount,
                 samples,
@@ -29,6 +29,13 @@ internal class WhisperContext private constructor(private var pointer: Long) {
                 quality.whisperTemperatureFallback,
                 prompt,
             )
+            // A failed decode returns no segments, which would otherwise be
+            // reported as an empty transcript — as though the microphone had
+            // heard nothing rather than the model having run out of room.
+            check(status == 0) {
+                "The on-device model could not decode this recording. " +
+                    "Try the Fast or Balanced accuracy setting, or a smaller model."
+            }
             LocalTranscription(
                 text = buildString {
                     repeat(WhisperLib.getTextSegmentCount(pointer)) { index ->

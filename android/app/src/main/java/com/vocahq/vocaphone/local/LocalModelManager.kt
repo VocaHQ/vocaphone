@@ -48,6 +48,15 @@ data class LocalModelState(
     val message: String? = null,
     /** Reported so the picker can hide models this phone cannot run. */
     val totalRamGB: Long = 0,
+    /**
+     * The model being loaded into memory right now, if any.
+     *
+     * Loading is slow enough to be worth saying out loud — hundreds of megabytes
+     * of ONNX or GGML — and it happens again whenever the accuracy setting
+     * changes a sherpa engine. Without this a dictation started in that window
+     * just appears to hang.
+     */
+    val preparing: String? = null,
 )
 
 /** Owns model storage, atomic downloads, and the verified inference engine. */
@@ -311,6 +320,22 @@ class LocalModelManager(
         )
     }
 
+    /**
+     * Loads the engine before a dictation needs it.
+     *
+     * Model loading is measured in seconds, and until now it always happened on
+     * the critical path of whatever dictation happened to be first. Changing the
+     * accuracy setting rebuilds a sherpa engine, so without this a user who
+     * changes it and immediately dictates waits through the whole load with no
+     * explanation. Failures are the caller's to ignore: this is an optimization,
+     * and the real attempt will report the same problem properly.
+     */
+    suspend fun prepare(modelID: String, language: String, quality: TranscriptionQuality) {
+        val model = LocalModelCatalog.find(modelID) ?: return
+        if (!isDownloaded(model.id)) return
+        prepareEngine(model, if (model.englishOnly) "en" else language, quality)
+    }
+
     suspend fun transcribe(
         samples: FloatArray,
         modelID: String,
@@ -349,20 +374,25 @@ class LocalModelManager(
                 loadedQuality != quality
             if (loadedModelID != model.id || loadedLanguage != resolvedLanguage || qualityChanged) {
                 releaseEngines()
-                withContext(Dispatchers.IO) {
-                    if (model.engine == LocalModelEngine.SHERPA_ONNX) {
-                        sherpaRecognizer = SherpaRecognizer.create(
-                            model = model,
-                            directory = directory,
-                            language = resolvedLanguage,
-                            threads = WhisperCpuConfig.preferredSherpaThreadCount,
-                            quality = quality,
-                        )
-                    } else {
-                        whisperContext = WhisperContext.create(
-                            File(directory, model.primaryFile.path).absolutePath,
-                        ) ?: error("Could not load ${model.displayName}")
+                _state.value = _state.value.copy(preparing = model.displayName)
+                try {
+                    withContext(Dispatchers.IO) {
+                        if (model.engine == LocalModelEngine.SHERPA_ONNX) {
+                            sherpaRecognizer = SherpaRecognizer.create(
+                                model = model,
+                                directory = directory,
+                                language = resolvedLanguage,
+                                threads = WhisperCpuConfig.preferredSherpaThreadCount,
+                                quality = quality,
+                            )
+                        } else {
+                            whisperContext = WhisperContext.create(
+                                File(directory, model.primaryFile.path).absolutePath,
+                            ) ?: error("Could not load ${model.displayName}")
+                        }
                     }
+                } finally {
+                    _state.value = _state.value.copy(preparing = null)
                 }
                 loadedModelID = model.id
                 loadedLanguage = resolvedLanguage

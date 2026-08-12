@@ -141,6 +141,16 @@ fun SettingsScreen(
                 label = { it.displayName },
                 onSelect = onTranscriptionQuality,
             )
+            // Changing this rebuilds a sherpa engine, which takes seconds. Said
+            // here so the reload is something the user watched finish rather
+            // than something the next dictation runs into.
+            localModels.preparing?.let { name ->
+                Text(
+                    "Loading $name… Dictation will wait for this to finish.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         CustomVocabularySection(

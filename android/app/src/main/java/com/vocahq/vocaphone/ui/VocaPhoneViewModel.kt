@@ -96,6 +96,9 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
     private val audioManager = application.getSystemService(AudioManager::class.java)
     private var localModelDownloadJob: Job? = null
 
+    /** Superseded rather than queued: only the newest selection is worth loading. */
+    private var localEnginePreloadJob: Job? = null
+
     /**
      * Headsets are plugged and unplugged while the settings screen is open, so the
      * offered inputs track the hardware rather than a snapshot taken at launch.
@@ -254,7 +257,13 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch { container.settings.setStyle(style) }
 
     fun setTranscriptionQuality(quality: TranscriptionQuality) =
-        viewModelScope.launch { container.settings.setTranscriptionQuality(quality) }
+        viewModelScope.launch {
+            container.settings.setTranscriptionQuality(quality)
+            // A sherpa engine has the decoding method baked in, so this rebuilds
+            // it. Doing that here means it happens while the user is still on
+            // this screen rather than in front of the next dictation.
+            preloadLocalEngine()
+        }
 
     fun setCustomVocabulary(vocabulary: String) =
         viewModelScope.launch { container.settings.setCustomVocabulary(vocabulary) }
@@ -287,6 +296,28 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
             container.settings.setLocalModel(model.id)
             container.settings.setLocalTranscriptionEnabled(true)
             refreshSetup()
+            preloadLocalEngine()
+        }
+    }
+
+    /**
+     * Warms the selected on-device engine. Best effort throughout: a failure
+     * here is silent because the dictation that follows will attempt the same
+     * load and report whatever went wrong in a place the user is looking.
+     */
+    private fun preloadLocalEngine() {
+        localEnginePreloadJob?.cancel()
+        localEnginePreloadJob = viewModelScope.launch {
+            val configuration = container.settings.current()
+            if (!configuration.localTranscriptionEnabled) return@launch
+            val modelID = configuration.localModelId.takeIf { it.isNotEmpty() } ?: return@launch
+            runCatching {
+                container.localModels.prepare(
+                    modelID = modelID,
+                    language = configuration.effectiveLanguage.wireValue,
+                    quality = configuration.transcriptionQuality,
+                )
+            }
         }
     }
 

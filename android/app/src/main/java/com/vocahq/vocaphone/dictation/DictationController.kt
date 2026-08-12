@@ -686,6 +686,16 @@ class DictationController(
         preparedTranscript: LocalTranscription? = null,
         transcriptionTimingRecorded: Boolean = false,
     ) {
+        // Loading a model is seconds of silence with nothing on screen to explain
+        // it, and changing the accuracy setting makes it happen again. Mirroring
+        // it into the status line is the difference between a wait and a hang.
+        val preparingJob = scope.launch {
+            localModels.state.collect { models ->
+                _state.update { state ->
+                    state.copy(statusDetail = models.preparing?.let { "Loading $it…" })
+                }
+            }
+        }
         try {
             _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
             if (!transcriptionTimingRecorded) {
@@ -723,6 +733,9 @@ class DictationController(
                 configuration,
                 generation,
             )
+        } finally {
+            preparingJob.cancel()
+            _state.update { it.copy(statusDetail = null) }
         }
     }
 

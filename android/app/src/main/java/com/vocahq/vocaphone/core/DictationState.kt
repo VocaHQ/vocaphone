@@ -66,6 +66,12 @@ data class DictationState(
     val failure: DictationFailure? = null,
     val missingPermissions: Set<MissingPermission> = emptySet(),
     val inputRouteLabel: String? = null,
+    /**
+     * A more specific line than the phase alone can give. Currently only the
+     * on-device model being loaded, which is the one wait long enough that
+     * "Transcribing" reads as the app having hung.
+     */
+    val statusDetail: String? = null,
 ) {
     val isRecording: Boolean get() = phase.holdsMicrophone
     val canRetry: Boolean get() = phase == DictationPhase.FAILED && failure?.recoverable == true
@@ -77,7 +83,7 @@ data class DictationState(
             DictationPhase.LISTENING -> "Listening"
             DictationPhase.FINALIZING -> "Finishing"
             DictationPhase.UPLOADING -> "Sending to your gateway"
-            DictationPhase.TRANSCRIBING -> "Transcribing"
+            DictationPhase.TRANSCRIBING -> statusDetail ?: "Transcribing"
             DictationPhase.READY_TO_INSERT -> "Ready to insert"
             DictationPhase.INSERTING -> "Inserting"
             DictationPhase.INSERTED -> "Inserted"

@@ -25,7 +25,8 @@ Java_com_vocahq_vocaphone_local_WhisperLib_00024Companion_freeContext(
     if (context_ptr != 0) whisper_free((struct whisper_context *) context_ptr);
 }
 
-JNIEXPORT void JNICALL
+/** Returns whisper's own status: zero on success, negative on failure. */
+JNIEXPORT jint JNICALL
 Java_com_vocahq_vocaphone_local_WhisperLib_00024Companion_fullTranscribe(
         JNIEnv *env, jobject thiz, jlong context_ptr, jint num_threads,
         jfloatArray audio_data, jstring language_str, jint beam_size,
@@ -73,13 +74,17 @@ Java_com_vocahq_vocaphone_local_WhisperLib_00024Companion_fullTranscribe(
     }
 
     whisper_reset_timings(context);
-    whisper_full(context, params, audio, length);
+    // Returned rather than discarded: a failed decode leaves zero segments, and
+    // reading those produces an empty transcript that looks to the user like the
+    // microphone heard nothing rather than like the model gave up.
+    const jint status = whisper_full(context, params, audio, length);
 
     if (prompt != NULL) {
         (*env)->ReleaseStringUTFChars(env, prompt_str, prompt);
     }
     (*env)->ReleaseStringUTFChars(env, language_str, language);
     (*env)->ReleaseFloatArrayElements(env, audio_data, audio, JNI_ABORT);
+    return status;
 }
 
 JNIEXPORT jint JNICALL
