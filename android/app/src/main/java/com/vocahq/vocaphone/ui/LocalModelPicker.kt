@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -215,6 +217,19 @@ private fun ModelRow(
         }
 
         when {
+            state.preparing == model.displayName -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Loading model… Please wait.",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             state.downloading == model.id -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
@@ -241,7 +256,7 @@ private fun ModelRow(
             model.id !in state.downloaded -> SecondaryButton(
                 text = "Download",
                 onClick = { onDownload(model) },
-                enabled = state.downloading == null,
+                enabled = state.downloading == null && state.preparing == null,
                 modifier = Modifier.fillMaxWidth(),
             )
             else -> {
@@ -265,6 +280,7 @@ private fun ModelRow(
                     SecondaryButton(
                         text = "Use this model",
                         onClick = { onSelect(model) },
+                        enabled = state.preparing == null,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

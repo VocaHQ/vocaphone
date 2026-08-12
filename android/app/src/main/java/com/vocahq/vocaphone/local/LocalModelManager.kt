@@ -26,6 +26,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -381,6 +382,9 @@ class LocalModelManager(
                 releaseEngines()
                 _state.value = _state.value.copy(preparing = model.displayName)
                 try {
+                    // Let Compose render the loading message before native model
+                    // initialization occupies the worker thread for seconds.
+                    yield()
                     withContext(Dispatchers.IO) {
                         if (model.engine == LocalModelEngine.SHERPA_ONNX) {
                             sherpaRecognizer = SherpaRecognizer.create(
