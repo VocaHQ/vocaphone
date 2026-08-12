@@ -24,6 +24,31 @@ class TranscriptStylerTest {
         )
     }
 
+    /**
+     * The case that made plumbing the detected language back from the on-device
+     * engines worth doing: "auto" can only guess from the text, and unpunctuated
+     * Devanagari looks exactly like Latin to that guess.
+     */
+    @Test
+    fun `an unpunctuated script needs the detected language, not auto`() {
+        val hindi = "मैं कल बाजार जाऊंगा"
+        assertEquals(
+            "a detected language punctuates by script",
+            "मैं कल बाजार जाऊंगा।",
+            TranscriptStyler.apply(hindi, WritingStyle.FORMAL, "hi"),
+        )
+        assertEquals(
+            "auto has nothing to go on and falls back to Latin",
+            "मैं कल बाजार जाऊंगा.",
+            TranscriptStyler.apply(hindi, WritingStyle.FORMAL, "auto"),
+        )
+        // Once the model has punctuated it, sniffing the text is enough.
+        assertEquals(
+            "मैं कल बाजार जाऊंगा। वह ठीक है।",
+            TranscriptStyler.apply("मैं कल बाजार जाऊंगा। वह ठीक है", WritingStyle.FORMAL, "auto"),
+        )
+    }
+
     @Test
     fun `local styling uses language punctuation`() {
         assertEquals(

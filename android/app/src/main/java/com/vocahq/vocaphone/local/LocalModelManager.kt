@@ -3,6 +3,9 @@ package com.vocahq.vocaphone.local
 import android.app.ActivityManager
 import android.content.Context
 import com.vocahq.vocaphone.audio.CaptureFormat
+import com.vocahq.vocaphone.audio.SpeechAudioConditioning
+import com.vocahq.vocaphone.core.CustomVocabulary
+import com.vocahq.vocaphone.core.TranscriptionQuality
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -26,6 +29,17 @@ import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
+
+/**
+ * What an on-device engine produced, and the language it actually decoded.
+ *
+ * The language matters because the writing styles punctuate by script — a
+ * Devanagari sentence ends in a danda, not a full stop — and with Automatic
+ * selected the request says only "auto". Whisper detects and reports; the
+ * sherpa bridges do not expose it, so they leave this empty and the styler
+ * falls back to inspecting the text.
+ */
+data class LocalTranscription(val text: String, val language: String = "")
 
 data class LocalModelState(
     val downloaded: Set<String> = emptySet(),
@@ -59,6 +73,13 @@ class LocalModelManager(
     private var sherpaRecognizer: SherpaRecognizer? = null
     private var loadedModelID: String? = null
     private var loadedLanguage: String? = null
+
+    /**
+     * Sherpa bakes the decoding method into the recognizer, so changing quality
+     * means building a new one. Whisper takes its search parameters per call and
+     * does not care.
+     */
+    private var loadedQuality: TranscriptionQuality? = null
     /** The coroutine cannot interrupt a blocking OkHttp execute by itself. */
     private val activeDownloadCall = AtomicReference<Call?>(null)
 
@@ -267,6 +288,7 @@ class LocalModelManager(
         sherpaRecognizer = null
         loadedModelID = null
         loadedLanguage = null
+        loadedQuality = null
     }
 
     /**
@@ -277,31 +299,55 @@ class LocalModelManager(
         modelID: String,
         language: String,
         scope: CoroutineScope,
+        quality: TranscriptionQuality = TranscriptionQuality.DEFAULT,
     ): SherpaIncrementalSession? {
         val model = LocalModelCatalog.find(modelID) ?: return null
         if (model.engine != LocalModelEngine.SHERPA_ONNX) return null
         val resolved = if (model.englishOnly) "en" else language
         return SherpaIncrementalSession(
             scope = scope,
-            prepare = { prepareEngine(model, resolved) },
-            decode = { samples -> decodePreparedSherpa(samples, model.id, resolved) },
+            prepare = { prepareEngine(model, resolved, quality) },
+            decode = { samples -> decodePreparedSherpa(samples, model.id, resolved, quality) },
         )
     }
 
-    suspend fun transcribe(samples: FloatArray, modelID: String, language: String): String {
+    suspend fun transcribe(
+        samples: FloatArray,
+        modelID: String,
+        language: String,
+        quality: TranscriptionQuality = TranscriptionQuality.DEFAULT,
+        vocabulary: String = "",
+    ): LocalTranscription {
         val model = LocalModelCatalog.find(modelID) ?: error("Unknown local model: $modelID")
         val resolved = if (model.englishOnly) "en" else language
-        prepareEngine(model, resolved)
-        return decodePrepared(samples, model.id, resolved)
+        prepareEngine(model, resolved, quality)
+        // Safe here and not on the incremental path: this is the whole recording,
+        // so one gain covers all of it.
+        return decodePrepared(
+            SpeechAudioConditioning.condition(samples),
+            model.id,
+            resolved,
+            quality,
+            vocabulary,
+        )
     }
 
-    private suspend fun prepareEngine(model: LocalModelDescriptor, resolvedLanguage: String) {
+    private suspend fun prepareEngine(
+        model: LocalModelDescriptor,
+        resolvedLanguage: String,
+        quality: TranscriptionQuality,
+    ) {
         val directory = directoryFor(model)
         // Stat-only: cheap enough to run per dictation, unlike a digest pass.
         withContext(Dispatchers.IO) { LocalModelIntegrity.verifySizes(model, directory) }
 
         engineMutex.withLock {
-            if (loadedModelID != model.id || loadedLanguage != resolvedLanguage) {
+            // Quality only invalidates a sherpa engine; whisper takes its search
+            // parameters per call, so reloading a multi-gigabyte model because
+            // the user moved a segmented control would be pure waste.
+            val qualityChanged = model.engine == LocalModelEngine.SHERPA_ONNX &&
+                loadedQuality != quality
+            if (loadedModelID != model.id || loadedLanguage != resolvedLanguage || qualityChanged) {
                 releaseEngines()
                 withContext(Dispatchers.IO) {
                     if (model.engine == LocalModelEngine.SHERPA_ONNX) {
@@ -310,6 +356,7 @@ class LocalModelManager(
                             directory = directory,
                             language = resolvedLanguage,
                             threads = WhisperCpuConfig.preferredSherpaThreadCount,
+                            quality = quality,
                         )
                     } else {
                         whisperContext = WhisperContext.create(
@@ -319,6 +366,7 @@ class LocalModelManager(
                 }
                 loadedModelID = model.id
                 loadedLanguage = resolvedLanguage
+                loadedQuality = quality
             }
         }
     }
@@ -327,31 +375,56 @@ class LocalModelManager(
         samples: FloatArray,
         modelID: String,
         resolvedLanguage: String,
-    ): String = engineMutex.withLock {
+        quality: TranscriptionQuality,
+        vocabulary: String,
+    ): LocalTranscription = engineMutex.withLock {
         check(loadedModelID == modelID && loadedLanguage == resolvedLanguage) {
             "Local transcription engine changed before inference started"
         }
         sherpaRecognizer?.let { recognizer ->
-            return@withLock withContext(Dispatchers.Default) { recognizer.transcribe(samples) }
+            return@withLock withContext(Dispatchers.Default) {
+                val result = recognizer.transcribe(samples)
+                LocalTranscription(result.text, result.language)
+            }
         }
-        whisperContext?.transcribe(samples, resolvedLanguage)
-            ?: error("Local transcription engine is not loaded")
+        whisperContext?.transcribe(
+            samples,
+            resolvedLanguage,
+            quality,
+            CustomVocabulary.whisperPrompt(vocabulary),
+        ) ?: error("Local transcription engine is not loaded")
     }
 
     private suspend fun decodePreparedSherpa(
         samples: FloatArray,
         modelID: String,
         resolvedLanguage: String,
-    ): String = engineMutex.withLock {
-        check(loadedModelID == modelID && loadedLanguage == resolvedLanguage) {
+        quality: TranscriptionQuality,
+    ): SherpaTranscript = engineMutex.withLock {
+        check(
+            loadedModelID == modelID &&
+                loadedLanguage == resolvedLanguage &&
+                loadedQuality == quality,
+        ) {
             "On-device model changed during transcription"
         }
         val recognizer = sherpaRecognizer ?: error("Sherpa transcription engine is not loaded")
         withContext(Dispatchers.Default) { recognizer.transcribeChunk(samples) }
     }
 
-    suspend fun transcribe(wavFile: File, modelID: String, language: String): String =
-        transcribe(withContext(Dispatchers.IO) { readWavSamples(wavFile) }, modelID, language)
+    suspend fun transcribe(
+        wavFile: File,
+        modelID: String,
+        language: String,
+        quality: TranscriptionQuality = TranscriptionQuality.DEFAULT,
+        vocabulary: String = "",
+    ): LocalTranscription = transcribe(
+        withContext(Dispatchers.IO) { readWavSamples(wavFile) },
+        modelID,
+        language,
+        quality,
+        vocabulary,
+    )
 
     private fun readWavSamples(file: File): FloatArray {
         require(file.isFile) { "Recording is missing" }

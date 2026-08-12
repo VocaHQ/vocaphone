@@ -11,6 +11,7 @@ import com.vocahq.vocaphone.audio.InputDevices
 import com.vocahq.vocaphone.core.GatewayEndpoint
 import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.TranscriptionLanguage
+import com.vocahq.vocaphone.core.TranscriptionQuality
 import com.vocahq.vocaphone.core.WritingStyle
 import com.vocahq.vocaphone.data.DictationRecordEntity
 import com.vocahq.vocaphone.dictation.DictationService
@@ -251,6 +252,12 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setStyle(style: WritingStyle) =
         viewModelScope.launch { container.settings.setStyle(style) }
+
+    fun setTranscriptionQuality(quality: TranscriptionQuality) =
+        viewModelScope.launch { container.settings.setTranscriptionQuality(quality) }
+
+    fun setCustomVocabulary(vocabulary: String) =
+        viewModelScope.launch { container.settings.setCustomVocabulary(vocabulary) }
 
     fun setMicrophone(preference: MicrophonePreference) {
         // Applied when the recorder is built, so a live dictation would keep the

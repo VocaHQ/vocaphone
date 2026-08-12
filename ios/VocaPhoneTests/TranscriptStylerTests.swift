@@ -11,6 +11,21 @@ struct TranscriptStylerTests {
         #expect(TranscriptStyler.apply(source, style: .excited) == "Hello there! How are you!")
     }
 
+    /// The case that made plumbing the detected language back from the on-device
+    /// engines worth doing: "auto" can only guess from the text, and
+    /// unpunctuated Devanagari looks exactly like Latin to that guess.
+    @Test func anUnpunctuatedScriptNeedsTheDetectedLanguageNotAuto() {
+        let hindi = "मैं कल बाजार जाऊंगा"
+        #expect(TranscriptStyler.apply(hindi, style: .formal, language: "hi") == "मैं कल बाजार जाऊंगा।")
+        #expect(TranscriptStyler.apply(hindi, style: .formal, language: "auto") == "मैं कल बाजार जाऊंगा.")
+        // Once the model has punctuated it, sniffing the text is enough.
+        #expect(
+            TranscriptStyler.apply(
+                "मैं कल बाजार जाऊंगा। वह ठीक है", style: .formal, language: "auto"
+            ) == "मैं कल बाजार जाऊंगा। वह ठीक है।"
+        )
+    }
+
     @Test func localStylingKeepsProtectedSpansIntact() {
         #expect(
             TranscriptStyler.apply(

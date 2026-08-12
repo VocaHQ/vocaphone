@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,10 +27,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.vocahq.vocaphone.core.CustomVocabulary
 import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.TranscriptionLanguage
+import com.vocahq.vocaphone.core.TranscriptionQuality
 import com.vocahq.vocaphone.core.WritingStyle
+import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.AudioRetention
@@ -44,6 +48,8 @@ fun SettingsScreen(
     onStyle: (WritingStyle) -> Unit,
     onMicrophone: (MicrophonePreference) -> Unit,
     onAudioRetention: (AudioRetention) -> Unit,
+    onTranscriptionQuality: (TranscriptionQuality) -> Unit,
+    onCustomVocabulary: (String) -> Unit,
     localModels: LocalModelState,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
@@ -123,6 +129,27 @@ fun SettingsScreen(
                 onDelete = onDeleteLocalModel,
             )
         }
+
+        Section(
+            title = "On-device accuracy",
+            supporting = "${settings.transcriptionQuality.detail}\n" +
+                "Applies to models running on this phone. The gateway decides for itself.",
+        ) {
+            ChipChoiceRow(
+                options = TranscriptionQuality.entries,
+                selected = settings.transcriptionQuality,
+                label = { it.displayName },
+                onSelect = onTranscriptionQuality,
+            )
+        }
+
+        CustomVocabularySection(
+            vocabulary = settings.customVocabulary,
+            onSave = onCustomVocabulary,
+            unsupportedModel = LocalModelCatalog.find(settings.localModelId)
+                ?.takeIf { settings.localTranscriptionEnabled && !it.supportsCustomVocabulary }
+                ?.displayName,
+        )
 
         ImeSetupCard(setup.ime)
 
@@ -282,6 +309,63 @@ private fun MicrophoneSection(
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The list is edited locally and saved on request rather than on every
+ * keystroke: the terms are parsed at inference time, and a half-typed name
+ * being persisted mid-word is a spelling nobody asked to be biased toward.
+ */
+@Composable
+private fun CustomVocabularySection(
+    vocabulary: String,
+    onSave: (String) -> Unit,
+    unsupportedModel: String?,
+) {
+    var draft by remember(vocabulary) { mutableStateOf(vocabulary) }
+    val terms = remember(draft) { CustomVocabulary.terms(draft) }
+
+    Section(
+        title = "Custom words",
+        supporting = "Names, places and jargon an on-device Whisper model is " +
+            "unlikely to know. One per line, or separated by commas.",
+    ) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Words and phrases") },
+            placeholder = { Text("Kanishk\nVocaHQ\nTailscale") },
+            minLines = 3,
+            maxLines = 6,
+        )
+        Text(
+            if (terms.isEmpty()) {
+                "No custom words. Transcription is unchanged."
+            } else {
+                "${terms.size} word${if (terms.size == 1) "" else "s"} will bias the decoder. " +
+                    "This nudges spelling rather than guaranteeing it, and a very long " +
+                    "list starts to crowd out the speech itself."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Said plainly rather than letting the list quietly do nothing: only
+        // Whisper's decoder has somewhere to put a vocabulary.
+        if (unsupportedModel != null && terms.isNotEmpty()) {
+            Text(
+                "$unsupportedModel cannot use these words. Only Whisper models take a " +
+                    "vocabulary; the list is kept for when you switch back to one.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        SecondaryButton(
+            text = "Save words",
+            onClick = { onSave(draft) },
+            enabled = draft != vocabulary,
         )
     }
 }

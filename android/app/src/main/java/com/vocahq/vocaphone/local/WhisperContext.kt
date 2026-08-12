@@ -1,6 +1,6 @@
 package com.vocahq.vocaphone.local
 
-import com.vocahq.vocaphone.audio.CaptureFormat
+import com.vocahq.vocaphone.core.TranscriptionQuality
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -12,7 +12,12 @@ internal class WhisperContext private constructor(private var pointer: Long) {
         Executors.newSingleThreadExecutor().asCoroutineDispatcher(),
     )
 
-    suspend fun transcribe(samples: FloatArray, language: String): String =
+    suspend fun transcribe(
+        samples: FloatArray,
+        language: String,
+        quality: TranscriptionQuality,
+        prompt: String,
+    ): LocalTranscription =
         withContext(scope.coroutineContext) {
             check(pointer != 0L) { "Whisper context has been released" }
             WhisperLib.fullTranscribe(
@@ -20,12 +25,20 @@ internal class WhisperContext private constructor(private var pointer: Long) {
                 WhisperCpuConfig.preferredThreadCount,
                 samples,
                 if (language == "auto") "auto" else language,
+                quality.whisperBeamSize,
+                quality.whisperTemperatureFallback,
+                prompt,
             )
-            buildString {
-                repeat(WhisperLib.getTextSegmentCount(pointer)) { index ->
-                    append(WhisperLib.getTextSegment(pointer, index))
-                }
-            }.trim()
+            LocalTranscription(
+                text = buildString {
+                    repeat(WhisperLib.getTextSegmentCount(pointer)) { index ->
+                        append(WhisperLib.getTextSegment(pointer, index))
+                    }
+                }.trim(),
+                // Only meaningful when "auto" was asked for; otherwise it echoes
+                // the request back, which is the same answer either way.
+                language = WhisperLib.getDetectedLanguage(pointer),
+            )
         }
 
     suspend fun release() = withContext(scope.coroutineContext) {

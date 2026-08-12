@@ -21,12 +21,22 @@ internal class WhisperLib {
 
         external fun initContext(modelPath: String): Long
         external fun freeContext(contextPtr: Long)
+        /**
+         * @param beamSize a beam search width, or zero for greedy sampling.
+         * @param prompt vocabulary to bias the decoder toward; empty for none.
+         */
         external fun fullTranscribe(
             contextPtr: Long,
             numThreads: Int,
             audioData: FloatArray,
             language: String,
+            beamSize: Int,
+            temperatureFallback: Boolean,
+            prompt: String,
         )
+        /** The language actually decoded, or empty when the model reported none. */
+        external fun getDetectedLanguage(contextPtr: Long): String
+
         external fun getTextSegmentCount(contextPtr: Long): Int
         external fun getTextSegment(contextPtr: Long, index: Int): String
         external fun getSystemInfo(): String
