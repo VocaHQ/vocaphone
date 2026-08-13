@@ -1,0 +1,5 @@
+First release published on F-Droid.
+
+- The Android build is now split into two flavors. "full" is unchanged and keeps the optional sherpa-onnx speech engine; "fdroid" is compiled entirely from source and uses the Whisper on-device engine.
+- A release build no longer fails when no signing keystore is configured; it produces an unsigned APK instead.
+- Store listing text, icon and changelogs are now kept in the repository.
