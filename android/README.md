@@ -110,7 +110,7 @@ Typing extras, all local to the phone:
 - A paste chip for the current clipboard while the keyboard is open
 - Emoji categories, recents, and search
 - Long-press letters for accents, double-space for a period
-- Long-press the space bar to switch keyboards (the globe key is gone)
+- The globe key is gone; Android's keyboard switcher still changes IMEs
 
 Suggestions may read about 32 characters before the cursor. The clipboard chip
 reads the current clip only while the keyboard is visible. Dictation still never

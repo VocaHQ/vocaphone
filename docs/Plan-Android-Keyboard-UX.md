@@ -1,7 +1,8 @@
 # Android typing keyboard plan
 
 Implemented on the Android IME. This document is the spec that landed, not a
-backlog.
+backlog. Long-press space to switch IMEs was dropped: Android's own keyboard
+switcher already covers that, and the spacebar keeps swipe-to-move-cursor.
 
 VocaPhone's Android IME is already a full QWERTY keyboard with dictation on top
 (`VocaPhoneInputMethodService`, `KeyboardLayouts`, `VocaPhoneKeyboard`). The
@@ -152,17 +153,12 @@ the right. That is why the spacebar sits right of center.
 
 Remove `KEYBOARD_SWITCH` from every layer. Android already exposes a keyboard
 picker in the navigation bar when more than one IME is enabled
-(`method.xml` already sets `supportsSwitchingToNextInputMethod`). Long-press
-space should still call the existing `switchKeyboard()` path so nobody is stuck
-on VocaPhone.
+(`method.xml` already sets `supportsSwitchingToNextInputMethod`). Do not add a
+long-press-space switcher; swipe-on-space stays cursor movement.
 
 After the globe is gone, give `?123` and Enter the same weight, and comma and
 period the same weight. Recheck visual center on a device. If the emoji key
 still shoves space right, shrink that key rather than adding spacers.
-
-Keep swipe-on-space for cursor movement. Long-press for IME switch must not
-fight that gesture: a stationary hold switches, a horizontal drag moves the
-cursor.
 
 ### Themes
 
@@ -180,7 +176,6 @@ Ship in this pass:
 - Emoji categories, recents, and search
 - Remove globe, rebalance spacebar
 - Double-space to period
-- Long-press space to switch IME
 
 Worth doing in the same pass if the layout files are already open:
 
@@ -229,7 +224,7 @@ When this ships (not in this plan-only change), update `docs/Plan-Android.md`,
 
 Sequential PRs, not one dump.
 
-1. Layout: drop globe, long-press space to switch, rebalance the bottom row,
+1. Layout: drop globe, rebalance the bottom row,
    height setting, number row, double-space period, Keyboard settings section.
 2. Emoji panel: catalog, categories, recents, search.
 3. Clipboard paste chip on the suggestion strip.
@@ -245,7 +240,7 @@ privacy wording.
 - Height: Default (current 48 dp)
 - Suggestions: on, English lists only, no autocorrect
 - Clipboard chip: on
-- Globe key: removed; long-press space switches IME
+- Globe key: removed; Android's keyboard switcher still changes IMEs
 - Themes: untouched
 - Next-word may call `getTextBeforeCursor(32)` when Suggestions is on and the
   field is not sensitive
@@ -255,6 +250,6 @@ privacy wording.
 ## What review needs to decide
 
 - Whether suggestions may call `getTextBeforeCursor`
-- Whether the globe key can go, with long-press space as the backup
+- Whether the globe key can go without a replacement key on the board
 - Whether accents belong in the first implementation wave
 - Anything from the cut list that should actually ship

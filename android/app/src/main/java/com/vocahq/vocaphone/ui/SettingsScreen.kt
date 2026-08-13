@@ -218,8 +218,7 @@ fun SettingsScreen(
 
         Section(
             title = "Keyboard",
-            supporting = "Layout and typing helpers for the VocaPhone keyboard. " +
-                "Long-press the space bar to switch to another keyboard.",
+            supporting = "Layout and typing helpers for the VocaPhone keyboard.",
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

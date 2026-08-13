@@ -6,7 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -215,7 +214,6 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 currentInputConnection?.finishComposingText()
                 performEditorAction()
             }
-            KeyboardCommand.SwitchKeyboard -> switchKeyboard()
             is KeyboardCommand.MoveCursor -> {
                 currentInputConnection?.finishComposingText()
                 moveCursor(command.positions)
@@ -313,14 +311,6 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val connection = currentInputConnection ?: return
         connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
         connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
-    }
-
-    private fun switchKeyboard() {
-        if (shouldOfferSwitchingToNextInputMethod()) {
-            switchToNextInputMethod(false)
-        } else {
-            getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
-        }
     }
 
     private fun toggleDictation() {

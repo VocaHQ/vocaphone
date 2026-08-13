@@ -53,7 +53,6 @@ internal sealed interface KeyboardCommand {
     data class SetComposingText(val text: String) : KeyboardCommand
     data object DeleteBackward : KeyboardCommand
     data object PerformEditorAction : KeyboardCommand
-    data object SwitchKeyboard : KeyboardCommand
     data class MoveCursor(val positions: Int) : KeyboardCommand
     data object DoubleSpacePeriod : KeyboardCommand
     data object FinishComposing : KeyboardCommand
