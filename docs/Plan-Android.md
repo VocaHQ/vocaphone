@@ -89,3 +89,8 @@ back the restricted-settings and overlay friction this architecture removes.
 Local speech models are also not bundled in the phone client yet; transcription
 continues to run on the user-controlled gateway where model choice and resource
 limits can be managed centrally.
+
+Daily-driver QWERTY changes (number row, height, suggestions, emoji search,
+clipboard chip) are proposed in
+[Plan-Android-Keyboard-UX.md](Plan-Android-Keyboard-UX.md) and are not part of
+this architecture document until accepted.
