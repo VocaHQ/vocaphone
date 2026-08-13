@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open PR action board, vocaphone</title>
+<style>
+  :root {
+    --bg: #f6f3ee;
+    --paper: #fffdf8;
+    --ink: #1c1917;
+    --muted: #57534e;
+    --line: #e7e0d6;
+    --red: #9f1239;
+    --red-bg: #ffe4e6;
+    --amber: #9a3412;
+    --amber-bg: #ffedd5;
+    --green: #166534;
+    --green-bg: #dcfce7;
+    --blue: #1e3a5f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  header {
+    padding: 2rem 1.5rem 1rem;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  header p.meta { color: var(--muted); margin: 0.25rem 0 0; }
+  h1 { font-size: 1.6rem; font-weight: 650; margin: 0; letter-spacing: -0.02em; }
+  h2 { font-size: 1.2rem; font-weight: 650; margin: 0 0 0.5rem; }
+  h3 { font-size: 1rem; font-weight: 650; margin: 1.25rem 0 0.4rem; }
+  main { max-width: 960px; margin: 0 auto; padding: 0 1.5rem 3rem; }
+  .banner {
+    background: var(--red-bg);
+    color: var(--red);
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    margin: 1rem 0 1.5rem;
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--paper); }
+  th, td { text-align: left; padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+  .pill {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 650;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .no { background: var(--red-bg); color: var(--red); }
+  .hold { background: var(--amber-bg); color: var(--amber); }
+  .ok { background: var(--green-bg); color: var(--green); }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.25rem 1.35rem;
+    margin: 1.25rem 0;
+  }
+  .card header.row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: baseline;
+    padding: 0;
+    max-width: none;
+    margin: 0 0 0.75rem;
+  }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem 1rem; margin: 0.75rem 0; }
+  .facts div { font-size: 0.9rem; }
+  .facts span { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  ol.actions { padding-left: 1.2rem; }
+  ol.actions li { margin: 0.4rem 0; }
+  a { color: var(--blue); }
+  pre {
+    background: #1c1917;
+    color: #f5f5f4;
+    padding: 0.9rem 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+  }
+  .comment { margin: 1rem 0; }
+  .comment .loc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; color: var(--muted); }
+  button.copy {
+    float: right;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button.copy:hover { background: #fff; }
+  ul { padding-left: 1.2rem; }
+  footer { color: var(--muted); font-size: 0.85rem; margin-top: 2rem; }
+  @media print {
+    body { background: #fff; }
+    button.copy { display: none; }
+    .card { break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Open PR action board</h1>
+  <p class="meta">VocaHQ/vocaphone · 13 August 2026 · adversarial review of every open pull request</p>
+</header>
+<main>
+  <div class="banner">Merge neither PR today. #67 is close. #40 cannot land on current main.</div>
+
+  <table>
+    <thead>
+      <tr><th>PR</th><th>Verdict</th><th>Merge now?</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="https://github.com/VocaHQ/vocaphone/pull/67">#67 Improve on-device transcription accuracy</a><br><span class="pill hold">request changes</span></td>
+        <td>Approve after a phone smoke</td>
+        <td><span class="pill no">no</span></td>
+        <td>CI green, clean merge, no reviews. Author has not dictated on hardware. Sherpa IME path skips the new audio gain.</td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/VocaHQ/vocaphone/pull/40">#40 Follow VocaMac and Handy model selections</a><br><span class="pill no">do not merge</span></td>
+        <td>Retarget at vocagateway</td>
+        <td><span class="pill no">no</span></td>
+        <td>Conflicts: <code>server/</code> is now a submodule. Blocked on still-open <a href="https://github.com/VocaHQ/vocamac/pull/200">vocamac#200</a>. Handy never forwards session language.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:2rem">What to do this pass</h2>
+  <ol class="actions">
+    <li>Paste the #67 review below. Either you or Kanishk run the four hardware checks already listed in that PR. Then approve.</li>
+    <li>Paste the #40 retarget review. Close it or leave it open as a pointer. The Python work has to be a <a href="https://github.com/VocaHQ/vocagateway">vocagateway</a> PR; this repo only gets a submodule pin after that.</li>
+    <li>If you still want headless VocaMac, merge <a href="https://github.com/VocaHQ/vocamac/pull/200">vocamac#200</a> first. Kanishk already said so on #40. It is still open.</li>
+  </ol>
+
+  <article class="card" id="pr67">
+    <header class="row">
+      <h2><a href="https://github.com/VocaHQ/vocaphone/pull/67">#67 Improve on-device transcription accuracy</a></h2>
+      <span class="pill hold">request changes</span>
+    </header>
+    <div class="facts">
+      <div><span>Author</span> Kanishk Pachauri</div>
+      <div><span>Size</span> +2529 / −192 · 51 files</div>
+      <div><span>CI</span> Android pass, iOS pass</div>
+      <div><span>Merge</span> Clean vs main, blocked on review</div>
+      <div><span>Opened</span> 12 Aug 2026</div>
+      <div><span>Hardware</span> Not run</div>
+    </div>
+    <p>The design is careful. Unit tests cover the scary bits: sherpa <code>exit(-1)</code> by family, language into the styler, sanitizer loops, whisper.cpp decode status. I would merge after a device smoke, not before.</p>
+    <h3>What the code actually does</h3>
+    <ul>
+      <li>iOS WhisperKit now sets <code>detectLanguage</code> when language is Automatic. That bug is real: WhisperKit derives detection from <code>usePrefillPrompt</code>, so Automatic was silently English.</li>
+      <li>Detected language reaches the styler on both platforms, so Automatic + Hindi can get a danda instead of a Latin full stop.</li>
+      <li>iOS gets <code>TranscriptSanitizer</code>, including the repetition-loop collapse Android just grew.</li>
+      <li>whisper.cpp decode status is no longer discarded (empty transcript used to look like silence).</li>
+      <li>Audio levelling is applied to the in-memory copy only. WAV on disk and gateway bytes are untouched. Confirmed in both <code>LocalModelManager</code>s.</li>
+      <li>Fast / Balanced / Accurate, plus a Whisper-only custom-word list. Sherpa decoding method comes from model family, not from the setting alone.</li>
+      <li>Engine preload when model or accuracy changes, with a loading label.</li>
+    </ul>
+    <h3>Why it is not a merge today</h3>
+    <p>The IME/sherpa live path never sees the new gain. <code>SpeechAudioConditioning</code> is called from whole-file <code>transcribe</code>. <code>startIncrementalSession</code> / <code>startSherpaIncrementalSession</code> feed raw chunks into sherpa. For Parakeet that is the keyboard path. Whisper still gets levelling because it still decodes at finish. Documented in comments, missing from the PR body.</p>
+    <p>Author’s hardware list, still outstanding:</p>
+    <ul>
+      <li>Hindi dictation, Automatic, Whisper: expect <code>।</code></li>
+      <li>SenseVoice Chinese: expect <code>。</code></li>
+      <li>Change accuracy, dictate immediately (preload)</li>
+      <li>Any CTC model on Balanced (the old <code>exit(-1)</code> path)</li>
+    </ul>
+    <p>CI does not exercise native decode, JNI, or a microphone.</p>
+    <h3>Nits</h3>
+    <p>Android Balanced copy says "Beam search where it is cheap". whisper.cpp Balanced is still greedy (<code>whisperBeamSize = 0</code>). Beam is Accurate only. Sherpa transducers do get beam on Balanced. iOS WhisperKit has no beam at all; Accurate only raises <code>temperatureFallbackCount</code>.</p>
+  </article>
+
+  <article class="card">
+    <h2>Copy-paste comments for #67</h2>
+    <p class="meta" style="color:var(--muted)">Post the summary as a review with "Request changes". The others are line comments.</p>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c67s">Copy</button>
+      <div class="loc">Summary · Request changes</div>
+      <pre id="c67s">The code is in good shape and CI is green. I do not want this on main until someone has actually dictated on a phone.
+
+Please run the four checks you already listed, or I will:
+
+1. Hindi + Automatic + Whisper: Devanagari should end in a danda, not a Latin full stop.
+2. SenseVoice Chinese: terminator should be `。`.
+3. Change Fast/Balanced/Accurate and dictate immediately. The wait should name the model, not look like a hang.
+4. A CTC sherpa model on Balanced. This is the path that used to be `exit(-1)`.
+
+Two other things, neither of them a rewrite:
+
+The new gain is not applied on the sherpa incremental/IME path, which is the path the keyboard uses for Parakeet and friends. Whole-file `transcribe` levels the buffer; `startIncrementalSession` does not. Whisper still benefits because it still decodes at finish. Please say that in the PR body so QA does not only test the in-app finish path.
+
+Android Balanced copy says "Beam search where it is cheap". whisper.cpp Balanced is still greedy. Only Accurate sets `whisperBeamSize = 3`. Sherpa transducers do beam on Balanced. The sentence is true for one engine and wrong for the other. Tighten the string.</pre>
+    </div>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c67a">Copy</button>
+      <div class="loc">android/.../LocalModelManager.kt:308 · medium</div>
+      <pre id="c67a">This is the keyboard’s sherpa path, and it never calls `SpeechAudioConditioning`. The whole-file `transcribe` below does.
+
+I get why: gain has to be computed over the full recording, and per-chunk AGC is what you were trying to avoid. The result is that Parakeet/IME dictation does not get the levelling this PR is selling. Whisper does, because it still waits for the WAV.
+
+Please call that out in the PR and in the accuracy footer. If there is a cheap way to level once at `session.finish()` before a last decode, that would close the gap; if not, say so rather than leaving QA to discover it.</pre>
+    </div>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c67b">Copy</button>
+      <div class="loc">android/.../TranscriptionQuality.kt:31 · nit</div>
+      <pre id="c67b">"Beam search where it is cheap" is not what whisper.cpp Balanced does. `whisperBeamSize` is 0 for Fast and Balanced, 3 for Accurate.
+
+Sherpa transducers do `modified_beam_search` on Balanced, so the sentence is half right. People reading this in Settings will think Balanced already bought them a beam on Whisper. It did not.</pre>
+    </div>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c67c">Copy</button>
+      <div class="loc">ios/.../LocalModelManager.swift:354 · medium</div>
+      <pre id="c67c">Same gap as Android: `startSherpaIncrementalSession` consumes raw chunks. Levelling only happens in `transcribe(audioURL:)` at line 771.
+
+WhisperKit is fine (finish-time decode). Sherpa IME is not. Please keep the two platforms’ PR notes in sync on this, and include a sherpa keyboard dictation in the hardware list, not only a whole-file in-app test.</pre>
+    </div>
+  </article>
+
+  <article class="card" id="pr40">
+    <header class="row">
+      <h2><a href="https://github.com/VocaHQ/vocaphone/pull/40">#40 Follow VocaMac and Handy model selections</a></h2>
+      <span class="pill no">do not merge</span>
+    </header>
+    <div class="facts">
+      <div><span>Author</span> Kanishk Pachauri</div>
+      <div><span>Size</span> +617 / −56 · 10 files</div>
+      <div><span>CI</span> Passed on 8 Aug (stale vs main)</div>
+      <div><span>Merge</span> CONFLICTING</div>
+      <div><span>Opened</span> 8 Aug 2026</div>
+      <div><span>Depends on</span> vocamac#200 still open</div>
+    </div>
+    <p>The idea is fine. The PR cannot land on current <code>main</code>.</p>
+    <p>On 8 August this repo still owned <code>server/</code> as a normal tree. <code>main</code> now has <code>server</code> as a gitlink to vocagateway (<code>160000</code>). Git reports the Python files as "removed in local" against a new submodule commit. CONTRIBUTING already says gateway work goes to vocagateway, then a pin bump here. There is no open vocagateway PR for this. vocagateway <code>handy.py</code> is still the old "read settings once at init" code.</p>
+    <p>Other conflicts: three docs files, plus iOS finish timeout 90s → 540s (real behaviour, one hunk).</p>
+    <p>CLI contract vs vocamac#200 matches: <code>--transcribe-file</code>, <code>--list-models --json</code>, <code>--model</code>, <code>--language</code>, and the error codes. The byte scan for <code>--transcribe-file</code> (instead of probing an old GUI) is the right approach. Keep it in the rewrite.</p>
+    <h3>Bugs to keep when this is re-filed</h3>
+    <ul>
+      <li>Handy ignores session language. <code>transcribe(..., options)</code> never passes <code>options.language</code>. The PR body claims it does. True for VocaMac, false for Handy.</li>
+      <li><code>is_available</code> is supposed to be a cheap sync check. It now spawns <code>VocaMac --list-models --json</code> (5s timeout) on the auto-engine probe.</li>
+      <li>iOS finish timeout becomes 9 minutes. Android <code>GatewayClient.finish</code> on main is still 120s. Bump both, or say why only iOS waits.</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <h2>Copy-paste comments for #40</h2>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c40s">Copy</button>
+      <div class="loc">Summary · Do not merge</div>
+      <pre id="c40s">Cannot merge this onto current main.
+
+`server/` is now the vocagateway submodule. This branch still treats it as an in-tree Python tree, so Git sees a dirty conflict (submodule gitlink vs the old files) plus the docs/iOS timeout hunks. CONTRIBUTING already requires gateway changes to land in https://github.com/VocaHQ/vocagateway, then a pin bump here.
+
+Please:
+
+1. Wait for vocamac#200 (you already noted this). The CLI flags this PR calls (`--transcribe-file`, `--list-models --json`, `--model`, `--language`) match that PR. Good.
+2. Open the Python work against vocagateway. There is no vocagateway PR for this today; handy.py on vocagateway main is still the old "read settings once at init" code.
+3. Rebase the iOS 90s → 540s finish timeout onto current vocaphone main as a tiny follow-up, or fold it into the pin-bump PR. Android finish is still 120s on main, so a one-shot VocaMac load that needs nine minutes will still die from the Android client.
+
+I went through the VocaMac adapter. The `--transcribe-file` byte scan instead of probing an old binary with an unknown flag is the right approach; keep that. A couple of code comments below still apply in the vocagateway rewrite.</pre>
+    </div>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c40a">Copy</button>
+      <div class="loc">server/app/models/handy.py:56 · medium</div>
+      <pre id="c40a">`options` is unused. The PR says each VocaPhone session language is passed explicitly. VocaMac headless does that (`--language`, including `auto`). Handy does not.
+
+If the Handy CLI accepts `--language`, pass `options.language` here. If it does not, drop the claim from the PR body so a Hindi session is not assumed to be forwarded.</pre>
+    </div>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c40b">Copy</button>
+      <div class="loc">server/app/models/vocamac.py:89 · medium</div>
+      <pre id="c40b">The docstring still says this is a cheap synchronous check for `auto` engine resolution. The new branch calls `_headless_model()`, which `subprocess.run`s `--list-models --json` with a 5s timeout.
+
+That is a cold-start stall on every auto probe until the 5s engine cache fills. Capability can stay in `_headless_supported()` (the file scan). Availability of the selected model belongs in `health()` / `transcribe()`.</pre>
+    </div>
+
+    <div class="comment">
+      <button class="copy" type="button" data-copy="c40c">Copy</button>
+      <div class="loc">ios/.../GatewayClient.swift:124 · medium</div>
+      <pre id="c40c">90s → 540s is a real product change, not just a conflict hunk.
+
+Android `GatewayClient.finish` is still 120s. If a first VocaMac one-shot can sit in model load for several minutes, Android will time out while iOS waits. Bump both clients, or document that only iOS is expected to use this engine for the slow path.</pre>
+    </div>
+  </article>
+
+  <footer>
+    Two open PRs, no overlap in runtime path. No other open PRs on vocaphone at review time.
+    Markdown twin: <code>reviews/open-pr-action-board.md</code>. Print this page to save a PDF.
+  </footer>
+</main>
+<script>
+document.querySelectorAll("button.copy").forEach(function (button) {
+  button.addEventListener("click", function () {
+    var node = document.getElementById(button.getAttribute("data-copy"));
+    navigator.clipboard.writeText(node.textContent).then(function () {
+      button.textContent = "Copied";
+      setTimeout(function () { button.textContent = "Copy"; }, 1200);
+    });
+  });
+});
+</script>
+</body>
+</html>
