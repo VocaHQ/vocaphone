@@ -20,6 +20,17 @@ enum class DictationPhase {
         get() = this == LISTENING || this == FINALIZING || this == UPLOADING ||
             this == TRANSCRIBING || this == INSERTING
 
+    /**
+     * The dictation no longer owns work that needs the foreground service.
+     *
+     * Derived from [isBusy] rather than listed again: spelled out separately,
+     * the two enumerations cover the same phases and a phase added to one would
+     * quietly go missing from the other, leaving the service either stopped
+     * mid-transcription or never stopped at all.
+     */
+    val isTerminal: Boolean
+        get() = !isBusy
+
     val holdsMicrophone: Boolean
         get() = this == LISTENING || this == FINALIZING
 }

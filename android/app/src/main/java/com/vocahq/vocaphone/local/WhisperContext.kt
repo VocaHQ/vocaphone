@@ -2,6 +2,7 @@ package com.vocahq.vocaphone.local
 
 import com.vocahq.vocaphone.core.TranscriptionQuality
 import java.util.concurrent.Executors
+import kotlin.math.ceil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -27,6 +28,7 @@ internal class WhisperContext private constructor(private var pointer: Long) {
                 if (language == "auto") "auto" else language,
                 quality.whisperBeamSize,
                 quality.whisperTemperatureFallback,
+                WhisperCpuConfig.whisperAudioContext(samples.size),
                 prompt,
             )
             // A failed decode returns no segments, which would otherwise be
@@ -68,12 +70,50 @@ internal object WhisperCpuConfig {
         get() = whisperThreadCount(Runtime.getRuntime().availableProcessors())
 
     /**
-     * Four is a conservative ceiling for sustained work on heterogeneous phone
-     * CPUs. Asking for six can recruit slower cores and add heat during a real
-     * dictation, especially while beam search is active.
+     * Whisper's encoder is the dominant cost on phones. Keep two cores free for
+     * Android and the UI, but let an eight-core POCO-class device use six for
+     * the actual model pass; capping it at four leaves sustained CPU throughput
+     * unused and makes even greedy decoding feel stalled.
      */
     internal fun whisperThreadCount(availableProcessors: Int): Int =
-        (availableProcessors - 2).coerceIn(2, 4)
+        (availableProcessors - 2).coerceIn(2, 6)
+
+    /** 20 ms of audio at 16 kHz, which is one unit of whisper's encoder window. */
+    private const val SAMPLES_PER_AUDIO_CONTEXT = 320
+
+    /** Whisper's own window: 1500 units, or the full thirty seconds. */
+    private const val FULL_AUDIO_CONTEXT = 1500
+
+    /**
+     * Below roughly this much context the decoder degenerates whatever the audio
+     * length, so short dictations stop here rather than shrinking to fit.
+     */
+    private const val MINIMUM_AUDIO_CONTEXT = 448
+
+    /** How much context to ask for beyond the audio itself. */
+    private const val AUDIO_CONTEXT_MARGIN = 1.5
+
+    /**
+     * The encoder window to ask for, or zero to leave whisper's default.
+     *
+     * Whisper pads every recording to thirty seconds and encodes all of it, so a
+     * two-second dictation costs a phone exactly as much as a full window — on an
+     * older device that padding is most of the wait. Cropping the window to the
+     * audio recovers nearly all of it.
+     *
+     * The margin is what makes this safe rather than merely fast. Sized close to
+     * the speech, the decoder falls into a repetition loop, and the temperature
+     * retries that follow leave the dictation both slower than it started and
+     * wrong — so this asks for half as much context again as the audio needs, and
+     * never less than [MINIMUM_AUDIO_CONTEXT]. Past twenty seconds the full window
+     * is the smaller ask, and long recordings whisper already splits into
+     * thirty-second windows are left exactly as they were.
+     */
+    internal fun whisperAudioContext(sampleCount: Int): Int {
+        val units = sampleCount.toDouble() / SAMPLES_PER_AUDIO_CONTEXT * AUDIO_CONTEXT_MARGIN
+        val requested = ceil(units).toInt().coerceAtLeast(MINIMUM_AUDIO_CONTEXT)
+        return if (requested >= FULL_AUDIO_CONTEXT) 0 else requested
+    }
 
     /** sherpa uses ONNX Runtime's pool; fewer sustained workers avoid POCO-class thermal throttling. */
     val preferredSherpaThreadCount: Int

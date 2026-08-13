@@ -692,7 +692,10 @@ class DictationController(
         val preparingJob = scope.launch {
             localModels.state.collect { models ->
                 _state.update { state ->
-                    state.copy(statusDetail = models.preparing?.let { "Loading $it…" })
+                    state.copy(
+                        statusDetail = models.preparing?.let { "Loading $it… Please wait." }
+                            ?: "Transcribing on this phone… Please wait.",
+                    )
                 }
             }
         }

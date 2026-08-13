@@ -209,7 +209,10 @@ object LocalModelCatalog {
     ): LocalModelDescriptor = when {
         totalRamGB >= 12 && mediaPerformanceClass >= 34 -> find("large-v3-turbo")
         totalRamGB >= 6 && mediaPerformanceClass >= 31 -> find("large-v3-turbo-q5_0")
-        totalRamGB >= 4 -> find("small-q5_1")
+        // RAM only says that a model fits. Older high-RAM phones such as the
+        // POCO F1 still need the smaller encoder to finish at a usable speed.
+        totalRamGB >= 4 && mediaPerformanceClass >= 31 -> find("small-q5_1")
+        totalRamGB >= 4 -> find("base-q5_1")
         totalRamGB >= 3 -> find("base-q5_1")
         else -> find("tiny-q5_1")
     } ?: all.first()
