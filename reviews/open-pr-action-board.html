@@ -135,7 +135,7 @@
         <td><a href="https://github.com/VocaHQ/vocaphone/pull/40">#40 Follow VocaMac and Handy model selections</a><br><span class="pill no">do not merge</span></td>
         <td>Retarget at vocagateway</td>
         <td><span class="pill no">no</span></td>
-        <td>Conflicts: <code>server/</code> is now a submodule. Blocked on still-open <a href="https://github.com/VocaHQ/vocamac/pull/200">vocamac#200</a>. Handy never forwards session language.</td>
+        <td>Conflicts: <code>server/</code> is now a submodule. vocamac#200 is still <code>CHANGES_REQUESTED</code>. Handy never forwards session language.</td>
       </tr>
     </tbody>
   </table>
@@ -144,7 +144,7 @@
   <ol class="actions">
     <li>Paste the #67 review below. Either you or Kanishk run the four hardware checks already listed in that PR. Then approve.</li>
     <li>Paste the #40 retarget review. Close it or leave it open as a pointer. The Python work has to be a <a href="https://github.com/VocaHQ/vocagateway">vocagateway</a> PR; this repo only gets a submodule pin after that.</li>
-    <li>If you still want headless VocaMac, merge <a href="https://github.com/VocaHQ/vocamac/pull/200">vocamac#200</a> first. Kanishk already said so on #40. It is still open.</li>
+    <li>vocamac#200 is still <code>CHANGES_REQUESTED</code> (your review, 11 Aug). Kanishk replied on <code>4319eaf</code> that the bot comments were addressed. Re-review that before any gateway work that assumes the CLI exists.</li>
   </ol>
 
   <article class="card" id="pr67">
@@ -246,16 +246,16 @@ WhisperKit is fine (finish-time decode). Sherpa IME is not. Please keep the two 
       <div><span>CI</span> Passed on 8 Aug (stale vs main)</div>
       <div><span>Merge</span> CONFLICTING</div>
       <div><span>Opened</span> 8 Aug 2026</div>
-      <div><span>Depends on</span> vocamac#200 still open</div>
+      <div><span>Depends on</span> vocamac#200 CHANGES_REQUESTED</div>
     </div>
     <p>The idea is fine. The PR cannot land on current <code>main</code>.</p>
     <p>On 8 August this repo still owned <code>server/</code> as a normal tree. <code>main</code> now has <code>server</code> as a gitlink to vocagateway (<code>160000</code>). Git reports the Python files as "removed in local" against a new submodule commit. CONTRIBUTING already says gateway work goes to vocagateway, then a pin bump here. There is no open vocagateway PR for this. vocagateway <code>handy.py</code> is still the old "read settings once at init" code.</p>
-    <p>Other conflicts: three docs files, plus iOS finish timeout 90s → 540s (real behaviour, one hunk).</p>
-    <p>CLI contract vs vocamac#200 matches: <code>--transcribe-file</code>, <code>--list-models --json</code>, <code>--model</code>, <code>--language</code>, and the error codes. The byte scan for <code>--transcribe-file</code> (instead of probing an old GUI) is the right approach. Keep it in the rewrite.</p>
+    <p>Other conflicts: three docs files, plus iOS finish timeout 90s → 540s. <code>main</code> also added streaming-support keys in #58. Keep <code>main</code>'s file and change only <code>timeoutInterval</code>.</p>
+    <p>CLI contract vs vocamac#200 matches. Until that PR merges, <code>_headless_supported()</code> stays false on shipping VocaMac builds and Parakeet users keep hitting the legacy "not a WhisperKit model" error.</p>
     <h3>Bugs to keep when this is re-filed</h3>
     <ul>
       <li>Handy ignores session language. <code>transcribe(..., options)</code> never passes <code>options.language</code>. The PR body claims it does. True for VocaMac, false for Handy.</li>
-      <li><code>is_available</code> is supposed to be a cheap sync check. It now spawns <code>VocaMac --list-models --json</code> (5s timeout) on the auto-engine probe.</li>
+      <li><code>is_available</code> spawns <code>--list-models</code> and swallows failures as <code>None</code>, so <code>auto</code> quietly skips VocaMac. The file scan is the cheap part; the spawn is not.</li>
       <li>iOS finish timeout becomes 9 minutes. Android <code>GatewayClient.finish</code> on main is still 120s. Bump both, or say why only iOS waits.</li>
     </ul>
   </article>
@@ -272,9 +272,9 @@ WhisperKit is fine (finish-time decode). Sherpa IME is not. Please keep the two 
 
 Please:
 
-1. Wait for vocamac#200 (you already noted this). The CLI flags this PR calls (`--transcribe-file`, `--list-models --json`, `--model`, `--language`) match that PR. Good.
+1. Wait for vocamac#200 (you already noted this). It is still CHANGES_REQUESTED / BLOCKED. The CLI flags this PR calls match that PR. Good. Do not ship an adapter against a CLI that is not on vocamac main.
 2. Open the Python work against vocagateway. There is no vocagateway PR for this today; handy.py on vocagateway main is still the old "read settings once at init" code.
-3. Rebase the iOS 90s → 540s finish timeout onto current vocaphone main as a tiny follow-up, or fold it into the pin-bump PR. Android finish is still 120s on main, so a one-shot VocaMac load that needs nine minutes will still die from the Android client.
+3. Rebase the iOS timeout onto current vocaphone main by keeping main's GatewayClient (it gained streaming-support keys in #58) and changing only timeoutInterval. Android finish is still 120s on main, so a one-shot VocaMac load that needs nine minutes will still die from the Android client.
 
 I went through the VocaMac adapter. The `--transcribe-file` byte scan instead of probing an old binary with an unknown flag is the right approach; keep that. A couple of code comments below still apply in the vocagateway rewrite.</pre>
     </div>
@@ -289,18 +289,18 @@ If the Handy CLI accepts `--language`, pass `options.language` here. If it does 
 
     <div class="comment">
       <button class="copy" type="button" data-copy="c40b">Copy</button>
-      <div class="loc">server/app/models/vocamac.py:89 · medium</div>
-      <pre id="c40b">The docstring still says this is a cheap synchronous check for `auto` engine resolution. The new branch calls `_headless_model()`, which `subprocess.run`s `--list-models --json` with a 5s timeout.
+      <div class="loc">server/app/models/vocamac.py:89 · high</div>
+      <pre id="c40b">`is_available()` is not the cheap filesystem check `build_engine` thinks it is. After `_headless_supported()` you call `_headless_model()`, which `subprocess.run`s `VocaMac --list-models --json` with a 5s timeout and swallows every failure as `None`. `auto` then quietly skips VocaMac.
 
-That is a cold-start stall on every auto probe until the 5s engine cache fills. Capability can stay in `_headless_supported()` (the file scan). Availability of the selected model belongs in `health()` / `transcribe()`.</pre>
+The scan in `_file_contains` is the side-effect-free part. This function is not. Cache the catalog, log list-models failures, and do not treat a hung CLI as "VocaMac is not installed."</pre>
     </div>
 
     <div class="comment">
       <button class="copy" type="button" data-copy="c40c">Copy</button>
-      <div class="loc">ios/.../GatewayClient.swift:124 · medium</div>
-      <pre id="c40c">90s → 540s is a real product change, not just a conflict hunk.
+      <div class="loc">ios/.../GatewayClient.swift:124 · high</div>
+      <pre id="c40c">540s is the right order of magnitude for a 300s VocaMac one-shot, but this file conflicts with main, and main added streaming-support keys in #58. Rebase by keeping main's GatewayClient and changing only `timeoutInterval` (line 153 on main, currently 90). Do not take this branch's copy of the file.
 
-Android `GatewayClient.finish` is still 120s. If a first VocaMac one-shot can sit in model load for several minutes, Android will time out while iOS waits. Bump both clients, or document that only iOS is expected to use this engine for the slow path.</pre>
+Android `GatewayClient.kt` finish is still 120s. A first-load that the comment says can spend several minutes will time out on Android while iOS waits. Match Android to this timeout or drop the claim.</pre>
     </div>
   </article>
 
