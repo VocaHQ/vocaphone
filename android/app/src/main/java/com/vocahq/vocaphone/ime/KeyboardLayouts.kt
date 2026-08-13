@@ -1,25 +1,34 @@
 package com.vocahq.vocaphone.ime
 
 internal object KeyboardLayouts {
-    fun rows(layer: KeyboardLayer, editor: KeyboardEditorConfig): List<KeyboardRow> = when (layer) {
-        KeyboardLayer.LETTERS -> letterRows(editor)
+    fun rows(
+        layer: KeyboardLayer,
+        editor: KeyboardEditorConfig,
+        numberRow: Boolean = false,
+    ): List<KeyboardRow> = when (layer) {
+        KeyboardLayer.LETTERS -> letterRows(editor, numberRow)
         KeyboardLayer.NUMBERS -> numberRows(editor)
         KeyboardLayer.SYMBOLS -> symbolRows(editor)
-        KeyboardLayer.EMOJI -> emojiRows(editor)
+        KeyboardLayer.EMOJI -> listOf(emojiBottomRow(editor))
     }
 
-    private fun letterRows(editor: KeyboardEditorConfig) = listOf(
-        characters("qwertyuiop"),
-        characters("asdfghjkl", inset = 0.5f),
-        KeyboardRow(
-            keys = listOf(
-                special("shift", "Shift", KeyboardKeyType.SHIFT, 1.35f),
-                *"zxcvbnm".map { character(it.toString()) }.toTypedArray(),
-                special("delete", "Delete", KeyboardKeyType.DELETE, 1.35f),
+    fun letterRowCount(numberRow: Boolean) = if (numberRow) 5 else 4
+
+    private fun letterRows(editor: KeyboardEditorConfig, numberRow: Boolean): List<KeyboardRow> = buildList {
+        if (numberRow) add(characters("1234567890"))
+        add(characters("qwertyuiop"))
+        add(characters("asdfghjkl", inset = 0.5f))
+        add(
+            KeyboardRow(
+                keys = listOf(
+                    special("shift", "Shift", KeyboardKeyType.SHIFT, 1.35f),
+                    *"zxcvbnm".map { character(it.toString()) }.toTypedArray(),
+                    special("delete", "Delete", KeyboardKeyType.DELETE, 1.35f),
+                ),
             ),
-        ),
-        utilityRow(editor, "?123", KeyboardLayer.NUMBERS),
-    )
+        )
+        add(utilityRow(editor, "?123", KeyboardLayer.NUMBERS))
+    }
 
     private fun numberRows(editor: KeyboardEditorConfig) = listOf(
         characters("1234567890"),
@@ -51,17 +60,22 @@ internal object KeyboardLayouts {
         utilityRow(editor, "ABC", KeyboardLayer.LETTERS),
     )
 
-    private fun emojiRows(editor: KeyboardEditorConfig) = listOf(
-        characters(listOf("😀", "😂", "🥰", "😍", "😊", "😉", "🥹", "😎", "🤔", "🫡")),
-        characters(listOf("👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "❤️", "🔥", "✨")),
-        characters(listOf("🎉", "✅", "💯", "🚀", "👀", "💡", "📌", "📱", "🎤", "🌍")),
+    private fun emojiBottomRow(editor: KeyboardEditorConfig) = KeyboardRow(
+        keys = listOf(
+            layer("emoji-letters", "ABC", KeyboardLayer.LETTERS, 1.4f),
+            special("space", "space", KeyboardKeyType.SPACE, 4.0f),
+            special("delete", "Delete", KeyboardKeyType.DELETE, 1.4f),
+            special("return", editor.returnKey.name, KeyboardKeyType.RETURN, 1.4f),
+        ),
+    )
+
+    fun searchLetterRows(): List<KeyboardRow> = listOf(
+        characters("qwertyuiop"),
+        characters("asdfghjkl", inset = 0.5f),
         KeyboardRow(
             keys = listOf(
-                layer("emoji-letters", "ABC", KeyboardLayer.LETTERS, 1.35f),
-                special("keyboard-switch", "Switch keyboard", KeyboardKeyType.KEYBOARD_SWITCH, 1.05f),
-                special("space", "space", KeyboardKeyType.SPACE, 3.85f),
-                special("delete", "Delete", KeyboardKeyType.DELETE, 1.35f),
-                special("return", editor.returnKey.name, KeyboardKeyType.RETURN, 1.55f),
+                special("search-space", "space", KeyboardKeyType.SPACE, 3.5f),
+                special("delete", "Delete", KeyboardKeyType.DELETE, 1.5f),
             ),
         ),
     )
@@ -72,13 +86,12 @@ internal object KeyboardLayouts {
         targetLayer: KeyboardLayer,
     ) = KeyboardRow(
         keys = listOf(
-            layer("layer-$layerLabel", layerLabel, targetLayer, 1.2f),
-            layer("emoji", "☺", KeyboardLayer.EMOJI, 0.9f),
-            character(editor.leadingPunctuation, 0.8f),
-            special("keyboard-switch", "Switch keyboard", KeyboardKeyType.KEYBOARD_SWITCH, 0.95f),
-            special("space", "space", KeyboardKeyType.SPACE, 3.25f),
-            character(".", 0.8f),
-            special("return", editor.returnKey.name, KeyboardKeyType.RETURN, 1.45f),
+            layer("layer-$layerLabel", layerLabel, targetLayer, 1.25f),
+            layer("emoji", "☺", KeyboardLayer.EMOJI, 0.7f),
+            character(editor.leadingPunctuation, 0.85f),
+            special("space", "space", KeyboardKeyType.SPACE, 4.1f),
+            character(".", 0.85f),
+            special("return", editor.returnKey.name, KeyboardKeyType.RETURN, 1.95f),
         ),
     )
 

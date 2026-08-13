@@ -100,10 +100,21 @@ gigabytes; changing a pin in a new build invalidates the marker.
 ## VocaPhone keyboard
 
 The microphone lives inside the keyboard and the transcript is written through
-Android's `InputConnection`. The keyboard only receives the editor connection
-provided by Android; it does not scrape or store surrounding field contents.
-VocaPhone refuses password and other sensitive input types through its input
-policy.
+Android's `InputConnection`. VocaPhone refuses password and other sensitive
+input types through its input policy.
+
+Typing extras, all local to the phone:
+
+- Optional number row and Compact / Default / Tall key height under Settings → Keyboard
+- English word completions and next-word guesses (off in passwords)
+- A paste chip for the current clipboard while the keyboard is open
+- Emoji categories, recents, and search
+- Long-press letters for accents, double-space for a period
+- Long-press the space bar to switch keyboards (the globe key is gone)
+
+Suggestions may read about 32 characters before the cursor. The clipboard chip
+reads the current clip only while the keyboard is visible. Dictation still never
+uses the clipboard, and nothing from either path is logged.
 
 ## Dictating
 

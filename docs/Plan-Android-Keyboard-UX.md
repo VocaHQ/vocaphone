@@ -1,6 +1,7 @@
 # Android typing keyboard plan
 
-Review this before any implementation. The items below are proposals, not work in progress.
+Implemented on the Android IME. This document is the spec that landed, not a
+backlog.
 
 VocaPhone's Android IME is already a full QWERTY keyboard with dictation on top
 (`VocaPhoneInputMethodService`, `KeyboardLayouts`, `VocaPhoneKeyboard`). The

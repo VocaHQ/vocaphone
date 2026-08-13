@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,7 @@ import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.AudioRetention
+import com.vocahq.vocaphone.settings.KeyboardHeight
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 
 @Composable
@@ -52,6 +54,10 @@ fun SettingsScreen(
     onAudioRetention: (AudioRetention) -> Unit,
     onTranscriptionQuality: (TranscriptionQuality) -> Unit,
     onCustomVocabulary: (String) -> Unit,
+    onNumberRow: (Boolean) -> Unit,
+    onKeyboardHeight: (KeyboardHeight) -> Unit,
+    onSuggestions: (Boolean) -> Unit,
+    onClipboardChip: (Boolean) -> Unit,
     localModels: LocalModelState,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
@@ -210,6 +216,75 @@ fun SettingsScreen(
             )
         }
 
+        Section(
+            title = "Keyboard",
+            supporting = "Layout and typing helpers for the VocaPhone keyboard. " +
+                "Long-press the space bar to switch to another keyboard.",
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Number row")
+                    Text(
+                        "Show 1-0 above the letter keys.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = settings.numberRowEnabled,
+                    onCheckedChange = onNumberRow,
+                )
+            }
+            Text("Height", style = MaterialTheme.typography.bodyMedium)
+            ChipChoiceRow(
+                options = KeyboardHeight.entries,
+                selected = settings.keyboardHeight,
+                label = { it.displayName },
+                onSelect = onKeyboardHeight,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Suggestions")
+                    Text(
+                        "Local English word completions and next-word guesses. " +
+                            "Reads a short window of text before the cursor. Off in passwords.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = settings.suggestionsEnabled,
+                    onCheckedChange = onSuggestions,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Clipboard paste")
+                    Text(
+                        "Show a paste chip when the current clip is text and the keyboard is open.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = settings.clipboardChipEnabled,
+                    onCheckedChange = onClipboardChip,
+                )
+            }
+        }
+
         MicrophoneSection(
             selected = settings.microphone,
             status = microphone,
@@ -231,12 +306,14 @@ fun SettingsScreen(
 
         Section("Privacy") {
             Text(
-                "VocaPhone's keyboard inserts through Android's text connection and " +
-                    "does not read the field. When on-device transcription is enabled, " +
-                    "audio never leaves this phone; otherwise it goes only to the " +
-                    "gateway you configured. There is no cloud transcription, no " +
-                    "analytics, and nothing is written to the clipboard unless you " +
-                    "tap Copy.",
+                "VocaPhone's keyboard inserts through Android's text connection. " +
+                    "Dictation does not read the field. With Suggestions on, the keyboard " +
+                    "reads about 32 characters before the cursor so it can guess the next " +
+                    "word; that text stays on this phone and is never logged. The clipboard " +
+                    "chip reads the current clip only while the keyboard is visible. Audio " +
+                    "goes to on-device transcription or the gateway you configured. There is " +
+                    "no cloud transcription, no analytics, and nothing is written to the " +
+                    "clipboard unless you tap Copy.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

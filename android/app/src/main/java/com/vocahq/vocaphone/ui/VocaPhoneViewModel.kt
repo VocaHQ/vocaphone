@@ -21,6 +21,7 @@ import com.vocahq.vocaphone.gateway.GatewayException
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.AudioRetention
+import com.vocahq.vocaphone.settings.KeyboardHeight
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -281,6 +282,18 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setAudioRetention(retention: AudioRetention) =
         viewModelScope.launch { container.settings.setAudioRetention(retention) }
+
+    fun setNumberRowEnabled(enabled: Boolean) =
+        viewModelScope.launch { container.settings.setNumberRowEnabled(enabled) }
+
+    fun setKeyboardHeight(height: KeyboardHeight) =
+        viewModelScope.launch { container.settings.setKeyboardHeight(height) }
+
+    fun setSuggestionsEnabled(enabled: Boolean) =
+        viewModelScope.launch { container.settings.setSuggestionsEnabled(enabled) }
+
+    fun setClipboardChipEnabled(enabled: Boolean) =
+        viewModelScope.launch { container.settings.setClipboardChipEnabled(enabled) }
 
     fun setOnboardingComplete(complete: Boolean) =
         viewModelScope.launch { container.settings.setOnboardingComplete(complete) }

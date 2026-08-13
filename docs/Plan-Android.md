@@ -57,7 +57,11 @@ the controller. The controller:
 
 Password and other sensitive input types are rejected by the IME input policy.
 The keyboard never reads surrounding editor text to decide whether to show the
-microphone or to construct an insertion.
+microphone or to construct an insertion. With Suggestions enabled it may read
+about 32 characters before the cursor, only in non-sensitive fields, so it can
+guess the next word. That text stays on the device and is never logged. The
+clipboard paste chip reads the current clip only while the input view is
+showing; dictation still never uses the clipboard.
 
 ## Privacy and diagnostics
 
