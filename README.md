@@ -387,11 +387,13 @@ then follow the guided setup in the app:
 cd android
 # macOS default; on Linux try $HOME/Android/Sdk
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-./gradlew assembleDebug
+# "full" is the flavor to develop against; "fdroid" is the from-source-only
+# build described under Build flavors below.
+./gradlew assembleFullDebug
 # Uninstall any pre-rename Local Flow build first — application IDs differ, so
 # `adb install -r` will side-install next to io.github.mrsunglasses.localflow.
 adb uninstall io.github.mrsunglasses.localflow 2>/dev/null || true
-adb install -r app/build/outputs/apk/debug/vocaphone-debug.apk
+adb install -r app/build/outputs/apk/full/debug/vocaphone-fullDebug.apk
 ```
 
 In the app: grant microphone and notifications, enable and select VocaPhone in
