@@ -54,6 +54,17 @@ class EmojiSuggestionsTest {
     }
 
     @Test
+    fun aliasesShareTheSameGlyphAndRelatedChips() {
+        assertEquals("😂", EmojiSuggestions.glyph("laugh"))
+        assertEquals("😂", EmojiSuggestions.glyph("lol"))
+        assertEquals("😢", EmojiSuggestions.glyph("unhappy"))
+        assertEquals(EmojiSuggestions.glyphs("sad"), EmojiSuggestions.glyphs("upset"))
+        assertEquals("🙏", EmojiSuggestions.glyph("thx"))
+        assertEquals("🎂", EmojiSuggestions.glyph("bday"))
+        assertEquals("🤷", EmojiSuggestions.glyph("idk"))
+    }
+
+    @Test
     fun everyEntryIsOneEmojiForOneLowercaseWord() {
         for ((word, glyph) in EmojiSuggestions.TRIGGERS) {
             assertEquals(word, word.lowercase())

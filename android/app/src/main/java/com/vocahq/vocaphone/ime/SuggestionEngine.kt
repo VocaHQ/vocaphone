@@ -62,7 +62,7 @@ internal class SuggestionDictionary(
         after: String,
         correctionsEnabled: Boolean,
     ): SuggestionStrip {
-        val token = composing.ifEmpty { SuggestionEngine.lastWord(before).orEmpty() }
+        val token = composing.ifEmpty { SuggestionEngine.lastWordForEmoji(before).orEmpty() }
         val emojis = EmojiSuggestions.glyphs(token)
         if (composing.isNotEmpty()) {
             val completions = complete(composing)
@@ -143,6 +143,17 @@ internal object SuggestionEngine {
             start--
         }
         val word = trimmed.substring(start).replace("'", "").lowercase()
+        return word.takeIf { it.any(Char::isLetter) }
+    }
+
+    /** Last word even when a space or period is already sitting after it. */
+    fun lastWordForEmoji(textBeforeCursor: CharSequence): String? {
+        var end = textBeforeCursor.length
+        while (end > 0 && !isWordChar(textBeforeCursor[end - 1])) end--
+        if (end == 0) return null
+        var start = end
+        while (start > 0 && isWordChar(textBeforeCursor[start - 1])) start--
+        val word = textBeforeCursor.subSequence(start, end).toString().replace("'", "").lowercase()
         return word.takeIf { it.any(Char::isLetter) }
     }
 

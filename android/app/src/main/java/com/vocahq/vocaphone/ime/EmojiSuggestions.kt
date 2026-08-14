@@ -19,7 +19,7 @@ internal object EmojiSuggestions {
         val key = word.lowercase()
         if (key.length < MINIMUM_LENGTH) return emptyList()
         val primary = TRIGGERS[key] ?: return emptyList()
-        return (listOf(primary) + EXTRAS[key].orEmpty()).distinct()
+        return (listOf(primary) + EXTRAS[primary].orEmpty()).distinct()
     }
 
     internal val TRIGGERS: Map<String, String> = mapOf(
@@ -78,18 +78,81 @@ internal object EmojiSuggestions {
         "football" to "⚽", "cricket" to "🏏", "basketball" to "🏀",
 
         "christmas" to "🎄", "halloween" to "🎃", "diwali" to "🪔",
+
+        // Extra doors into the same glyphs. Gemoji / chat short names, not
+        // catalog keywords: each one should still mean that emoji.
+        "laugh" to "😂", "laughing" to "😂", "joy" to "😂",
+        "grin" to "😄", "grinning" to "😄",
+        "smile" to "😊", "smiling" to "😊", "blush" to "😊",
+        "unhappy" to "😢", "upset" to "😢", "tear" to "😢",
+        "sob" to "😭", "tears" to "😭",
+        "annoyed" to "😠", "pissed" to "😠",
+        "sleeping" to "😴", "zzz" to "😴", "exhausted" to "😴", "nap" to "😴",
+        "yawn" to "🥱", "yawning" to "🥱",
+        "ill" to "🤒", "unwell" to "🤒",
+        "scream" to "😱", "shocked" to "😱",
+        "nervous" to "😰", "worried" to "😰",
+        "weary" to "😩",
+        "whew" to "😌",
+        "starstruck" to "🤩",
+        "ily" to "❤️",
+        "xoxo" to "😘",
+        "thx" to "🙏", "ty" to "🙏", "thank" to "🙏", "pls" to "🙏",
+        "tada" to "🎉", "hooray" to "🎉",
+        "smh" to "🤦",
+        "idk" to "🤷", "dunno" to "🤷",
+        "think" to "🤔",
+        "flex" to "💪",
+        "thumbsup" to "👍",
+        "howdy" to "👋", "cya" to "👋",
+        "flame" to "🔥", "burn" to "🔥",
+        "dead" to "💀",
+        "poo" to "💩", "crap" to "💩",
+        "spooky" to "👻",
+        "bday" to "🎂",
+        "bulb" to "💡",
+        "launch" to "🚀",
+        "hamburger" to "🍔",
+        "latte" to "☕", "espresso" to "☕", "cafe" to "☕",
+        "doggo" to "🐶", "doggy" to "🐶", "pup" to "🐶",
+        "kitty" to "🐱", "meow" to "🐱",
+        "goodnight" to "🌙", "nite" to "🌙",
+        "airplane" to "✈️",
+        "taxi" to "🚗", "cab" to "🚗",
+        "bicycle" to "🚲",
+        "pic" to "📷",
+        "film" to "🎬",
+        "mobile" to "📱",
+        "tune" to "🎵",
+        "books" to "📚",
+        "soccer" to "⚽",
     )
 
-    // A couple of neighbours for the feeling-words people actually tap.
+    // Related chips, keyed by the primary glyph so every alias shares them.
     private val EXTRAS: Map<String, List<String>> = mapOf(
-        "sad" to listOf("😭", "😞"),
-        "happy" to listOf("😄", "😁"),
-        "cry" to listOf("😢"),
-        "crying" to listOf("😢"),
-        "love" to listOf("💕", "😍"),
-        "angry" to listOf("😡"),
-        "mad" to listOf("😡"),
-        "lol" to listOf("🤣"),
-        "skull" to listOf("☠️"),
+        "😢" to listOf("😭", "😞"),
+        "😊" to listOf("😄", "😁"),
+        "😭" to listOf("😢"),
+        "❤️" to listOf("💕", "😍"),
+        "😠" to listOf("😡"),
+        "😂" to listOf("🤣"),
+        "💀" to listOf("☠️"),
     )
+}
+
+/** Replace the trigger while the cursor is still on it; insert once anything follows. */
+internal object EmojiCommit {
+    fun shouldReplaceTrigger(composing: String, before: CharSequence): Boolean {
+        if (composing.isNotEmpty()) return EmojiSuggestions.glyph(composing) != null
+        if (before.isEmpty() || !isWordChar(before.last())) return false
+        return EmojiSuggestions.glyph(SuggestionEngine.lastWord(before).orEmpty()) != null
+    }
+
+    fun insertText(before: CharSequence, emoji: String): String {
+        val prefix = if (before.isEmpty() || before.last().isWhitespace()) "" else " "
+        return prefix + emoji
+    }
+
+    private fun isWordChar(character: Char): Boolean =
+        character.isLetterOrDigit() || character == '\''
 }

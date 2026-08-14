@@ -301,10 +301,20 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val connection = currentInputConnection ?: return
         connection.finishComposingText()
         val before = runCatching {
-            connection.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+            connection.getTextBeforeCursor(32, 0)?.toString().orEmpty()
         }.getOrDefault("")
-        val prefix = if (before.isEmpty() || before.last().isWhitespace()) "" else " "
-        connection.commitText("$prefix$emoji", 1)
+        val after = runCatching {
+            connection.getTextAfterCursor(32, 0)?.toString().orEmpty()
+        }.getOrDefault("")
+        if (EmojiCommit.shouldReplaceTrigger("", before)) {
+            val span = SuggestionEngine.replaceableWord(before, after)
+            if (span != null) {
+                connection.deleteSurroundingText(span.beforeLength, span.afterLength)
+            }
+            connection.commitText(emoji, 1)
+        } else {
+            connection.commitText(EmojiCommit.insertText(before, emoji), 1)
+        }
         recordEmojiRecent(emoji)
         syncShiftFromCursor()
         refreshEditorText()

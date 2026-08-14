@@ -142,6 +142,27 @@ class SuggestionEngineTest {
     }
 
     @Test
+    fun `strip still offers emoji after a period`() {
+        val strip = dictionary.strip(
+            composing = "",
+            before = "sad.",
+            after = "",
+            correctionsEnabled = false,
+        )
+        assertEquals(listOf("😢", "😭", "😞"), strip.emojis)
+        assertTrue(!EmojiCommit.shouldReplaceTrigger("", "sad."))
+    }
+
+    @Test
+    fun lastWordForEmojiSkipsTrailingPunctuation() {
+        assertEquals("sad", SuggestionEngine.lastWordForEmoji("sad."))
+        assertEquals("sad", SuggestionEngine.lastWordForEmoji("sad "))
+        assertEquals("sad", SuggestionEngine.lastWordForEmoji("I am sad!"))
+        assertEquals("happy", SuggestionEngine.lastWord("happy "))
+        assertEquals(null, SuggestionEngine.lastWord("sad."))
+    }
+
+    @Test
     fun `word before deletes the previous token and its trailing space`() {
         assertEquals(5, SuggestionEngine.wordBefore("hello world"))
         assertEquals(6, SuggestionEngine.wordBefore("hello world "))
