@@ -58,7 +58,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.runtime.MutableState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -90,6 +96,7 @@ import com.vocahq.vocaphone.core.DictationState
 import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.WritingStyle
+import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.ui.theme.VocaPhoneTheme
 import kotlin.math.PI
@@ -121,6 +128,7 @@ internal fun VocaPhoneKeyboard(
     onCommand: (KeyboardCommand) -> Unit,
     onMicTap: () -> Unit,
     onOpenApp: () -> Unit,
+    onOpenModels: () -> Unit,
     onLanguageSelected: (TranscriptionLanguage) -> Unit,
     onStyleSelected: (WritingStyle) -> Unit,
     onSuggestionPicked: (String, Boolean) -> Unit,
@@ -140,6 +148,7 @@ internal fun VocaPhoneKeyboard(
     }
     var preferencePanel by remember(editor.sessionId) { mutableStateOf<PreferencePanel?>(null) }
     var emojiCategory by remember(editor.sessionId) { mutableStateOf(EmojiCategory.SMILEYS) }
+    var swipeChoices by remember(editor.sessionId) { mutableStateOf<List<String>>(emptyList()) }
 
     LaunchedEffect(dictationState.phase, editor.dictationAllowed) {
         if (dictationState.phase != DictationPhase.IDLE || !editor.dictationAllowed) {
@@ -182,9 +191,15 @@ internal fun VocaPhoneKeyboard(
     val clipboardChip = clipboard.takeIf { settings.clipboardChipEnabled && !editor.sensitive }
     val startedTyping = KeyboardChrome.startedTyping(keyboardState.composing, editorText.before)
     val stripClipboard = KeyboardChrome.clipboardForStrip(clipboardChip)
-    val stripSuggestions = KeyboardChrome.suggestionsForStrip(suggestionStrip.words, startedTyping)
+    val stripSuggestions = if (swipeChoices.isNotEmpty()) {
+        swipeChoices
+    } else {
+        KeyboardChrome.suggestionsForStrip(suggestionStrip.words, startedTyping)
+    }
+    val swipeReplacesWord = swipeChoices.isNotEmpty()
 
     fun handleKey(key: KeyboardKey) {
+        swipeChoices = emptyList()
         val reduction = KeyboardReducer.press(
             state = keyboardState,
             key = key,
@@ -193,6 +208,24 @@ internal fun VocaPhoneKeyboard(
         )
         keyboardState = reduction.state
         reduction.command?.let(onCommand)
+    }
+
+    fun handleSwipe(path: String) {
+        val matches = suggestions?.swipe(path).orEmpty()
+        if (matches.isEmpty()) return
+        if (keyboardState.composing.isNotEmpty()) {
+            onCommand(KeyboardCommand.SetComposingText(""))
+        }
+        val capitalize = keyboardState.shift != ShiftState.OFF
+        fun cased(word: String) = if (capitalize) word.replaceFirstChar { it.uppercase() } else word
+        swipeChoices = matches.drop(1).map(::cased)
+        keyboardState = keyboardState.copy(
+            composing = "",
+            lastWasSpace = true,
+            capitalizeAfterSpace = false,
+            shift = if (keyboardState.shift == ShiftState.LOCKED) ShiftState.LOCKED else ShiftState.OFF,
+        )
+        onSuggestionPicked(cased(matches.first()), false)
     }
 
     VocaPhoneTheme {
@@ -224,6 +257,7 @@ internal fun VocaPhoneKeyboard(
                     asciiEmojiEnabled = settings.asciiEmojiEnabled,
                     onEmojiCategory = { emojiCategory = it },
                     onMicTap = onMicTap,
+                    onOpenApp = onOpenApp,
                     menuOpen = preferencePanel == PreferencePanel.MENU,
                     onMenuTap = {
                         preferencePanel = if (preferencePanel == PreferencePanel.MENU) {
@@ -235,12 +269,14 @@ internal fun VocaPhoneKeyboard(
                     onPaste = { onPasteClipboard(clipboardChip?.fullText.orEmpty()) },
                     onDismissClipboard = onDismissClipboard,
                     onSuggestion = { word ->
+                        val replace = swipeReplacesWord || suggestionStrip.replacesWord
+                        swipeChoices = emptyList()
                         keyboardState = keyboardState.copy(
                             composing = "",
                             lastWasSpace = true,
                             capitalizeAfterSpace = false,
                         )
-                        onSuggestionPicked(word, suggestionStrip.replacesWord)
+                        onSuggestionPicked(word, replace)
                     },
                 )
                 Spacer(Modifier.height(4.dp))
@@ -252,9 +288,9 @@ internal fun VocaPhoneKeyboard(
                         onLanguage = { preferencePanel = PreferencePanel.LANGUAGE },
                         onStyle = { preferencePanel = PreferencePanel.STYLE },
                         onClipboard = { preferencePanel = PreferencePanel.CLIPBOARD },
-                        onOpenApp = {
+                        onOpenModels = {
                             preferencePanel = null
-                            onOpenApp()
+                            onOpenModels()
                         },
                         onClose = { preferencePanel = null },
                     )
@@ -333,6 +369,9 @@ internal fun VocaPhoneKeyboard(
                             editor = editor,
                             keyHeight = fittedKeyHeight,
                             showKeyHints = settings.numberKeyHintsEnabled,
+                            swipeEnabled = settings.swipeTypingEnabled &&
+                                keyboardState.layer == KeyboardLayer.LETTERS,
+                            onSwipe = ::handleSwipe,
                             onKey = ::handleKey,
                             onCursorMove = { positions ->
                                 keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
@@ -362,6 +401,7 @@ private fun DictationBar(
     asciiEmojiEnabled: Boolean,
     onEmojiCategory: (EmojiCategory) -> Unit,
     onMicTap: () -> Unit,
+    onOpenApp: () -> Unit,
     menuOpen: Boolean,
     onMenuTap: () -> Unit,
     onPaste: () -> Unit,
@@ -398,35 +438,40 @@ private fun DictationBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Surface(
+        Box(
             modifier = Modifier
                 .size(36.dp)
+                .clip(CircleShape)
+                .background(
+                    if (menuOpen) {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                )
                 .semantics {
                     role = Role.Button
-                    contentDescription = "Keyboard menu"
+                    contentDescription = "Keyboard menu. Long press to open VocaPhone."
+                }
+                .pointerInput(idle, menuOpen) {
+                    detectTapGestures(
+                        onTap = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            if (idle) onMenuTap()
+                        },
+                        onLongPress = {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            onOpenApp()
+                        },
+                    )
                 },
-            shape = CircleShape,
-            color = if (menuOpen) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
-            onClick = {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                if (idle) onMenuTap()
-            },
+            contentAlignment = Alignment.Center,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                KeyboardIcon(
-                    glyph = Glyph.SETTINGS,
-                    tint = if (menuOpen) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onPrimary
-                    },
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+            KeyboardIcon(
+                glyph = Glyph.SETTINGS,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
         }
 
         Row(
@@ -438,29 +483,39 @@ private fun DictationBar(
         ) {
             when {
                 state.isRecording -> {
-                    Spacer(Modifier.weight(1f))
-                    Waveform(level = state.level)
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.Center,
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            text = status,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.End,
+                        Waveform(
+                            level = state.level,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(34.dp),
+                            alpha = 0.34f,
+                            bars = 13,
                         )
-                        if (detail.isNotEmpty()) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = detail,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelSmall,
+                                text = status,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.End,
+                                textAlign = TextAlign.Center,
                             )
+                            if (detail.isNotEmpty()) {
+                                Text(
+                                    text = detail,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
                         }
                     }
                 }
@@ -562,12 +617,18 @@ private fun ToolbarMenuPanel(
     onLanguage: () -> Unit,
     onStyle: () -> Unit,
     onClipboard: () -> Unit,
-    onOpenApp: () -> Unit,
+    onOpenModels: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val localModel = LocalModelCatalog.find(settings.localModelId)
+    val modelDetail = when {
+        settings.localTranscriptionEnabled && localModel != null -> localModel.displayName
+        settings.isConfigured -> "Gateway"
+        else -> "Pick a model"
+    }
     PreferencePanelShell(
         title = "Keyboard",
-        subtitle = "Language, style, clipboard, and app settings",
+        subtitle = "Tap a tile. Models opens the app.",
         height = height,
         onClose = onClose,
     ) {
@@ -575,65 +636,78 @@ private fun ToolbarMenuPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            ToolbarMenuRow(
-                title = "Language",
-                detail = settings.effectiveLanguage.displayName,
-                onClick = onLanguage,
-            )
-            ToolbarMenuRow(
-                title = "Writing style",
-                detail = settings.style.displayName,
-                onClick = onStyle,
-            )
-            if (settings.clipboardHistoryEnabled && !editor.sensitive) {
-                ToolbarMenuRow(
-                    title = "Clipboard",
-                    detail = if (settings.clipboardHistory.isEmpty()) {
-                        "No saved clips"
-                    } else {
-                        "${settings.clipboardHistory.size} saved"
-                    },
-                    onClick = onClipboard,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ToolbarMenuTile(
+                    title = "Language",
+                    detail = settings.effectiveLanguage.displayName,
+                    onClick = onLanguage,
+                )
+                ToolbarMenuTile(
+                    title = "Style",
+                    detail = settings.style.displayName,
+                    onClick = onStyle,
                 )
             }
-            ToolbarMenuRow(
-                title = "VocaPhone settings",
-                detail = "Open the app",
-                onClick = onOpenApp,
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (settings.clipboardHistoryEnabled && !editor.sensitive) {
+                    ToolbarMenuTile(
+                        title = "Clipboard",
+                        detail = if (settings.clipboardHistory.isEmpty()) {
+                            "No saved clips"
+                        } else {
+                            "${settings.clipboardHistory.size} saved"
+                        },
+                        onClick = onClipboard,
+                    )
+                }
+                ToolbarMenuTile(
+                    title = "Models",
+                    detail = modelDetail,
+                    onClick = onOpenModels,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ToolbarMenuRow(
+private fun RowScope.ToolbarMenuTile(
     title: String,
     detail: String,
     onClick: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight(),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         onClick = onClick,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Text(
-                    detail,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(">", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Text(
+                detail,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1058,8 +1132,13 @@ private fun MicButton(
 }
 
 @Composable
-private fun Waveform(level: Float) {
-    val color = MaterialTheme.colorScheme.primary
+private fun Waveform(
+    level: Float,
+    modifier: Modifier = Modifier.size(width = 44.dp, height = 28.dp),
+    alpha: Float = 1f,
+    bars: Int = 7,
+) {
+    val color = MaterialTheme.colorScheme.primary.copy(alpha = alpha)
     val phase by rememberInfiniteTransition(label = "wave").animateFloat(
         initialValue = 0f,
         targetValue = (PI * 2).toFloat(),
@@ -1069,11 +1148,10 @@ private fun Waveform(level: Float) {
         ),
         label = "phase",
     )
-    val bars = 7
-    Canvas(Modifier.size(width = 44.dp, height = 28.dp)) {
+    Canvas(modifier) {
         val normalized = level.coerceIn(0.14f, 1f)
         val barWidth = 2.6.dp.toPx()
-        val gap = (size.width - barWidth * bars) / (bars - 1)
+        val gap = if (bars <= 1) 0f else (size.width - barWidth * bars) / (bars - 1)
         repeat(bars) { index ->
             val pulse = ((sin(phase + index * 0.75f) + 1f) / 2f)
             val height = size.height * (0.16f + 0.84f * normalized * (0.28f + 0.72f * pulse))
@@ -1295,47 +1373,146 @@ private fun KeyboardRows(
     editor: KeyboardEditorConfig,
     keyHeight: Dp,
     showKeyHints: Boolean = false,
+    swipeEnabled: Boolean = false,
+    onSwipe: (String) -> Unit = {},
     onKey: (KeyboardKey) -> Unit,
     onCursorMove: (Int) -> Unit,
 ) {
-    Column(
+    val swipeConsumed = remember { mutableStateOf(false) }
+    val keyBounds = remember { mutableMapOf<String, Pair<KeyboardKey, Rect>>() }
+    var parentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var trail by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    val trailColor = MaterialTheme.colorScheme.primary
+    val currentOnSwipe = rememberUpdatedState(onSwipe)
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(RowGap),
-    ) {
-        rows.forEach { row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(keyHeight),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (row.leadingSpace > 0f) Spacer(Modifier.weight(row.leadingSpace))
-                row.keys.forEach { key ->
-                    KeyButton(
-                        key = key,
-                        state = state,
-                        editor = editor,
-                        keyHeight = keyHeight,
-                        showKeyHints = showKeyHints,
-                        onPress = { onKey(key) },
-                        onCommitText = { text ->
-                            onKey(
-                                KeyboardKey(
-                                    id = "variant-$text",
-                                    label = text,
-                                    output = text,
-                                ),
-                            )
-                        },
-                        onCursorMove = onCursorMove,
-                        modifier = Modifier.weight(key.weight),
+            .onGloballyPositioned { parentCoords = it }
+            .then(
+                if (swipeEnabled) {
+                    Modifier.swipeTypingGesture(
+                        keyBounds = keyBounds,
+                        parentCoords = { parentCoords },
+                        swipeConsumed = swipeConsumed,
+                        onTrail = { trail = it },
+                        onSwipe = { currentOnSwipe.value(it) },
                     )
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(RowGap),
+        ) {
+            rows.forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(keyHeight),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (row.leadingSpace > 0f) Spacer(Modifier.weight(row.leadingSpace))
+                    row.keys.forEach { key ->
+                        KeyButton(
+                            key = key,
+                            state = state,
+                            editor = editor,
+                            keyHeight = keyHeight,
+                            showKeyHints = showKeyHints,
+                            swipeConsumed = swipeConsumed,
+                            onPress = { onKey(key) },
+                            onCommitText = { text ->
+                                onKey(
+                                    KeyboardKey(
+                                        id = "variant-$text",
+                                        label = text,
+                                        output = text,
+                                    ),
+                                )
+                            },
+                            onCursorMove = onCursorMove,
+                            modifier = Modifier
+                                .weight(key.weight)
+                                .onGloballyPositioned { coords ->
+                                    val origin = coords.positionInRoot()
+                                    keyBounds[key.id] = key to Rect(
+                                        origin.x,
+                                        origin.y,
+                                        origin.x + coords.size.width,
+                                        origin.y + coords.size.height,
+                                    )
+                                },
+                        )
+                    }
+                    if (row.trailingSpace > 0f) Spacer(Modifier.weight(row.trailingSpace))
                 }
-                if (row.trailingSpace > 0f) Spacer(Modifier.weight(row.trailingSpace))
             }
         }
+        if (trail.size >= 2) {
+            Canvas(Modifier.matchParentSize()) {
+                val path = Path().apply {
+                    moveTo(trail.first().x, trail.first().y)
+                    trail.drop(1).forEach { lineTo(it.x, it.y) }
+                }
+                drawPath(
+                    path = path,
+                    color = trailColor,
+                    style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                )
+            }
+        }
+    }
+}
+
+private fun Modifier.swipeTypingGesture(
+    keyBounds: Map<String, Pair<KeyboardKey, Rect>>,
+    parentCoords: () -> LayoutCoordinates?,
+    swipeConsumed: MutableState<Boolean>,
+    onTrail: (List<Offset>) -> Unit,
+    onSwipe: (String) -> Unit,
+) = pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        val start = hitLetter(keyBounds, parentCoords()?.localToRoot(down.position))
+        if (start == null) return@awaitEachGesture
+        swipeConsumed.value = false
+        val path = StringBuilder(start.output.lowercase())
+        var lastId = start.id
+        val points = mutableListOf(down.position)
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            points.add(change.position)
+            val hit = hitLetter(keyBounds, parentCoords()?.localToRoot(change.position))
+            if (hit != null && hit.id != lastId) {
+                swipeConsumed.value = true
+                path.append(hit.output.lowercase())
+                lastId = hit.id
+            }
+            if (swipeConsumed.value) {
+                change.consume()
+                onTrail(points.toList())
+            }
+            if (!change.pressed) break
+        }
+        onTrail(emptyList())
+        if (swipeConsumed.value) onSwipe(path.toString())
+    }
+}
+
+private fun hitLetter(
+    keyBounds: Map<String, Pair<KeyboardKey, Rect>>,
+    root: Offset?,
+): KeyboardKey? {
+    if (root == null) return null
+    val hit = keyBounds.values.firstOrNull { (_, rect) -> rect.contains(root) }?.first ?: return null
+    return hit.takeIf {
+        it.type == KeyboardKeyType.CHARACTER && it.output.length == 1 && it.output[0].isLetter()
     }
 }
 
@@ -1346,6 +1523,7 @@ private fun RowScope.KeyButton(
     editor: KeyboardEditorConfig,
     keyHeight: Dp,
     showKeyHints: Boolean = false,
+    swipeConsumed: MutableState<Boolean>? = null,
     onPress: () -> Unit,
     onCommitText: (String) -> Unit,
     onCursorMove: (Int) -> Unit,
@@ -1393,6 +1571,7 @@ private fun RowScope.KeyButton(
         key.type == KeyboardKeyType.CHARACTER && accents.isNotEmpty() -> Modifier.accentGesture(
             pointerKey = key.id,
             variantCount = accents.size,
+            swipeConsumed = swipeConsumed,
             onTap = { currentOnPress.value() },
             onVariant = { index -> currentOnCommitText.value(accents[index]) },
             onPressedChange = { pressed = it },
@@ -1402,6 +1581,7 @@ private fun RowScope.KeyButton(
         else -> Modifier.keyGesture(
             pointerKey = key.id,
             repeat = key.type == KeyboardKeyType.DELETE,
+            swipeConsumed = swipeConsumed,
             onPress = { currentOnPress.value() },
             onPressedChange = { pressed = it },
             onHaptic = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) },
@@ -1434,7 +1614,7 @@ private fun RowScope.KeyButton(
             hint = if (showKeyHints) KeyAccents.hint(key) else null,
         )
 
-        if (pressed && key.type == KeyboardKeyType.CHARACTER) {
+        if (pressed && swipeConsumed?.value != true && key.type == KeyboardKeyType.CHARACTER) {
             Popup(
                 alignment = Alignment.TopCenter,
                 offset = IntOffset(0, previewOffset),
@@ -1489,6 +1669,7 @@ private fun Modifier.keyGesture(
     onPress: () -> Unit,
     onPressedChange: (Boolean) -> Unit,
     onHaptic: () -> Unit,
+    swipeConsumed: MutableState<Boolean>? = null,
 ) = pointerInput(pointerKey, repeat) {
     coroutineScope {
         awaitEachGesture {
@@ -1511,7 +1692,7 @@ private fun Modifier.keyGesture(
             val up = waitForUpOrCancellation()
             repeatJob?.cancel()
             onPressedChange(false)
-            if (!repeat && up != null) onPress()
+            if (!repeat && up != null && swipeConsumed?.value != true) onPress()
         }
     }
 }
@@ -1563,6 +1744,7 @@ private fun Modifier.accentGesture(
     onPressedChange: (Boolean) -> Unit,
     onAccentIndex: (Int) -> Unit,
     onHaptic: () -> Unit,
+    swipeConsumed: MutableState<Boolean>? = null,
 ) = pointerInput(pointerKey, variantCount) {
     val step = 28.dp.toPx()
     coroutineScope {
@@ -1599,10 +1781,12 @@ private fun Modifier.accentGesture(
             }
             hold.cancel()
             onPressedChange(false)
-            if (showing) {
-                onVariant(index)
-            } else {
-                onTap()
+            if (swipeConsumed?.value != true) {
+                if (showing) {
+                    onVariant(index)
+                } else {
+                    onTap()
+                }
             }
             onAccentIndex(-1)
         }

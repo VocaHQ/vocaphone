@@ -7,7 +7,7 @@ import org.junit.Test
 class SuggestionEngineTest {
 
     private val dictionary = SuggestionDictionary(
-        words = listOf("hello", "help", "held", "the", "there", "their"),
+        words = listOf("hello", "help", "held", "the", "there", "their", "book"),
         bigrams = mapOf(
             "the" to listOf("first", "same", "other"),
             "see" to listOf("you", "the"),
@@ -57,5 +57,24 @@ class SuggestionEngineTest {
         )
         assertEquals(listOf("hello"), strip.words)
         assertTrue(strip.replacesWord)
+    }
+
+    @Test
+    fun `swipe matches a path across letter keys`() {
+        assertEquals(listOf("the"), dictionary.swipe("the"))
+        assertEquals(listOf("the"), dictionary.swipe("tghe"))
+        assertEquals(listOf("hello"), dictionary.swipe("hjkello"))
+        assertEquals(listOf("hello"), dictionary.swipe("helo"))
+        assertEquals(listOf("book"), dictionary.swipe("bok"))
+        assertTrue(dictionary.swipe("qz").isEmpty())
+        assertTrue(dictionary.swipe("h").isEmpty())
+    }
+
+    @Test
+    fun `replaceable word includes a trailing space after a swipe`() {
+        val span = SuggestionEngine.replaceableWord("hello ", "")
+        assertEquals("hello", span?.word)
+        assertEquals(6, span?.beforeLength)
+        assertEquals(0, span?.afterLength)
     }
 }

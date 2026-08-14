@@ -117,6 +117,7 @@ data class VocaPhoneSettings(
     val correctionsEnabled: Boolean = true,
     val numberKeyHintsEnabled: Boolean = true,
     val asciiEmojiEnabled: Boolean = true,
+    val swipeTypingEnabled: Boolean = true,
     val clipboardChipEnabled: Boolean = true,
     val clipboardHistoryEnabled: Boolean = true,
     val clipboardHistory: List<String> = emptyList(),
@@ -240,6 +241,8 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAsciiEmojiEnabled(enabled: Boolean) = put(Keys.ASCII_EMOJI, enabled)
 
+    suspend fun setSwipeTypingEnabled(enabled: Boolean) = put(Keys.SWIPE_TYPING, enabled)
+
     suspend fun setClipboardChipEnabled(enabled: Boolean) = put(Keys.CLIPBOARD_CHIP, enabled)
 
     suspend fun setClipboardHistoryEnabled(enabled: Boolean) = put(Keys.CLIPBOARD_HISTORY_ENABLED, enabled)
@@ -318,6 +321,7 @@ class SettingsRepository(private val context: Context) {
         correctionsEnabled = this[Keys.CORRECTIONS] ?: true,
         numberKeyHintsEnabled = this[Keys.NUMBER_KEY_HINTS] ?: true,
         asciiEmojiEnabled = this[Keys.ASCII_EMOJI] ?: true,
+        swipeTypingEnabled = this[Keys.SWIPE_TYPING] ?: true,
         clipboardChipEnabled = this[Keys.CLIPBOARD_CHIP] ?: true,
         clipboardHistoryEnabled = this[Keys.CLIPBOARD_HISTORY_ENABLED] ?: true,
         clipboardHistory = ClipboardHistory.decode(this[Keys.CLIPBOARD_HISTORY]),
@@ -349,6 +353,7 @@ class SettingsRepository(private val context: Context) {
         val CORRECTIONS = booleanPreferencesKey("keyboard_corrections")
         val NUMBER_KEY_HINTS = booleanPreferencesKey("keyboard_number_key_hints")
         val ASCII_EMOJI = booleanPreferencesKey("keyboard_ascii_emoji")
+        val SWIPE_TYPING = booleanPreferencesKey("keyboard_swipe_typing")
         val CLIPBOARD_CHIP = booleanPreferencesKey("keyboard_clipboard_chip")
         val CLIPBOARD_HISTORY_ENABLED = booleanPreferencesKey("keyboard_clipboard_history")
         val CLIPBOARD_HISTORY = stringPreferencesKey("keyboard_clipboard_history_items")

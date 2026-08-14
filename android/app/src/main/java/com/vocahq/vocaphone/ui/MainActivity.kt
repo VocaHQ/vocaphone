@@ -37,9 +37,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VocaPhoneTheme {
-                VocaPhoneApp()
+                VocaPhoneApp(launchIntent = intent)
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_SETTINGS = "open_settings"
+        const val EXTRA_OPEN_MODELS = "open_models"
     }
 }
 
@@ -51,7 +56,10 @@ private enum class Destination(val label: String, @param:DrawableRes val icon: I
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VocaPhoneApp(viewModel: VocaPhoneViewModel = viewModel()) {
+fun VocaPhoneApp(
+    viewModel: VocaPhoneViewModel = viewModel(),
+    launchIntent: android.content.Intent? = null,
+) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val setup by viewModel.setup.collectAsStateWithLifecycle()
     val dictation by viewModel.dictation.collectAsStateWithLifecycle()
@@ -72,7 +80,16 @@ fun VocaPhoneApp(viewModel: VocaPhoneViewModel = viewModel()) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    var destination by remember { mutableStateOf(Destination.DICTATE) }
+    var destination by remember {
+        mutableStateOf(
+            if (launchIntent?.getBooleanExtra(MainActivity.EXTRA_OPEN_SETTINGS, false) == true) {
+                Destination.SETTINGS
+            } else {
+                Destination.DICTATE
+            },
+        )
+    }
+    val startOnModels = launchIntent?.getBooleanExtra(MainActivity.EXTRA_OPEN_MODELS, false) == true
     var showingGateway by remember { mutableStateOf(false) }
 
     val showSetup = !settings.onboardingComplete && !showingGateway
@@ -185,6 +202,7 @@ fun VocaPhoneApp(viewModel: VocaPhoneViewModel = viewModel()) {
                 onCorrections = { viewModel.setCorrectionsEnabled(it) },
                 onNumberKeyHints = { viewModel.setNumberKeyHintsEnabled(it) },
                 onAsciiEmoji = { viewModel.setAsciiEmojiEnabled(it) },
+                onSwipeTyping = { viewModel.setSwipeTypingEnabled(it) },
                 onClipboardChip = { viewModel.setClipboardChipEnabled(it) },
                 onClipboardHistory = { viewModel.setClipboardHistoryEnabled(it) },
                 onClearClipboardHistory = { viewModel.clearClipboardHistory() },
@@ -199,6 +217,7 @@ fun VocaPhoneApp(viewModel: VocaPhoneViewModel = viewModel()) {
                 onTryDictation = { destination = Destination.DICTATE },
                 diagnosticEvents = viewModel::diagnosticEvents,
                 onClearDiagnosticEvents = viewModel::clearDiagnosticEvents,
+                startOnModels = startOnModels,
                 modifier = content,
             )
         }

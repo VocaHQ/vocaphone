@@ -69,6 +69,23 @@ internal class SuggestionDictionary(
         return SuggestionStrip(next(SuggestionEngine.lastWord(before).orEmpty()))
     }
 
+    fun swipe(path: String, limit: Int = 3): List<String> {
+        val keys = SuggestionEngine.collapseLetters(path)
+        if (keys.length < 2) return emptyList()
+        val first = keys.first()
+        val last = keys.last()
+        return words.asSequence()
+            .filter { word ->
+                val compact = SuggestionEngine.collapseLetters(word)
+                compact.length >= 2 &&
+                    compact.first() == first &&
+                    compact.last() == last &&
+                    SuggestionEngine.isSubsequence(compact, keys)
+            }
+            .take(limit)
+            .toList()
+    }
+
     companion object {
         fun load(assets: AssetManager) = SuggestionDictionary(
             words = assets.open("suggestions/en.txt").bufferedReader().readLines()
@@ -114,6 +131,15 @@ internal object SuggestionEngine {
         prefix.all { it.isUpperCase() } -> word.uppercase()
         prefix.first().isUpperCase() -> word.replaceFirstChar { it.uppercase() }
         else -> word
+    }
+
+    fun replaceableWord(before: CharSequence, after: CharSequence): WordSpan? {
+        wordSpan(before, after)?.let { return it }
+        val text = before.toString()
+        val trimmed = text.trimEnd()
+        if (trimmed.length == text.length) return null
+        val span = wordSpan(trimmed, "") ?: return null
+        return span.copy(beforeLength = span.beforeLength + (text.length - trimmed.length))
     }
 
     fun wordSpan(before: CharSequence, after: CharSequence): WordSpan? {
@@ -166,6 +192,20 @@ internal object SuggestionEngine {
             current = recycled
         }
         return previous[columns]
+    }
+
+    internal fun collapseLetters(path: String): String = buildString {
+        for (character in path.lowercase()) {
+            if (character.isLetter() && (isEmpty() || character != last())) append(character)
+        }
+    }
+
+    internal fun isSubsequence(word: String, path: String): Boolean {
+        var index = 0
+        for (character in path) {
+            if (index < word.length && character == word[index]) index++
+        }
+        return index == word.length
     }
 
     private fun isWordChar(character: Char): Boolean =

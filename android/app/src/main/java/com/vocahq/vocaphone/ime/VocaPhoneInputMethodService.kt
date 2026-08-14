@@ -98,7 +98,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             emojiCatalog = emojiCatalog,
             onCommand = ::handleCommand,
             onMicTap = ::toggleDictation,
-            onOpenApp = ::openCompanion,
+            onOpenApp = { openCompanion(openModels = false) },
+            onOpenModels = { openCompanion(openModels = true) },
             onLanguageSelected = ::setLanguage,
             onStyleSelected = ::setStyle,
             onSuggestionPicked = ::commitSuggestion,
@@ -240,7 +241,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         connection.finishComposingText()
         if (replaceWord) {
             val window = visibleEditorText.value
-            val span = SuggestionEngine.wordSpan(window.before, window.after)
+            val span = SuggestionEngine.replaceableWord(window.before, window.after)
             if (span != null) {
                 connection.deleteSurroundingText(span.beforeLength, span.afterLength)
             }
@@ -428,10 +429,17 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         container.dictation.cancel()
     }
 
-    private fun openCompanion() {
-        packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
-            startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    private fun openCompanion(openModels: Boolean = false) {
+        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
+        intent.addFlags(
+            android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP,
+        )
+        intent.putExtra(com.vocahq.vocaphone.ui.MainActivity.EXTRA_OPEN_SETTINGS, true)
+        if (openModels) {
+            intent.putExtra(com.vocahq.vocaphone.ui.MainActivity.EXTRA_OPEN_MODELS, true)
         }
+        startActivity(intent)
     }
 
     private companion object {

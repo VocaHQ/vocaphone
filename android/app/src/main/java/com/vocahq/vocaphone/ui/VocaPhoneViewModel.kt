@@ -301,6 +301,9 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
     fun setAsciiEmojiEnabled(enabled: Boolean) =
         viewModelScope.launch { container.settings.setAsciiEmojiEnabled(enabled) }
 
+    fun setSwipeTypingEnabled(enabled: Boolean) =
+        viewModelScope.launch { container.settings.setSwipeTypingEnabled(enabled) }
+
     fun setClipboardChipEnabled(enabled: Boolean) =
         viewModelScope.launch { container.settings.setClipboardChipEnabled(enabled) }
 

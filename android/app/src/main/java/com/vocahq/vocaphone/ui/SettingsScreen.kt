@@ -65,6 +65,7 @@ fun SettingsScreen(
     onCorrections: (Boolean) -> Unit,
     onNumberKeyHints: (Boolean) -> Unit,
     onAsciiEmoji: (Boolean) -> Unit,
+    onSwipeTyping: (Boolean) -> Unit,
     onClipboardChip: (Boolean) -> Unit,
     onClipboardHistory: (Boolean) -> Unit,
     onClearClipboardHistory: () -> Unit,
@@ -79,12 +80,13 @@ fun SettingsScreen(
     onTryDictation: () -> Unit,
     diagnosticEvents: () -> String,
     onClearDiagnosticEvents: () -> Unit,
+    startOnModels: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val appInfo = remember { context.readAppInfo() }
     var pickingLanguage by remember { mutableStateOf(false) }
-    var page by remember { mutableStateOf(SettingsPage.HOME) }
+    var page by remember { mutableStateOf(if (startOnModels) SettingsPage.MODELS else SettingsPage.HOME) }
     val localModel = LocalModelCatalog.find(settings.localModelId)
 
     BackHandler(enabled = page != SettingsPage.HOME) { page = SettingsPage.HOME }
@@ -225,6 +227,13 @@ fun SettingsScreen(
                         detail = "Add an ASCII category to the emoji panel, like :) and ¯\\_(ツ)_/¯.",
                         checked = settings.asciiEmojiEnabled,
                         onCheckedChange = onAsciiEmoji,
+                    )
+                    SettingToggle(
+                        title = "Swipe typing",
+                        detail = "Glide across letter keys to enter a word. " +
+                            "Uses the on-phone English word list.",
+                        checked = settings.swipeTypingEnabled,
+                        onCheckedChange = onSwipeTyping,
                     )
                     SettingToggle(
                         title = "Clipboard chip",

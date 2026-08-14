@@ -107,6 +107,7 @@ Typing extras, all local to the phone:
 
 - Optional number row and Compact / Default / Tall key height under Settings → Keyboard
 - English word completions, next-word guesses, and spelling corrections (off in passwords)
+- Swipe typing across letter keys, using the same on-phone English word list
 - Clipboard chip (tap to paste, long press to dismiss) and optional clip history
 - Emoji categories, recents, and optional ASCII emoticons
 - Long-press letters for accents, long-press 1-0 for symbols, double-space for a period
