@@ -96,6 +96,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val appInfo = remember { context.readAppInfo() }
+    val onDevice = context.readOnDeviceDiagnostics(localModels.downloaded)
     var pickingLanguage by remember { mutableStateOf(false) }
     val localModel = LocalModelCatalog.find(settings.localModelId)
 
@@ -321,15 +322,7 @@ fun SettingsScreen(
             SettingsPage.ABOUT -> {
                 Section("Privacy") {
                     Text(
-                        "VocaPhone's keyboard inserts through Android's text connection. " +
-                            "Dictation does not read the field. With Suggestions on, the keyboard " +
-                            "reads about 32 characters before the cursor so it can guess the next " +
-                            "word; that text stays on this phone and is never logged. The clipboard " +
-                            "chip and history read clips only on this phone, never logged. Long " +
-                            "press the chip to dismiss it. Audio " +
-                            "goes to on-device transcription or the gateway you configured. There is " +
-                            "no cloud transcription, no analytics, and nothing is written to the " +
-                            "clipboard unless you tap Copy.",
+                        ABOUT_PRIVACY_NOTE,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -339,7 +332,7 @@ fun SettingsScreen(
                     InfoRow("Installed from", appInfo.installedFrom)
                     InfoRow("Package", appInfo.packageName)
                     InfoRow(
-                        "Engine",
+                        "Speech",
                         speechSourceCopy(
                             localEnabled = settings.localTranscriptionEnabled,
                             localModelName = localModel?.displayName,
@@ -350,6 +343,33 @@ fun SettingsScreen(
                         ).engineLabel,
                     )
                     InfoRow(
+                        "RAM",
+                        "${formatBytes(onDevice.totalRamBytes)} total, " +
+                            "${formatBytes(onDevice.availRamBytes)} free",
+                    )
+                    InfoRow(
+                        "Storage",
+                        "${formatBytes(onDevice.availStorageBytes)} free of " +
+                            formatBytes(onDevice.totalStorageBytes),
+                    )
+                    InfoRow(
+                        "Models",
+                        if (onDevice.downloadedModelIds.isEmpty()) {
+                            "None downloaded"
+                        } else {
+                            "${formatBytes(onDevice.modelStorageBytes)} · " +
+                                "${onDevice.downloadedModelIds.size} downloaded"
+                        },
+                    )
+                    InfoRow(
+                        "CPU",
+                        buildString {
+                            append("${onDevice.cpuCores} cores")
+                            if (onDevice.abi.isNotEmpty()) append(" · ${onDevice.abi}")
+                            if (onDevice.soc.isNotEmpty()) append(" · ${onDevice.soc}")
+                        },
+                    )
+                    InfoRow(
                         "Setup",
                         if (setup.isReadyToDictate) {
                             "complete"
@@ -358,9 +378,7 @@ fun SettingsScreen(
                         },
                     )
                     Text(
-                        "Diagnostics contain only bounded timestamps, state transitions, " +
-                            "error categories and build/source context. They never include " +
-                            "transcripts, typed text, audio, gateway hosts or tokens.",
+                        ABOUT_DIAGNOSTICS_NOTE,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -369,7 +387,13 @@ fun SettingsScreen(
                             text = "Copy diagnostics",
                             onClick = {
                                 context.copyDiagnostics(
-                                    diagnosticsReport(appInfo, settings, setup, diagnosticEvents())
+                                    diagnosticsReport(
+                                        appInfo,
+                                        settings,
+                                        setup,
+                                        diagnosticEvents(),
+                                        onDevice,
+                                    )
                                 )
                             },
                             modifier = Modifier.weight(1f),
