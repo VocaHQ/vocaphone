@@ -82,10 +82,10 @@ third-party keyboard is available in a field.
 
 The Android IME inserts through `InputConnection`. Dictation does not read the
 field. With Suggestions enabled, the keyboard may call `getTextBeforeCursor(32)`
-in non-password fields so next-word guesses have a previous token. That window
-stays in memory, is never logged, and is not sent to the gateway. The clipboard
-paste chip reads the current clip only while the input view is showing and
-you have not started typing. Neither
+and `getTextAfterCursor(32)` in non-password fields so next-word guesses and
+corrections have a token. That window stays in memory, is never logged, and is
+not sent to the gateway. The clipboard chip and optional clipboard history read
+clips only while the input view is showing; history stays on the phone. Neither
 path is used to insert a transcript.
 
 ## Per-device tokens

@@ -62,7 +62,12 @@ fun SettingsScreen(
     onNumberRow: (Boolean) -> Unit,
     onKeyboardHeight: (KeyboardHeight) -> Unit,
     onSuggestions: (Boolean) -> Unit,
+    onCorrections: (Boolean) -> Unit,
+    onNumberKeyHints: (Boolean) -> Unit,
+    onAsciiEmoji: (Boolean) -> Unit,
     onClipboardChip: (Boolean) -> Unit,
+    onClipboardHistory: (Boolean) -> Unit,
+    onClearClipboardHistory: () -> Unit,
     localModels: LocalModelState,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
@@ -198,17 +203,49 @@ fun SettingsScreen(
                     SettingToggle(
                         title = "Suggestions",
                         detail = "Local English word completions and next-word guesses. " +
-                            "Reads a short window of text before the cursor. Off in passwords.",
+                            "Reads a short window of text around the cursor. Off in passwords.",
                         checked = settings.suggestionsEnabled,
                         onCheckedChange = onSuggestions,
                     )
                     SettingToggle(
+                        title = "Corrections",
+                        detail = "When a typed word looks wrong, offer nearby dictionary words " +
+                            "in the toolbar. Tap a committed word to correct it.",
+                        checked = settings.correctionsEnabled,
+                        onCheckedChange = onCorrections,
+                    )
+                    SettingToggle(
+                        title = "Number key hints",
+                        detail = "Show the long-press symbol on 1-0 in a lighter color.",
+                        checked = settings.numberKeyHintsEnabled,
+                        onCheckedChange = onNumberKeyHints,
+                    )
+                    SettingToggle(
+                        title = "Text emoticons",
+                        detail = "Add an ASCII category to the emoji panel, like :) and ¯\\_(ツ)_/¯.",
+                        checked = settings.asciiEmojiEnabled,
+                        onCheckedChange = onAsciiEmoji,
+                    )
+                    SettingToggle(
                         title = "Clipboard chip",
                         detail = "Clipboard icon plus a preview of the current clip. " +
-                            "It goes away after you use it once.",
+                            "Tap to paste. Long press to dismiss it.",
                         checked = settings.clipboardChipEnabled,
                         onCheckedChange = onClipboardChip,
                     )
+                    SettingToggle(
+                        title = "Clipboard history",
+                        detail = "Save recent clips on this phone. Open them from the " +
+                            "keyboard menu. Off in passwords.",
+                        checked = settings.clipboardHistoryEnabled,
+                        onCheckedChange = onClipboardHistory,
+                    )
+                    if (settings.clipboardHistory.isNotEmpty()) {
+                        SecondaryButton(
+                            "Clear clipboard history (${settings.clipboardHistory.size})",
+                            onClick = onClearClipboardHistory,
+                        )
+                    }
                 }
             }
 
@@ -276,8 +313,8 @@ fun SettingsScreen(
                             "Dictation does not read the field. With Suggestions on, the keyboard " +
                             "reads about 32 characters before the cursor so it can guess the next " +
                             "word; that text stays on this phone and is never logged. The clipboard " +
-                            "chip reads the current clip only while the keyboard is visible, and " +
-                            "it goes away after you paste once. Audio " +
+                            "chip and history read clips only on this phone, never logged. Long " +
+                            "press the chip to dismiss it. Audio " +
                             "goes to on-device transcription or the gateway you configured. There is " +
                             "no cloud transcription, no analytics, and nothing is written to the " +
                             "clipboard unless you tap Copy.",

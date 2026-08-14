@@ -43,7 +43,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private val visibleDictationState = MutableStateFlow(DictationState())
     private val visibleSettings = MutableStateFlow(VocaPhoneSettings())
     private val visibleClipboard = MutableStateFlow<ClipboardChip?>(null)
-    private val visibleBeforeCursor = MutableStateFlow("")
+    private val visibleEditorText = MutableStateFlow(EditorTextWindow())
     private val suggestionDictionary by lazy { SuggestionDictionary.load(assets) }
     private val emojiCatalog by lazy { EmojiCatalog.load(assets) }
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -57,7 +57,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var lastState = DictationState()
     private var currentInputType: Int = 0
     private var startedImeDictation = false
-    private var pastedClipboardText: String? = null
+    private var ignoredClipboardText: String? = null
+    private var lastRecordedClip: String? = null
     private var editorSession = 0
     private var editorConfig by mutableStateOf(KeyboardEditorConfig.empty())
 
@@ -85,14 +86,14 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val settings by visibleSettings.collectAsState()
         val isPreferenceWritePending by preferenceWrites.pending.collectAsState()
         val clipboard by visibleClipboard.collectAsState()
-        val textBeforeCursor by visibleBeforeCursor.collectAsState()
+        val editorText by visibleEditorText.collectAsState()
         VocaPhoneKeyboard(
             dictationState = dictationState,
             editor = editorConfig,
             settings = settings,
             isPreferenceWritePending = isPreferenceWritePending,
             clipboard = clipboard,
-            textBeforeCursor = textBeforeCursor,
+            editorText = editorText,
             suggestions = suggestionDictionary,
             emojiCatalog = emojiCatalog,
             onCommand = ::handleCommand,
@@ -101,7 +102,10 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             onLanguageSelected = ::setLanguage,
             onStyleSelected = ::setStyle,
             onSuggestionPicked = ::commitSuggestion,
-            onPasteClipboard = ::pasteClipboard,
+            onPasteClipboard = { pasteClipboard(it) },
+            onDismissClipboard = ::dismissClipboard,
+            onRemoveClipboardHistory = ::removeClipboardHistory,
+            onClearClipboardHistory = ::clearClipboardHistory,
             onEmojiUsed = ::recordEmojiRecent,
         )
     }
@@ -114,19 +118,19 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             currentInputConnection?.getCursorCapsMode(currentInputType) ?: 0
         }.getOrDefault(0)
         editorConfig = KeyboardEditorConfig.from(attribute, editorSession).let { config ->
-            if (cursorCapsMode != 0 && config.initialLayer == KeyboardLayer.LETTERS) {
-                config.copy(initialShift = ShiftState.ONCE)
+            if (config.initialLayer == KeyboardLayer.LETTERS) {
+                config.copy(initialShift = KeyboardEditorConfig.shiftFromCapsMode(cursorCapsMode))
             } else {
                 config
             }
         }
-        refreshBeforeCursor()
+        refreshEditorText()
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         startClipboardWatch()
-        refreshBeforeCursor()
+        refreshEditorText()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -151,7 +155,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             candidatesStart,
             candidatesEnd,
         )
-        refreshBeforeCursor()
+        refreshEditorText()
     }
 
     override fun onFinishInput() {
@@ -191,6 +195,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             }
 
             if (runCatching { connection.commitText(cleaned, 1) }.getOrDefault(false)) {
+                syncShiftFromCursor()
+                refreshEditorText()
                 InsertionReport(InsertionOutcome.INSERTED)
             } else {
                 InsertionReport(InsertionOutcome.UNSUPPORTED_EDITOR)
@@ -226,36 +232,74 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 connection.commitText(". ", 1)
             }
         }
-        refreshBeforeCursor()
+        refreshEditorText()
     }
 
-    private fun commitSuggestion(word: String) {
-        currentInputConnection?.commitText("$word ", 1)
-        refreshBeforeCursor()
+    private fun commitSuggestion(word: String, replaceWord: Boolean) {
+        val connection = currentInputConnection ?: return
+        connection.finishComposingText()
+        if (replaceWord) {
+            val window = visibleEditorText.value
+            val span = SuggestionEngine.wordSpan(window.before, window.after)
+            if (span != null) {
+                connection.deleteSurroundingText(span.beforeLength, span.afterLength)
+            }
+        }
+        connection.commitText("$word ", 1)
+        syncShiftFromCursor()
+        refreshEditorText()
     }
 
-    private fun pasteClipboard() {
-        val text = visibleClipboard.value?.fullText ?: return
+    private fun pasteClipboard(text: String = visibleClipboard.value?.fullText.orEmpty()) {
+        if (text.isEmpty()) return
         currentInputConnection?.finishComposingText()
         currentInputConnection?.commitText(text, 1)
-        pastedClipboardText = text
+        ignoredClipboardText = text
+        if (visibleClipboard.value?.fullText == text) visibleClipboard.value = null
+        syncShiftFromCursor()
+        refreshEditorText()
+    }
+
+    private fun dismissClipboard() {
+        ignoredClipboardText = visibleClipboard.value?.fullText ?: return
         visibleClipboard.value = null
-        refreshBeforeCursor()
+    }
+
+    private fun removeClipboardHistory(text: String) {
+        persistPreference { container.settings.removeClipboardHistory(text) }
+    }
+
+    private fun clearClipboardHistory() {
+        persistPreference { container.settings.clearClipboardHistory() }
     }
 
     private fun recordEmojiRecent(emoji: String) {
         persistPreference { container.settings.recordEmojiRecent(emoji) }
     }
 
-    private fun refreshBeforeCursor() {
+    private fun refreshEditorText() {
         if (!visibleSettings.value.suggestionsEnabled || editorConfig.sensitive) {
-            visibleBeforeCursor.value = ""
+            visibleEditorText.value = EditorTextWindow()
             return
         }
         val before = runCatching {
             currentInputConnection?.getTextBeforeCursor(32, 0)?.toString().orEmpty()
         }.getOrDefault("")
-        visibleBeforeCursor.value = before
+        val after = runCatching {
+            currentInputConnection?.getTextAfterCursor(32, 0)?.toString().orEmpty()
+        }.getOrDefault("")
+        visibleEditorText.value = EditorTextWindow(before, after)
+    }
+
+    private fun syncShiftFromCursor() {
+        if (editorConfig.initialLayer != KeyboardLayer.LETTERS) return
+        val capsMode = runCatching {
+            currentInputConnection?.getCursorCapsMode(currentInputType) ?: 0
+        }.getOrDefault(0)
+        editorConfig = editorConfig.copy(
+            initialShift = KeyboardEditorConfig.shiftFromCapsMode(capsMode),
+            shiftSync = editorConfig.shiftSync + 1,
+        )
     }
 
     private fun startClipboardWatch() {
@@ -273,7 +317,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private fun refreshClipboard() {
         mainHandler.post {
             val settings = visibleSettings.value
-            if (!settings.clipboardChipEnabled || editorConfig.sensitive) {
+            if (editorConfig.sensitive) {
                 visibleClipboard.value = null
                 return@post
             }
@@ -288,7 +332,17 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             val text = runCatching {
                 manager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
             }.getOrNull()?.trim().orEmpty()
-            visibleClipboard.value = text.takeIf { it.isNotEmpty() && it != pastedClipboardText }?.let { value ->
+            if (
+                text.isNotEmpty() &&
+                settings.clipboardHistoryEnabled &&
+                text != lastRecordedClip
+            ) {
+                lastRecordedClip = text
+                persistPreference { container.settings.recordClipboardHistory(text) }
+            }
+            visibleClipboard.value = text.takeIf {
+                settings.clipboardChipEnabled && it.isNotEmpty() && it != ignoredClipboardText
+            }?.let { value ->
                 ClipboardChip(
                     preview = value.replace('\n', ' ').take(24),
                     fullText = value,

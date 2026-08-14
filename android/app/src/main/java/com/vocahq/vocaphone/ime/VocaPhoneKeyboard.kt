@@ -2,6 +2,10 @@ package com.vocahq.vocaphone.ime
 
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -9,11 +13,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -41,6 +45,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,7 +67,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -81,7 +85,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.DictationPhase
 import com.vocahq.vocaphone.core.DictationState
 import com.vocahq.vocaphone.core.ModelLanguageSupport
@@ -99,8 +102,10 @@ import kotlin.math.abs
 import java.util.Locale
 
 private enum class PreferencePanel {
+    MENU,
     LANGUAGE,
     STYLE,
+    CLIPBOARD,
 }
 
 @Composable
@@ -110,7 +115,7 @@ internal fun VocaPhoneKeyboard(
     settings: VocaPhoneSettings,
     isPreferenceWritePending: Boolean,
     clipboard: ClipboardChip?,
-    textBeforeCursor: String,
+    editorText: EditorTextWindow,
     suggestions: SuggestionDictionary?,
     emojiCatalog: List<EmojiEntry>,
     onCommand: (KeyboardCommand) -> Unit,
@@ -118,8 +123,11 @@ internal fun VocaPhoneKeyboard(
     onOpenApp: () -> Unit,
     onLanguageSelected: (TranscriptionLanguage) -> Unit,
     onStyleSelected: (WritingStyle) -> Unit,
-    onSuggestionPicked: (String) -> Unit,
-    onPasteClipboard: () -> Unit,
+    onSuggestionPicked: (String, Boolean) -> Unit,
+    onPasteClipboard: (String) -> Unit,
+    onDismissClipboard: () -> Unit,
+    onRemoveClipboardHistory: (String) -> Unit,
+    onClearClipboardHistory: () -> Unit,
     onEmojiUsed: (String) -> Unit,
 ) {
     var keyboardState by remember(editor.sessionId) {
@@ -138,29 +146,43 @@ internal fun VocaPhoneKeyboard(
             preferencePanel = null
         }
     }
+    LaunchedEffect(editor.shiftSync) {
+        if (editor.shiftSync > 0) {
+            keyboardState = keyboardState.copy(shift = editor.initialShift)
+        }
+    }
+    LaunchedEffect(settings.asciiEmojiEnabled, emojiCategory) {
+        if (!settings.asciiEmojiEnabled && emojiCategory == EmojiCategory.ASCII) {
+            emojiCategory = EmojiCategory.SMILEYS
+        }
+    }
 
     val composeWords = settings.suggestionsEnabled && !editor.sensitive
     val keyHeight = settings.keyboardHeight.keyHeightDp.dp
     val letterRows = KeyboardLayouts.letterRowCount(settings.numberRowEnabled)
     val keyAreaHeight = keyHeight * letterRows + RowGap * (letterRows - 1)
-    val suggestionItems = remember(
+    val suggestionStrip = remember(
         composeWords,
+        settings.correctionsEnabled,
         keyboardState.composing,
-        textBeforeCursor,
+        editorText,
         suggestions,
     ) {
         if (!composeWords || suggestions == null) {
-            emptyList()
-        } else if (keyboardState.composing.isNotEmpty()) {
-            suggestions.complete(keyboardState.composing)
+            SuggestionStrip(emptyList())
         } else {
-            suggestions.next(SuggestionEngine.lastWord(textBeforeCursor).orEmpty())
+            suggestions.strip(
+                composing = keyboardState.composing,
+                before = editorText.before,
+                after = editorText.after,
+                correctionsEnabled = settings.correctionsEnabled,
+            )
         }
     }
     val clipboardChip = clipboard.takeIf { settings.clipboardChipEnabled && !editor.sensitive }
-    val startedTyping = KeyboardChrome.startedTyping(keyboardState.composing, textBeforeCursor)
+    val startedTyping = KeyboardChrome.startedTyping(keyboardState.composing, editorText.before)
     val stripClipboard = KeyboardChrome.clipboardForStrip(clipboardChip)
-    val stripSuggestions = KeyboardChrome.suggestionsForStrip(suggestionItems, startedTyping)
+    val stripSuggestions = KeyboardChrome.suggestionsForStrip(suggestionStrip.words, startedTyping)
 
     fun handleKey(key: KeyboardKey) {
         val reduction = KeyboardReducer.press(
@@ -199,36 +221,55 @@ internal fun VocaPhoneKeyboard(
                         preferencePanel == null && keyboardState.layer == KeyboardLayer.EMOJI
                     },
                     hasEmojiRecents = settings.emojiRecents.isNotEmpty(),
+                    asciiEmojiEnabled = settings.asciiEmojiEnabled,
                     onEmojiCategory = { emojiCategory = it },
                     onMicTap = onMicTap,
-                    onOpenApp = onOpenApp,
-                    onPaste = onPasteClipboard,
+                    menuOpen = preferencePanel == PreferencePanel.MENU,
+                    onMenuTap = {
+                        preferencePanel = if (preferencePanel == PreferencePanel.MENU) {
+                            null
+                        } else {
+                            PreferencePanel.MENU
+                        }
+                    },
+                    onPaste = { onPasteClipboard(clipboardChip?.fullText.orEmpty()) },
+                    onDismissClipboard = onDismissClipboard,
                     onSuggestion = { word ->
                         keyboardState = keyboardState.copy(
                             composing = "",
                             lastWasSpace = true,
                             capitalizeAfterSpace = false,
                         )
-                        onSuggestionPicked(word)
-                    },
-                    activePreferencePanel = preferencePanel,
-                    onLanguageChipTapped = {
-                        preferencePanel = if (preferencePanel == PreferencePanel.LANGUAGE) {
-                            null
-                        } else {
-                            PreferencePanel.LANGUAGE
-                        }
-                    },
-                    onStyleChipTapped = {
-                        preferencePanel = if (preferencePanel == PreferencePanel.STYLE) {
-                            null
-                        } else {
-                            PreferencePanel.STYLE
-                        }
+                        onSuggestionPicked(word, suggestionStrip.replacesWord)
                     },
                 )
                 Spacer(Modifier.height(4.dp))
                 when (preferencePanel) {
+                    PreferencePanel.MENU -> ToolbarMenuPanel(
+                        settings = settings,
+                        editor = editor,
+                        height = keyAreaHeight,
+                        onLanguage = { preferencePanel = PreferencePanel.LANGUAGE },
+                        onStyle = { preferencePanel = PreferencePanel.STYLE },
+                        onClipboard = { preferencePanel = PreferencePanel.CLIPBOARD },
+                        onOpenApp = {
+                            preferencePanel = null
+                            onOpenApp()
+                        },
+                        onClose = { preferencePanel = null },
+                    )
+                    PreferencePanel.CLIPBOARD -> ClipboardHistoryPanel(
+                        items = settings.clipboardHistory,
+                        height = keyAreaHeight,
+                        enabled = !isPreferenceWritePending,
+                        onPaste = { text ->
+                            preferencePanel = null
+                            onPasteClipboard(text)
+                        },
+                        onRemove = onRemoveClipboardHistory,
+                        onClear = onClearClipboardHistory,
+                        onClose = { preferencePanel = null },
+                    )
                     PreferencePanel.LANGUAGE -> LanguagePreferencePanel(
                         settings = settings,
                         height = keyAreaHeight,
@@ -291,6 +332,7 @@ internal fun VocaPhoneKeyboard(
                             state = keyboardState,
                             editor = editor,
                             keyHeight = fittedKeyHeight,
+                            showKeyHints = settings.numberKeyHintsEnabled,
                             onKey = ::handleKey,
                             onCursorMove = { positions ->
                                 keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
@@ -317,14 +359,14 @@ private fun DictationBar(
     suggestions: List<String>,
     emojiCategory: EmojiCategory?,
     hasEmojiRecents: Boolean,
+    asciiEmojiEnabled: Boolean,
     onEmojiCategory: (EmojiCategory) -> Unit,
     onMicTap: () -> Unit,
-    onOpenApp: () -> Unit,
+    menuOpen: Boolean,
+    onMenuTap: () -> Unit,
     onPaste: () -> Unit,
+    onDismissClipboard: () -> Unit,
     onSuggestion: (String) -> Unit,
-    activePreferencePanel: PreferencePanel?,
-    onLanguageChipTapped: () -> Unit,
-    onStyleChipTapped: () -> Unit,
 ) {
     val view = LocalView.current
     val idle = state.phase == DictationPhase.IDLE
@@ -361,20 +403,28 @@ private fun DictationBar(
                 .size(36.dp)
                 .semantics {
                     role = Role.Button
-                    contentDescription = "Open VocaPhone"
+                    contentDescription = "Keyboard menu"
                 },
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
+            color = if (menuOpen) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
             onClick = {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                onOpenApp()
+                if (idle) onMenuTap()
             },
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Image(
-                    painter = painterResource(R.drawable.ic_launcher_foreground),
-                    contentDescription = null,
-                    modifier = Modifier.size(28.dp),
+                KeyboardIcon(
+                    glyph = Glyph.SETTINGS,
+                    tint = if (menuOpen) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onPrimary
+                    },
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
@@ -437,12 +487,14 @@ private fun DictationBar(
                 emojiCategory != null -> EmojiCategoryRow(
                     selected = emojiCategory,
                     hasRecents = hasEmojiRecents,
+                    asciiEmojiEnabled = asciiEmojiEnabled,
                     onSelect = onEmojiCategory,
                     modifier = Modifier.weight(1f),
                 )
                 clipboard != null -> ClipboardChipButton(
                     preview = clipboard.preview,
                     onClick = onPaste,
+                    onLongClick = onDismissClipboard,
                     modifier = Modifier.weight(1f),
                 )
                 suggestions.isNotEmpty() -> suggestions.take(3).forEach { word ->
@@ -453,34 +505,6 @@ private fun DictationBar(
                     )
                 }
                 else -> Spacer(Modifier.weight(1f))
-            }
-        }
-
-        if (idle && editor.dictationAllowed && emojiCategory == null) {
-            ToolbarIconButton(
-                contentDescription = "Transcription language, ${settings.effectiveLanguage.displayName}",
-                active = activePreferencePanel == PreferencePanel.LANGUAGE,
-                enabled = !isPreferenceWritePending,
-                onClick = onLanguageChipTapped,
-            ) {
-                KeyboardIcon(
-                    glyph = Glyph.GLOBE,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            ToolbarIconButton(
-                contentDescription = "Writing style, ${settings.style.displayName}",
-                active = activePreferencePanel == PreferencePanel.STYLE,
-                enabled = !isPreferenceWritePending,
-                onClick = onStyleChipTapped,
-            ) {
-                Text(
-                    text = "Aa",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                )
             }
         }
 
@@ -528,6 +552,166 @@ private fun SelectedMark() {
         color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.Bold,
     )
+}
+
+@Composable
+private fun ToolbarMenuPanel(
+    settings: VocaPhoneSettings,
+    editor: KeyboardEditorConfig,
+    height: Dp,
+    onLanguage: () -> Unit,
+    onStyle: () -> Unit,
+    onClipboard: () -> Unit,
+    onOpenApp: () -> Unit,
+    onClose: () -> Unit,
+) {
+    PreferencePanelShell(
+        title = "Keyboard",
+        subtitle = "Language, style, clipboard, and app settings",
+        height = height,
+        onClose = onClose,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ToolbarMenuRow(
+                title = "Language",
+                detail = settings.effectiveLanguage.displayName,
+                onClick = onLanguage,
+            )
+            ToolbarMenuRow(
+                title = "Writing style",
+                detail = settings.style.displayName,
+                onClick = onStyle,
+            )
+            if (settings.clipboardHistoryEnabled && !editor.sensitive) {
+                ToolbarMenuRow(
+                    title = "Clipboard",
+                    detail = if (settings.clipboardHistory.isEmpty()) {
+                        "No saved clips"
+                    } else {
+                        "${settings.clipboardHistory.size} saved"
+                    },
+                    onClick = onClipboard,
+                )
+            }
+            ToolbarMenuRow(
+                title = "VocaPhone settings",
+                detail = "Open the app",
+                onClick = onOpenApp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolbarMenuRow(
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = onClick,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text(
+                    detail,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(">", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ClipboardHistoryPanel(
+    items: List<String>,
+    height: Dp,
+    enabled: Boolean,
+    onPaste: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit,
+) {
+    PreferencePanelShell(
+        title = "Clipboard",
+        subtitle = if (items.isEmpty()) {
+            "Copy text to save it here"
+        } else {
+            "Tap to paste. Long press to remove."
+        },
+        height = height,
+        onClose = onClose,
+    ) {
+        if (items.isNotEmpty()) {
+            TextButton(
+                onClick = onClear,
+                enabled = enabled,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text("Clear", fontSize = 12.sp)
+            }
+        }
+        if (items.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "Nothing saved yet",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                items(items, key = { it.hashCode().toString() + it.take(12) }) { text ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(text) {
+                                detectTapGestures(
+                                    onTap = { if (enabled) onPaste(text) },
+                                    onLongPress = { if (enabled) onRemove(text) },
+                                )
+                            },
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Text(
+                            text = text.replace('\n', ' '),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -909,18 +1093,41 @@ private fun Waveform(level: Float) {
 private fun ClipboardChipButton(
     preview: String,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val view = LocalView.current
+    var dismissing by remember(preview) { mutableStateOf(false) }
+    LaunchedEffect(dismissing) {
+        if (dismissing) {
+            delay(180)
+            onLongClick()
+        }
+    }
+    AnimatedVisibility(
+        visible = !dismissing,
+        enter = fadeIn(),
+        exit = fadeOut() + shrinkHorizontally(),
+        modifier = modifier,
+    ) {
     Surface(
-        modifier = modifier
+        modifier = Modifier
             .height(32.dp)
             .semantics {
                 role = Role.Button
-                contentDescription = "Clipboard, $preview"
+                contentDescription = "Clipboard, $preview. Long press to dismiss."
+            }
+            .pointerInput(preview) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = {
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        dismissing = true
+                    },
+                )
             },
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        onClick = onClick,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp),
@@ -940,6 +1147,7 @@ private fun ClipboardChipButton(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
     }
 }
 
@@ -986,10 +1194,10 @@ private fun EmojiLayer(
     onCursorMove: (Int) -> Unit,
 ) {
     val bottomRow = KeyboardLayouts.rows(KeyboardLayer.EMOJI, editor)
-    val glyphs = if (category == EmojiCategory.RECENTS) {
-        recents
-    } else {
-        EmojiCatalog.inCategory(catalog, category).map { it.glyph }
+    val glyphs = when (category) {
+        EmojiCategory.RECENTS -> recents
+        EmojiCategory.ASCII -> EmojiCatalog.asciiEmoticons
+        else -> EmojiCatalog.inCategory(catalog, category).map { it.glyph }
     }
     Column(Modifier.fillMaxWidth()) {
         EmojiGrid(
@@ -1014,12 +1222,13 @@ private fun EmojiLayer(
 private fun EmojiCategoryRow(
     selected: EmojiCategory,
     hasRecents: Boolean,
+    asciiEmojiEnabled: Boolean,
     onSelect: (EmojiCategory) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val categories = buildList {
         if (hasRecents) add(EmojiCategory.RECENTS)
-        addAll(EmojiCategory.browsable)
+        addAll(EmojiCategory.browsable(asciiEmojiEnabled))
     }
     LazyRow(
         modifier = modifier
@@ -1073,7 +1282,7 @@ private fun EmojiGrid(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(glyph, fontSize = 22.sp)
+                Text(glyph, fontSize = if (glyph.length > 2) 14.sp else 22.sp, maxLines = 1)
             }
         }
     }
@@ -1085,6 +1294,7 @@ private fun KeyboardRows(
     state: KeyboardState,
     editor: KeyboardEditorConfig,
     keyHeight: Dp,
+    showKeyHints: Boolean = false,
     onKey: (KeyboardKey) -> Unit,
     onCursorMove: (Int) -> Unit,
 ) {
@@ -1108,6 +1318,7 @@ private fun KeyboardRows(
                         state = state,
                         editor = editor,
                         keyHeight = keyHeight,
+                        showKeyHints = showKeyHints,
                         onPress = { onKey(key) },
                         onCommitText = { text ->
                             onKey(
@@ -1134,6 +1345,7 @@ private fun RowScope.KeyButton(
     state: KeyboardState,
     editor: KeyboardEditorConfig,
     keyHeight: Dp,
+    showKeyHints: Boolean = false,
     onPress: () -> Unit,
     onCommitText: (String) -> Unit,
     onCursorMove: (Int) -> Unit,
@@ -1219,6 +1431,7 @@ private fun RowScope.KeyButton(
             shift = state.shift,
             returnKey = editor.returnKey,
             tint = foreground,
+            hint = if (showKeyHints) KeyAccents.hint(key) else null,
         )
 
         if (pressed && key.type == KeyboardKeyType.CHARACTER) {
@@ -1403,6 +1616,7 @@ private fun KeyContent(
     shift: ShiftState,
     returnKey: ReturnKeyKind,
     tint: Color,
+    hint: String? = null,
 ) {
     when (key.type) {
         KeyboardKeyType.SHIFT -> KeyboardIcon(
@@ -1421,7 +1635,25 @@ private fun KeyContent(
         }
         KeyboardKeyType.SPACE -> KeyLabel("VocaPhone", tint.copy(alpha = 0.78f), utility = true)
         KeyboardKeyType.LAYER_SWITCH -> KeyLabel(displayLabel, tint, utility = true)
-        KeyboardKeyType.CHARACTER -> KeyLabel(displayLabel, tint, utility = false)
+        KeyboardKeyType.CHARACTER -> {
+            if (hint == null) {
+                KeyLabel(displayLabel, tint, utility = false)
+            } else {
+                Box(Modifier.fillMaxWidth().fillMaxHeight()) {
+                    Text(
+                        text = hint,
+                        color = tint.copy(alpha = 0.38f),
+                        fontSize = 10.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 2.dp, end = 4.dp),
+                    )
+                    Box(Modifier.align(Alignment.Center)) {
+                        KeyLabel(displayLabel, tint, utility = false)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1448,6 +1680,7 @@ private enum class Glyph {
     PREVIOUS,
     DONE,
     CLIPBOARD,
+    SETTINGS,
 }
 
 @Composable
@@ -1564,6 +1797,38 @@ private fun KeyboardIcon(
                 )
                 drawLine(tint, Offset(w * 0.34f, h * 0.48f), Offset(w * 0.66f, h * 0.48f), stroke.width)
                 drawLine(tint, Offset(w * 0.34f, h * 0.64f), Offset(w * 0.58f, h * 0.64f), stroke.width)
+            }
+            Glyph.SETTINGS -> {
+                drawCircle(
+                    color = tint,
+                    radius = w * 0.16f,
+                    center = Offset(w * 0.5f, h * 0.5f),
+                    style = stroke,
+                )
+                drawCircle(
+                    color = tint,
+                    radius = w * 0.34f,
+                    center = Offset(w * 0.5f, h * 0.5f),
+                    style = stroke,
+                )
+                repeat(6) { index ->
+                    val angle = (index * 60f) * (PI.toFloat() / 180f)
+                    val inner = w * 0.34f
+                    val outer = w * 0.46f
+                    drawLine(
+                        color = tint,
+                        start = Offset(
+                            w * 0.5f + kotlin.math.cos(angle) * inner,
+                            h * 0.5f + sin(angle) * inner,
+                        ),
+                        end = Offset(
+                            w * 0.5f + kotlin.math.cos(angle) * outer,
+                            h * 0.5f + sin(angle) * outer,
+                        ),
+                        strokeWidth = stroke.width,
+                        cap = StrokeCap.Round,
+                    )
+                }
             }
         }
     }

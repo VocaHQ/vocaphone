@@ -82,6 +82,23 @@ internal object KeyboardChrome {
         if (startedTyping) suggestions else emptyList()
 }
 
+internal data class SuggestionStrip(
+    val words: List<String>,
+    val replacesWord: Boolean = false,
+)
+
+internal data class WordSpan(
+    val word: String,
+    val beforeLength: Int,
+    val afterLength: Int,
+)
+
+internal data class EditorTextWindow(
+    val before: String = "",
+    val after: String = "",
+)
+
+
 /** Pure keyboard-state reducer so behavior stays testable outside the IME process. */
 internal object KeyboardReducer {
     const val CAPS_LOCK_WINDOW_MILLIS = 350L

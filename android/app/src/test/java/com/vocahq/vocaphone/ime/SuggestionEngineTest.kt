@@ -30,4 +30,32 @@ class SuggestionEngineTest {
         assertEquals(listOf("you", "the"), dictionary.next("see"))
         assertTrue(dictionary.next("xyz").isEmpty())
     }
+
+    @Test
+    fun `corrections prefer nearby dictionary words`() {
+        assertEquals(listOf("hello"), dictionary.correct("helllo"))
+        assertEquals(listOf("the"), dictionary.correct("teh"))
+        assertTrue(dictionary.correct("hello").isEmpty())
+        assertEquals(listOf("Hello"), dictionary.correct("Helllo"))
+    }
+
+    @Test
+    fun `word span covers the token around the cursor`() {
+        val span = SuggestionEngine.wordSpan("say hel", "lo there")
+        assertEquals("hello", span?.word)
+        assertEquals(3, span?.beforeLength)
+        assertEquals(2, span?.afterLength)
+    }
+
+    @Test
+    fun `strip offers corrections for a misspelled committed word`() {
+        val strip = dictionary.strip(
+            composing = "",
+            before = "helllo",
+            after = "",
+            correctionsEnabled = true,
+        )
+        assertEquals(listOf("hello"), strip.words)
+        assertTrue(strip.replacesWord)
+    }
 }
