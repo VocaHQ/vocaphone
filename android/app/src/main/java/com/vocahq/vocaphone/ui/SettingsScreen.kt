@@ -1,12 +1,8 @@
 package com.vocahq.vocaphone.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,7 +11,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -320,92 +315,15 @@ fun SettingsScreen(
             }
 
             SettingsPage.ABOUT -> {
-                Section("Privacy") {
-                    Text(
-                        ABOUT_PRIVACY_NOTE,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Section("Device") {
-                    InfoRow("Android", "${appInfo.androidRelease} (SDK ${appInfo.sdkInt})")
-                    InfoRow("Device", appInfo.device)
-                    InfoRow("Installed from", appInfo.installedFrom)
-                    InfoRow("Package", appInfo.packageName)
-                    InfoRow(
-                        "Speech",
-                        speechSourceCopy(
-                            localEnabled = settings.localTranscriptionEnabled,
-                            localModelName = localModel?.displayName,
-                            gatewayConfigured = settings.isConfigured,
-                            gatewayUrl = settings.gatewayUrl,
-                            lastEngine = settings.lastEngine,
-                            lastEngineReady = settings.lastEngineReady,
-                        ).engineLabel,
-                    )
-                    InfoRow(
-                        "RAM",
-                        "${formatBytes(onDevice.totalRamBytes)} total, " +
-                            "${formatBytes(onDevice.availRamBytes)} free",
-                    )
-                    InfoRow(
-                        "Storage",
-                        "${formatBytes(onDevice.availStorageBytes)} free of " +
-                            formatBytes(onDevice.totalStorageBytes),
-                    )
-                    InfoRow(
-                        "Models",
-                        if (onDevice.downloadedModelIds.isEmpty()) {
-                            "None downloaded"
-                        } else {
-                            "${formatBytes(onDevice.modelStorageBytes)} · " +
-                                "${onDevice.downloadedModelIds.size} downloaded"
-                        },
-                    )
-                    InfoRow(
-                        "CPU",
-                        buildString {
-                            append("${onDevice.cpuCores} cores")
-                            if (onDevice.abi.isNotEmpty()) append(" · ${onDevice.abi}")
-                            if (onDevice.soc.isNotEmpty()) append(" · ${onDevice.soc}")
-                        },
-                    )
-                    InfoRow(
-                        "Setup",
-                        if (setup.isReadyToDictate) {
-                            "complete"
-                        } else {
-                            "${setup.completedStepCount} of ${setup.stepCount} steps"
-                        },
-                    )
-                    Text(
-                        ABOUT_DIAGNOSTICS_NOTE,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SecondaryButton(
-                            text = "Copy diagnostics",
-                            onClick = {
-                                context.copyDiagnostics(
-                                    diagnosticsReport(
-                                        appInfo,
-                                        settings,
-                                        setup,
-                                        diagnosticEvents(),
-                                        onDevice,
-                                    )
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                        SecondaryButton(
-                            text = "Project page",
-                            onClick = { context.openHttpUrl(PROJECT_URL) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    TextButton(onClick = onClearDiagnosticEvents) { Text("Clear event log") }
-                }
+                AboutPage(
+                    appInfo = appInfo,
+                    settings = settings,
+                    setup = setup,
+                    localModel = localModel,
+                    onDevice = onDevice,
+                    diagnosticEvents = diagnosticEvents,
+                    onClearDiagnosticEvents = onClearDiagnosticEvents,
+                )
             }
         }
     }
@@ -518,8 +436,4 @@ private fun CustomVocabularySection(
     }
 }
 
-private fun Context.copyDiagnostics(text: String) {
-    val clipboard = getSystemService(ClipboardManager::class.java) ?: return
-    clipboard.setPrimaryClip(ClipData.newPlainText("VocaPhone diagnostics", text))
-}
 

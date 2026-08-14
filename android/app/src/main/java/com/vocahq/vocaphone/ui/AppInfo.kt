@@ -12,10 +12,23 @@ import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import java.io.File
 
+const val ORG_URL = "https://github.com/VocaHQ"
 const val PROJECT_URL = "https://github.com/VocaHQ/vocaphone"
+const val NEW_ISSUE_URL = "https://github.com/VocaHQ/vocaphone/issues/new/choose"
 
 /** Quick start, engines, and pairing for a self-hosted gateway. */
 const val GATEWAY_GUIDE_URL = "https://github.com/VocaHQ/vocagateway"
+
+const val ABOUT_TAGLINE = "Voice dictation for Android and iPhone."
+
+const val ABOUT_FAMILY_NOTE =
+    "VocaPhone is one of the VocaHQ apps. The same dictation already runs on " +
+        "Linux as VocaLinux and on macOS as VocaMac. Windows is on the way, " +
+        "and the iPhone build lives in this project too."
+
+const val ABOUT_FEEDBACK_NOTE =
+    "Bugs, feedback, and feature ideas open a new GitHub issue. You pick the " +
+        "template on the next screen."
 
 const val ABOUT_PRIVACY_NOTE =
     "The keyboard types through Android's text connection. Dictation does not " +
