@@ -123,7 +123,7 @@ fun scoreModel(model: LocalModelDescriptor, profile: DeviceProfile): Int {
     var score = 0
     when (model.sherpaFamily) {
         SherpaFamily.NEMO_TRANSDUCER -> score += 100
-        SherpaFamily.MOONSHINE -> score += 70
+        SherpaFamily.MOONSHINE -> score += 80
         SherpaFamily.SENSE_VOICE, SherpaFamily.CANARY -> score += 50
         SherpaFamily.DOLPHIN_CTC, SherpaFamily.NEMO_CTC, SherpaFamily.PARAFORMER -> score += 40
         null -> Unit
