@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -487,24 +488,30 @@ private fun DictationBar(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             when {
-                state.isRecording -> {
+                !idle || !editor.dictationAllowed -> {
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Waveform(
-                            level = state.level,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(34.dp),
-                            alpha = 0.34f,
-                            bars = 13,
-                        )
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (state.isRecording) {
+                            Waveform(
+                                level = state.level,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp),
+                                alpha = 0.34f,
+                                bars = 13,
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
                             Text(
                                 text = status,
+                                modifier = Modifier.fillMaxWidth(),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -514,6 +521,7 @@ private fun DictationBar(
                             if (detail.isNotEmpty()) {
                                 Text(
                                     text = detail,
+                                    modifier = Modifier.fillMaxWidth(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.labelSmall,
                                     maxLines = 1,
@@ -521,26 +529,6 @@ private fun DictationBar(
                                     textAlign = TextAlign.Center,
                                 )
                             }
-                        }
-                    }
-                }
-                !idle || !editor.dictationAllowed -> {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                        Text(
-                            text = status,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (detail.isNotEmpty()) {
-                            Text(
-                                text = detail,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
                         }
                     }
                 }
@@ -693,23 +681,26 @@ private fun RowScope.ToolbarMenuTile(
         onClick = onClick,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
         ) {
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(20.dp),
             )
-            Spacer(Modifier.height(4.dp))
             Text(
                 title,
                 fontWeight = FontWeight.Medium,
                 fontSize = 11.sp,
+                lineHeight = 14.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -1018,7 +1009,7 @@ private fun PreferencePanelShell(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(42.dp)
+                    .height(34.dp)
                     .padding(start = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
