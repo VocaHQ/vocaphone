@@ -335,10 +335,24 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun downloadLocalModel(model: LocalModelDescriptor) {
+        startLocalModelDownload(model, useWhenReady = false)
+    }
+
+    fun downloadAndUseLocalModel(model: LocalModelDescriptor) {
+        startLocalModelDownload(model, useWhenReady = true)
+    }
+
+    private fun startLocalModelDownload(model: LocalModelDescriptor, useWhenReady: Boolean) {
         cancelLocalModelDownload()
         val job = viewModelScope.launch {
             try {
                 container.localModels.download(model)
+                if (useWhenReady) {
+                    container.settings.setLocalModel(model.id)
+                    container.settings.setLocalTranscriptionEnabled(true)
+                    refreshSetup()
+                    preloadLocalEngine()
+                }
             } catch (_: CancellationException) {
                 // Cancellation is an explicit user action, not a failed download.
             }

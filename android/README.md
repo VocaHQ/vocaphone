@@ -79,8 +79,8 @@ shows up as an actionable repair prompt rather than a silent failure.
    **Test connection**, which reports reachability, token validity, the active
    engine, whether it is ready, and whether it supports streaming.
 
-To use the phone without a gateway, choose **On-device option** during setup or
-under Settings, download a model, and tap **Use**.
+To use the phone without a gateway, open **Speech** during setup or in Settings,
+download the recommended model with **Download and use**, or search the catalog.
 
 The catalog carries 32 whisper.cpp GGML builds from Tiny through Large v3,
 including the q5 and q8 quantizations — a 574 MB Large v3 Turbo q5 is a far

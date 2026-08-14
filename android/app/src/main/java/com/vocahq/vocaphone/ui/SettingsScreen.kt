@@ -11,13 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -61,6 +57,7 @@ fun SettingsScreen(
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
     onDownloadLocalModel: (LocalModelDescriptor) -> Unit,
+    onDownloadAndUseLocalModel: (LocalModelDescriptor) -> Unit,
     onCancelLocalModelDownload: () -> Unit,
     onDeleteLocalModel: (LocalModelDescriptor) -> Unit,
     onOpenGateway: () -> Unit,
@@ -72,319 +69,292 @@ fun SettingsScreen(
     val context = LocalContext.current
     val appInfo = remember { context.readAppInfo() }
     var pickingLanguage by remember { mutableStateOf(false) }
-    var modelsOpen by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+        verticalArrangement = Arrangement.spacedBy(CategorySpacing),
     ) {
-        Section(
-            title = "Try dictation",
-            supporting = "Record in the app, or pick VocaPhone as the keyboard in any text field.",
+        SettingsCategory(
+            title = "Speech",
+            supporting = "Pick a model, download it, and dictate on this phone. " +
+                "The gateway is only used when on-device transcription is off.",
         ) {
-            PrimaryButton("Try dictation", onClick = onTryDictation, modifier = Modifier.fillMaxWidth())
-        }
-
-        Section(
-            title = "On-device accuracy",
-            supporting = "${settings.transcriptionQuality.detail}\n" +
-                "Applies to models running on this phone. The gateway decides for itself.",
-        ) {
-            ChipChoiceRow(
-                options = TranscriptionQuality.entries,
-                selected = settings.transcriptionQuality,
-                label = { it.displayName },
-                onSelect = onTranscriptionQuality,
+            SpeechSourceCard(
+                settings = settings,
+                onTryDictation = onTryDictation,
+                onOpenGateway = onOpenGateway,
+                onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
             )
-            // Changing this rebuilds a sherpa engine, which takes seconds. Said
-            // here so the reload is something the user watched finish rather
-            // than something the next dictation runs into.
-            localModels.preparing?.let { name ->
-                Row(
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text(
-                        "Loading $name… Please wait.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        CustomVocabularySection(
-            vocabulary = settings.customVocabulary,
-            onSave = onCustomVocabulary,
-            unsupportedModel = LocalModelCatalog.find(settings.localModelId)
-                ?.takeIf { settings.localTranscriptionEnabled && !it.supportsCustomVocabulary }
-                ?.displayName,
-        )
-
-        ImeSetupCard(setup.ime)
-
-        // One row rather than 27 wrapping chips, which pushed every setting below
-        // this one off the screen. The full list, with search, lives in a sheet.
-        val languageRestriction = ModelLanguageSupport.restriction(
-            settings.activeModelLanguages,
-            settings.activeModelDetectsLanguage,
-            onDevice = settings.localTranscriptionEnabled,
-        )
-        Section(
-            "Transcription language",
-            supporting = listOfNotNull(settings.effectiveLanguage.detail, languageRestriction)
-                .joinToString("\n"),
-        ) {
-            InfoRow(label = "Language", value = settings.effectiveLanguage.displayName)
-            SecondaryButton("Change language", onClick = { pickingLanguage = true })
-        }
-        if (pickingLanguage) {
-            LanguagePickerSheet(
-                selected = settings.effectiveLanguage,
-                modelLanguages = settings.activeModelLanguages,
-                detectsLanguageAutomatically = settings.activeModelDetectsLanguage,
-                onDevice = settings.localTranscriptionEnabled,
-                onSelect = onLanguage,
-                onDismiss = { pickingLanguage = false },
+            LocalModelPicker(
+                state = localModels,
+                selectedModelId = settings.localModelId,
+                onSelect = onLocalModel,
+                onDownload = onDownloadLocalModel,
+                onDownloadAndUse = onDownloadAndUseLocalModel,
+                onCancelDownload = onCancelLocalModelDownload,
+                onDelete = onDeleteLocalModel,
             )
-        }
-
-        Section(
-            title = "Writing style",
-            supporting = "${settings.style.detail}\n${settings.style.example}",
-        ) {
-            ChipChoiceRow(
-                options = WritingStyle.entries,
-                selected = settings.style,
-                label = { it.displayName },
-                onSelect = onStyle,
-            )
-        }
-
-        Section(
-            title = "Keyboard",
-            supporting = "Layout and typing helpers for the VocaPhone keyboard.",
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Section(
+                title = "Accuracy",
+                supporting = "${settings.transcriptionQuality.detail}\n" +
+                    "Applies to models running on this phone. The gateway decides for itself.",
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Number row")
-                    Text(
-                        "Show 1-0 above the letter keys.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
+                ChipChoiceRow(
+                    options = TranscriptionQuality.entries,
+                    selected = settings.transcriptionQuality,
+                    label = { it.displayName },
+                    onSelect = onTranscriptionQuality,
+                )
+            }
+            CustomVocabularySection(
+                vocabulary = settings.customVocabulary,
+                onSave = onCustomVocabulary,
+                unsupportedModel = LocalModelCatalog.find(settings.localModelId)
+                    ?.takeIf { settings.localTranscriptionEnabled && !it.supportsCustomVocabulary }
+                    ?.displayName,
+            )
+        }
+
+        SettingsCategory(
+            title = "Keyboard",
+            supporting = "Enable VocaPhone as a keyboard, then adjust the layout.",
+        ) {
+            ImeSetupCard(setup.ime)
+            Section("Layout") {
+                SettingToggle(
+                    title = "Number row",
+                    detail = "Show 1-0 above the letter keys.",
                     checked = settings.numberRowEnabled,
                     onCheckedChange = onNumberRow,
                 )
-            }
-            Text("Height", style = MaterialTheme.typography.bodyMedium)
-            ChipChoiceRow(
-                options = KeyboardHeight.entries,
-                selected = settings.keyboardHeight,
-                label = { it.displayName },
-                onSelect = onKeyboardHeight,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Suggestions")
-                    Text(
-                        "Local English word completions and next-word guesses. " +
-                            "Reads a short window of text before the cursor. Off in passwords.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
+                Text("Height", style = MaterialTheme.typography.bodyMedium)
+                ChipChoiceRow(
+                    options = KeyboardHeight.entries,
+                    selected = settings.keyboardHeight,
+                    label = { it.displayName },
+                    onSelect = onKeyboardHeight,
+                )
+                SettingToggle(
+                    title = "Suggestions",
+                    detail = "Local English word completions and next-word guesses. " +
+                        "Reads a short window of text before the cursor. Off in passwords.",
                     checked = settings.suggestionsEnabled,
                     onCheckedChange = onSuggestions,
                 )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Clipboard paste")
-                    Text(
-                        "Show a paste chip before you start typing. Predictions replace it once you type.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
+                SettingToggle(
+                    title = "Clipboard paste",
+                    detail = "Show a paste chip before you start typing. Predictions replace it once you type.",
                     checked = settings.clipboardChipEnabled,
                     onCheckedChange = onClipboardChip,
                 )
             }
         }
 
-        MicrophoneSection(
-            selected = settings.microphone,
-            status = microphone,
-            onSelect = onMicrophone,
-        )
-
-        Section(
-            title = "Audio retention",
-            supporting = "Successful dictations delete their audio immediately. A " +
-                "failed one keeps it only this long, so Retry still works.",
+        SettingsCategory(
+            title = "Dictation",
+            supporting = "How speech is written, and which microphone records it.",
         ) {
-            ChipChoiceRow(
-                options = AudioRetention.entries,
-                selected = settings.audioRetention,
-                label = { it.displayName },
-                onSelect = onAudioRetention,
+            val languageRestriction = ModelLanguageSupport.restriction(
+                settings.activeModelLanguages,
+                settings.activeModelDetectsLanguage,
+                onDevice = settings.localTranscriptionEnabled,
             )
-        }
-
-        Section(
-            title = "Gateway",
-            supporting = settings.gatewayUrl.ifEmpty { "Not configured" },
-        ) {
-            Text(
-                buildString {
-                    append("Engine: ")
-                    append(settings.lastEngine.ifEmpty { "unknown" })
-                    append(if (settings.lastEngineReady) " (ready)" else " (not ready)")
-                    append("\nStreaming: ")
-                    append(if (settings.lastStreamingSupported) "supported" else "batch upload")
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            SecondaryButton("Gateway settings", onClick = onOpenGateway)
-            SecondaryButton(
-                text = "Open web dashboard",
-                onClick = { context.openUrl(settings.gatewayUrl) },
-                enabled = settings.gatewayUrl.isNotEmpty(),
-            )
-            Text(
-                "For more customization, including choosing the speech-to-text model, " +
-                    "open your gateway's web dashboard.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Section(
-            title = "On-device models",
-            supporting = "Run speech-to-text privately on this phone. The gateway is not used while this is enabled.",
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            Section(
+                "Language",
+                supporting = listOfNotNull(settings.effectiveLanguage.detail, languageRestriction)
+                    .joinToString("\n"),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Use on-device transcription")
-                    Text(
-                        "Downloads are checked with SHA-256 before they are accepted.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = settings.localTranscriptionEnabled,
-                    onCheckedChange = onLocalTranscriptionEnabled,
+                InfoRow(label = "Language", value = settings.effectiveLanguage.displayName)
+                SecondaryButton("Change language", onClick = { pickingLanguage = true })
+            }
+            Section(
+                title = "Writing style",
+                supporting = "${settings.style.detail}\n${settings.style.example}",
+            ) {
+                ChipChoiceRow(
+                    options = WritingStyle.entries,
+                    selected = settings.style,
+                    label = { it.displayName },
+                    onSelect = onStyle,
                 )
             }
-            if (modelsOpen) {
-                LocalModelPicker(
-                    state = localModels,
-                    selectedModelId = settings.localModelId,
-                    onSelect = onLocalModel,
-                    onDownload = onDownloadLocalModel,
-                    onCancelDownload = onCancelLocalModelDownload,
-                    onDelete = onDeleteLocalModel,
+            MicrophoneSection(
+                selected = settings.microphone,
+                status = microphone,
+                onSelect = onMicrophone,
+            )
+            Section(
+                title = "Audio retention",
+                supporting = "Successful dictations delete their audio immediately. A " +
+                    "failed one keeps it only this long, so Retry still works.",
+            ) {
+                ChipChoiceRow(
+                    options = AudioRetention.entries,
+                    selected = settings.audioRetention,
+                    label = { it.displayName },
+                    onSelect = onAudioRetention,
                 )
-                TextButton(onClick = { modelsOpen = false }) { Text("Hide model catalog") }
-            } else {
+            }
+        }
+
+        SettingsCategory(
+            title = "Connection",
+            supporting = settings.gatewayUrl.ifEmpty { "No gateway configured." },
+        ) {
+            FeaturedCard {
                 Text(
-                    if (settings.localTranscriptionEnabled && settings.localModelId.isNotEmpty()) {
-                        "Using ${settings.localModelId}."
-                    } else {
-                        "Catalog is hidden so the rest of Settings stays on screen."
+                    buildString {
+                        append("Engine: ")
+                        append(settings.lastEngine.ifEmpty { "unknown" })
+                        append(if (settings.lastEngineReady) " (ready)" else " (not ready)")
+                        append("\nStreaming: ")
+                        append(if (settings.lastStreamingSupported) "supported" else "batch upload")
                     },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                SecondaryButton("Gateway settings", onClick = onOpenGateway)
+                SecondaryButton(
+                    text = "Open web dashboard",
+                    onClick = { context.openUrl(settings.gatewayUrl) },
+                    enabled = settings.gatewayUrl.isNotEmpty(),
+                )
+                Text(
+                    "The dashboard is where you pick a speech-to-text model for the gateway.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SecondaryButton("Show model catalog", onClick = { modelsOpen = true })
             }
         }
 
-        Section("Privacy") {
-            Text(
-                "VocaPhone's keyboard inserts through Android's text connection. " +
-                    "Dictation does not read the field. With Suggestions on, the keyboard " +
-                    "reads about 32 characters before the cursor so it can guess the next " +
-                    "word; that text stays on this phone and is never logged. The clipboard " +
-                    "chip reads the current clip only while the keyboard is visible and " +
-                    "you have not started typing. Audio " +
-                    "goes to on-device transcription or the gateway you configured. There is " +
-                    "no cloud transcription, no analytics, and nothing is written to the " +
-                    "clipboard unless you tap Copy.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-
-        Section(
+        SettingsCategory(
             title = "About",
             supporting = "VocaPhone ${appInfo.versionName} (${appInfo.versionCode})",
         ) {
-            InfoRow("Android", "${appInfo.androidRelease} (SDK ${appInfo.sdkInt})")
-            InfoRow("Device", appInfo.device)
-            InfoRow("Installed from", appInfo.installedFrom)
-            InfoRow("Package", appInfo.packageName)
-            InfoRow(
-                "Engine",
-                settings.lastEngine.ifEmpty { "unknown" } +
-                    if (settings.lastEngineReady) " (ready)" else " (not ready)",
-            )
-            InfoRow(
-                "Setup",
-                if (setup.isReadyToDictate) {
-                    "complete"
-                } else {
-                    "${setup.completedStepCount} of ${setup.stepCount} steps"
-                },
-            )
+            Section("Privacy") {
+                Text(
+                    "VocaPhone's keyboard inserts through Android's text connection. " +
+                        "Dictation does not read the field. With Suggestions on, the keyboard " +
+                        "reads about 32 characters before the cursor so it can guess the next " +
+                        "word; that text stays on this phone and is never logged. The clipboard " +
+                        "chip reads the current clip only while the keyboard is visible and " +
+                        "you have not started typing. Audio " +
+                        "goes to on-device transcription or the gateway you configured. There is " +
+                        "no cloud transcription, no analytics, and nothing is written to the " +
+                        "clipboard unless you tap Copy.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Section("Device") {
+                InfoRow("Android", "${appInfo.androidRelease} (SDK ${appInfo.sdkInt})")
+                InfoRow("Device", appInfo.device)
+                InfoRow("Installed from", appInfo.installedFrom)
+                InfoRow("Package", appInfo.packageName)
+                InfoRow(
+                    "Engine",
+                    settings.lastEngine.ifEmpty { "unknown" } +
+                        if (settings.lastEngineReady) " (ready)" else " (not ready)",
+                )
+                InfoRow(
+                    "Setup",
+                    if (setup.isReadyToDictate) {
+                        "complete"
+                    } else {
+                        "${setup.completedStepCount} of ${setup.stepCount} steps"
+                    },
+                )
+                Text(
+                    "Diagnostics contain only bounded timestamps, state transitions, " +
+                        "error categories and build/source context. They never include " +
+                        "transcripts, typed text, audio, gateway hosts or tokens.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SecondaryButton(
+                        text = "Copy diagnostics",
+                        onClick = {
+                            context.copyDiagnostics(
+                                diagnosticsReport(appInfo, settings, setup, diagnosticEvents())
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    SecondaryButton(
+                        text = "Project page",
+                        onClick = { context.openUrl(PROJECT_URL) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                TextButton(onClick = onClearDiagnosticEvents) { Text("Clear event log") }
+            }
+        }
+    }
+
+    if (pickingLanguage) {
+        LanguagePickerSheet(
+            selected = settings.effectiveLanguage,
+            modelLanguages = settings.activeModelLanguages,
+            detectsLanguageAutomatically = settings.activeModelDetectsLanguage,
+            onDevice = settings.localTranscriptionEnabled,
+            onSelect = onLanguage,
+            onDismiss = { pickingLanguage = false },
+        )
+    }
+}
+
+@Composable
+private fun SpeechSourceCard(
+    settings: VocaPhoneSettings,
+    onTryDictation: () -> Unit,
+    onOpenGateway: () -> Unit,
+    onLocalTranscriptionEnabled: (Boolean) -> Unit,
+) {
+    val localModel = LocalModelCatalog.find(settings.localModelId)
+    val usingLocal = settings.localTranscriptionEnabled && localModel != null
+    FeaturedCard {
+        Text(
+            if (usingLocal) "On this phone" else if (settings.isConfigured) "Gateway" else "No speech source yet",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            when {
+                usingLocal -> localModel.displayName
+                settings.isConfigured -> settings.gatewayUrl
+                else -> "Download a model below, or add a gateway."
+            },
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (usingLocal) {
             Text(
-                "Diagnostics contain only bounded timestamps, state transitions, " +
-                    "error categories and build/source context. They never include " +
-                    "transcripts, typed text, audio, gateway hosts or tokens.",
+                localModel.catalogMeta(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SecondaryButton(
-                    text = "Copy diagnostics",
-                    onClick = {
-                        context.copyDiagnostics(
-                            diagnosticsReport(appInfo, settings, setup, diagnosticEvents())
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                SecondaryButton(
-                    text = "Project page",
-                    onClick = { context.openUrl(PROJECT_URL) },
-                    modifier = Modifier.weight(1f),
-                )
+        } else if (settings.isConfigured) {
+            Text(
+                buildString {
+                    append(settings.lastEngine.ifEmpty { "unknown engine" })
+                    append(if (settings.lastEngineReady) " · ready" else " · not ready")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        SettingToggle(
+            title = "Use on-device transcription",
+            detail = "Downloads are checked with SHA-256 before they are accepted.",
+            checked = settings.localTranscriptionEnabled,
+            onCheckedChange = onLocalTranscriptionEnabled,
+        )
+        PrimaryButton("Try dictation", onClick = onTryDictation, modifier = Modifier.fillMaxWidth())
+        if (settings.isConfigured) {
+            TextButton(onClick = onOpenGateway, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                Text("Gateway settings")
             }
-            TextButton(onClick = onClearDiagnosticEvents) { Text("Clear event log") }
         }
     }
 }
@@ -469,8 +439,6 @@ private fun CustomVocabularySection(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        // Said plainly rather than letting the list quietly do nothing: only
-        // Whisper's decoder has somewhere to put a vocabulary.
         if (unsupportedModel != null && terms.isNotEmpty()) {
             Text(
                 "$unsupportedModel cannot use these words. Only Whisper models take a " +
