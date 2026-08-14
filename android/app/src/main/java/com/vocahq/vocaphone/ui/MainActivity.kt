@@ -245,7 +245,6 @@ fun VocaPhoneApp(
                 onCancelLocalModelDownload = viewModel::cancelLocalModelDownload,
                 onDeleteLocalModel = viewModel::deleteLocalModel,
                 onOpenGateway = { showingGateway = true },
-                onTryDictation = { destination = Destination.DICTATE },
                 diagnosticEvents = viewModel::diagnosticEvents,
                 onClearDiagnosticEvents = viewModel::clearDiagnosticEvents,
                 page = settingsPage,

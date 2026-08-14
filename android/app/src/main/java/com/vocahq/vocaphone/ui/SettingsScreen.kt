@@ -90,7 +90,6 @@ fun SettingsScreen(
     onCancelLocalModelDownload: () -> Unit,
     onDeleteLocalModel: (LocalModelDescriptor) -> Unit,
     onOpenGateway: () -> Unit,
-    onTryDictation: () -> Unit,
     diagnosticEvents: () -> String,
     onClearDiagnosticEvents: () -> Unit,
     page: SettingsPage,
@@ -109,13 +108,12 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(if (page == SettingsPage.HOME) CategorySpacing else SectionSpacing),
+        verticalArrangement = Arrangement.spacedBy(SectionSpacing),
     ) {
         when (page) {
             SettingsPage.HOME -> {
                 SpeechSourceCard(
                     settings = settings,
-                    onTryDictation = onTryDictation,
                     onOpenGateway = onOpenGateway,
                     onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
                 )
@@ -124,55 +122,58 @@ fun SettingsScreen(
                     settings.activeModelDetectsLanguage,
                     onDevice = settings.localTranscriptionEnabled,
                 )
-                Section(
-                    "Language",
-                    supporting = listOfNotNull(settings.effectiveLanguage.detail, languageRestriction)
-                        .joinToString("\n"),
-                ) {
-                    InfoRow(label = "Language", value = settings.effectiveLanguage.displayName)
-                    SecondaryButton("Change language", onClick = { pickingLanguage = true })
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsMenuRow(
+                        title = "Language",
+                        supporting = listOfNotNull(
+                            settings.effectiveLanguage.displayName,
+                            languageRestriction,
+                        ).joinToString(" · "),
+                        icon = R.drawable.ic_language,
+                        onClick = { pickingLanguage = true },
+                    )
+                    SettingsMenuRow(
+                        title = "Models",
+                        supporting = localModel?.displayName ?: "Download a model for this phone",
+                        icon = R.drawable.ic_models,
+                        onClick = { onPageChange(SettingsPage.MODELS) },
+                    )
+                    SettingsMenuRow(
+                        title = "Keyboard",
+                        supporting = buildString {
+                            append(
+                                when {
+                                    setup.ime.selected -> "Selected"
+                                    setup.ime.enabled -> "Enabled"
+                                    else -> "Not enabled"
+                                },
+                            )
+                            append(" · ")
+                            append(settings.keyboardHeight.displayName)
+                            if (settings.numberRowEnabled) append(" · number row")
+                        },
+                        icon = R.drawable.ic_keyboard,
+                        onClick = { onPageChange(SettingsPage.KEYBOARD) },
+                    )
+                    SettingsMenuRow(
+                        title = "Dictation",
+                        supporting = "${settings.style.displayName} · ${settings.microphone.displayName}",
+                        icon = R.drawable.ic_dictation,
+                        onClick = { onPageChange(SettingsPage.DICTATION) },
+                    )
+                    SettingsMenuRow(
+                        title = "Connection",
+                        supporting = settings.gatewayUrl.ifEmpty { "No gateway configured" },
+                        icon = R.drawable.ic_connection,
+                        onClick = { onPageChange(SettingsPage.CONNECTION) },
+                    )
+                    SettingsMenuRow(
+                        title = "About",
+                        supporting = "VocaPhone ${appInfo.versionName}",
+                        icon = R.drawable.ic_about,
+                        onClick = { onPageChange(SettingsPage.ABOUT) },
+                    )
                 }
-                SettingsMenuRow(
-                    title = "Models",
-                    supporting = localModel?.displayName ?: "Download a model for this phone",
-                    icon = R.drawable.ic_models,
-                    onClick = { onPageChange(SettingsPage.MODELS) },
-                )
-                SettingsMenuRow(
-                    title = "Keyboard",
-                    supporting = buildString {
-                        append(
-                            when {
-                                setup.ime.selected -> "Selected"
-                                setup.ime.enabled -> "Enabled"
-                                else -> "Not enabled"
-                            },
-                        )
-                        append(" · ")
-                        append(settings.keyboardHeight.displayName)
-                        if (settings.numberRowEnabled) append(" · number row")
-                    },
-                    icon = R.drawable.ic_keyboard,
-                    onClick = { onPageChange(SettingsPage.KEYBOARD) },
-                )
-                SettingsMenuRow(
-                    title = "Dictation",
-                    supporting = "${settings.style.displayName} · ${settings.microphone.displayName}",
-                    icon = R.drawable.ic_dictation,
-                    onClick = { onPageChange(SettingsPage.DICTATION) },
-                )
-                SettingsMenuRow(
-                    title = "Connection",
-                    supporting = settings.gatewayUrl.ifEmpty { "No gateway configured" },
-                    icon = R.drawable.ic_connection,
-                    onClick = { onPageChange(SettingsPage.CONNECTION) },
-                )
-                SettingsMenuRow(
-                    title = "About",
-                    supporting = "VocaPhone ${appInfo.versionName}",
-                    icon = R.drawable.ic_about,
-                    onClick = { onPageChange(SettingsPage.ABOUT) },
-                )
             }
 
             SettingsPage.MODELS -> {
@@ -231,8 +232,8 @@ fun SettingsScreen(
                     )
                     SettingToggle(
                         title = "Corrections",
-                        detail = "When a typed word looks wrong, offer nearby dictionary words " +
-                            "in the toolbar. Tap a committed word to correct it.",
+                        detail = "Offer nearby dictionary words in the toolbar. " +
+                            "Tap a word, or a swipe alternative, to replace it.",
                         checked = settings.correctionsEnabled,
                         onCheckedChange = onCorrections,
                     )
@@ -412,7 +413,6 @@ fun SettingsScreen(
 @Composable
 private fun SpeechSourceCard(
     settings: VocaPhoneSettings,
-    onTryDictation: () -> Unit,
     onOpenGateway: () -> Unit,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
 ) {
@@ -449,12 +449,11 @@ private fun SpeechSourceCard(
             )
         }
         SettingToggle(
-            title = "Use on-device transcription",
+            title = "On-device transcription",
             detail = "Downloads are checked with SHA-256 before they are accepted.",
             checked = settings.localTranscriptionEnabled,
             onCheckedChange = onLocalTranscriptionEnabled,
         )
-        PrimaryButton("Try dictation", onClick = onTryDictation, modifier = Modifier.fillMaxWidth())
         if (settings.isConfigured) {
             TextButton(onClick = onOpenGateway, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
                 Text("Gateway settings")
