@@ -92,7 +92,9 @@ limits and Android's keyboard/input-method boundaries.
 - Native Kotlin/Compose Android client with a permission-minimal VocaPhone voice
   keyboard, the same styles and gateway as the iOS keyboard
 - 27 selectable transcription languages plus Automatic on both clients —
-  including Hindi, Bengali, Tamil, Telugu, Marathi, Gujarati, Urdu, Kannada,
+  English, Mandarin Chinese, Spanish, French, German, Russian, Portuguese,
+  Italian, Dutch, Polish, Ukrainian, Arabic, Japanese, Korean and Vietnamese,
+  along with Hindi, Bengali, Tamil, Telugu, Marathi, Gujarati, Urdu, Kannada,
   Malayalam, Punjabi, Assamese and Nepali — and four writing styles: Formal,
   Casual, Very Casual, and Excited, with sentence punctuation that follows the
   script rather than assuming a Latin full stop
