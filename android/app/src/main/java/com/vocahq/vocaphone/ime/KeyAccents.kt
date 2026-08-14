@@ -24,6 +24,16 @@ internal object KeyAccents {
         "?" to listOf("?", "¿"),
         "!" to listOf("!", "¡"),
         "$" to listOf("$", "€", "£", "¥", "₹", "₩"),
+        "1" to listOf("!"),
+        "2" to listOf("@"),
+        "3" to listOf("#"),
+        "4" to listOf("$"),
+        "5" to listOf("%"),
+        "6" to listOf("^"),
+        "7" to listOf("&"),
+        "8" to listOf("*"),
+        "9" to listOf("("),
+        "0" to listOf(")"),
     )
 
     fun forKey(key: KeyboardKey, shift: ShiftState): List<String> {

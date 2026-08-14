@@ -207,6 +207,41 @@ fun FeaturedCard(
     }
 }
 
+/** A tappable row that opens a settings sub-screen. */
+@Composable
+fun SettingsMenuRow(
+    title: String,
+    supporting: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.large,
+        onClick = onClick,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                ">",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+    }
+}
+
 /** Title, detail and a switch, used for every boolean setting. */
 @Composable
 fun SettingToggle(

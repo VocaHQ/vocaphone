@@ -7,8 +7,8 @@ internal object KeyboardLayouts {
         numberRow: Boolean = false,
     ): List<KeyboardRow> = when (layer) {
         KeyboardLayer.LETTERS -> letterRows(editor, numberRow)
-        KeyboardLayer.NUMBERS -> numberRows(editor)
-        KeyboardLayer.SYMBOLS -> symbolRows(editor)
+        KeyboardLayer.NUMBERS -> numberRows(editor, extraRow = true)
+        KeyboardLayer.SYMBOLS -> symbolRows(editor, extraRow = true)
         KeyboardLayer.EMOJI -> listOf(emojiBottomRow(editor))
     }
 
@@ -30,35 +30,45 @@ internal object KeyboardLayouts {
         add(utilityRow(editor, "?123", KeyboardLayer.NUMBERS))
     }
 
-    private fun numberRows(editor: KeyboardEditorConfig) = listOf(
-        characters("1234567890"),
-        characters(listOf("@", "#", "$", "%", "&", "-", "+", "(", ")", "/")),
-        KeyboardRow(
-            keys = listOf(
-                layer("symbols", "#+=", KeyboardLayer.SYMBOLS, 1.35f),
-                *listOf("*", "\"", "'", ":", ";", "!", "?")
-                    .map { character(it) }
-                    .toTypedArray(),
-                special("delete", "Delete", KeyboardKeyType.DELETE, 1.35f),
+    private fun numberRows(editor: KeyboardEditorConfig, extraRow: Boolean) = buildList {
+        add(characters("1234567890"))
+        add(characters(listOf("@", "#", "$", "%", "&", "-", "+", "(", ")", "/")))
+        if (extraRow) {
+            add(characters(listOf("€", "£", "¥", "•", "_", "\\", "|", "~", "<", ">")))
+        }
+        add(
+            KeyboardRow(
+                keys = listOf(
+                    layer("symbols", "#+=", KeyboardLayer.SYMBOLS, 1.35f),
+                    *listOf("*", "\"", "'", ":", ";", "!", "?")
+                        .map { character(it) }
+                        .toTypedArray(),
+                    special("delete", "Delete", KeyboardKeyType.DELETE, 1.35f),
+                ),
             ),
-        ),
-        utilityRow(editor, "ABC", KeyboardLayer.LETTERS),
-    )
+        )
+        add(utilityRow(editor, "ABC", KeyboardLayer.LETTERS))
+    }
 
-    private fun symbolRows(editor: KeyboardEditorConfig) = listOf(
-        characters(listOf("[", "]", "{", "}", "#", "%", "^", "*", "+", "=")),
-        characters(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•")),
-        KeyboardRow(
-            keys = listOf(
-                layer("numbers", "123", KeyboardLayer.NUMBERS, 1.35f),
-                *listOf("`", "\"", "'", ":", ";", "!", "?")
-                    .map { character(it) }
-                    .toTypedArray(),
-                special("delete", "Delete", KeyboardKeyType.DELETE, 1.35f),
+    private fun symbolRows(editor: KeyboardEditorConfig, extraRow: Boolean) = buildList {
+        add(characters(listOf("[", "]", "{", "}", "#", "%", "^", "*", "+", "=")))
+        add(characters(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•")))
+        if (extraRow) {
+            add(characters(listOf("©", "®", "™", "°", "¿", "¡", "√", "π", "∆", "¶")))
+        }
+        add(
+            KeyboardRow(
+                keys = listOf(
+                    layer("numbers", "123", KeyboardLayer.NUMBERS, 1.35f),
+                    *listOf("`", "\"", "'", ":", ";", "!", "?")
+                        .map { character(it) }
+                        .toTypedArray(),
+                    special("delete", "Delete", KeyboardKeyType.DELETE, 1.35f),
+                ),
             ),
-        ),
-        utilityRow(editor, "ABC", KeyboardLayer.LETTERS),
-    )
+        )
+        add(utilityRow(editor, "ABC", KeyboardLayer.LETTERS))
+    }
 
     private fun emojiBottomRow(editor: KeyboardEditorConfig) = KeyboardRow(
         keys = listOf(
@@ -66,17 +76,6 @@ internal object KeyboardLayouts {
             special("space", "space", KeyboardKeyType.SPACE, 4.0f),
             special("delete", "Delete", KeyboardKeyType.DELETE, 1.4f),
             special("return", editor.returnKey.name, KeyboardKeyType.RETURN, 1.4f),
-        ),
-    )
-
-    fun searchLetterRows(): List<KeyboardRow> = listOf(
-        characters("qwertyuiop"),
-        characters("asdfghjkl", inset = 0.5f),
-        KeyboardRow(
-            keys = listOf(
-                special("search-space", "space", KeyboardKeyType.SPACE, 3.5f),
-                special("delete", "Delete", KeyboardKeyType.DELETE, 1.5f),
-            ),
         ),
     )
 

@@ -2,17 +2,17 @@ package com.vocahq.vocaphone.ime
 
 import android.content.res.AssetManager
 
-internal enum class EmojiCategory(val id: String, val label: String) {
-    RECENTS("recents", "Recents"),
-    SMILEYS("smileys", "Smileys"),
-    PEOPLE("people", "People"),
-    ANIMALS("animals", "Animals"),
-    FOOD("food", "Food"),
-    TRAVEL("travel", "Travel"),
-    ACTIVITIES("activities", "Activities"),
-    OBJECTS("objects", "Objects"),
-    SYMBOLS("symbols", "Symbols"),
-    FLAGS("flags", "Flags"),
+internal enum class EmojiCategory(val id: String, val label: String, val icon: String) {
+    RECENTS("recents", "Recents", "🕒"),
+    SMILEYS("smileys", "Smileys", "😀"),
+    PEOPLE("people", "People", "👋"),
+    ANIMALS("animals", "Animals", "🐻"),
+    FOOD("food", "Food", "🍔"),
+    TRAVEL("travel", "Travel", "✈️"),
+    ACTIVITIES("activities", "Activities", "⚽"),
+    OBJECTS("objects", "Objects", "💡"),
+    SYMBOLS("symbols", "Symbols", "🔣"),
+    FLAGS("flags", "Flags", "🚩"),
     ;
 
     companion object {
@@ -42,21 +42,6 @@ internal object EmojiCatalog {
         assets.open("emoji/catalog.tsv").bufferedReader().use { reader ->
             parse(reader.lineSequence())
         }
-
-    fun search(entries: List<EmojiEntry>, query: String): List<EmojiEntry> {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) return entries
-        val starts = ArrayList<EmojiEntry>()
-        val contains = ArrayList<EmojiEntry>()
-        for (entry in entries) {
-            when {
-                entry.glyph == query.trim() -> starts.add(0, entry)
-                entry.keywords.split(' ').any { it.startsWith(q) } -> starts.add(entry)
-                q in entry.keywords -> contains.add(entry)
-            }
-        }
-        return starts + contains
-    }
 
     fun inCategory(entries: List<EmojiEntry>, category: EmojiCategory): List<EmojiEntry> {
         if (category == EmojiCategory.RECENTS) return emptyList()

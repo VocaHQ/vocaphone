@@ -57,6 +57,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var lastState = DictationState()
     private var currentInputType: Int = 0
     private var startedImeDictation = false
+    private var pastedClipboardText: String? = null
     private var editorSession = 0
     private var editorConfig by mutableStateOf(KeyboardEditorConfig.empty())
 
@@ -237,6 +238,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val text = visibleClipboard.value?.fullText ?: return
         currentInputConnection?.finishComposingText()
         currentInputConnection?.commitText(text, 1)
+        pastedClipboardText = text
+        visibleClipboard.value = null
         refreshBeforeCursor()
     }
 
@@ -285,7 +288,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             val text = runCatching {
                 manager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
             }.getOrNull()?.trim().orEmpty()
-            visibleClipboard.value = text.takeIf { it.isNotEmpty() }?.let { value ->
+            visibleClipboard.value = text.takeIf { it.isNotEmpty() && it != pastedClipboardText }?.let { value ->
                 ClipboardChip(
                     preview = value.replace('\n', ' ').take(24),
                     fullText = value,
@@ -326,9 +329,14 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             lastState.phase.isBusy -> {
                 DictationService.send(this, DictationService.ACTION_CANCEL)
             }
-            lastState.phase == DictationPhase.PERMISSION_REPAIR ||
-                lastState.phase == DictationPhase.FAILED -> openCompanion()
+            lastState.phase == DictationPhase.PERMISSION_REPAIR -> openCompanion()
             else -> {
+                if (lastState.phase == DictationPhase.FAILED ||
+                    lastState.phase == DictationPhase.READY_TO_INSERT ||
+                    lastState.phase == DictationPhase.INSERTED
+                ) {
+                    container.dictation.clearTransient()
+                }
                 startedImeDictation = true
                 DictationService.start(this, DictationSource.IME)
             }

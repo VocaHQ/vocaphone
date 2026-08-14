@@ -23,10 +23,10 @@ class KeyboardChromeTest {
     }
 
     @Test
-    fun `clipboard only shows before typing starts`() {
-        assertEquals(clip, KeyboardChrome.clipboardForStrip(clip, startedTyping = false))
-        assertNull(KeyboardChrome.clipboardForStrip(clip, startedTyping = true))
-        assertNull(KeyboardChrome.clipboardForStrip(null, startedTyping = false))
+    fun `clipboard stays until the clip is used`() {
+        assertEquals(clip, KeyboardChrome.clipboardForStrip(clip))
+        assertNull(KeyboardChrome.clipboardForStrip(null))
+        assertNull(KeyboardChrome.clipboardForStrip(clip, alreadyPasted = true))
     }
 
     @Test

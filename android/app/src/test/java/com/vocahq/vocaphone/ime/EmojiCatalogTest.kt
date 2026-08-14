@@ -16,13 +16,15 @@ class EmojiCatalogTest {
     )
 
     @Test
-    fun `search matches keywords and keeps category filters`() {
-        assertEquals(listOf("😂"), EmojiCatalog.search(catalog, "laugh").map { it.glyph })
-        assertEquals(listOf("🚀"), EmojiCatalog.search(catalog, "rock").map { it.glyph })
+    fun `category filter keeps matching glyphs`() {
         assertEquals(
             listOf("😀", "😂"),
             EmojiCatalog.inCategory(catalog, EmojiCategory.SMILEYS).map { it.glyph },
         )
-        assertTrue(EmojiCatalog.search(catalog, "nope").isEmpty())
+        assertEquals(
+            listOf("🚀"),
+            EmojiCatalog.inCategory(catalog, EmojiCategory.TRAVEL).map { it.glyph },
+        )
+        assertTrue(EmojiCatalog.inCategory(catalog, EmojiCategory.FOOD).isEmpty())
     }
 }

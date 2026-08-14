@@ -2,7 +2,14 @@ package com.vocahq.vocaphone.ime
 
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -55,6 +62,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
@@ -72,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.DictationPhase
 import com.vocahq.vocaphone.core.DictationState
 import com.vocahq.vocaphone.core.ModelLanguageSupport
@@ -79,6 +89,8 @@ import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.WritingStyle
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.ui.theme.VocaPhoneTheme
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -119,18 +131,11 @@ internal fun VocaPhoneKeyboard(
         )
     }
     var preferencePanel by remember(editor.sessionId) { mutableStateOf<PreferencePanel?>(null) }
-    var emojiSearch by remember(editor.sessionId) { mutableStateOf(false) }
-    var emojiQuery by remember(editor.sessionId) { mutableStateOf("") }
+    var emojiCategory by remember(editor.sessionId) { mutableStateOf(EmojiCategory.SMILEYS) }
 
     LaunchedEffect(dictationState.phase, editor.dictationAllowed) {
         if (dictationState.phase != DictationPhase.IDLE || !editor.dictationAllowed) {
             preferencePanel = null
-        }
-    }
-    LaunchedEffect(keyboardState.layer) {
-        if (keyboardState.layer != KeyboardLayer.EMOJI) {
-            emojiSearch = false
-            emojiQuery = ""
         }
     }
 
@@ -154,7 +159,7 @@ internal fun VocaPhoneKeyboard(
     }
     val clipboardChip = clipboard.takeIf { settings.clipboardChipEnabled && !editor.sensitive }
     val startedTyping = KeyboardChrome.startedTyping(keyboardState.composing, textBeforeCursor)
-    val stripClipboard = KeyboardChrome.clipboardForStrip(clipboardChip, startedTyping)
+    val stripClipboard = KeyboardChrome.clipboardForStrip(clipboardChip)
     val stripSuggestions = KeyboardChrome.suggestionsForStrip(suggestionItems, startedTyping)
 
     fun handleKey(key: KeyboardKey) {
@@ -184,8 +189,17 @@ internal fun VocaPhoneKeyboard(
                     settings = settings,
                     barHeight = settings.keyboardHeight.dictationBarDp.dp,
                     isPreferenceWritePending = isPreferenceWritePending,
-                    clipboard = stripClipboard.takeIf { preferencePanel == null },
-                    suggestions = stripSuggestions.takeIf { preferencePanel == null }.orEmpty(),
+                    clipboard = stripClipboard.takeIf {
+                        preferencePanel == null && keyboardState.layer != KeyboardLayer.EMOJI
+                    },
+                    suggestions = stripSuggestions.takeIf {
+                        preferencePanel == null && keyboardState.layer != KeyboardLayer.EMOJI
+                    }.orEmpty(),
+                    emojiCategory = emojiCategory.takeIf {
+                        preferencePanel == null && keyboardState.layer == KeyboardLayer.EMOJI
+                    },
+                    hasEmojiRecents = settings.emojiRecents.isNotEmpty(),
+                    onEmojiCategory = { emojiCategory = it },
                     onMicTap = onMicTap,
                     onOpenApp = onOpenApp,
                     onPaste = onPasteClipboard,
@@ -243,10 +257,7 @@ internal fun VocaPhoneKeyboard(
                             state = keyboardState,
                             catalog = emojiCatalog,
                             recents = settings.emojiRecents,
-                            search = emojiSearch,
-                            query = emojiQuery,
-                            onSearchChange = { emojiSearch = it },
-                            onQueryChange = { emojiQuery = it },
+                            category = emojiCategory,
                             onEmoji = { glyph ->
                                 handleKey(
                                     KeyboardKey(
@@ -264,15 +275,22 @@ internal fun VocaPhoneKeyboard(
                             },
                         )
                     } else {
+                        val rows = KeyboardLayouts.rows(
+                            keyboardState.layer,
+                            editor,
+                            numberRow = settings.numberRowEnabled,
+                        )
+                        val fittedKeyHeight = if (rows.size <= 1) {
+                            keyHeight
+                        } else {
+                            ((keyAreaHeight - RowGap * (rows.size - 1)) / rows.size)
+                                .coerceAtLeast(36.dp)
+                        }
                         KeyboardRows(
-                            rows = KeyboardLayouts.rows(
-                                keyboardState.layer,
-                                editor,
-                                numberRow = settings.numberRowEnabled,
-                            ),
+                            rows = rows,
                             state = keyboardState,
                             editor = editor,
-                            keyHeight = keyHeight,
+                            keyHeight = fittedKeyHeight,
                             onKey = ::handleKey,
                             onCursorMove = { positions ->
                                 keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
@@ -297,6 +315,9 @@ private fun DictationBar(
     isPreferenceWritePending: Boolean,
     clipboard: ClipboardChip?,
     suggestions: List<String>,
+    emojiCategory: EmojiCategory?,
+    hasEmojiRecents: Boolean,
+    onEmojiCategory: (EmojiCategory) -> Unit,
     onMicTap: () -> Unit,
     onOpenApp: () -> Unit,
     onPaste: () -> Unit,
@@ -323,7 +344,7 @@ private fun DictationBar(
         state.phase == DictationPhase.LISTENING -> state.inputRouteLabel ?: "Tap the mic again to finish"
         state.phase.isBusy -> "You can keep typing while VocaPhone works"
         state.phase == DictationPhase.PERMISSION_REPAIR -> "Open VocaPhone to finish setup"
-        state.phase == DictationPhase.FAILED -> "Tap for help"
+        state.phase == DictationPhase.FAILED -> "Tap the mic to try again"
         else -> "Ready"
     }
 
@@ -335,19 +356,27 @@ private fun DictationBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ToolbarIconButton(
-            contentDescription = "Open VocaPhone",
+        Surface(
+            modifier = Modifier
+                .size(36.dp)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Open VocaPhone"
+                },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary,
             onClick = {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 onOpenApp()
             },
         ) {
-            Text(
-                text = "V",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Black,
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
         }
 
         Row(
@@ -358,10 +387,34 @@ private fun DictationBar(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             when {
-                !idle || !editor.dictationAllowed -> {
-                    if (state.isRecording) {
-                        Waveform(level = state.level)
+                state.isRecording -> {
+                    Spacer(Modifier.weight(1f))
+                    Waveform(level = state.level)
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.End,
+                        )
+                        if (detail.isNotEmpty()) {
+                            Text(
+                                text = detail,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End,
+                            )
+                        }
                     }
+                }
+                !idle || !editor.dictationAllowed -> {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                         Text(
                             text = status,
@@ -381,8 +434,14 @@ private fun DictationBar(
                         }
                     }
                 }
-                clipboard != null -> SuggestionChip(
-                    label = "Paste ${clipboard.preview}",
+                emojiCategory != null -> EmojiCategoryRow(
+                    selected = emojiCategory,
+                    hasRecents = hasEmojiRecents,
+                    onSelect = onEmojiCategory,
+                    modifier = Modifier.weight(1f),
+                )
+                clipboard != null -> ClipboardChipButton(
+                    preview = clipboard.preview,
                     onClick = onPaste,
                     modifier = Modifier.weight(1f),
                 )
@@ -397,7 +456,7 @@ private fun DictationBar(
             }
         }
 
-        if (idle && editor.dictationAllowed) {
+        if (idle && editor.dictationAllowed && emojiCategory == null) {
             ToolbarIconButton(
                 contentDescription = "Transcription language, ${settings.effectiveLanguage.displayName}",
                 active = activePreferencePanel == PreferencePanel.LANGUAGE,
@@ -768,8 +827,7 @@ private fun MicButton(
         !enabled -> "Dictation unavailable"
         recording -> "Finish dictation"
         processing -> "Cancel dictation"
-        state.phase == DictationPhase.PERMISSION_REPAIR || state.phase == DictationPhase.FAILED ->
-            "Open VocaPhone"
+        state.phase == DictationPhase.PERMISSION_REPAIR -> "Open VocaPhone"
         else -> "Start dictation"
     }
     val container = when {
@@ -818,13 +876,23 @@ private fun MicButton(
 @Composable
 private fun Waveform(level: Float) {
     val color = MaterialTheme.colorScheme.primary
-    val amplitudes = floatArrayOf(0.45f, 0.75f, 1f, 0.68f, 0.4f)
-    Canvas(Modifier.size(width = 30.dp, height = 24.dp)) {
-        val normalized = level.coerceIn(0.08f, 1f)
-        val barWidth = 2.dp.toPx()
-        val gap = (size.width - barWidth * amplitudes.size) / (amplitudes.size - 1)
-        amplitudes.forEachIndexed { index, amplitude ->
-            val height = size.height * (0.18f + 0.72f * normalized * amplitude)
+    val phase by rememberInfiniteTransition(label = "wave").animateFloat(
+        initialValue = 0f,
+        targetValue = (PI * 2).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 650, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "phase",
+    )
+    val bars = 7
+    Canvas(Modifier.size(width = 44.dp, height = 28.dp)) {
+        val normalized = level.coerceIn(0.14f, 1f)
+        val barWidth = 2.6.dp.toPx()
+        val gap = (size.width - barWidth * bars) / (bars - 1)
+        repeat(bars) { index ->
+            val pulse = ((sin(phase + index * 0.75f) + 1f) / 2f)
+            val height = size.height * (0.16f + 0.84f * normalized * (0.28f + 0.72f * pulse))
             val x = index * (barWidth + gap) + barWidth / 2
             drawLine(
                 color = color,
@@ -832,6 +900,44 @@ private fun Waveform(level: Float) {
                 end = Offset(x, (size.height + height) / 2),
                 strokeWidth = barWidth,
                 cap = StrokeCap.Round,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClipboardChipButton(
+    preview: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .height(32.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = "Clipboard, $preview"
+            },
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = onClick,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            KeyboardIcon(
+                glyph = Glyph.CLIPBOARD,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = preview,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -874,67 +980,25 @@ private fun EmojiLayer(
     state: KeyboardState,
     catalog: List<EmojiEntry>,
     recents: List<String>,
-    search: Boolean,
-    query: String,
-    onSearchChange: (Boolean) -> Unit,
-    onQueryChange: (String) -> Unit,
+    category: EmojiCategory,
     onEmoji: (String) -> Unit,
     onKey: (KeyboardKey) -> Unit,
     onCursorMove: (Int) -> Unit,
 ) {
-    val searchRows = KeyboardLayouts.searchLetterRows()
-    val searchKeysHeight = keyHeight * searchRows.size + RowGap * (searchRows.size - 1)
     val bottomRow = KeyboardLayouts.rows(KeyboardLayer.EMOJI, editor)
-
+    val glyphs = if (category == EmojiCategory.RECENTS) {
+        recents
+    } else {
+        EmojiCatalog.inCategory(catalog, category).map { it.glyph }
+    }
     Column(Modifier.fillMaxWidth()) {
-        if (search) {
-            EmojiSearchHeader(query = query, onClose = {
-                onSearchChange(false)
-                onQueryChange("")
-            })
-            EmojiGrid(
-                glyphs = EmojiCatalog.search(catalog, query).map { it.glyph },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height((height - searchKeysHeight - keyHeight - RowGap * 2).coerceAtLeast(48.dp)),
-                onEmoji = onEmoji,
-            )
-            KeyboardRows(
-                rows = searchRows,
-                state = state,
-                editor = editor,
-                keyHeight = keyHeight,
-                onKey = { key ->
-                    when (key.type) {
-                        KeyboardKeyType.CHARACTER -> onQueryChange(query + key.output)
-                        KeyboardKeyType.SPACE -> onQueryChange("$query ")
-                        KeyboardKeyType.DELETE -> if (query.isNotEmpty()) onQueryChange(query.dropLast(1))
-                        else -> Unit
-                    }
-                },
-                onCursorMove = {},
-            )
-        } else {
-            var category by remember { mutableStateOf(EmojiCategory.SMILEYS) }
-            EmojiSearchHeader(query = "", placeholder = true, onOpen = { onSearchChange(true) })
-            EmojiCategoryRow(
-                selected = category,
-                hasRecents = recents.isNotEmpty(),
-                onSelect = { category = it },
-            )
-            val glyphs = if (category == EmojiCategory.RECENTS) {
-                recents
-            } else {
-                EmojiCatalog.inCategory(catalog, category).map { it.glyph }
-            }
-            EmojiGrid(
-                glyphs = glyphs,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height((height - keyHeight - 72.dp - RowGap).coerceAtLeast(48.dp)),
-                onEmoji = onEmoji,
-            )
-        }
+        EmojiGrid(
+            glyphs = glyphs,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height((height - keyHeight - RowGap).coerceAtLeast(48.dp)),
+            onEmoji = onEmoji,
+        )
         KeyboardRows(
             rows = bottomRow,
             state = state,
@@ -947,60 +1011,20 @@ private fun EmojiLayer(
 }
 
 @Composable
-private fun EmojiSearchHeader(
-    query: String,
-    placeholder: Boolean = false,
-    onOpen: () -> Unit = {},
-    onClose: () -> Unit = {},
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(36.dp)
-            .padding(horizontal = 6.dp)
-            .semantics { contentDescription = if (placeholder) "Search emoji" else "Emoji search query" },
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        onClick = if (placeholder) onOpen else onClose,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = when {
-                    placeholder -> "Search emoji"
-                    query.isEmpty() -> "Type to search"
-                    else -> query
-                },
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!placeholder) {
-                Text("×", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 18.sp)
-            }
-        }
-    }
-}
-
-@Composable
 private fun EmojiCategoryRow(
     selected: EmojiCategory,
     hasRecents: Boolean,
     onSelect: (EmojiCategory) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val categories = buildList {
         if (hasRecents) add(EmojiCategory.RECENTS)
         addAll(EmojiCategory.browsable)
     }
     LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .height(36.dp)
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1015,11 +1039,11 @@ private fun EmojiCategoryRow(
                 onClick = { onSelect(category) },
             ) {
                 Text(
-                    text = category.label,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    fontSize = 11.sp,
-                    fontWeight = if (category == selected) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = 1,
+                    text = category.icon,
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .semantics { contentDescription = category.label },
+                    fontSize = 16.sp,
                 )
             }
         }
@@ -1423,6 +1447,7 @@ private enum class Glyph {
     NEXT,
     PREVIOUS,
     DONE,
+    CLIPBOARD,
 }
 
 @Composable
@@ -1521,6 +1546,24 @@ private fun KeyboardIcon(
             Glyph.DONE -> {
                 drawLine(tint, Offset(w * 0.15f, h * 0.52f), Offset(w * 0.42f, h * 0.78f), stroke.width)
                 drawLine(tint, Offset(w * 0.42f, h * 0.78f), Offset(w * 0.86f, h * 0.26f), stroke.width)
+            }
+            Glyph.CLIPBOARD -> {
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(w * 0.22f, h * 0.22f),
+                    size = Size(w * 0.56f, h * 0.68f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                    style = stroke,
+                )
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(w * 0.34f, h * 0.1f),
+                    size = Size(w * 0.32f, h * 0.2f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx()),
+                    style = stroke,
+                )
+                drawLine(tint, Offset(w * 0.34f, h * 0.48f), Offset(w * 0.66f, h * 0.48f), stroke.width)
+                drawLine(tint, Offset(w * 0.34f, h * 0.64f), Offset(w * 0.58f, h * 0.64f), stroke.width)
             }
         }
     }

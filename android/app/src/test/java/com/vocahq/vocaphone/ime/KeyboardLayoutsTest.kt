@@ -30,6 +30,14 @@ class KeyboardLayoutsTest {
     }
 
     @Test
+    fun `number and symbol layers keep five rows so they fill the letter height`() {
+        val editor = KeyboardEditorConfig.empty()
+        assertEquals(5, KeyboardLayouts.rows(KeyboardLayer.NUMBERS, editor).size)
+        assertEquals(5, KeyboardLayouts.rows(KeyboardLayer.SYMBOLS, editor).size)
+        assertEquals(5, KeyboardLayouts.rows(KeyboardLayer.SYMBOLS, editor, numberRow = true).size)
+    }
+
+    @Test
     fun `letter bottom row balances weight around the spacebar`() {
         val bottom = KeyboardLayouts.rows(KeyboardLayer.LETTERS, KeyboardEditorConfig.empty()).last()
         val spaceIndex = bottom.keys.indexOfFirst { it.type == KeyboardKeyType.SPACE }

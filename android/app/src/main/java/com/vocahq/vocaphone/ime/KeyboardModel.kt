@@ -73,8 +73,10 @@ internal object KeyboardChrome {
     fun startedTyping(composing: String, textBeforeCursor: CharSequence): Boolean =
         composing.isNotEmpty() || textBeforeCursor.any { !it.isWhitespace() }
 
-    fun clipboardForStrip(clipboard: ClipboardChip?, startedTyping: Boolean): ClipboardChip? =
-        clipboard.takeIf { !startedTyping }
+    fun clipboardForStrip(
+        clipboard: ClipboardChip?,
+        alreadyPasted: Boolean = false,
+    ): ClipboardChip? = clipboard.takeIf { !alreadyPasted }
 
     fun suggestionsForStrip(suggestions: List<String>, startedTyping: Boolean): List<String> =
         if (startedTyping) suggestions else emptyList()
