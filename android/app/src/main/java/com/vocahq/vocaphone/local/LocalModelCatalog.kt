@@ -201,39 +201,36 @@ object LocalModelCatalog {
 
     fun find(id: String): LocalModelDescriptor? = all.firstOrNull { it.id == id }
 
-    /**
-     * Pick a default that this phone can finish at a usable speed.
-     *
-     * Disk size is a bad proxy. Parakeet 0.6B INT8 is larger than Whisper Base
-     * and still quicker; Whisper Large on an old high-RAM phone is the opposite.
-     * When sherpa-onnx is present on arm64 and the model’s own 4 GB floor is
-     * met, prefer that transducer. Otherwise stay on the Whisper ladder, and
-     * use Android’s media performance class so a 2018 phone with 8 GB of RAM
-     * does not get Large.
-     */
     fun recommended(
         totalRamGB: Long,
         mediaPerformanceClass: Int = Build.VERSION.MEDIA_PERFORMANCE_CLASS,
         abi: String = Build.SUPPORTED_ABIS?.firstOrNull().orEmpty(),
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
-    ): LocalModelDescriptor {
-        if (sherpaAvailable && abi == "arm64-v8a" && totalRamGB >= 4) {
-            find("parakeet-tdt-0.6b-v3")?.let { return it }
-        }
-        return whisperRecommended(totalRamGB, mediaPerformanceClass)
-    }
+        cpuCores: Int = Runtime.getRuntime().availableProcessors(),
+        maxCpuKHz: Int = 0,
+    ): LocalModelDescriptor = recommended(
+        DeviceProfile(
+            totalRamGB = totalRamGB,
+            cpuCores = cpuCores,
+            performanceClass = mediaPerformanceClass,
+            abi = abi,
+            maxCpuKHz = maxCpuKHz,
+            sherpaAvailable = sherpaAvailable,
+        ),
+    )
 
-    private fun whisperRecommended(
-        totalRamGB: Long,
-        mediaPerformanceClass: Int,
-    ): LocalModelDescriptor = when {
-        totalRamGB >= 12 && mediaPerformanceClass >= 34 -> find("large-v3-turbo")
-        totalRamGB >= 6 && mediaPerformanceClass >= 31 -> find("large-v3-turbo-q5_0")
-        totalRamGB >= 4 && mediaPerformanceClass >= 31 -> find("small-q5_1")
-        totalRamGB >= 4 -> find("base-q5_1")
-        totalRamGB >= 3 -> find("base-q5_1")
-        else -> find("tiny-q5_1")
-    } ?: all.first()
+    /**
+     * Highest-scoring catalog entry that fits this phone's RAM budget.
+     * Adding a model does not require a new branch here; it only needs a
+     * family and a RAM floor.
+     */
+    fun recommended(profile: DeviceProfile): LocalModelDescriptor {
+        val candidates = all.filter { profile.fits(it) }
+        return candidates.maxByOrNull { scoreModel(it, profile) }
+            ?: all.filter { isUsableOnDevice(it, profile.totalRamGB, profile.sherpaAvailable) }
+                .minByOrNull { it.minimumRamGB }
+            ?: all.first()
+    }
 
     /**
      * Warn only when a slower Whisper class is selected. Sherpa file size is
@@ -246,7 +243,11 @@ object LocalModelCatalog {
         selected.engine == LocalModelEngine.WHISPER &&
         selected.minimumRamGB > recommended.minimumRamGB
 
-    fun isUsableOnDevice(model: LocalModelDescriptor, totalRamGB: Long): Boolean =
+    fun isUsableOnDevice(
+        model: LocalModelDescriptor,
+        totalRamGB: Long,
+        sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
+    ): Boolean =
         totalRamGB >= model.minimumRamGB &&
             (model.engine != LocalModelEngine.SHERPA_ONNX || sherpaAvailable)
 

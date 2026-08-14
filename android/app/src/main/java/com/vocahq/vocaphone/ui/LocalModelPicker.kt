@@ -35,9 +35,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.R
+import com.vocahq.vocaphone.local.DeviceProfile
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
-import com.vocahq.vocaphone.local.LocalModelEngine
 import com.vocahq.vocaphone.local.LocalModelState
 
 /**
@@ -61,8 +61,11 @@ fun LocalModelPicker(
     val usable = remember(state.totalRamGB) {
         LocalModelCatalog.usableOnDevice(state.totalRamGB).sortedBy { it.sizeBytes }
     }
-    val recommended = remember(state.totalRamGB) {
-        LocalModelCatalog.recommended(state.totalRamGB)
+    val profile = remember(state.totalRamGB) {
+        DeviceProfile.current(state.totalRamGB)
+    }
+    val recommended = remember(profile) {
+        LocalModelCatalog.recommended(profile)
     }
     val selectedModel = usable.firstOrNull { it.id == selectedModelId }
 
@@ -120,6 +123,7 @@ fun LocalModelPicker(
     if (recommendedVisible) {
         RecommendedModelCard(
             model = recommended,
+            profile = profile,
             state = state,
             selected = selectedModelId == recommended.id,
             busy = busy,
@@ -258,6 +262,7 @@ private fun ModelBusyBanner(state: LocalModelState, onCancelDownload: () -> Unit
 @Composable
 private fun RecommendedModelCard(
     model: LocalModelDescriptor,
+    profile: DeviceProfile,
     state: LocalModelState,
     selected: Boolean,
     busy: Boolean,
@@ -274,12 +279,7 @@ private fun RecommendedModelCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            if (model.engine == LocalModelEngine.SHERPA_ONNX) {
-                "Suggested because this phone has the RAM to run it, and Sherpa " +
-                    "finishes faster than Whisper at this accuracy."
-            } else {
-                "Suggested from this phone's RAM and Android performance class."
-            },
+            profile.summary(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

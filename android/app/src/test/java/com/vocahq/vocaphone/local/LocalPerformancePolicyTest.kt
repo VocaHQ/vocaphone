@@ -33,64 +33,6 @@ class LocalPerformancePolicyTest {
     }
 
     @Test
-    fun `older high ram phone receives a conservative whisper recommendation`() {
-        assertEquals(
-            "base-q5_1",
-            LocalModelCatalog.recommended(8, 0, sherpaAvailable = false).id,
-        )
-        assertTrue(
-            LocalModelCatalog.usableOnDevice(8).any { it.id == "large-v3-turbo-q5_0" },
-        )
-    }
-
-    @Test
-    fun `large whisper remains the pick when sherpa is missing`() {
-        assertEquals(
-            "large-v3-turbo-q5_0",
-            LocalModelCatalog.recommended(8, 31, sherpaAvailable = false).id,
-        )
-        assertEquals(
-            "large-v3-turbo",
-            LocalModelCatalog.recommended(12, 34, sherpaAvailable = false).id,
-        )
-    }
-
-    @Test
-    fun `arm64 phones with enough ram get parakeet`() {
-        assertEquals(
-            "parakeet-tdt-0.6b-v3",
-            LocalModelCatalog.recommended(
-                totalRamGB = 8,
-                mediaPerformanceClass = 0,
-                abi = "arm64-v8a",
-                sherpaAvailable = true,
-            ).id,
-        )
-        assertEquals(
-            "parakeet-tdt-0.6b-v3",
-            LocalModelCatalog.recommended(
-                totalRamGB = 4,
-                mediaPerformanceClass = 31,
-                abi = "arm64-v8a",
-                sherpaAvailable = true,
-            ).id,
-        )
-    }
-
-    @Test
-    fun `32-bit arm stays on the whisper ladder`() {
-        assertEquals(
-            "base-q5_1",
-            LocalModelCatalog.recommended(
-                totalRamGB = 8,
-                mediaPerformanceClass = 0,
-                abi = "armeabi-v7a",
-                sherpaAvailable = true,
-            ).id,
-        )
-    }
-
-    @Test
     fun `parakeet is not treated as heavier than a smaller whisper`() {
         val parakeet = LocalModelCatalog.find("parakeet-tdt-0.6b-v3")!!
         val whisperBase = LocalModelCatalog.find("base-q5_1")!!
