@@ -240,14 +240,19 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val connection = currentInputConnection ?: return
         if (replaceWord) {
             connection.finishComposingText()
-            val window = visibleEditorText.value
-            val span = SuggestionEngine.replaceableWord(window.before, window.after)
+            val before = runCatching {
+                connection.getTextBeforeCursor(32, 0)?.toString().orEmpty()
+            }.getOrDefault("")
+            val after = runCatching {
+                connection.getTextAfterCursor(32, 0)?.toString().orEmpty()
+            }.getOrDefault("")
+            val span = SuggestionEngine.replaceableWord(before, after)
             if (span != null) {
                 connection.deleteSurroundingText(span.beforeLength, span.afterLength)
             }
         }
-        // commitText replaces the composing region, so a tapped completion
-        // overwrites "hel" instead of finishing it and appending "hello".
+        // Leave composing alone so commitText replaces "hel" with "hello ".
+        // Finishing first commits the stub, then this would insert in front of it.
         connection.commitText("$word ", 1)
         syncShiftFromCursor()
         refreshEditorText()

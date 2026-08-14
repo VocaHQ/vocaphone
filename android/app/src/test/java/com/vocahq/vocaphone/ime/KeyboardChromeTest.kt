@@ -37,12 +37,19 @@ class KeyboardChromeTest {
     }
 
     @Test
-    fun `a tapped completion replaces the unfinished word`() {
-        assertTrue(
+    fun `a tapped completion keeps composing so commitText can replace it`() {
+        assertFalse(
             KeyboardChrome.suggestionReplacesWord(
                 composing = "hel",
                 swipeChoicesActive = false,
                 stripReplacesWord = false,
+            ),
+        )
+        assertFalse(
+            KeyboardChrome.suggestionReplacesWord(
+                composing = "hel",
+                swipeChoicesActive = true,
+                stripReplacesWord = true,
             ),
         )
         assertTrue(
@@ -50,6 +57,13 @@ class KeyboardChromeTest {
                 composing = "",
                 swipeChoicesActive = true,
                 stripReplacesWord = false,
+            ),
+        )
+        assertTrue(
+            KeyboardChrome.suggestionReplacesWord(
+                composing = "",
+                swipeChoicesActive = false,
+                stripReplacesWord = true,
             ),
         )
         assertFalse(

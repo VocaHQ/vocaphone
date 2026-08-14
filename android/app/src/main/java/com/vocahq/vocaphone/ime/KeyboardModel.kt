@@ -85,7 +85,7 @@ internal object KeyboardChrome {
         composing: String,
         swipeChoicesActive: Boolean,
         stripReplacesWord: Boolean,
-    ): Boolean = composing.isNotEmpty() || swipeChoicesActive || stripReplacesWord
+    ): Boolean = composing.isEmpty() && (swipeChoicesActive || stripReplacesWord)
 }
 
 internal data class SuggestionStrip(
