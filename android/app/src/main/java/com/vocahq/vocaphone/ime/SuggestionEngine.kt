@@ -72,17 +72,21 @@ internal class SuggestionDictionary(
     fun swipe(path: String, limit: Int = 3): List<String> {
         val keys = SuggestionEngine.collapseLetters(path)
         if (keys.length < 2) return emptyList()
-        val first = keys.first()
-        val last = keys.last()
+        val firstKeys = SuggestionEngine.nearbyLetters(keys.first()) + keys.first()
+        val lastKeys = SuggestionEngine.nearbyLetters(keys.last()) + keys.last()
         return words.asSequence()
-            .filter { word ->
+            .mapIndexedNotNull { rank, word ->
                 val compact = SuggestionEngine.collapseLetters(word)
-                compact.length >= 2 &&
-                    compact.first() == first &&
-                    compact.last() == last &&
-                    SuggestionEngine.isSubsequence(compact, keys)
+                if (compact.length < 2) return@mapIndexedNotNull null
+                if (compact.first() !in firstKeys || compact.last() !in lastKeys) {
+                    return@mapIndexedNotNull null
+                }
+                if (!SuggestionEngine.isSubsequence(compact, keys)) return@mapIndexedNotNull null
+                word to SuggestionEngine.swipeScore(keys, compact, rank)
             }
+            .sortedByDescending { it.second }
             .take(limit)
+            .map { it.first }
             .toList()
     }
 
@@ -206,6 +210,89 @@ internal object SuggestionEngine {
             if (index < word.length && character == word[index]) index++
         }
         return index == word.length
+    }
+
+    /**
+     * FlorisBoard / AnySoftKeyboard compare a swipe to the ideal line through
+     * the word's key centers, then rank by shape and path length. We do the
+     * same on the QWERTY grid instead of taking the first dictionary hit.
+     */
+    internal fun swipeScore(path: String, compactWord: String, frequencyRank: Int): Float {
+        val shape = shapeDistance(path, compactWord)
+        val lengthGap = kotlin.math.abs(pathLength(path) - pathLength(compactWord))
+        val endPenalty =
+            (if (compactWord.first() == path.first()) 0f else 0.7f) +
+                (if (compactWord.last() == path.last()) 0f else 0.7f)
+        val frequency = 1f / (1f + frequencyRank / 400f)
+        return frequency * 2f - shape * 3f - lengthGap * 0.35f - endPenalty
+    }
+
+    internal fun nearbyLetters(letter: Char): Set<Char> {
+        val origin = QWERTY[letter] ?: return emptySet()
+        return QWERTY.mapNotNull { (other, point) ->
+            other.takeIf { it != letter && origin.distanceTo(point) < 1.55f }
+        }.toSet()
+    }
+
+    internal fun shapeDistance(userPath: String, word: String): Float {
+        val user = samplePath(userPath, SAMPLE_POINTS)
+        val ideal = samplePath(word, SAMPLE_POINTS)
+        if (user.isEmpty() || ideal.isEmpty()) return Float.MAX_VALUE
+        var sum = 0f
+        for (index in user.indices) sum += user[index].distanceTo(ideal[index])
+        return sum / user.size
+    }
+
+    private fun pathLength(keys: String): Float {
+        var length = 0f
+        var previous: KeyXY? = null
+        for (character in keys) {
+            val point = QWERTY[character] ?: continue
+            if (previous != null) length += previous.distanceTo(point)
+            previous = point
+        }
+        return length
+    }
+
+    private fun samplePath(keys: String, count: Int): List<KeyXY> {
+        val points = keys.mapNotNull { QWERTY[it] }
+        if (points.isEmpty()) return emptyList()
+        if (points.size == 1 || count <= 1) return List(count.coerceAtLeast(1)) { points.first() }
+        val prefix = FloatArray(points.size)
+        for (index in 1 until points.size) {
+            prefix[index] = prefix[index - 1] + points[index - 1].distanceTo(points[index])
+        }
+        val total = prefix.last().coerceAtLeast(0.0001f)
+        return List(count) { sample ->
+            val target = total * sample / (count - 1)
+            var index = 1
+            while (index < prefix.lastIndex && prefix[index] < target) index++
+            val start = prefix[index - 1]
+            val span = (prefix[index] - start).coerceAtLeast(0.0001f)
+            val t = ((target - start) / span).coerceIn(0f, 1f)
+            val from = points[index - 1]
+            val to = points[index]
+            KeyXY(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
+        }
+    }
+
+    private data class KeyXY(val x: Float, val y: Float) {
+        fun distanceTo(other: KeyXY): Float {
+            val dx = x - other.x
+            val dy = y - other.y
+            return kotlin.math.sqrt(dx * dx + dy * dy)
+        }
+    }
+
+    private const val SAMPLE_POINTS = 16
+
+    private val QWERTY: Map<Char, KeyXY> = buildMap {
+        fun row(y: Float, startX: Float, letters: String) {
+            letters.forEachIndexed { index, letter -> put(letter, KeyXY(startX + index, y)) }
+        }
+        row(0f, 0f, "qwertyuiop")
+        row(1f, 0.5f, "asdfghjkl")
+        row(2f, 1.5f, "zxcvbnm")
     }
 
     private fun isWordChar(character: Char): Boolean =

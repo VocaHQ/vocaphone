@@ -71,6 +71,31 @@ class SuggestionEngineTest {
     }
 
     @Test
+    fun `english list picks some not see on an s-o-m-e swipe`() {
+        val file = java.io.File("src/main/assets/suggestions/en.txt")
+        org.junit.Assume.assumeTrue(file.exists())
+        val dict = SuggestionDictionary(
+            words = file.readLines().map { it.trim() }.filter { it.isNotEmpty() },
+            bigrams = emptyMap(),
+        )
+        assertEquals("some", dict.swipe("sdfghjklomnhytre").first())
+        assertEquals("hello", dict.swipe("hjkello").first())
+        assertEquals("the", dict.swipe("tghe").first())
+    }
+
+    @Test
+    fun `swipe prefers the word whose key path matches the gesture`() {
+        val words = SuggestionDictionary(
+            words = listOf("see", "she", "same", "some", "store", "case"),
+            bigrams = emptyMap(),
+        )
+        // S → O → M → E crosses the home row, then down to M, then up to E.
+        // "see" is earlier in the list and is a subsequence, but the shape is "some".
+        assertEquals("some", words.swipe("sdfghjklomnhytre").first())
+        assertEquals("some", words.swipe("sertoiuytrewmne").first())
+    }
+
+    @Test
     fun `replaceable word includes a trailing space after a swipe`() {
         val span = SuggestionEngine.replaceableWord("hello ", "")
         assertEquals("hello", span?.word)
