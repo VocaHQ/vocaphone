@@ -80,6 +80,12 @@ internal object KeyboardChrome {
 
     fun suggestionsForStrip(suggestions: List<String>, startedTyping: Boolean): List<String> =
         if (startedTyping) suggestions else emptyList()
+
+    fun suggestionReplacesWord(
+        composing: String,
+        swipeChoicesActive: Boolean,
+        stripReplacesWord: Boolean,
+    ): Boolean = composing.isNotEmpty() || swipeChoicesActive || stripReplacesWord
 }
 
 internal data class SuggestionStrip(

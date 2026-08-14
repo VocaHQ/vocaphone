@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -73,6 +74,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
+import com.vocahq.vocaphone.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -96,7 +99,6 @@ import com.vocahq.vocaphone.core.DictationState
 import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.WritingStyle
-import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.ui.theme.VocaPhoneTheme
 import kotlin.math.PI
@@ -128,7 +130,7 @@ internal fun VocaPhoneKeyboard(
     onCommand: (KeyboardCommand) -> Unit,
     onMicTap: () -> Unit,
     onOpenApp: () -> Unit,
-    onOpenModels: () -> Unit,
+    onOpenSettings: (String) -> Unit,
     onLanguageSelected: (TranscriptionLanguage) -> Unit,
     onStyleSelected: (WritingStyle) -> Unit,
     onSuggestionPicked: (String, Boolean) -> Unit,
@@ -269,7 +271,11 @@ internal fun VocaPhoneKeyboard(
                     onPaste = { onPasteClipboard(clipboardChip?.fullText.orEmpty()) },
                     onDismissClipboard = onDismissClipboard,
                     onSuggestion = { word ->
-                        val replace = swipeReplacesWord || suggestionStrip.replacesWord
+                        val replace = KeyboardChrome.suggestionReplacesWord(
+                            composing = keyboardState.composing,
+                            swipeChoicesActive = swipeReplacesWord,
+                            stripReplacesWord = suggestionStrip.replacesWord,
+                        )
                         swipeChoices = emptyList()
                         keyboardState = keyboardState.copy(
                             composing = "",
@@ -282,15 +288,14 @@ internal fun VocaPhoneKeyboard(
                 Spacer(Modifier.height(4.dp))
                 when (preferencePanel) {
                     PreferencePanel.MENU -> ToolbarMenuPanel(
-                        settings = settings,
-                        editor = editor,
+                        clipboardOn = settings.clipboardHistoryEnabled && !editor.sensitive,
                         height = keyAreaHeight,
                         onLanguage = { preferencePanel = PreferencePanel.LANGUAGE },
                         onStyle = { preferencePanel = PreferencePanel.STYLE },
                         onClipboard = { preferencePanel = PreferencePanel.CLIPBOARD },
-                        onOpenModels = {
+                        onOpenSettings = { page ->
                             preferencePanel = null
-                            onOpenModels()
+                            onOpenSettings(page)
                         },
                         onClose = { preferencePanel = null },
                     )
@@ -611,24 +616,17 @@ private fun SelectedMark() {
 
 @Composable
 private fun ToolbarMenuPanel(
-    settings: VocaPhoneSettings,
-    editor: KeyboardEditorConfig,
+    clipboardOn: Boolean,
     height: Dp,
     onLanguage: () -> Unit,
     onStyle: () -> Unit,
     onClipboard: () -> Unit,
-    onOpenModels: () -> Unit,
+    onOpenSettings: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    val localModel = LocalModelCatalog.find(settings.localModelId)
-    val modelDetail = when {
-        settings.localTranscriptionEnabled && localModel != null -> localModel.displayName
-        settings.isConfigured -> "Gateway"
-        else -> "Pick a model"
-    }
     PreferencePanelShell(
         title = "Keyboard",
-        subtitle = "Tap a tile. Models opens the app.",
+        subtitle = "Tiles open a panel or the app.",
         height = height,
         onClose = onClose,
     ) {
@@ -638,54 +636,52 @@ private fun ToolbarMenuPanel(
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ToolbarMenuTile(
-                    title = "Language",
-                    detail = settings.effectiveLanguage.displayName,
-                    onClick = onLanguage,
-                )
-                ToolbarMenuTile(
-                    title = "Style",
-                    detail = settings.style.displayName,
-                    onClick = onStyle,
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (settings.clipboardHistoryEnabled && !editor.sensitive) {
-                    ToolbarMenuTile(
-                        title = "Clipboard",
-                        detail = if (settings.clipboardHistory.isEmpty()) {
-                            "No saved clips"
-                        } else {
-                            "${settings.clipboardHistory.size} saved"
-                        },
-                        onClick = onClipboard,
-                    )
+            listOf(
+                listOf(
+                    MenuTile("Language", R.drawable.ic_language, onLanguage),
+                    MenuTile("Style", R.drawable.ic_style, onStyle),
+                    MenuTile(
+                        "Clipboard",
+                        R.drawable.ic_clipboard,
+                        if (clipboardOn) onClipboard else ({ onOpenSettings("keyboard") }),
+                    ),
+                ),
+                listOf(
+                    MenuTile("Models", R.drawable.ic_models) { onOpenSettings("models") },
+                    MenuTile("Keyboard", R.drawable.ic_keyboard) { onOpenSettings("keyboard") },
+                    MenuTile("Dictation", R.drawable.ic_dictation) { onOpenSettings("dictation") },
+                ),
+                listOf(
+                    MenuTile("Connection", R.drawable.ic_connection) { onOpenSettings("connection") },
+                    MenuTile("About", R.drawable.ic_about) { onOpenSettings("about") },
+                    MenuTile("App", R.drawable.ic_settings) { onOpenSettings("") },
+                ),
+            ).forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    row.forEach { tile ->
+                        ToolbarMenuTile(title = tile.title, icon = tile.icon, onClick = tile.onClick)
+                    }
                 }
-                ToolbarMenuTile(
-                    title = "Models",
-                    detail = modelDetail,
-                    onClick = onOpenModels,
-                )
             }
         }
     }
 }
 
+private data class MenuTile(
+    val title: String,
+    val icon: Int,
+    val onClick: () -> Unit,
+)
+
 @Composable
 private fun RowScope.ToolbarMenuTile(
     title: String,
-    detail: String,
+    icon: Int,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -697,15 +693,22 @@ private fun RowScope.ToolbarMenuTile(
         onClick = onClick,
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
-                detail,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                maxLines = 2,
+                title,
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.sp,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -1478,9 +1481,9 @@ private fun Modifier.swipeTypingGesture(
 ) = pointerInput(Unit) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        swipeConsumed.value = false
         val start = hitLetter(keyBounds, parentCoords()?.localToRoot(down.position))
         if (start == null) return@awaitEachGesture
-        swipeConsumed.value = false
         val path = StringBuilder(start.output.lowercase())
         var lastId = start.id
         val points = mutableListOf(down.position)

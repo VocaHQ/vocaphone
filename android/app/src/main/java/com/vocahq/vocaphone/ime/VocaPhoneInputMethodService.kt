@@ -98,8 +98,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             emojiCatalog = emojiCatalog,
             onCommand = ::handleCommand,
             onMicTap = ::toggleDictation,
-            onOpenApp = { openCompanion(openModels = false) },
-            onOpenModels = { openCompanion(openModels = true) },
+            onOpenApp = { openCompanion() },
+            onOpenSettings = ::openCompanion,
             onLanguageSelected = ::setLanguage,
             onStyleSelected = ::setStyle,
             onSuggestionPicked = ::commitSuggestion,
@@ -238,14 +238,16 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     private fun commitSuggestion(word: String, replaceWord: Boolean) {
         val connection = currentInputConnection ?: return
-        connection.finishComposingText()
         if (replaceWord) {
+            connection.finishComposingText()
             val window = visibleEditorText.value
             val span = SuggestionEngine.replaceableWord(window.before, window.after)
             if (span != null) {
                 connection.deleteSurroundingText(span.beforeLength, span.afterLength)
             }
         }
+        // commitText replaces the composing region, so a tapped completion
+        // overwrites "hel" instead of finishing it and appending "hello".
         connection.commitText("$word ", 1)
         syncShiftFromCursor()
         refreshEditorText()
@@ -429,15 +431,15 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         container.dictation.cancel()
     }
 
-    private fun openCompanion(openModels: Boolean = false) {
+    private fun openCompanion(page: String? = null) {
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
         intent.addFlags(
             android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
                 android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP,
         )
         intent.putExtra(com.vocahq.vocaphone.ui.MainActivity.EXTRA_OPEN_SETTINGS, true)
-        if (openModels) {
-            intent.putExtra(com.vocahq.vocaphone.ui.MainActivity.EXTRA_OPEN_MODELS, true)
+        if (!page.isNullOrEmpty()) {
+            intent.putExtra(com.vocahq.vocaphone.ui.MainActivity.EXTRA_SETTINGS_PAGE, page)
         }
         startActivity(intent)
     }

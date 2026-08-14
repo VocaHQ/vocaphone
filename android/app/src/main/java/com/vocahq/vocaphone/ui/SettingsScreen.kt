@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.CustomVocabulary
 import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.ModelLanguageSupport
@@ -46,6 +47,18 @@ private enum class SettingsPage(val title: String) {
     DICTATION("Dictation"),
     CONNECTION("Connection"),
     ABOUT("About"),
+    ;
+
+    companion object {
+        fun fromExtra(value: String?): SettingsPage = when (value?.lowercase()) {
+            "models" -> MODELS
+            "keyboard" -> KEYBOARD
+            "dictation" -> DICTATION
+            "connection" -> CONNECTION
+            "about" -> ABOUT
+            else -> HOME
+        }
+    }
 }
 
 @Composable
@@ -80,13 +93,13 @@ fun SettingsScreen(
     onTryDictation: () -> Unit,
     diagnosticEvents: () -> String,
     onClearDiagnosticEvents: () -> Unit,
-    startOnModels: Boolean = false,
+    startPage: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val appInfo = remember { context.readAppInfo() }
     var pickingLanguage by remember { mutableStateOf(false) }
-    var page by remember { mutableStateOf(if (startOnModels) SettingsPage.MODELS else SettingsPage.HOME) }
+    var page by remember(startPage) { mutableStateOf(SettingsPage.fromExtra(startPage)) }
     val localModel = LocalModelCatalog.find(settings.localModelId)
 
     BackHandler(enabled = page != SettingsPage.HOME) { page = SettingsPage.HOME }
@@ -128,6 +141,7 @@ fun SettingsScreen(
                 SettingsMenuRow(
                     title = "Models",
                     supporting = localModel?.displayName ?: "Download a model for this phone",
+                    icon = R.drawable.ic_models,
                     onClick = { page = SettingsPage.MODELS },
                 )
                 SettingsMenuRow(
@@ -136,21 +150,25 @@ fun SettingsScreen(
                         append(settings.keyboardHeight.displayName)
                         if (settings.numberRowEnabled) append(" · number row")
                     },
+                    icon = R.drawable.ic_keyboard,
                     onClick = { page = SettingsPage.KEYBOARD },
                 )
                 SettingsMenuRow(
                     title = "Dictation",
                     supporting = "${settings.style.displayName} · ${settings.microphone.displayName}",
+                    icon = R.drawable.ic_dictation,
                     onClick = { page = SettingsPage.DICTATION },
                 )
                 SettingsMenuRow(
                     title = "Connection",
                     supporting = settings.gatewayUrl.ifEmpty { "No gateway configured" },
+                    icon = R.drawable.ic_connection,
                     onClick = { page = SettingsPage.CONNECTION },
                 )
                 SettingsMenuRow(
                     title = "About",
                     supporting = "VocaPhone ${appInfo.versionName}",
+                    icon = R.drawable.ic_about,
                     onClick = { page = SettingsPage.ABOUT },
                 )
             }
@@ -231,7 +249,7 @@ fun SettingsScreen(
                     SettingToggle(
                         title = "Swipe typing",
                         detail = "Glide across letter keys to enter a word. " +
-                            "Uses the on-phone English word list.",
+                            "English only; there is no language pack to download.",
                         checked = settings.swipeTypingEnabled,
                         onCheckedChange = onSwipeTyping,
                     )

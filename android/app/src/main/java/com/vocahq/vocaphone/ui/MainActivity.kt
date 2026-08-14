@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -17,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,21 +32,33 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.ui.theme.VocaPhoneTheme
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
+    private val launchIntents = MutableStateFlow<Intent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        launchIntents.value = intent
         enableEdgeToEdge()
         setContent {
+            val launchIntent by launchIntents.collectAsStateWithLifecycle()
             VocaPhoneTheme {
-                VocaPhoneApp(launchIntent = intent)
+                VocaPhoneApp(launchIntent = launchIntent)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        launchIntents.value = intent
     }
 
     companion object {
         const val EXTRA_OPEN_SETTINGS = "open_settings"
         const val EXTRA_OPEN_MODELS = "open_models"
+        const val EXTRA_SETTINGS_PAGE = "settings_page"
     }
 }
 
@@ -80,17 +94,18 @@ fun VocaPhoneApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    var destination by remember {
-        mutableStateOf(
-            if (launchIntent?.getBooleanExtra(MainActivity.EXTRA_OPEN_SETTINGS, false) == true) {
-                Destination.SETTINGS
-            } else {
-                Destination.DICTATE
-            },
-        )
-    }
-    val startOnModels = launchIntent?.getBooleanExtra(MainActivity.EXTRA_OPEN_MODELS, false) == true
+    var destination by remember { mutableStateOf(Destination.DICTATE) }
+    var settingsPage by remember { mutableStateOf<String?>(null) }
     var showingGateway by remember { mutableStateOf(false) }
+
+    LaunchedEffect(launchIntent) {
+        val incoming = launchIntent ?: return@LaunchedEffect
+        if (!incoming.getBooleanExtra(MainActivity.EXTRA_OPEN_SETTINGS, false)) return@LaunchedEffect
+        destination = Destination.SETTINGS
+        settingsPage = incoming.getStringExtra(MainActivity.EXTRA_SETTINGS_PAGE)
+            ?: incoming.takeIf { it.getBooleanExtra(MainActivity.EXTRA_OPEN_MODELS, false) }
+                ?.let { "models" }
+    }
 
     val showSetup = !settings.onboardingComplete && !showingGateway
 
@@ -217,7 +232,7 @@ fun VocaPhoneApp(
                 onTryDictation = { destination = Destination.DICTATE },
                 diagnosticEvents = viewModel::diagnosticEvents,
                 onClearDiagnosticEvents = viewModel::clearDiagnosticEvents,
-                startOnModels = startOnModels,
+                startPage = settingsPage,
                 modifier = content,
             )
         }

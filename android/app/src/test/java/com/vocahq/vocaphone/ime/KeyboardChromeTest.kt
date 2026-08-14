@@ -35,4 +35,29 @@ class KeyboardChromeTest {
         assertEquals(emptyList<String>(), KeyboardChrome.suggestionsForStrip(words, startedTyping = false))
         assertEquals(words, KeyboardChrome.suggestionsForStrip(words, startedTyping = true))
     }
+
+    @Test
+    fun `a tapped completion replaces the unfinished word`() {
+        assertTrue(
+            KeyboardChrome.suggestionReplacesWord(
+                composing = "hel",
+                swipeChoicesActive = false,
+                stripReplacesWord = false,
+            ),
+        )
+        assertTrue(
+            KeyboardChrome.suggestionReplacesWord(
+                composing = "",
+                swipeChoicesActive = true,
+                stripReplacesWord = false,
+            ),
+        )
+        assertFalse(
+            KeyboardChrome.suggestionReplacesWord(
+                composing = "",
+                swipeChoicesActive = false,
+                stripReplacesWord = false,
+            ),
+        )
+    }
 }

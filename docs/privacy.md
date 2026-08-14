@@ -85,7 +85,8 @@ field. With Suggestions enabled, the keyboard may call `getTextBeforeCursor(32)`
 and `getTextAfterCursor(32)` in non-password fields so next-word guesses and
 corrections have a token. That window stays in memory, is never logged, and is
 not sent to the gateway. Swipe typing matches the finger path against the same
-on-phone English word list and does not read the field. The clipboard chip and
+on-phone English word list and does not read the field. Swipe and suggestions
+are English only; the app does not download other keyboard language packs. The clipboard chip and
 optional clipboard history read
 clips only while the input view is showing; history stays on the phone. Neither
 path is used to insert a transcript.
