@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
+import com.vocahq.vocaphone.local.LocalModelEngine
 import com.vocahq.vocaphone.local.LocalModelState
 
 /**
@@ -104,7 +105,9 @@ fun LocalModelPicker(
         ModelBusyBanner(state = state, onCancelDownload = onCancelDownload)
     }
 
-    if (selectedModel != null && selectedModel.sizeBytes > recommended.sizeBytes) {
+    if (selectedModel != null &&
+        LocalModelCatalog.needsHeavierWarning(selectedModel, recommended)
+    ) {
         OversizedModelNotice(
             recommended = recommended,
             installed = recommended.id in state.downloaded,
@@ -270,6 +273,16 @@ private fun RecommendedModelCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Text(
+            if (model.engine == LocalModelEngine.SHERPA_ONNX) {
+                "Suggested because this phone has the RAM to run it, and Sherpa " +
+                    "finishes faster than Whisper at this accuracy."
+            } else {
+                "Suggested from this phone's RAM and Android performance class."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         ModelActions(
             model = model,
             state = state,
@@ -295,9 +308,9 @@ private fun OversizedModelNotice(
 ) {
     Notice(tone = NoticeTone.Attention) {
         Text(
-            "The selected model is larger than this phone is rated for, which can " +
-                "make every dictation take much longer. ${recommended.displayName} is " +
-                "the fastest good match.",
+            "This model asks for more RAM than the one we suggest for this phone, " +
+                "so dictation can take longer. ${recommended.displayName} is the " +
+                "match we would start with.",
             style = MaterialTheme.typography.bodySmall,
         )
         SecondaryButton(
