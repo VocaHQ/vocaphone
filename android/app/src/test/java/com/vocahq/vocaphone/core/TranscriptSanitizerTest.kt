@@ -69,6 +69,24 @@ class TranscriptSanitizerTest {
     }
 
     @Test
+    fun `a one-word dictation returned twice as two sentences keeps one`() {
+        // What a large whisper model does with a single word: it finishes the
+        // sentence and starts it again rather than stopping.
+        assertEquals("Hi.", TranscriptSanitizer.clean("Hi. Hi."))
+        assertEquals("Hello!", TranscriptSanitizer.clean("Hello! Hello! Hello!"))
+        assertEquals("Thank you.", TranscriptSanitizer.clean("Thank you. Thank you."))
+    }
+
+    @Test
+    fun `reduplication inside one sentence survives`() {
+        // The copies are not separately punctuated, which is the whole
+        // difference between a speaker and a decoder that restarted.
+        assertEquals("Bye bye.", TranscriptSanitizer.clean("Bye bye."))
+        assertEquals("night night", TranscriptSanitizer.clean("night night"))
+        assertEquals("no no, that one", TranscriptSanitizer.clean("no no, that one"))
+    }
+
+    @Test
     fun `ordinary prose with repeated words is not collapsed`() {
         val sentence = "I think that that meeting was the one we moved"
         assertEquals(sentence, TranscriptSanitizer.clean(sentence))

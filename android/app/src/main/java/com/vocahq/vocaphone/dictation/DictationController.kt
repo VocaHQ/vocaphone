@@ -219,6 +219,30 @@ class DictationController(
         }
     }
 
+    /**
+     * Android refused the microphone foreground service this dictation needs.
+     *
+     * Nothing has been captured and nothing will be, so this only has to say so
+     * on whichever surface the user tapped. Not recoverable in the sense Retry
+     * means — there is no audio to re-send — but the message says what to do
+     * instead, because the refusal is usually about when the tap happened rather
+     * than about the app: dictating from VocaPhone itself generally works, and
+     * on the OEM builds that restrict this, so does allowing background activity.
+     */
+    fun reportForegroundServiceRefused() {
+        diagnostics.recordError("foreground_service_denied", activeSource?.name)
+        nextGeneration()
+        _state.value = DictationState(
+            phase = DictationPhase.FAILED,
+            failure = DictationFailure(
+                "foreground_service_denied",
+                "Android would not let VocaPhone start recording just now. Open VocaPhone " +
+                    "and try again, or allow it to run in the background in system settings.",
+                recoverable = false,
+            ),
+        )
+    }
+
     fun clearTransient() {
         if (!_state.value.phase.isBusy) reset()
     }

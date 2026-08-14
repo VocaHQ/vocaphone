@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,6 +15,28 @@ class SherpaLongAudioTest {
         val chunks = SherpaLongAudio.chunks(FloatArray(12 * SherpaLongAudio.SAMPLE_RATE))
 
         assertEquals(listOf(SherpaAudioChunk(0, 192_000, false)), chunks)
+    }
+
+    @Test
+    fun `a single word is padded to something the recognizers answer`() {
+        // "Hey" is a few hundred milliseconds, and several families returned no
+        // tokens at all for a waveform that short.
+        val word = FloatArray(SherpaLongAudio.SAMPLE_RATE / 3) { 0.4f }
+
+        val padded = SherpaLongAudio.padded(word)
+
+        assertEquals(SherpaLongAudio.SAMPLE_RATE, padded.size)
+        assertEquals(0.4f, padded[word.size - 1], 0f)
+        assertEquals(0f, padded[word.size], 0f)
+    }
+
+    @Test
+    fun `audio already long enough is handed over untouched`() {
+        val speech = FloatArray(3 * SherpaLongAudio.SAMPLE_RATE) { 0.2f }
+
+        assertSame(speech, SherpaLongAudio.padded(speech))
+        val empty = FloatArray(0)
+        assertSame(empty, SherpaLongAudio.padded(empty))
     }
 
     @Test

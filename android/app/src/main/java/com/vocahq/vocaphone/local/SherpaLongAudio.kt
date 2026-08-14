@@ -33,11 +33,36 @@ internal object SherpaLongAudio {
     const val OVERLAP_MILLIS = 500
     const val STREAMING_WINDOW_SECONDS = TARGET_CHUNK_SECONDS + 2
 
+    /**
+     * The shortest waveform handed to an offline recognizer.
+     *
+     * A single word is a fraction of a second of audio, and Moonshine returns no
+     * tokens at all for one: its preprocessor stacks convolutions and strided
+     * pooling, so a waveform this short reaches the encoder as a handful of
+     * frames the decoder ends immediately. "Hey" and "Hello" were reported as
+     * nothing transcribed while a whole sentence in the same session worked.
+     * Applied to every family because none of them is worse off for it: trailing
+     * silence costs one short decode and is what a model was trained to see
+     * around speech anyway.
+     */
+    private const val MINIMUM_DECODE_MILLIS = 1_000
+
     private const val SILENCE_FRAME_MILLIS = 100
     private const val SILENCE_SEARCH_MILLIS = 2_000
     private const val MIN_CHUNK_SECONDS = 4
     private const val MIN_SILENCE_RMS = 0.0125
     private const val SILENCE_RMS_RATIO = 0.18
+
+    /**
+     * [samples] with trailing silence to [MINIMUM_DECODE_MILLIS], or unchanged
+     * when it is already long enough. Returns the same array wherever it can:
+     * only a very short recording is ever copied.
+     */
+    fun padded(samples: FloatArray): FloatArray {
+        val minimum = MINIMUM_DECODE_MILLIS * SAMPLE_RATE / 1_000
+        if (samples.isEmpty() || samples.size >= minimum) return samples
+        return samples.copyOf(minimum)
+    }
 
     fun chunks(samples: FloatArray): List<SherpaAudioChunk> {
         if (samples.size <= LONG_AUDIO_THRESHOLD_SECONDS * SAMPLE_RATE) {

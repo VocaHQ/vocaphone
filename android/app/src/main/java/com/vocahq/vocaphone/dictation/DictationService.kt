@@ -1,6 +1,5 @@
 package com.vocahq.vocaphone.dictation
 
-import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -47,11 +46,10 @@ class DictationService : Service() {
             ACTION_START -> {
                 // Called before any capture begins: Android requires the microphone
                 // foreground service to be visible for the whole recording.
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification("Listening"),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-                )
+                if (!startRecordingForeground()) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
                 val source = intent.getStringExtra(EXTRA_SOURCE)
                     ?.let { runCatching { DictationSource.valueOf(it) }.getOrNull() }
                     ?: DictationSource.COMPANION_APP
@@ -72,6 +70,36 @@ class DictationService : Service() {
             else -> stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    /**
+     * Goes foreground as a microphone service, and reports whether Android let it.
+     *
+     * Every one of these throws rather than returning a failure, and none of them
+     * is under the app's control. A microphone foreground service needs the
+     * caller to hold while-in-use microphone access at this exact moment, and
+     * whether it does is decided by the platform and, on some OEM builds, by a
+     * background policy of the vendor's own: OxygenOS refuses starts that stock
+     * Android allows. The keyboard is the common case — an IME is not a
+     * foreground app in the sense this check uses — and the crash landed on the
+     * user as the whole app disappearing when they tapped the microphone.
+     *
+     * A refusal is a dictation that cannot start, which the surfaces already
+     * know how to say. It is not a reason to take the process down.
+     */
+    private fun startRecordingForeground(): Boolean = try {
+        startForeground(
+            NOTIFICATION_ID,
+            notification("Listening"),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+        )
+        true
+    } catch (_: RuntimeException) {
+        // Every refusal arrives as one of these: SecurityException for the
+        // while-in-use check, IllegalStateException for a start Android no
+        // longer considers allowed, and the vendor policies use both.
+        VocaPhoneApplication.container(this).dictation.reportForegroundServiceRefused()
+        false
     }
 
     /**
@@ -122,12 +150,12 @@ class DictationService : Service() {
     }
 
     private fun notification(status: String): Notification {
-        val open = PendingIntent.getActivity(
-            this,
-            0,
-            packageManager.getLaunchIntentForPackage(packageName),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
+        // Some OEM launchers resolve no launch intent for a package. The
+        // notification is what keeps the recording legal, so it is built with or
+        // without somewhere to tap through to.
+        val open = packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
+            PendingIntent.getActivity(this, 0, launch, PendingIntent.FLAG_IMMUTABLE)
+        }
         val cancel = PendingIntent.getService(
             this,
             1,
@@ -184,7 +212,13 @@ class DictationService : Service() {
                 .putExtra(EXTRA_SOURCE, source.name)
             try {
                 ContextCompat.startForegroundService(context, intent)
-            } catch (_: ForegroundServiceStartNotAllowedException) {
+            } catch (_: IllegalStateException) {
+                // ForegroundServiceStartNotAllowedException is the documented
+                // one, and is an IllegalStateException. OEM builds enforcing
+                // their own background policy — OxygenOS among them — refuse
+                // the same start with the plain superclass instead, and taking
+                // only the subclass turned a refusal the fallback below handles
+                // into the app disappearing on the user's microphone tap.
                 context.startActivity(
                     Intent(context, DictationLauncherActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)

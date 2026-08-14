@@ -41,7 +41,7 @@ internal class SherpaRecognizer private constructor(
     private fun decode(samples: FloatArray): SherpaTranscript {
         val stream = recognizer.createStream()
         return try {
-            stream.acceptWaveform(samples, SherpaLongAudio.SAMPLE_RATE)
+            stream.acceptWaveform(SherpaLongAudio.padded(samples), SherpaLongAudio.SAMPLE_RATE)
             recognizer.decode(stream)
             val result = recognizer.getResult(stream)
             SherpaTranscript(

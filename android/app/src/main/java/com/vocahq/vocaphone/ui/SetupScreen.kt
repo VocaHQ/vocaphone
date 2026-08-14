@@ -108,6 +108,7 @@ fun SetupScreen(
             LocalModelPicker(
                 state = localModels,
                 selectedModelId = settings.localModelId,
+                language = settings.effectiveLanguage.wireValue,
                 onSelect = onLocalModel,
                 onDownload = onDownloadLocalModel,
                 onDownloadAndUse = onDownloadAndUseLocalModel,

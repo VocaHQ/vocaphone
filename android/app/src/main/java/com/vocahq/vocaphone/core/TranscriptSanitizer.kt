@@ -58,26 +58,36 @@ object TranscriptSanitizer {
      * so one copy is kept. A single word genuinely is — "no no no no" is a
      * sentence — so it takes more repeats to look like a loop, and two copies
      * survive to record that the emphasis was there.
+     *
+     * Punctuation lowers the bar to a single repeat. A loop restarts the
+     * decoder's sentence, so its copies arrive finished — "Hi. Hi." — where
+     * emphasis and reduplication do not: "bye bye" and "no no no" are one
+     * sentence with the punctuation, if any, only at the end. That distinction
+     * is what lets the two-word case be collapsed at all, and it is the shape
+     * the smallest and most common loop takes.
      */
     private fun collapseRepetition(line: String): String {
         if (line.isEmpty()) return line
         val words = line.split(' ').filter { it.isNotEmpty() }
-        if (words.size < 4) return line
+        if (words.size < 2) return line
 
         val result = mutableListOf<String>()
         var index = 0
         while (index < words.size) {
             var phrase = 0
             var repeats = 0
-            // Ascending, keeping the last match, so the longest repeating unit
-            // wins: "thank you thank you thank you" is one phrase three times
-            // over, not six unrelated words.
+            var kept = 0
+            // Ascending, stopping at the first match, so the shortest repeating
+            // unit wins. A phrase repeated four times is also a double phrase
+            // repeated twice, and only the shorter reading collapses all of it:
+            // "Thank you." four times over is one sentence, not two.
             for (length in 1..minOf(MAX_PHRASE_WORDS, (words.size - index) / 2)) {
                 val count = countRepeats(words, index, length)
-                if (count >= if (length == 1) 4 else 3) {
-                    phrase = length
-                    repeats = count
-                }
+                val survivors = keptCopies(words, index, length, count) ?: continue
+                phrase = length
+                repeats = count
+                kept = survivors
+                break
             }
             if (phrase == 0) {
                 result += words[index]
@@ -86,12 +96,38 @@ object TranscriptSanitizer {
             }
             // Taken from the source rather than the first copy repeated, so the
             // survivors keep the punctuation they arrived with.
-            val kept = if (phrase == 1) 2 else 1
             for (offset in 0 until phrase * kept) result += words[index + offset]
             index += phrase * repeats
         }
         return result.joinToString(" ")
     }
+
+    /**
+     * How many copies of this run survive, or null when it is not a loop.
+     */
+    private fun keptCopies(words: List<String>, start: Int, length: Int, repeats: Int): Int? = when {
+        repeats < 2 -> null
+        // Every copy a finished sentence: the decoder restarted, a speaker
+        // repeating themselves for emphasis did not.
+        sentencesRepeated(words, start, length, repeats) -> 1
+        repeats >= if (length == 1) 4 else 3 -> if (length == 1) 2 else 1
+        else -> null
+    }
+
+    /** Whether each of the [repeats] copies ends its own sentence. */
+    private fun sentencesRepeated(
+        words: List<String>,
+        start: Int,
+        length: Int,
+        repeats: Int,
+    ): Boolean = (0 until repeats).all { copy ->
+        val last = words[start + copy * length + length - 1]
+        val ending = last.trimEnd('"', '\'', ')', ']', '»', '”').lastOrNull()
+        ending != null && ending in SENTENCE_ENDINGS
+    }
+
+    /** What a decoder finishes a sentence with, across the scripts on offer. */
+    private val SENTENCE_ENDINGS = setOf('.', '!', '?', '。', '！', '？', '।', '۔')
 
     /** How many times the [length]-word unit at [start] repeats back to back. */
     private fun countRepeats(words: List<String>, start: Int, length: Int): Int {

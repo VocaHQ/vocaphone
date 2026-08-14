@@ -109,11 +109,19 @@ Java_com_vocahq_vocaphone_local_WhisperLib_00024Companion_fullTranscribe(
     params.language = language;
     params.n_threads = num_threads;
     params.no_context = true;
-    // The client only consumes text. Timestamp tokens add decoder work and
-    // their segment boundaries are never used, so decode one text segment per
-    // 30-second whisper window instead of making the phone predict timestamps
-    // that are immediately discarded.
-    params.no_timestamps = true;
+    // The client only consumes text, so the whole window stays one segment and
+    // no timestamp is ever printed.
+    //
+    // The tokens themselves are predicted anyway. Suppressing them (the
+    // `no_timestamps` this used to set) is what a decoder with nothing left to
+    // transcribe stops on: without a timestamp token to emit, the only way out
+    // of a window is an end-of-text the model is reluctant to produce over
+    // padding, so it repeats the last phrase until the window ends instead.
+    // "Hi" coming back as "Hi. Hi." is exactly that, and the larger models —
+    // more confident about continuing — fall into it most readily. Predicting
+    // timestamps costs a little decoder work per window and is the difference
+    // between a transcript that stops and one that loops.
+    params.no_timestamps = false;
     params.single_segment = true;
     // whisper.cpp defaults greedy.best_of to five. That default is also used
     // for temperature-fallback passes, and it turns a rare retry into five

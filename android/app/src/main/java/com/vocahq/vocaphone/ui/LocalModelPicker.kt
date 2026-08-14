@@ -42,6 +42,8 @@ import com.vocahq.vocaphone.local.LocalModelState
 fun LocalModelPicker(
     state: LocalModelState,
     selectedModelId: String,
+    /** Wire value of the language being dictated, which the recommendation follows. */
+    language: String,
     onSelect: (LocalModelDescriptor) -> Unit,
     onDownload: (LocalModelDescriptor) -> Unit,
     onDownloadAndUse: (LocalModelDescriptor) -> Unit = onDownload,
@@ -51,8 +53,8 @@ fun LocalModelPicker(
     val usable = remember(state.totalRamGB) {
         LocalModelCatalog.usableOnDevice(state.totalRamGB).sortedBy { it.sizeBytes }
     }
-    val recommended = remember(state.totalRamGB) {
-        LocalModelCatalog.recommended(state.totalRamGB)
+    val recommended = remember(state.totalRamGB, language) {
+        LocalModelCatalog.recommended(state.totalRamGB, language)
     }
     val selectedModel = usable.firstOrNull { it.id == selectedModelId }
 
@@ -82,7 +84,14 @@ fun LocalModelPicker(
         return
     }
 
-    if (state.downloading != null || state.preparing != null) {
+    // Every model on screen reports its own progress inside its card, so the
+    // banner is only for the one the current search or filter is hiding.
+    // Without this the recommended model — which always has a card — showed its
+    // download twice over, two progress bars and two Cancel buttons.
+    val busyModelVisible = filtered.any {
+        it.id == state.downloading || it.displayName == state.preparing
+    }
+    if (busy && !busyModelVisible) {
         ModelBusyBanner(state = state, onCancelDownload = onCancelDownload)
     }
 
@@ -422,7 +431,7 @@ private fun ModelActions(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Downloading",
+                    "Downloading · ${state.progress}%",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )

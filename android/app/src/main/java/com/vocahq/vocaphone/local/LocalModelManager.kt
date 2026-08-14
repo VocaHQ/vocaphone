@@ -434,6 +434,7 @@ class LocalModelManager(
             resolvedLanguage,
             quality,
             CustomVocabulary.whisperPrompt(vocabulary),
+            cropAudioContext = model.cropsAudioContext,
         ) ?: error("Local transcription engine is not loaded")
     }
 

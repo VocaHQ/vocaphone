@@ -73,6 +73,19 @@ data class LocalModelDescriptor(
     val languageCodes: Set<String> = emptySet(),
     /** True when the model decides the language itself and ignores the request. */
     val detectsLanguage: Boolean = false,
+    /**
+     * Whether this model may be decoded with whisper's encoder window cropped to
+     * the recording (see `WhisperCpuConfig.whisperAudioContext`).
+     *
+     * Cropping is most of the speed of a short dictation and it is also how a
+     * decoder ends up repeating itself, because the encoder output it produces
+     * is off the distribution the model was trained on. How much a model
+     * tolerates that scales with its size: tiny through small are unaffected at
+     * the margin used here, while medium and large answered a one-word dictation
+     * with the same word twice. Those decode at the full window and pay for the
+     * padding instead.
+     */
+    val cropsAudioContext: Boolean = false,
 ) {
     val sizeLabel: String
         get() = if (sizeBytes >= 1_000_000_000) {
@@ -202,21 +215,71 @@ object LocalModelCatalog {
     fun find(id: String): LocalModelDescriptor? = all.firstOrNull { it.id == id }
 
     /**
+     * The model a new user should start on, for [language] on this hardware.
+     *
      * A model fitting in RAM does not mean the CPU can transcribe with it at an
      * interactive speed. Older high-RAM phones report no media performance
      * class, so keep their default conservative while leaving every model that
      * fits available as an explicit choice.
+     *
+     * Where a specialist model exists for the requested language, it wins over
+     * whisper regardless of what the phone could manage. The transducer and CTC
+     * families are an order of magnitude faster than whisper at the same
+     * accuracy on the one language they were trained for — Parakeet at 661 MB
+     * transcribes instantly where whisper's 574 MB large-turbo takes five to
+     * eight seconds for the same few words on the same phone. That first
+     * dictation is the whole impression a new user gets.
      */
     fun recommended(
         totalRamGB: Long,
+        language: String = "auto",
         mediaPerformanceClass: Int = Build.VERSION.MEDIA_PERFORMANCE_CLASS,
-    ): LocalModelDescriptor = when {
-        totalRamGB >= 12 && mediaPerformanceClass >= 34 -> find("large-v3-turbo")
-        totalRamGB >= 6 && mediaPerformanceClass >= 31 -> find("large-v3-turbo-q5_0")
+    ): LocalModelDescriptor = recommended(totalRamGB, language, mediaPerformanceClass, sherpaAvailable)
+
+    /** [sherpaAvailable] is a parameter here only so it can be decided in a test. */
+    internal fun recommended(
+        totalRamGB: Long,
+        language: String,
+        mediaPerformanceClass: Int,
+        sherpaAvailable: Boolean,
+    ): LocalModelDescriptor = specialist(totalRamGB, language, sherpaAvailable)
+        ?: whisperFor(totalRamGB, mediaPerformanceClass)
+
+    /**
+     * The fastest model that only does [language], or null when there is none
+     * this phone can run — including every build without sherpa-onnx.
+     *
+     * Deliberately not extended to the multilingual sherpa models. Parakeet's
+     * 25-language build is as quick as its English one and noticeably weaker on
+     * French and German, so "Automatic" and everything not listed here stays on
+     * whisper, which is honest about covering the language it was asked for.
+     */
+    private fun specialist(
+        totalRamGB: Long,
+        language: String,
+        sherpaAvailable: Boolean,
+    ): LocalModelDescriptor? {
+        if (!sherpaAvailable) return null
+        val candidates = when (language) {
+            "en" -> listOf("parakeet-tdt-0.6b-v2-en", "moonshine-base-en", "moonshine-tiny-en")
+            "ru" -> listOf("giga-am-ctc-ru")
+            else -> return null
+        }
+        return candidates
+            .mapNotNull(::find)
+            .firstOrNull { totalRamGB >= it.minimumRamGB }
+    }
+
+    private fun whisperFor(totalRamGB: Long, mediaPerformanceClass: Int): LocalModelDescriptor = when {
+        // One tier below what this used to recommend at each step. A large
+        // encoder is where a mid-range phone spends its seconds, and a first
+        // dictation that lands quickly and slightly less accurately is a better
+        // introduction than an accurate one the user waits out.
+        totalRamGB >= 12 && mediaPerformanceClass >= 34 -> find("large-v3-turbo-q5_0")
         // RAM only says that a model fits. Older high-RAM phones such as the
-        // POCO F1 still need the smaller encoder to finish at a usable speed.
+        // POCO F1 declare no performance class and still need the smaller
+        // encoder to finish at a usable speed.
         totalRamGB >= 4 && mediaPerformanceClass >= 31 -> find("small-q5_1")
-        totalRamGB >= 4 -> find("base-q5_1")
         totalRamGB >= 3 -> find("base-q5_1")
         else -> find("tiny-q5_1")
     } ?: all.first()
@@ -249,6 +312,10 @@ object LocalModelCatalog {
         languages = languages,
         englishOnly = englishOnly,
         languageCodes = if (englishOnly) setOf("en") else emptySet(),
+        // Everything up to and including small. The two families above them
+        // repeat themselves when the encoder window is cropped, and the naming
+        // here is upstream's own and stable across releases.
+        cropsAudioContext = !name.startsWith("medium") && !name.startsWith("large"),
     )
 
     fun downloadUrl(model: LocalModelDescriptor, file: PinnedFile): String =
