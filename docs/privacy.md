@@ -84,7 +84,8 @@ The Android IME inserts through `InputConnection`. Dictation does not read the
 field. With Suggestions enabled, the keyboard may call `getTextBeforeCursor(32)`
 in non-password fields so next-word guesses have a previous token. That window
 stays in memory, is never logged, and is not sent to the gateway. The clipboard
-paste chip reads the current clip only while the input view is showing. Neither
+paste chip reads the current clip only while the input view is showing and
+you have not started typing. Neither
 path is used to insert a transcript.
 
 ## Per-device tokens

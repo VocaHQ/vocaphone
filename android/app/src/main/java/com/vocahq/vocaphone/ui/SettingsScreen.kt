@@ -16,7 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -65,12 +64,15 @@ fun SettingsScreen(
     onCancelLocalModelDownload: () -> Unit,
     onDeleteLocalModel: (LocalModelDescriptor) -> Unit,
     onOpenGateway: () -> Unit,
+    onTryDictation: () -> Unit,
     diagnosticEvents: () -> String,
     onClearDiagnosticEvents: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val appInfo = remember { context.readAppInfo() }
+    var pickingLanguage by remember { mutableStateOf(false) }
+    var modelsOpen by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -80,62 +82,10 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
     ) {
         Section(
-            title = "Gateway",
-            supporting = settings.gatewayUrl.ifEmpty { "Not configured" },
+            title = "Try dictation",
+            supporting = "Record in the app, or pick VocaPhone as the keyboard in any text field.",
         ) {
-            Text(
-                buildString {
-                    append("Engine: ")
-                    append(settings.lastEngine.ifEmpty { "unknown" })
-                    append(if (settings.lastEngineReady) " (ready)" else " (not ready)")
-                    append("\nStreaming: ")
-                    append(if (settings.lastStreamingSupported) "supported" else "batch upload")
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            SecondaryButton("Gateway settings", onClick = onOpenGateway)
-            SecondaryButton(
-                text = "Open web dashboard",
-                onClick = { context.openUrl(settings.gatewayUrl) },
-                enabled = settings.gatewayUrl.isNotEmpty(),
-            )
-            Text(
-                "For more customization, including choosing the speech-to-text model, " +
-                    "open your gateway's web dashboard.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Section(
-            title = "On-device models",
-            supporting = "Run speech-to-text privately on this phone. The gateway is not used while this is enabled.",
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Use on-device transcription")
-                    Text(
-                        "Downloads are checked with SHA-256 before they are accepted.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = settings.localTranscriptionEnabled,
-                    onCheckedChange = onLocalTranscriptionEnabled,
-                )
-            }
-            LocalModelPicker(
-                state = localModels,
-                selectedModelId = settings.localModelId,
-                onSelect = onLocalModel,
-                onDownload = onDownloadLocalModel,
-                onCancelDownload = onCancelLocalModelDownload,
-                onDelete = onDeleteLocalModel,
-            )
+            PrimaryButton("Try dictation", onClick = onTryDictation, modifier = Modifier.fillMaxWidth())
         }
 
         Section(
@@ -179,7 +129,6 @@ fun SettingsScreen(
 
         // One row rather than 27 wrapping chips, which pushed every setting below
         // this one off the screen. The full list, with search, lives in a sheet.
-        var pickingLanguage by remember { mutableStateOf(false) }
         val languageRestriction = ModelLanguageSupport.restriction(
             settings.activeModelLanguages,
             settings.activeModelDetectsLanguage,
@@ -272,7 +221,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Clipboard paste")
                     Text(
-                        "Show a paste chip when the current clip is text and the keyboard is open.",
+                        "Show a paste chip before you start typing. Predictions replace it once you type.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -303,13 +252,87 @@ fun SettingsScreen(
             )
         }
 
+        Section(
+            title = "Gateway",
+            supporting = settings.gatewayUrl.ifEmpty { "Not configured" },
+        ) {
+            Text(
+                buildString {
+                    append("Engine: ")
+                    append(settings.lastEngine.ifEmpty { "unknown" })
+                    append(if (settings.lastEngineReady) " (ready)" else " (not ready)")
+                    append("\nStreaming: ")
+                    append(if (settings.lastStreamingSupported) "supported" else "batch upload")
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            SecondaryButton("Gateway settings", onClick = onOpenGateway)
+            SecondaryButton(
+                text = "Open web dashboard",
+                onClick = { context.openUrl(settings.gatewayUrl) },
+                enabled = settings.gatewayUrl.isNotEmpty(),
+            )
+            Text(
+                "For more customization, including choosing the speech-to-text model, " +
+                    "open your gateway's web dashboard.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Section(
+            title = "On-device models",
+            supporting = "Run speech-to-text privately on this phone. The gateway is not used while this is enabled.",
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Use on-device transcription")
+                    Text(
+                        "Downloads are checked with SHA-256 before they are accepted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = settings.localTranscriptionEnabled,
+                    onCheckedChange = onLocalTranscriptionEnabled,
+                )
+            }
+            if (modelsOpen) {
+                LocalModelPicker(
+                    state = localModels,
+                    selectedModelId = settings.localModelId,
+                    onSelect = onLocalModel,
+                    onDownload = onDownloadLocalModel,
+                    onCancelDownload = onCancelLocalModelDownload,
+                    onDelete = onDeleteLocalModel,
+                )
+                TextButton(onClick = { modelsOpen = false }) { Text("Hide model catalog") }
+            } else {
+                Text(
+                    if (settings.localTranscriptionEnabled && settings.localModelId.isNotEmpty()) {
+                        "Using ${settings.localModelId}."
+                    } else {
+                        "Catalog is hidden so the rest of Settings stays on screen."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SecondaryButton("Show model catalog", onClick = { modelsOpen = true })
+            }
+        }
+
         Section("Privacy") {
             Text(
                 "VocaPhone's keyboard inserts through Android's text connection. " +
                     "Dictation does not read the field. With Suggestions on, the keyboard " +
                     "reads about 32 characters before the cursor so it can guess the next " +
                     "word; that text stays on this phone and is never logged. The clipboard " +
-                    "chip reads the current clip only while the keyboard is visible. Audio " +
+                    "chip reads the current clip only while the keyboard is visible and " +
+                    "you have not started typing. Audio " +
                     "goes to on-device transcription or the gateway you configured. There is " +
                     "no cloud transcription, no analytics, and nothing is written to the " +
                     "clipboard unless you tap Copy.",

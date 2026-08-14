@@ -68,6 +68,18 @@ internal data class ClipboardChip(
     val fullText: String,
 )
 
+/** What the single Gboard-style toolbar row should show. */
+internal object KeyboardChrome {
+    fun startedTyping(composing: String, textBeforeCursor: CharSequence): Boolean =
+        composing.isNotEmpty() || textBeforeCursor.any { !it.isWhitespace() }
+
+    fun clipboardForStrip(clipboard: ClipboardChip?, startedTyping: Boolean): ClipboardChip? =
+        clipboard.takeIf { !startedTyping }
+
+    fun suggestionsForStrip(suggestions: List<String>, startedTyping: Boolean): List<String> =
+        if (startedTyping) suggestions else emptyList()
+}
+
 /** Pure keyboard-state reducer so behavior stays testable outside the IME process. */
 internal object KeyboardReducer {
     const val CAPS_LOCK_WINDOW_MILLIS = 350L

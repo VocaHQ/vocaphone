@@ -153,7 +153,9 @@ internal fun VocaPhoneKeyboard(
         }
     }
     val clipboardChip = clipboard.takeIf { settings.clipboardChipEnabled && !editor.sensitive }
-    val showSuggestionStrip = clipboardChip != null || suggestionItems.isNotEmpty()
+    val startedTyping = KeyboardChrome.startedTyping(keyboardState.composing, textBeforeCursor)
+    val stripClipboard = KeyboardChrome.clipboardForStrip(clipboardChip, startedTyping)
+    val stripSuggestions = KeyboardChrome.suggestionsForStrip(suggestionItems, startedTyping)
 
     fun handleKey(key: KeyboardKey) {
         val reduction = KeyboardReducer.press(
@@ -182,8 +184,19 @@ internal fun VocaPhoneKeyboard(
                     settings = settings,
                     barHeight = settings.keyboardHeight.dictationBarDp.dp,
                     isPreferenceWritePending = isPreferenceWritePending,
+                    clipboard = stripClipboard.takeIf { preferencePanel == null },
+                    suggestions = stripSuggestions.takeIf { preferencePanel == null }.orEmpty(),
                     onMicTap = onMicTap,
                     onOpenApp = onOpenApp,
+                    onPaste = onPasteClipboard,
+                    onSuggestion = { word ->
+                        keyboardState = keyboardState.copy(
+                            composing = "",
+                            lastWasSpace = true,
+                            capitalizeAfterSpace = false,
+                        )
+                        onSuggestionPicked(word)
+                    },
                     activePreferencePanel = preferencePanel,
                     onLanguageChipTapped = {
                         preferencePanel = if (preferencePanel == PreferencePanel.LANGUAGE) {
@@ -201,22 +214,6 @@ internal fun VocaPhoneKeyboard(
                     },
                 )
                 Spacer(Modifier.height(4.dp))
-                if (showSuggestionStrip && preferencePanel == null) {
-                    SuggestionStrip(
-                        clipboard = clipboardChip,
-                        suggestions = suggestionItems,
-                        onPaste = onPasteClipboard,
-                        onSuggestion = { word ->
-                            keyboardState = keyboardState.copy(
-                                composing = "",
-                                lastWasSpace = true,
-                                capitalizeAfterSpace = false,
-                            )
-                            onSuggestionPicked(word)
-                        },
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
                 when (preferencePanel) {
                     PreferencePanel.LANGUAGE -> LanguagePreferencePanel(
                         settings = settings,
@@ -298,24 +295,29 @@ private fun DictationBar(
     settings: VocaPhoneSettings,
     barHeight: Dp,
     isPreferenceWritePending: Boolean,
+    clipboard: ClipboardChip?,
+    suggestions: List<String>,
     onMicTap: () -> Unit,
     onOpenApp: () -> Unit,
+    onPaste: () -> Unit,
+    onSuggestion: (String) -> Unit,
     activePreferencePanel: PreferencePanel?,
     onLanguageChipTapped: () -> Unit,
     onStyleChipTapped: () -> Unit,
 ) {
     val view = LocalView.current
+    val idle = state.phase == DictationPhase.IDLE
     val status = when {
         editor.sensitive -> "Private field"
         !editor.dictationAllowed -> "Typing only"
-        state.phase == DictationPhase.IDLE -> "VocaPhone"
+        idle -> "VocaPhone"
         state.phase == DictationPhase.LISTENING -> "Listening · ${formatDuration(state.recordedMillis)}"
         else -> state.statusText
     }
     val detail = when {
         editor.sensitive -> "Dictation is off here"
         !editor.dictationAllowed -> "Dictation is available in text fields"
-        state.phase == DictationPhase.IDLE -> "Tap the mic to dictate"
+        idle -> ""
         state.phase == DictationPhase.LISTENING && state.partialTranscript.isNotBlank() ->
             state.partialTranscript.replace('\n', ' ').take(64)
         state.phase == DictationPhase.LISTENING -> state.inputRouteLabel ?: "Tap the mic again to finish"
@@ -329,72 +331,98 @@ private fun DictationBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(barHeight)
-            .padding(horizontal = 6.dp),
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Surface(
-            modifier = Modifier
-                .size(42.dp)
-                .semantics {
-                    role = Role.Button
-                    contentDescription = "Open VocaPhone"
-                },
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ToolbarIconButton(
+            contentDescription = "Open VocaPhone",
             onClick = {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 onOpenApp()
             },
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = "V",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Black,
+            Text(
+                text = "V",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Black,
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            when {
+                !idle || !editor.dictationAllowed -> {
+                    if (state.isRecording) {
+                        Waveform(level = state.level)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (detail.isNotEmpty()) {
+                            Text(
+                                text = detail,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                clipboard != null -> SuggestionChip(
+                    label = "Paste ${clipboard.preview}",
+                    onClick = onPaste,
+                    modifier = Modifier.weight(1f),
                 )
+                suggestions.isNotEmpty() -> suggestions.take(3).forEach { word ->
+                    SuggestionChip(
+                        label = word,
+                        onClick = { onSuggestion(word) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                else -> Spacer(Modifier.weight(1f))
             }
         }
 
-        if (state.phase == DictationPhase.IDLE && editor.dictationAllowed) {
-            PreferenceControls(
-                settings = settings,
+        if (idle && editor.dictationAllowed) {
+            ToolbarIconButton(
+                contentDescription = "Transcription language, ${settings.effectiveLanguage.displayName}",
+                active = activePreferencePanel == PreferencePanel.LANGUAGE,
                 enabled = !isPreferenceWritePending,
-                activePanel = activePreferencePanel,
-                onLanguageTapped = onLanguageChipTapped,
-                onStyleTapped = onStyleChipTapped,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
-            )
-        } else {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 10.dp)
-                    .semantics { liveRegion = LiveRegionMode.Polite },
-                verticalArrangement = Arrangement.Center,
+                onClick = onLanguageChipTapped,
+            ) {
+                KeyboardIcon(
+                    glyph = Glyph.GLOBE,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            ToolbarIconButton(
+                contentDescription = "Writing style, ${settings.style.displayName}",
+                active = activePreferencePanel == PreferencePanel.STYLE,
+                enabled = !isPreferenceWritePending,
+                onClick = onStyleChipTapped,
             ) {
                 Text(
-                    text = status,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = detail,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = "Aa",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
                 )
             }
-        }
-
-        if (state.isRecording) {
-            Waveform(level = state.level)
-            Spacer(Modifier.width(8.dp))
         }
 
         MicButton(
@@ -406,142 +434,31 @@ private fun DictationBar(
 }
 
 @Composable
-private fun PreferenceControls(
-    settings: VocaPhoneSettings,
-    enabled: Boolean,
-    activePanel: PreferencePanel?,
-    onLanguageTapped: () -> Unit,
-    onStyleTapped: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.height(40.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        LanguagePreferenceChip(
-            selected = settings.effectiveLanguage,
-            enabled = enabled,
-            active = activePanel == PreferencePanel.LANGUAGE,
-            onClick = onLanguageTapped,
-            modifier = Modifier.weight(0.9f),
-        )
-        StylePreferenceChip(
-            selected = settings.style,
-            enabled = enabled,
-            active = activePanel == PreferencePanel.STYLE,
-            onClick = onStyleTapped,
-            modifier = Modifier.weight(1.1f),
-        )
-    }
-}
-
-@Composable
-private fun LanguagePreferenceChip(
-    selected: TranscriptionLanguage,
-    enabled: Boolean,
-    active: Boolean,
+private fun ToolbarIconButton(
+    contentDescription: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier) {
-        PreferenceChip(
-            label = selected.shortLabel,
-            accessibilityLabel = "Transcription language",
-            accessibilityValue = selected.displayName,
-            enabled = enabled,
-            active = active,
-            leading = {
-                KeyboardIcon(
-                    glyph = Glyph.GLOBE,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(17.dp),
-                )
-            },
-            onClick = onClick,
-        )
-    }
-}
-
-@Composable
-private fun StylePreferenceChip(
-    selected: WritingStyle,
-    enabled: Boolean,
-    active: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier) {
-        PreferenceChip(
-            label = selected.displayName,
-            accessibilityLabel = "Writing style",
-            accessibilityValue = selected.displayName,
-            enabled = enabled,
-            active = active,
-            leading = {
-                Text(
-                    text = "Aa",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            },
-            onClick = onClick,
-        )
-    }
-}
-
-@Composable
-private fun PreferenceChip(
-    label: String,
-    accessibilityLabel: String,
-    accessibilityValue: String,
-    enabled: Boolean,
-    active: Boolean,
-    leading: @Composable () -> Unit,
-    onClick: () -> Unit,
+    active: Boolean = false,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
 ) {
     Surface(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(36.dp)
+            .size(36.dp)
             .semantics {
-                contentDescription = "$accessibilityLabel, $accessibilityValue"
+                role = Role.Button
+                this.contentDescription = contentDescription
+                if (!enabled) disabled()
             },
-        shape = RoundedCornerShape(14.dp),
+        shape = CircleShape,
         color = if (active) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
             MaterialTheme.colorScheme.surfaceContainerHigh
         },
-        contentColor = if (active) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
         enabled = enabled,
         onClick = onClick,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            leading()
-            Text(
-                text = label,
-                modifier = Modifier.weight(1f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = if (active) "▴" else "▾",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-            )
-        }
+        Box(contentAlignment = Alignment.Center) { content() }
     }
 }
 
@@ -870,13 +787,13 @@ private fun MicButton(
 
     Surface(
         modifier = Modifier
-            .size(width = 64.dp, height = 44.dp)
+            .size(40.dp)
             .semantics {
                 role = Role.Button
                 contentDescription = description
                 if (!enabled) disabled()
             },
-        shape = RoundedCornerShape(18.dp),
+        shape = CircleShape,
         color = container,
         enabled = enabled,
         onClick = {
@@ -915,39 +832,6 @@ private fun Waveform(level: Float) {
                 end = Offset(x, (size.height + height) / 2),
                 strokeWidth = barWidth,
                 cap = StrokeCap.Round,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SuggestionStrip(
-    clipboard: ClipboardChip?,
-    suggestions: List<String>,
-    onPaste: () -> Unit,
-    onSuggestion: (String) -> Unit,
-) {
-    val suggestionSlots = if (clipboard == null) 3 else 2
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(36.dp)
-            .padding(horizontal = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (clipboard != null) {
-            SuggestionChip(
-                label = "Paste ${clipboard.preview}",
-                onClick = onPaste,
-                modifier = Modifier.weight(1.2f),
-            )
-        }
-        suggestions.take(suggestionSlots).forEach { word ->
-            SuggestionChip(
-                label = word,
-                onClick = { onSuggestion(word) },
-                modifier = Modifier.weight(1f),
             )
         }
     }
