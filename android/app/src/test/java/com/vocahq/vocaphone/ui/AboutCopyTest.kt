@@ -11,6 +11,7 @@ class AboutCopyTest {
     fun `source links point at the org, the repo, and a new issue`() {
         assertEquals("https://github.com/VocaHQ", ORG_URL)
         assertEquals("https://github.com/VocaHQ/vocaphone", PROJECT_URL)
+        assertEquals("https://vocaphone.vocahq.com", WEBSITE_URL)
         assertEquals("https://github.com/VocaHQ/vocaphone/issues/new/choose", NEW_ISSUE_URL)
     }
 

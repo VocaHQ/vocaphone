@@ -74,6 +74,9 @@ fun AboutPage(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
+            TextButton(onClick = { context.openHttpUrl(WEBSITE_URL) }) {
+                Text("vocaphone.vocahq.com")
+            }
         }
     }
 

@@ -14,6 +14,7 @@ import java.io.File
 
 const val ORG_URL = "https://github.com/VocaHQ"
 const val PROJECT_URL = "https://github.com/VocaHQ/vocaphone"
+const val WEBSITE_URL = "https://vocaphone.vocahq.com"
 const val NEW_ISSUE_URL = "https://github.com/VocaHQ/vocaphone/issues/new/choose"
 
 /** Quick start, engines, and pairing for a self-hosted gateway. */
