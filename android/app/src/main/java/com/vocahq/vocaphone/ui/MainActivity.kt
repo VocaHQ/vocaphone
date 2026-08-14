@@ -95,16 +95,18 @@ fun VocaPhoneApp(
     }
 
     var destination by remember { mutableStateOf(Destination.DICTATE) }
-    var settingsPage by remember { mutableStateOf<String?>(null) }
+    var settingsPage by remember { mutableStateOf(SettingsPage.HOME) }
     var showingGateway by remember { mutableStateOf(false) }
 
     LaunchedEffect(launchIntent) {
         val incoming = launchIntent ?: return@LaunchedEffect
         if (!incoming.getBooleanExtra(MainActivity.EXTRA_OPEN_SETTINGS, false)) return@LaunchedEffect
         destination = Destination.SETTINGS
-        settingsPage = incoming.getStringExtra(MainActivity.EXTRA_SETTINGS_PAGE)
-            ?: incoming.takeIf { it.getBooleanExtra(MainActivity.EXTRA_OPEN_MODELS, false) }
-                ?.let { "models" }
+        settingsPage = SettingsPage.fromExtra(
+            incoming.getStringExtra(MainActivity.EXTRA_SETTINGS_PAGE)
+                ?: incoming.takeIf { it.getBooleanExtra(MainActivity.EXTRA_OPEN_MODELS, false) }
+                    ?.let { "models" },
+        )
     }
 
     val showSetup = !settings.onboardingComplete && !showingGateway
@@ -117,19 +119,28 @@ fun VocaPhoneApp(
                         when {
                             showingGateway -> "Gateway"
                             showSetup -> "Setup"
+                            destination == Destination.SETTINGS -> settingsPage.title
                             else -> destination.label
                         }
                     )
                 },
                 navigationIcon = {
-                    // The gateway screen is pushed on top of setup, so it needs a
-                    // visible way back; the system gesture alone is not discoverable.
-                    if (showingGateway) {
-                        IconButton(onClick = { showingGateway = false }) {
-                            Icon(
-                                painterResource(R.drawable.ic_back),
-                                contentDescription = "Back",
-                            )
+                    when {
+                        showingGateway -> {
+                            IconButton(onClick = { showingGateway = false }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_back),
+                                    contentDescription = "Back",
+                                )
+                            }
+                        }
+                        destination == Destination.SETTINGS && settingsPage != SettingsPage.HOME -> {
+                            IconButton(onClick = { settingsPage = SettingsPage.HOME }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_back),
+                                    contentDescription = "Back",
+                                )
+                            }
                         }
                     }
                 },
@@ -141,7 +152,12 @@ fun VocaPhoneApp(
                     Destination.entries.forEach { entry ->
                         NavigationBarItem(
                             selected = destination == entry,
-                            onClick = { destination = entry },
+                            onClick = {
+                                if (destination == Destination.SETTINGS && entry == Destination.SETTINGS) {
+                                    settingsPage = SettingsPage.HOME
+                                }
+                                destination = entry
+                            },
                             icon = { Icon(painterResource(entry.icon), contentDescription = entry.label) },
                             label = { Text(entry.label) },
                         )
@@ -232,7 +248,8 @@ fun VocaPhoneApp(
                 onTryDictation = { destination = Destination.DICTATE },
                 diagnosticEvents = viewModel::diagnosticEvents,
                 onClearDiagnosticEvents = viewModel::clearDiagnosticEvents,
-                startPage = settingsPage,
+                page = settingsPage,
+                onPageChange = { settingsPage = it },
                 modifier = content,
             )
         }

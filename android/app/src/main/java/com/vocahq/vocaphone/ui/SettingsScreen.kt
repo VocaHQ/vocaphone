@@ -40,7 +40,7 @@ import com.vocahq.vocaphone.settings.AudioRetention
 import com.vocahq.vocaphone.settings.KeyboardHeight
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 
-private enum class SettingsPage(val title: String) {
+enum class SettingsPage(val title: String) {
     HOME("Settings"),
     MODELS("Models"),
     KEYBOARD("Keyboard"),
@@ -93,16 +93,16 @@ fun SettingsScreen(
     onTryDictation: () -> Unit,
     diagnosticEvents: () -> String,
     onClearDiagnosticEvents: () -> Unit,
-    startPage: String? = null,
+    page: SettingsPage,
+    onPageChange: (SettingsPage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val appInfo = remember { context.readAppInfo() }
     var pickingLanguage by remember { mutableStateOf(false) }
-    var page by remember(startPage) { mutableStateOf(SettingsPage.fromExtra(startPage)) }
     val localModel = LocalModelCatalog.find(settings.localModelId)
 
-    BackHandler(enabled = page != SettingsPage.HOME) { page = SettingsPage.HOME }
+    BackHandler(enabled = page != SettingsPage.HOME) { onPageChange(SettingsPage.HOME) }
 
     Column(
         modifier = modifier
@@ -111,11 +111,6 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(if (page == SettingsPage.HOME) CategorySpacing else SectionSpacing),
     ) {
-        if (page != SettingsPage.HOME) {
-            TextButton(onClick = { page = SettingsPage.HOME }) { Text("Back") }
-            Text(page.title, style = MaterialTheme.typography.headlineSmall)
-        }
-
         when (page) {
             SettingsPage.HOME -> {
                 SpeechSourceCard(
@@ -124,7 +119,6 @@ fun SettingsScreen(
                     onOpenGateway = onOpenGateway,
                     onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
                 )
-                ImeSetupCard(setup.ime)
                 val languageRestriction = ModelLanguageSupport.restriction(
                     settings.activeModelLanguages,
                     settings.activeModelDetectsLanguage,
@@ -142,34 +136,42 @@ fun SettingsScreen(
                     title = "Models",
                     supporting = localModel?.displayName ?: "Download a model for this phone",
                     icon = R.drawable.ic_models,
-                    onClick = { page = SettingsPage.MODELS },
+                    onClick = { onPageChange(SettingsPage.MODELS) },
                 )
                 SettingsMenuRow(
                     title = "Keyboard",
                     supporting = buildString {
+                        append(
+                            when {
+                                setup.ime.selected -> "Selected"
+                                setup.ime.enabled -> "Enabled"
+                                else -> "Not enabled"
+                            },
+                        )
+                        append(" · ")
                         append(settings.keyboardHeight.displayName)
                         if (settings.numberRowEnabled) append(" · number row")
                     },
                     icon = R.drawable.ic_keyboard,
-                    onClick = { page = SettingsPage.KEYBOARD },
+                    onClick = { onPageChange(SettingsPage.KEYBOARD) },
                 )
                 SettingsMenuRow(
                     title = "Dictation",
                     supporting = "${settings.style.displayName} · ${settings.microphone.displayName}",
                     icon = R.drawable.ic_dictation,
-                    onClick = { page = SettingsPage.DICTATION },
+                    onClick = { onPageChange(SettingsPage.DICTATION) },
                 )
                 SettingsMenuRow(
                     title = "Connection",
                     supporting = settings.gatewayUrl.ifEmpty { "No gateway configured" },
                     icon = R.drawable.ic_connection,
-                    onClick = { page = SettingsPage.CONNECTION },
+                    onClick = { onPageChange(SettingsPage.CONNECTION) },
                 )
                 SettingsMenuRow(
                     title = "About",
                     supporting = "VocaPhone ${appInfo.versionName}",
                     icon = R.drawable.ic_about,
-                    onClick = { page = SettingsPage.ABOUT },
+                    onClick = { onPageChange(SettingsPage.ABOUT) },
                 )
             }
 
