@@ -56,6 +56,7 @@ internal sealed interface KeyboardCommand {
     data class MoveCursor(val positions: Int) : KeyboardCommand
     data object DoubleSpacePeriod : KeyboardCommand
     data object FinishComposing : KeyboardCommand
+    data object CycleSelectionCase : KeyboardCommand
 }
 
 internal data class KeyboardReduction(
@@ -102,7 +103,59 @@ internal data class WordSpan(
 internal data class EditorTextWindow(
     val before: String = "",
     val after: String = "",
+    val selected: String = "",
 )
+
+/** Shift on a selection: camel → title → ALL CAPS → lower. */
+internal object CaseCycle {
+    fun next(text: String): String {
+        if (text.none { it.isLetter() }) return text
+        val options = linkedSetOf(
+            camel(text),
+            title(text),
+            text.uppercase(Locale.ROOT),
+            text.lowercase(Locale.ROOT),
+        ).toList()
+        val index = options.indexOf(text)
+        return options[(index + 1).mod(options.size)]
+    }
+
+    private fun title(text: String): String = mapWords(text) { index, word ->
+        if (index == 0) capitalize(word) else word.lowercase(Locale.ROOT)
+    }
+
+    private fun camel(text: String): String = mapWords(text) { index, word ->
+        if (index == 0) word.lowercase(Locale.ROOT) else capitalize(word)
+    }
+
+    private fun capitalize(word: String): String {
+        val letter = word.indexOfFirst { it.isLetter() }
+        if (letter < 0) return word
+        return word.substring(0, letter) +
+            word[letter].uppercaseChar() +
+            word.substring(letter + 1).lowercase(Locale.ROOT)
+    }
+
+    private fun mapWords(text: String, transform: (Int, String) -> String): String {
+        val out = StringBuilder(text.length)
+        var wordIndex = 0
+        var i = 0
+        while (i < text.length) {
+            if (isWordChar(text[i])) {
+                val start = i
+                while (i < text.length && isWordChar(text[i])) i++
+                out.append(transform(wordIndex++, text.substring(start, i)))
+            } else {
+                out.append(text[i])
+                i++
+            }
+        }
+        return out.toString()
+    }
+
+    private fun isWordChar(character: Char): Boolean =
+        character.isLetterOrDigit() || character == '\''
+}
 
 
 /** Pure keyboard-state reducer so behavior stays testable outside the IME process. */

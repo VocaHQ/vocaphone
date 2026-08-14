@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -232,6 +233,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 connection.deleteSurroundingText(1, 0)
                 connection.commitText(". ", 1)
             }
+            KeyboardCommand.CycleSelectionCase -> cycleSelectionCase()
         }
         refreshEditorText()
     }
@@ -285,9 +287,29 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         persistPreference { container.settings.recordEmojiRecent(emoji) }
     }
 
+    private fun cycleSelectionCase() {
+        val connection = currentInputConnection ?: return
+        connection.finishComposingText()
+        val selected = runCatching {
+            connection.getSelectedText(0)?.toString().orEmpty()
+        }.getOrDefault("")
+        if (selected.none { it.isLetter() }) return
+        val next = CaseCycle.next(selected)
+        val start = runCatching {
+            connection.getExtractedText(ExtractedTextRequest(), 0)?.selectionStart
+        }.getOrNull()
+        connection.commitText(next, 1)
+        if (start != null && start >= 0) {
+            connection.setSelection(start, start + next.length)
+        }
+    }
+
     private fun refreshEditorText() {
+        val selected = runCatching {
+            currentInputConnection?.getSelectedText(0)?.toString().orEmpty()
+        }.getOrDefault("")
         if (!visibleSettings.value.suggestionsEnabled || editorConfig.sensitive) {
-            visibleEditorText.value = EditorTextWindow()
+            visibleEditorText.value = EditorTextWindow(selected = selected)
             return
         }
         val before = runCatching {
@@ -296,7 +318,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val after = runCatching {
             currentInputConnection?.getTextAfterCursor(32, 0)?.toString().orEmpty()
         }.getOrDefault("")
-        visibleEditorText.value = EditorTextWindow(before, after)
+        visibleEditorText.value = EditorTextWindow(before, after, selected)
     }
 
     private fun syncShiftFromCursor() {

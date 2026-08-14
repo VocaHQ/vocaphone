@@ -203,6 +203,14 @@ internal fun VocaPhoneKeyboard(
 
     fun handleKey(key: KeyboardKey) {
         swipeChoices = emptyList()
+        if (
+            key.type == KeyboardKeyType.SHIFT &&
+            editorText.selected.any { it.isLetter() }
+        ) {
+            keyboardState = keyboardState.copy(composing = "")
+            onCommand(KeyboardCommand.CycleSelectionCase)
+            return
+        }
         val reduction = KeyboardReducer.press(
             state = keyboardState,
             key = key,
