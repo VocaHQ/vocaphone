@@ -721,7 +721,7 @@ private fun ToolbarMenuPanel(
                     MenuTile("Dictation", R.drawable.ic_dictation) { onOpenSettings("dictation") },
                 ),
                 listOf(
-                    MenuTile("Connection", R.drawable.ic_connection) { onOpenSettings("connection") },
+                    MenuTile("Speech", R.drawable.ic_connection) { onOpenSettings("connection") },
                     MenuTile("About", R.drawable.ic_about) { onOpenSettings("about") },
                     MenuTile("App", R.drawable.ic_settings) { onOpenSettings("") },
                 ),

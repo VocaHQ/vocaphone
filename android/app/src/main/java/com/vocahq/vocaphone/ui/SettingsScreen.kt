@@ -3,8 +3,6 @@ package com.vocahq.vocaphone.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,7 +43,7 @@ enum class SettingsPage(val title: String) {
     MODELS("Models"),
     KEYBOARD("Keyboard"),
     DICTATION("Dictation"),
-    CONNECTION("Connection"),
+    CONNECTION("Speech"),
     ABOUT("About"),
     ;
 
@@ -115,6 +113,7 @@ fun SettingsScreen(
                 SpeechSourceCard(
                     settings = settings,
                     onOpenGateway = onOpenGateway,
+                    onOpenModels = { onPageChange(SettingsPage.MODELS) },
                     onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
                 )
                 val languageRestriction = ModelLanguageSupport.restriction(
@@ -134,7 +133,12 @@ fun SettingsScreen(
                     )
                     SettingsMenuRow(
                         title = "Models",
-                        supporting = localModel?.displayName ?: "Download a model for this phone",
+                        supporting = when {
+                            !settings.localTranscriptionEnabled ->
+                                "Off while you use a gateway"
+                            localModel != null -> localModel.displayName
+                            else -> "Download a model for this phone"
+                        },
                         icon = R.drawable.ic_models,
                         onClick = { onPageChange(SettingsPage.MODELS) },
                     )
@@ -155,19 +159,13 @@ fun SettingsScreen(
                         icon = R.drawable.ic_keyboard,
                         onClick = { onPageChange(SettingsPage.KEYBOARD) },
                     )
-                    SettingsMenuRow(
-                        title = "Dictation",
-                        supporting = "${settings.style.displayName} · ${settings.microphone.displayName}",
-                        icon = R.drawable.ic_dictation,
-                        onClick = { onPageChange(SettingsPage.DICTATION) },
-                    )
-                    SettingsMenuRow(
-                        title = "Connection",
-                        supporting = settings.gatewayUrl.ifEmpty { "No gateway configured" },
-                        icon = R.drawable.ic_connection,
-                        onClick = { onPageChange(SettingsPage.CONNECTION) },
-                    )
-                    SettingsMenuRow(
+                SettingsMenuRow(
+                    title = "Dictation",
+                    supporting = "${settings.style.displayName} · ${settings.microphone.displayName}",
+                    icon = R.drawable.ic_dictation,
+                    onClick = { onPageChange(SettingsPage.DICTATION) },
+                )
+                SettingsMenuRow(
                         title = "About",
                         supporting = "VocaPhone ${appInfo.versionName}",
                         icon = R.drawable.ic_about,
@@ -180,6 +178,7 @@ fun SettingsScreen(
                 LocalModelPicker(
                     state = localModels,
                     selectedModelId = settings.localModelId,
+                    usingGateway = !settings.localTranscriptionEnabled,
                     onSelect = onLocalModel,
                     onDownload = onDownloadLocalModel,
                     onDownloadAndUse = onDownloadAndUseLocalModel,
@@ -311,29 +310,12 @@ fun SettingsScreen(
             }
 
             SettingsPage.CONNECTION -> {
-                FeaturedCard {
-                    Text(
-                        buildString {
-                            append("Engine: ")
-                            append(settings.lastEngine.ifEmpty { "unknown" })
-                            append(if (settings.lastEngineReady) " (ready)" else " (not ready)")
-                            append("\nStreaming: ")
-                            append(if (settings.lastStreamingSupported) "supported" else "batch upload")
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    SecondaryButton("Gateway settings", onClick = onOpenGateway)
-                    SecondaryButton(
-                        text = "Open web dashboard",
-                        onClick = { context.openUrl(settings.gatewayUrl) },
-                        enabled = settings.gatewayUrl.isNotEmpty(),
-                    )
-                    Text(
-                        "The dashboard is where you pick a speech-to-text model for the gateway.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                SpeechSourceCard(
+                    settings = settings,
+                    onOpenGateway = onOpenGateway,
+                    onOpenModels = { onPageChange(SettingsPage.MODELS) },
+                    onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
+                )
             }
 
             SettingsPage.ABOUT -> {
@@ -358,8 +340,14 @@ fun SettingsScreen(
                     InfoRow("Package", appInfo.packageName)
                     InfoRow(
                         "Engine",
-                        settings.lastEngine.ifEmpty { "unknown" } +
-                            if (settings.lastEngineReady) " (ready)" else " (not ready)",
+                        speechSourceCopy(
+                            localEnabled = settings.localTranscriptionEnabled,
+                            localModelName = localModel?.displayName,
+                            gatewayConfigured = settings.isConfigured,
+                            gatewayUrl = settings.gatewayUrl,
+                            lastEngine = settings.lastEngine,
+                            lastEngineReady = settings.lastEngineReady,
+                        ).engineLabel,
                     )
                     InfoRow(
                         "Setup",
@@ -388,7 +376,7 @@ fun SettingsScreen(
                         )
                         SecondaryButton(
                             text = "Project page",
-                            onClick = { context.openUrl(PROJECT_URL) },
+                            onClick = { context.openHttpUrl(PROJECT_URL) },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -407,58 +395,6 @@ fun SettingsScreen(
             onSelect = onLanguage,
             onDismiss = { pickingLanguage = false },
         )
-    }
-}
-
-@Composable
-private fun SpeechSourceCard(
-    settings: VocaPhoneSettings,
-    onOpenGateway: () -> Unit,
-    onLocalTranscriptionEnabled: (Boolean) -> Unit,
-) {
-    val localModel = LocalModelCatalog.find(settings.localModelId)
-    val usingLocal = settings.localTranscriptionEnabled && localModel != null
-    FeaturedCard {
-        Text(
-            if (usingLocal) "On this phone" else if (settings.isConfigured) "Gateway" else "No speech source yet",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            when {
-                usingLocal -> localModel.displayName
-                settings.isConfigured -> settings.gatewayUrl
-                else -> "Open Models to download one, or add a gateway."
-            },
-            style = MaterialTheme.typography.titleMedium,
-        )
-        if (usingLocal) {
-            Text(
-                localModel.catalogMeta(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else if (settings.isConfigured) {
-            Text(
-                buildString {
-                    append(settings.lastEngine.ifEmpty { "unknown engine" })
-                    append(if (settings.lastEngineReady) " · ready" else " · not ready")
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        SettingToggle(
-            title = "On-device transcription",
-            detail = "Downloads are checked with SHA-256 before they are accepted.",
-            checked = settings.localTranscriptionEnabled,
-            onCheckedChange = onLocalTranscriptionEnabled,
-        )
-        if (settings.isConfigured) {
-            TextButton(onClick = onOpenGateway, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-                Text("Gateway settings")
-            }
-        }
     }
 }
 
@@ -563,7 +499,3 @@ private fun Context.copyDiagnostics(text: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("VocaPhone diagnostics", text))
 }
 
-/** No browser is a plausible state on a stripped-down ROM, so failure is silent. */
-private fun Context.openUrl(url: String) {
-    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-}

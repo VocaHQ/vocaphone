@@ -166,6 +166,7 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     container.settings.setGateway(validation.url, trimmed)
                 }
+                container.settings.setLocalTranscriptionEnabled(false)
                 refreshSetup()
                 testConnection()
                 onResult(null)
