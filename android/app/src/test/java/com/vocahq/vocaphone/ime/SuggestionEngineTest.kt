@@ -55,8 +55,70 @@ class SuggestionEngineTest {
             after = "",
             correctionsEnabled = true,
         )
-        assertEquals(listOf("hello"), strip.words)
+        assertEquals("hello", strip.words.first())
         assertTrue(strip.replacesWord)
+    }
+
+    @Test
+    fun `similar offers nearby words even when the typed word is known`() {
+        assertTrue(dictionary.correct("hello").isEmpty())
+        val nearby = dictionary.similar("hello")
+        assertTrue(nearby.contains("help") || nearby.contains("held"))
+        assertTrue("hello" !in nearby)
+    }
+
+    @Test
+    fun `strip offers nearby replacements when the cursor is in a known word`() {
+        val strip = dictionary.strip(
+            composing = "",
+            before = "hello",
+            after = "",
+            correctionsEnabled = true,
+        )
+        assertTrue(strip.replacesWord)
+        assertTrue(strip.words.any { it == "help" || it == "held" })
+        assertTrue("hello" !in strip.words)
+    }
+
+    @Test
+    fun `strip skips replacements when corrections are off`() {
+        val strip = dictionary.strip(
+            composing = "",
+            before = "hello",
+            after = "",
+            correctionsEnabled = false,
+        )
+        assertTrue(strip.words.isEmpty())
+        assertTrue(!strip.replacesWord)
+    }
+
+    @Test
+    fun `strip keeps next-word guesses after a space`() {
+        val strip = dictionary.strip(
+            composing = "",
+            before = "the ",
+            after = "",
+            correctionsEnabled = true,
+        )
+        assertEquals(listOf("first", "same", "other"), strip.words)
+        assertTrue(!strip.replacesWord)
+    }
+
+    @Test
+    fun `word before deletes the previous token and its trailing space`() {
+        assertEquals(5, SuggestionEngine.wordBefore("hello world"))
+        assertEquals(6, SuggestionEngine.wordBefore("hello world "))
+        assertEquals(2, SuggestionEngine.wordBefore("hello. "))
+        assertEquals(0, SuggestionEngine.wordBefore(""))
+        assertEquals(3, SuggestionEngine.wordBefore("   "))
+    }
+
+    @Test
+    fun `line before deletes back to the previous newline`() {
+        assertEquals(1, SuggestionEngine.lineBefore("a\nb\nc"))
+        assertEquals(1, SuggestionEngine.lineBefore("a\nb\n"))
+        assertEquals(5, SuggestionEngine.lineBefore("hello"))
+        assertEquals(0, SuggestionEngine.lineBefore(""))
     }
 
     @Test

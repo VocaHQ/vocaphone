@@ -28,20 +28,30 @@ internal class SuggestionDictionary(
     fun correct(typed: String, limit: Int = 3): List<String> {
         val lower = typed.lowercase()
         if (lower.length < 2 || isKnown(lower)) return emptyList()
+        return similar(typed, limit)
+    }
+
+    fun similar(typed: String, limit: Int = 3): List<String> {
+        val lower = typed.lowercase()
+        if (lower.length < 2) return emptyList()
+        val neighbor = ArrayList<String>(limit)
         val distance1 = ArrayList<String>(limit)
         val distance2 = ArrayList<String>(limit)
         val minLen = (lower.length - 2).coerceAtLeast(1)
         val maxLen = lower.length + 2
         for (word in words) {
-            if (word.length !in minLen..maxLen) continue
+            if (word == lower || word.length !in minLen..maxLen) continue
             val distance = SuggestionEngine.editDistance(lower, word, max = 2)
             when (distance) {
-                1 -> distance1.add(word)
+                1 -> {
+                    if (SuggestionEngine.isNeighborSubstitution(lower, word)) neighbor.add(word)
+                    else distance1.add(word)
+                }
                 2 -> if (distance2.size < limit) distance2.add(word)
             }
-            if (distance1.size >= limit) break
+            if (neighbor.size >= limit) break
         }
-        return (distance1 + distance2)
+        return (neighbor + distance1 + distance2)
             .take(limit)
             .map { SuggestionEngine.matchCase(typed, it) }
     }
@@ -59,17 +69,17 @@ internal class SuggestionDictionary(
         }
         if (correctionsEnabled) {
             val span = SuggestionEngine.wordSpan(before, after)
-            if (span != null && span.word.length >= 3 && !isKnown(span.word)) {
-                val corrections = correct(span.word)
-                if (corrections.isNotEmpty()) {
-                    return SuggestionStrip(corrections, replacesWord = true)
+            if (span != null && span.word.length >= 2) {
+                val nearby = similar(span.word)
+                if (nearby.isNotEmpty()) {
+                    return SuggestionStrip(nearby, replacesWord = true)
                 }
             }
         }
         return SuggestionStrip(next(SuggestionEngine.lastWord(before).orEmpty()))
     }
 
-    fun swipe(path: String, limit: Int = 3): List<String> {
+    fun swipe(path: String, limit: Int = 4): List<String> {
         val keys = SuggestionEngine.collapseLetters(path)
         if (keys.length < 2) return emptyList()
         val firstKeys = SuggestionEngine.nearbyLetters(keys.first()) + keys.first()
@@ -135,6 +145,40 @@ internal object SuggestionEngine {
         prefix.all { it.isUpperCase() } -> word.uppercase()
         prefix.first().isUpperCase() -> word.replaceFirstChar { it.uppercase() }
         else -> word
+    }
+
+    fun wordBefore(before: CharSequence): Int {
+        if (before.isEmpty()) return 0
+        var index = before.length
+        while (index > 0 && before[index - 1].isWhitespace()) index--
+        if (index == 0) return before.length
+        if (isWordChar(before[index - 1])) {
+            while (index > 0 && isWordChar(before[index - 1])) index--
+        } else {
+            while (index > 0 && !before[index - 1].isWhitespace() && !isWordChar(before[index - 1])) {
+                index--
+            }
+        }
+        return before.length - index
+    }
+
+    fun lineBefore(before: CharSequence): Int {
+        if (before.isEmpty()) return 0
+        if (before.last() == '\n') return 1
+        val newline = before.lastIndexOf('\n')
+        return before.length - (newline + 1)
+    }
+
+    internal fun isNeighborSubstitution(left: String, right: String): Boolean {
+        if (left.length != right.length) return false
+        var diff = -1
+        for (index in left.indices) {
+            if (left[index] == right[index]) continue
+            if (diff >= 0) return false
+            diff = index
+        }
+        if (diff < 0) return false
+        return right[diff] in nearbyLetters(left[diff])
     }
 
     fun replaceableWord(before: CharSequence, after: CharSequence): WordSpan? {

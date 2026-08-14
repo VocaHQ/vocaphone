@@ -152,6 +152,7 @@ internal fun VocaPhoneKeyboard(
     var preferencePanel by remember(editor.sessionId) { mutableStateOf<PreferencePanel?>(null) }
     var emojiCategory by remember(editor.sessionId) { mutableStateOf(EmojiCategory.SMILEYS) }
     var swipeChoices by remember(editor.sessionId) { mutableStateOf<List<String>>(emptyList()) }
+    var swipeWord by remember(editor.sessionId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(dictationState.phase, editor.dictationAllowed) {
         if (dictationState.phase != DictationPhase.IDLE || !editor.dictationAllowed) {
@@ -194,15 +195,72 @@ internal fun VocaPhoneKeyboard(
     val clipboardChip = clipboard.takeIf { settings.clipboardChipEnabled && !editor.sensitive }
     val startedTyping = KeyboardChrome.startedTyping(keyboardState.composing, editorText.before)
     val stripClipboard = KeyboardChrome.clipboardForStrip(clipboardChip)
-    val stripSuggestions = if (swipeChoices.isNotEmpty()) {
+    val swipeArmed = KeyboardChrome.swipeWordArmed(swipeWord, editorText.before, editorText.after)
+    val stripSuggestions = if (swipeArmed && swipeChoices.isNotEmpty()) {
         swipeChoices
     } else {
         KeyboardChrome.suggestionsForStrip(suggestionStrip.words, startedTyping)
     }
-    val swipeReplacesWord = swipeChoices.isNotEmpty()
+    val swipeReplacesWord = swipeArmed && swipeChoices.isNotEmpty()
+
+    fun clearSwipe() {
+        swipeChoices = emptyList()
+        swipeWord = null
+    }
+
+    fun handleDelete(heldMs: Long) {
+        val swipeUndo = heldMs == 0L && swipeArmed
+        if (heldMs == 0L) {
+            swipeChoices = emptyList()
+            if (swipeUndo) swipeWord = null
+        }
+        val stage = DeleteHold.stage(heldMs)
+        if (composeWords && keyboardState.composing.isNotEmpty()) {
+            if (stage == DeleteHold.Stage.CHAR && !swipeUndo) {
+                val reduction = KeyboardReducer.press(
+                    state = keyboardState,
+                    key = KeyboardKey("delete", "Delete", type = KeyboardKeyType.DELETE),
+                    nowMillis = SystemClock.uptimeMillis(),
+                    composeWords = true,
+                )
+                keyboardState = reduction.state
+                reduction.command?.let(onCommand)
+            } else {
+                keyboardState = keyboardState.copy(
+                    composing = "",
+                    lastWasSpace = false,
+                    capitalizeAfterSpace = false,
+                )
+                onCommand(KeyboardCommand.SetComposingText(""))
+            }
+            return
+        }
+        val command = DeleteHold.command(
+            heldMs = heldMs,
+            swipeUndo = swipeUndo,
+            before = editorText.before,
+            after = editorText.after,
+        )
+        keyboardState = keyboardState.copy(
+            composing = "",
+            lastWasSpace = false,
+            capitalizeAfterSpace = false,
+        )
+        onCommand(command)
+    }
 
     fun handleKey(key: KeyboardKey) {
-        swipeChoices = emptyList()
+        if (key.type == KeyboardKeyType.DELETE) {
+            handleDelete(0L)
+            return
+        }
+        if (
+            key.type == KeyboardKeyType.CHARACTER ||
+            key.type == KeyboardKeyType.SPACE ||
+            key.type == KeyboardKeyType.RETURN
+        ) {
+            clearSwipe()
+        }
         if (
             key.type == KeyboardKeyType.SHIFT &&
             editorText.selected.any { it.isLetter() }
@@ -229,14 +287,20 @@ internal fun VocaPhoneKeyboard(
         }
         val capitalize = keyboardState.shift != ShiftState.OFF
         fun cased(word: String) = if (capitalize) word.replaceFirstChar { it.uppercase() } else word
-        swipeChoices = matches.drop(1).map(::cased)
+        val chosen = cased(matches.first())
+        swipeWord = chosen
+        swipeChoices = KeyboardChrome.swipeAlternatives(
+            committed = chosen,
+            swipeMatches = matches.map(::cased),
+            similar = suggestions?.similar(matches.first()).orEmpty().map(::cased),
+        )
         keyboardState = keyboardState.copy(
             composing = "",
             lastWasSpace = true,
             capitalizeAfterSpace = false,
             shift = if (keyboardState.shift == ShiftState.LOCKED) ShiftState.LOCKED else ShiftState.OFF,
         )
-        onSuggestionPicked(cased(matches.first()), false)
+        onSuggestionPicked(chosen, false)
     }
 
     VocaPhoneTheme {
@@ -286,6 +350,7 @@ internal fun VocaPhoneKeyboard(
                             stripReplacesWord = suggestionStrip.replacesWord,
                         )
                         swipeChoices = emptyList()
+                        swipeWord = if (replace) word else null
                         keyboardState = keyboardState.copy(
                             composing = "",
                             lastWasSpace = true,
@@ -360,7 +425,11 @@ internal fun VocaPhoneKeyboard(
                                 onEmojiUsed(glyph)
                             },
                             onKey = ::handleKey,
+                            onKeyHold = { key, heldMs ->
+                                if (key.type == KeyboardKeyType.DELETE) handleDelete(heldMs)
+                            },
                             onCursorMove = { positions ->
+                                clearSwipe()
                                 keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
                                 onCommand(KeyboardCommand.MoveCursor(positions))
                             },
@@ -387,7 +456,11 @@ internal fun VocaPhoneKeyboard(
                                 keyboardState.layer == KeyboardLayer.LETTERS,
                             onSwipe = ::handleSwipe,
                             onKey = ::handleKey,
+                            onKeyHold = { key, heldMs ->
+                                if (key.type == KeyboardKeyType.DELETE) handleDelete(heldMs)
+                            },
                             onCursorMove = { positions ->
+                                clearSwipe()
                                 keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
                                 onCommand(KeyboardCommand.MoveCursor(positions))
                             },
@@ -1271,6 +1344,7 @@ private fun EmojiLayer(
     category: EmojiCategory,
     onEmoji: (String) -> Unit,
     onKey: (KeyboardKey) -> Unit,
+    onKeyHold: (KeyboardKey, Long) -> Unit = { _, _ -> },
     onCursorMove: (Int) -> Unit,
 ) {
     val bottomRow = KeyboardLayouts.rows(KeyboardLayer.EMOJI, editor)
@@ -1293,6 +1367,7 @@ private fun EmojiLayer(
             editor = editor,
             keyHeight = keyHeight,
             onKey = onKey,
+            onKeyHold = onKeyHold,
             onCursorMove = onCursorMove,
         )
     }
@@ -1378,6 +1453,7 @@ private fun KeyboardRows(
     swipeEnabled: Boolean = false,
     onSwipe: (String) -> Unit = {},
     onKey: (KeyboardKey) -> Unit,
+    onKeyHold: (KeyboardKey, Long) -> Unit = { _, _ -> },
     onCursorMove: (Int) -> Unit,
 ) {
     val swipeConsumed = remember { mutableStateOf(false) }
@@ -1428,6 +1504,7 @@ private fun KeyboardRows(
                             showKeyHints = showKeyHints,
                             swipeConsumed = swipeConsumed,
                             onPress = { onKey(key) },
+                            onHold = { heldMs -> onKeyHold(key, heldMs) },
                             onCommitText = { text ->
                                 onKey(
                                     KeyboardKey(
@@ -1527,6 +1604,7 @@ private fun RowScope.KeyButton(
     showKeyHints: Boolean = false,
     swipeConsumed: MutableState<Boolean>? = null,
     onPress: () -> Unit,
+    onHold: (Long) -> Unit = {},
     onCommitText: (String) -> Unit,
     onCursorMove: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -1534,6 +1612,7 @@ private fun RowScope.KeyButton(
     val view = LocalView.current
     val previewOffset = with(LocalDensity.current) { -(keyHeight + 8.dp).roundToPx() }
     val currentOnPress = rememberUpdatedState(onPress)
+    val currentOnHold = rememberUpdatedState(onHold)
     val currentOnCommitText = rememberUpdatedState(onCommitText)
     val currentOnCursorMove = rememberUpdatedState(onCursorMove)
     var pressed by remember(key.id) { mutableStateOf(false) }
@@ -1585,6 +1664,7 @@ private fun RowScope.KeyButton(
             repeat = key.type == KeyboardKeyType.DELETE,
             swipeConsumed = swipeConsumed,
             onPress = { currentOnPress.value() },
+            onHold = { currentOnHold.value(it) },
             onPressedChange = { pressed = it },
             onHaptic = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) },
         )
@@ -1669,6 +1749,7 @@ private fun Modifier.keyGesture(
     pointerKey: String,
     repeat: Boolean,
     onPress: () -> Unit,
+    onHold: (Long) -> Unit = {},
     onPressedChange: (Boolean) -> Unit,
     onHaptic: () -> Unit,
     swipeConsumed: MutableState<Boolean>? = null,
@@ -1679,13 +1760,15 @@ private fun Modifier.keyGesture(
             down.consume()
             onPressedChange(true)
             onHaptic()
+            val downAt = SystemClock.uptimeMillis()
             if (repeat) onPress()
             val repeatJob = if (repeat) {
                 launch {
-                    delay(380L)
+                    delay(DeleteHold.REPEAT_DELAY_MS)
                     while (isActive) {
-                        onPress()
-                        delay(55L)
+                        val heldMs = SystemClock.uptimeMillis() - downAt
+                        onHold(heldMs)
+                        delay(DeleteHold.interval(heldMs))
                     }
                 }
             } else {

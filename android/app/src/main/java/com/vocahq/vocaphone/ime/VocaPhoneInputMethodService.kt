@@ -219,6 +219,13 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 currentInputConnection?.setComposingText(command.text, 1)
             KeyboardCommand.FinishComposing -> currentInputConnection?.finishComposingText()
             KeyboardCommand.DeleteBackward -> sendKey(KeyEvent.KEYCODE_DEL)
+            is KeyboardCommand.DeleteSurrounding -> {
+                val connection = currentInputConnection ?: return
+                connection.finishComposingText()
+                if (command.before > 0 || command.after > 0) {
+                    connection.deleteSurroundingText(command.before, command.after)
+                }
+            }
             KeyboardCommand.PerformEditorAction -> {
                 currentInputConnection?.finishComposingText()
                 performEditorAction()
