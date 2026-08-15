@@ -197,7 +197,22 @@ struct SemanticPaletteTests {
 
     /// Nothing branded may fall back to a system blue, which is where this
     /// product's identity used to leak away one control at a time.
+    ///
+    /// Compared as colours rather than as luminances. A contrast ratio cannot
+    /// answer "is this blue?": hue does not enter into it, and a neutral grey
+    /// can sit at the same relative luminance as a saturated blue. The disabled
+    /// grey and dark-appearance `systemBlue` do exactly that, at 1.005:1 — so
+    /// the ratio this test used to assert failed on a palette that is not
+    /// remotely blue, and only on machines whose trait environment resolved
+    /// `systemBlue` dark.
+    ///
+    /// `systemBlue` is also resolved for both appearances explicitly. It is a
+    /// dynamic colour, and leaving it to whatever traits the test process
+    /// happens to have is what made this pass locally and fail in CI.
     @Test func noKeyboardSurfaceFallsBackToSystemBlue() {
+        let blues = [UIUserInterfaceStyle.light, .dark].map {
+            UIColor.systemBlue.resolvedColor(with: UITraitCollection(userInterfaceStyle: $0))
+        }
         for isDark in [true, false] {
             let palette = KeyboardPalette(isDark: isDark)
             let brand = BrandPalette.accent(isDark: isDark)
@@ -205,7 +220,11 @@ struct SemanticPaletteTests {
             for accent in [
                 DictationAccent.brand, .recording, .working, .ready, .error, .locked,
             ] {
-                #expect(contrast(palette.color(for: accent), .systemBlue) > 1.05)
+                for blue in blues {
+                    // Same measure the state colours use. The closest any
+                    // accent gets is 0.61 away, so nothing here is a near miss.
+                    #expect(Self.distance(palette.color(for: accent), blue) > 0.25)
+                }
             }
         }
     }
