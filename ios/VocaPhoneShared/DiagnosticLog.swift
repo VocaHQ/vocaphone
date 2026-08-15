@@ -86,6 +86,10 @@ struct DiagnosticMetadata: Codable, Equatable, Sendable {
     let phase: DiagnosticPhase?
     let errorCode: DiagnosticErrorCode?
     let hasFullAccess: Bool?
+    /// Whole megabytes of headroom the process had left. A count and nothing
+    /// else — a keyboard extension is killed for exceeding its budget, and
+    /// without this number the only symptom is a keyboard that will not open.
+    let megabytesAvailable: Int?
 
     static let empty = DiagnosticMetadata()
 
@@ -94,13 +98,15 @@ struct DiagnosticMetadata: Codable, Equatable, Sendable {
         reason: DiagnosticReason? = nil,
         phase: DiagnosticPhase? = nil,
         errorCode: DiagnosticErrorCode? = nil,
-        hasFullAccess: Bool? = nil
+        hasFullAccess: Bool? = nil,
+        megabytesAvailable: Int? = nil
     ) {
         self.state = state
         self.reason = reason
         self.phase = phase
         self.errorCode = errorCode
         self.hasFullAccess = hasFullAccess
+        self.megabytesAvailable = megabytesAvailable
     }
 
     static func state(_ state: SessionState) -> DiagnosticMetadata {
@@ -121,6 +127,10 @@ struct DiagnosticMetadata: Codable, Equatable, Sendable {
 
     static func fullAccess(_ hasFullAccess: Bool) -> DiagnosticMetadata {
         DiagnosticMetadata(hasFullAccess: hasFullAccess)
+    }
+
+    static func megabytesAvailable(_ megabytes: Int) -> DiagnosticMetadata {
+        DiagnosticMetadata(megabytesAvailable: megabytes)
     }
 }
 
