@@ -233,6 +233,7 @@ final class TypingStripView: UIScrollView {
         case .correction: "Replaces the word."
         case .prediction: "Inserts this word next."
         case .emoji: "Replaces the word with this emoji."
+        case .swipeAlternate: "Replaces the swiped word."
         }
     }
 

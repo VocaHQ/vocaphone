@@ -15,6 +15,10 @@ struct TypingCandidate: Equatable {
         /// An emoji for the word being typed. Never competes with the word
         /// candidates for a slot — it is offered beside them or not at all.
         case emoji
+        /// A word the swipe recogniser ranked below the one it committed.
+        /// Distinct from ``correction`` because replacing it has to take the
+        /// space the swipe inserted with it — see ``SwipeAlternates``.
+        case swipeAlternate
     }
 
     let text: String

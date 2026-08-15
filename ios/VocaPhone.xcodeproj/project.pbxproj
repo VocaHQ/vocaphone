@@ -87,6 +87,7 @@
 		414B7AB5FBA938C804977DAE /* SpellChecking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D4BE75828FCA9C70DFEDC96 /* SpellChecking.swift */; };
 		4217DD7E4261F3B917A4FD81 /* SwipeTrailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DFD83D2BCB84400E7981A4B /* SwipeTrailTests.swift */; };
 		444F9DFC10831BE9150988A6 /* TranscriptionQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E2BF42CAC209DA12464566 /* TranscriptionQuality.swift */; };
+		445497F26F783CF512F605AD /* SwipeAlternates.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1F0FABCAE6669D0EB07FC3 /* SwipeAlternates.swift */; };
 		45AB9DD91FB8969A4BB19A60 /* TranscriptRetention.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56B6FFEA14B55E6F6C61FBAC /* TranscriptRetention.swift */; };
 		4700DB7F7BE95078E7A8A563 /* TypingFieldPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDBE3CB8FFE4DDA7B459C2A7 /* TypingFieldPolicyTests.swift */; };
 		482A8494DA8A03BDB5DF1B0E /* LocalTranscriptionPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13FF1A5ABC4220C886291309 /* LocalTranscriptionPreferences.swift */; };
@@ -114,6 +115,7 @@
 		5D5A394AA7E8170CFE4E128B /* RecordingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF871FC84B4C6B2627A43C2 /* RecordingCoordinator.swift */; };
 		5FB6858C38350EC77F45EB62 /* BrandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9711C18238B39EA2E842C0F /* BrandPalette.swift */; };
 		5FD3264678E78B2F180A074A /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11816AC1A2219D15E870CE3E /* EmojiCatalog.swift */; };
+		612E02043BE5C4F9567D128E /* SwipeAlternatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CF82ECCA1F28AB94B4142DE /* SwipeAlternatesTests.swift */; };
 		6192C923119F158CCE94B48E /* QuickDictationAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB84927D76F9C32C4BE1547 /* QuickDictationAvailability.swift */; };
 		61D705F2D38349B0A9667F2E /* KeyboardStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F34BD131F1AB394941AC87 /* KeyboardStatus.swift */; };
 		62F20884ED82C44DD050F3E5 /* KeyGridLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC2C1575D306E7683092FBA /* KeyGridLayoutTests.swift */; };
@@ -160,6 +162,7 @@
 		91EA8108C4C2D6C4EF5CF3F1 /* SpeechAudioConditioning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5508D34514C05BA0075667D5 /* SpeechAudioConditioning.swift */; };
 		9282771B81021A932B1C6EA1 /* DictatedTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575BDB070A428051B623F095 /* DictatedTranscript.swift */; };
 		939752FDA33E96C811ED23C1 /* LocalTranscriptionPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13FF1A5ABC4220C886291309 /* LocalTranscriptionPreferences.swift */; };
+		939ADF1C236F670A3541ACAA /* SwipeAlternates.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1F0FABCAE6669D0EB07FC3 /* SwipeAlternates.swift */; };
 		9418E647BE968A5FC2064D06 /* SpokenNumbersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8201161064874EF522DF3F70 /* SpokenNumbersTests.swift */; };
 		94B667AC0FFB905D57BE2CA3 /* VocaPhoneLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CF080065DC31C6DA8E693163 /* VocaPhoneLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		95A08342703AE27BD09E08AC /* TranscriptStyler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DBF47C7F5E5B13752056CB /* TranscriptStyler.swift */; };
@@ -314,6 +317,7 @@
 		13FF1A5ABC4220C886291309 /* LocalTranscriptionPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTranscriptionPreferences.swift; sourceTree = "<group>"; };
 		1582F900473255CD64DC8C2A /* sherpa-onnx.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "sherpa-onnx.xcframework"; path = "ThirdParty/SherpaOnnx/sherpa-onnx.xcframework"; sourceTree = "<group>"; };
 		17B4671FC8BBA4DD4FD5AA8C /* GatewaySetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewaySetupView.swift; sourceTree = "<group>"; };
+		1CF82ECCA1F28AB94B4142DE /* SwipeAlternatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeAlternatesTests.swift; sourceTree = "<group>"; };
 		20F3E310970DBFA3822A4D19 /* SherpaDecodingMethodTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SherpaDecodingMethodTests.swift; sourceTree = "<group>"; };
 		2678D836274997421A54E901 /* AudioCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureTests.swift; sourceTree = "<group>"; };
 		28ECEDA044D2B1021710F205 /* TranscriptHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHistoryView.swift; sourceTree = "<group>"; };
@@ -405,6 +409,7 @@
 		B854354D06D0111DEB123E7A /* SessionRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRecordTests.swift; sourceTree = "<group>"; };
 		B87128326897BFA30E7B2038 /* KeyLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyLayout.swift; sourceTree = "<group>"; };
 		B9B9027C03A87FBC74CE1130 /* TypingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingEngine.swift; sourceTree = "<group>"; };
+		BA1F0FABCAE6669D0EB07FC3 /* SwipeAlternates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeAlternates.swift; sourceTree = "<group>"; };
 		BE0BE99770A5F7F08891E2BD /* KeyboardURLLauncher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KeyboardURLLauncher.h; sourceTree = "<group>"; };
 		BE3489C985467C23EB6A90AD /* DictationBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationBarView.swift; sourceTree = "<group>"; };
 		C304CF763960E5F1D8F76B2B /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
@@ -502,6 +507,7 @@
 				5118F8CFAAE127CD5FF92076 /* KeyView.swift */,
 				07178E9C6A3CF354CD83A2C1 /* SmartPunctuation.swift */,
 				3D4BE75828FCA9C70DFEDC96 /* SpellChecking.swift */,
+				BA1F0FABCAE6669D0EB07FC3 /* SwipeAlternates.swift */,
 				07C4BD2142E9377F123A8848 /* SwipeRecognizer.swift */,
 				DEEBFC48C457EF15183DB453 /* SwipeTrailView.swift */,
 				DEAA4440B24071020CD693DB /* TypingCandidates.swift */,
@@ -668,6 +674,7 @@
 				8F8CE24C7BC4F4CA618F4B79 /* SmartPunctuationTests.swift */,
 				A59DB522E7DFDE3B3E009AFD /* SpeechAudioConditioningTests.swift */,
 				8201161064874EF522DF3F70 /* SpokenNumbersTests.swift */,
+				1CF82ECCA1F28AB94B4142DE /* SwipeAlternatesTests.swift */,
 				924E5D73CB086A4210BF6052 /* SwipeRecognizerTests.swift */,
 				0DFD83D2BCB84400E7981A4B /* SwipeTrailTests.swift */,
 				ABDF2EC3AB09FF78FD1EF935 /* TranscriptHistoryModelTests.swift */,
@@ -929,6 +936,7 @@
 				B4542386951D03680B5F6638 /* SpeechAudioConditioning.swift in Sources */,
 				414B7AB5FBA938C804977DAE /* SpellChecking.swift in Sources */,
 				E269B9344AB06AD0FB9FF665 /* SpokenNumbers.swift in Sources */,
+				445497F26F783CF512F605AD /* SwipeAlternates.swift in Sources */,
 				282E28F25550DF3BFB996429 /* SwipeRecognizer.swift in Sources */,
 				B1D4DE96B74C3327DA6A0FAD /* SwipeTrailView.swift in Sources */,
 				E366EFAD9B70FE3FC43FEBAD /* TextInsertion.swift in Sources */,
@@ -1129,6 +1137,8 @@
 				9EE31A21EE5F9D71A15404DA /* SpellChecking.swift in Sources */,
 				AC222A4D19661A309FEC32C1 /* SpokenNumbers.swift in Sources */,
 				9418E647BE968A5FC2064D06 /* SpokenNumbersTests.swift in Sources */,
+				939ADF1C236F670A3541ACAA /* SwipeAlternates.swift in Sources */,
+				612E02043BE5C4F9567D128E /* SwipeAlternatesTests.swift in Sources */,
 				33049B8AD2490B0F8D0A9E0F /* SwipeRecognizer.swift in Sources */,
 				6A62B202B2F9C76E00794A3D /* SwipeRecognizerTests.swift in Sources */,
 				4217DD7E4261F3B917A4FD81 /* SwipeTrailTests.swift in Sources */,
