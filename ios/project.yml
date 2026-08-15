@@ -137,6 +137,9 @@ targets:
       - path: VocaPhoneKeyboard/TypingWordList.swift
       - path: VocaPhoneKeyboard/SpellChecking.swift
       - path: VocaPhoneKeyboard/SmartPunctuation.swift
+      # The curated word-to-emoji table is the whole feature, so it is the part
+      # worth pinning: which words are in it, and which are deliberately not.
+      - path: VocaPhoneKeyboard/EmojiSuggestions.swift
       - path: VocaPhoneKeyboard/SwipeRecognizer.swift
       - path: VocaPhoneKeyboard/EmojiCatalog.swift
       # The state-to-interface mapping for the dictation bar is pure, so every

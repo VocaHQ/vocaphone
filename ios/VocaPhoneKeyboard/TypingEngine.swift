@@ -371,6 +371,10 @@ final class TypingEngine {
         context.isKnownToChecker = checked?.isKnown ?? false
         context.isInWordList = wordList.contains(composition)
         context.assertedWords = assertedWords
+        // Exact word only, so nothing appears while the user is partway into a
+        // different one.
+        context.emojiSuggestion = EmojiSuggestions.glyph(for: composition)
+        context.emojiEnabled = KeyboardPreferences.emojiSuggestionsEnabled
         context.suggestionsEnabled = KeyboardPreferences.typingSuggestionsEnabled
         context.autocorrectEnabled = KeyboardPreferences.autocorrectIsActive
         context.predictionEnabled = KeyboardPreferences.nextWordPredictionEnabled

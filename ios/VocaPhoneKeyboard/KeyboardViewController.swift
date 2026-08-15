@@ -1250,6 +1250,16 @@ extension KeyboardViewController: DictationBarViewDelegate {
         case .prediction:
             textDocumentProxy.insertText(candidate.text + " ")
             typing.resetComposition(origin: .suggestion, documentBefore: documentBefore)
+        case .emoji:
+            // The emoji stands in for the word, exactly as the system keyboard
+            // does it: "lol" becomes 😂 rather than "lol 😂".
+            let typed = typing.composer.text
+            for _ in 0..<typed.count { textDocumentProxy.deleteBackward() }
+            textDocumentProxy.insertText(candidate.text + " ")
+            // Deliberately not learned. `noteCompletedWord` teaches the
+            // keyboard vocabulary, and an emoji is not a word it should start
+            // completing letters into.
+            typing.resetComposition(origin: .suggestion, documentBefore: documentBefore)
         }
         lastSpaceInsertedAt = nil
         releaseUndoIfDetached()

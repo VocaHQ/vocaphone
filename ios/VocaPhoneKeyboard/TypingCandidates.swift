@@ -12,6 +12,9 @@ struct TypingCandidate: Equatable {
         case correction
         /// What usually follows the word just finished.
         case prediction
+        /// An emoji for the word being typed. Never competes with the word
+        /// candidates for a slot — it is offered beside them or not at all.
+        case emoji
     }
 
     let text: String
@@ -70,9 +73,13 @@ enum TypingCandidates {
         /// Words the user restored after an autocorrect, for this document.
         var assertedWords: Set<String> = []
 
+        /// The emoji for the word being composed, when there is an obvious one.
+        var emojiSuggestion: String?
+
         var suggestionsEnabled = true
         var autocorrectEnabled = true
         var predictionEnabled = true
+        var emojiEnabled = true
         var allowsTypingIntelligence = true
     }
 
@@ -118,7 +125,35 @@ enum TypingCandidates {
                 )
             )
         }
-        return TypingStrip(candidates: candidates, autocorrection: correction)
+        return TypingStrip(
+            candidates: appendingEmoji(to: candidates, context: context),
+            autocorrection: correction
+        )
+    }
+
+    /// The emoji goes last, and takes the lowest-ranked word's slot when the
+    /// strip is already full.
+    ///
+    /// A fourth chip was the intention — the three word slots are what the
+    /// strip is for — but on a 320 pt phone four chips plus the Dictate button
+    /// push the emoji off the visible row entirely. A suggestion the user has
+    /// to scroll sideways to discover is not a suggestion, so on a full strip
+    /// the emoji displaces the *last* candidate: the third-ranked completion,
+    /// which is the least likely word on the row.
+    ///
+    /// The literal and the emphasised correction are never at risk. They sit at
+    /// the front, and the one that space would apply must always be visible.
+    private static func appendingEmoji(
+        to candidates: [TypingCandidate],
+        context: Context
+    ) -> [TypingCandidate] {
+        guard context.emojiEnabled,
+              let glyph = context.emojiSuggestion,
+              !candidates.contains(where: { $0.kind == .emoji })
+        else { return candidates }
+        var kept = candidates
+        if kept.count >= slotCount { kept.removeLast() }
+        return kept + [TypingCandidate(text: glyph, kind: .emoji)]
     }
 
     /// Suggestions in priority order, deduplicated, never echoing the typed word.
