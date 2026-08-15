@@ -161,31 +161,40 @@ struct LocalModelPicker: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 }
+            // `.frame(maxWidth:)` outside a button stretches its *layout* and
+            // leaves the control its natural size, which is how these ended up
+            // the same compact pill as the destructive action below them. The
+            // width belongs on the label.
             case .failedIntegrity:
-                Button("Download again") { download(model) }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+                Button { download(model) } label: {
+                    Text("Download again").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             case .notDownloaded:
-                Button("Download \(model.sizeLabel)") { download(model) }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
-                    .disabled(isBusy)
+                Button { download(model) } label: {
+                    Text("Download \(model.sizeLabel)").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(isBusy)
             case .ready:
-                Button("Use this model") { prepare(model) }
-                    .buttonStyle(.borderedProminent)
-                    .foregroundStyle(Color.onBrand)
-                    .frame(maxWidth: .infinity)
+                VocaPrimaryButton(title: "Use this model") { prepare(model) }
                     .disabled(isBusy)
             case .selected:
                 EmptyView()
             }
 
             if state == .ready || state == .selected || state == .failedIntegrity {
-                Button("Delete from this iPhone", role: .destructive) {
+                // Centred and compact, with room above it. "Use this model" is
+                // a full-width filled button, so a full-width destructive one
+                // directly beneath it shares an edge with the very action it
+                // must never be confused for.
+                VocaDestructiveButton(title: "Delete model") {
                     pendingDeletion = model
                 }
-                .font(.footnote)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, VocaMetrics.related)
             }
         }
         .padding(.vertical, VocaMetrics.tight)

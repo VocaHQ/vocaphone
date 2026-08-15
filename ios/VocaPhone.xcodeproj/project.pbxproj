@@ -101,6 +101,7 @@
 		53A1176717AEAE72A1F5B9F1 /* SemanticPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6C44F954E7A62974C66109 /* SemanticPalette.swift */; };
 		5634120C15A37F9E2C0FF2C0 /* LearnedWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4453D027A8B7CC1D29FF8285 /* LearnedWords.swift */; };
 		5673DF7E07F7F800FB847C2A /* KeyboardStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F34BD131F1AB394941AC87 /* KeyboardStatus.swift */; };
+		56783518C221839DE432BCC7 /* DesignSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755A4279065D41A705E1F19D /* DesignSystemTests.swift */; };
 		5769EF4A106AFBD7B375DC5D /* KeyboardPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9571AEC75B1A986C5D3077 /* KeyboardPreferences.swift */; };
 		582C18BD155158A79ADCBB5A /* KeyboardStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F34BD131F1AB394941AC87 /* KeyboardStatus.swift */; };
 		58CDCA65875E94B8F7BE0101 /* QuickDictationAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB84927D76F9C32C4BE1547 /* QuickDictationAvailability.swift */; };
@@ -144,6 +145,7 @@
 		84EB79403F7CED013A82334F /* PairingScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70B3F1DBA8332A13B095E4BA /* PairingScannerView.swift */; };
 		84F2FD89DD3C1EB490E86A73 /* FinishRecordingIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B19321866AE8083C78C2B7F /* FinishRecordingIntent.swift */; };
 		867671B90E038F77BE36A4E6 /* DarwinNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3498C523755A678225152570 /* DarwinNotifications.swift */; };
+		8712BCA2AF3E80084CFF59FE /* ZZRenderModelRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7391F37C94A60DAD62DDA43B /* ZZRenderModelRowTests.swift */; };
 		89A73E55E01C0814D465824C /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1582F900473255CD64DC8C2A /* sherpa-onnx.xcframework */; };
 		89E3D47D85EBD6AD5A093813 /* TextInsertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBB0D1B0CD48BA2F8F22986 /* TextInsertion.swift */; };
 		8A69E16ABEF642C3D68FADD5 /* TranscriptHistoryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A89F2BEC08F07614372D84D /* TranscriptHistoryModel.swift */; };
@@ -348,6 +350,8 @@
 		6B6743BB4173E2F719E3D8CB /* TypingWordList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingWordList.swift; sourceTree = "<group>"; };
 		6CF871FC84B4C6B2627A43C2 /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
 		70B3F1DBA8332A13B095E4BA /* PairingScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingScannerView.swift; sourceTree = "<group>"; };
+		7391F37C94A60DAD62DDA43B /* ZZRenderModelRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZZRenderModelRowTests.swift; sourceTree = "<group>"; };
+		755A4279065D41A705E1F19D /* DesignSystemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystemTests.swift; sourceTree = "<group>"; };
 		75FD84E65614D9F94D8EF0AC /* DictationBarComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationBarComponents.swift; sourceTree = "<group>"; };
 		786DEF44BDB4C70935762971 /* VocaPhoneLiveActivity.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VocaPhoneLiveActivity.entitlements; sourceTree = "<group>"; };
 		7948F8C6C72A8D7A16C18562 /* SharedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStore.swift; sourceTree = "<group>"; };
@@ -632,6 +636,7 @@
 			children = (
 				2678D836274997421A54E901 /* AudioCaptureTests.swift */,
 				EF0D852E37E341D37CCB4DB2 /* CustomVocabularyTests.swift */,
+				755A4279065D41A705E1F19D /* DesignSystemTests.swift */,
 				7F810558C0B42C924BC6CF21 /* DictatedTranscriptTests.swift */,
 				32BFD71F9D14772A0C7330CD /* DictationBarLabelColorTests.swift */,
 				FA83B914C241E5F8BF8F32AC /* DictationBarLayoutTests.swift */,
@@ -667,6 +672,7 @@
 				D80C83295868E17F215D9382 /* TypingStripPresentationTests.swift */,
 				867A5BD6049E4D6788DB704C /* TypingWordListTests.swift */,
 				9859ACCB32CD57E4F3E4D46A /* WordComposerTests.swift */,
+				7391F37C94A60DAD62DDA43B /* ZZRenderModelRowTests.swift */,
 			);
 			path = VocaPhoneTests;
 			sourceTree = "<group>";
@@ -1057,6 +1063,7 @@
 				E1554F20FFD17CD98B6367D4 /* CustomVocabularyTests.swift in Sources */,
 				16A937522A6A8C972B1107A2 /* DarwinNotifications.swift in Sources */,
 				396FBA5370CCA2D012DD1ADC /* DesignSystem.swift in Sources */,
+				56783518C221839DE432BCC7 /* DesignSystemTests.swift in Sources */,
 				9C6AF2EE68EB7AA4D4CF0F61 /* DiagnosticLog.swift in Sources */,
 				9282771B81021A932B1C6EA1 /* DictatedTranscript.swift in Sources */,
 				67B842A93BF69D4542744655 /* DictatedTranscriptTests.swift in Sources */,
@@ -1137,6 +1144,7 @@
 				BAEC1D5BFECB17B9B28BD780 /* TypingWordListTests.swift in Sources */,
 				114481F43D07358C285C76C3 /* WordComposer.swift in Sources */,
 				28F0EDCC20383E5A9FEB5B42 /* WordComposerTests.swift in Sources */,
+				8712BCA2AF3E80084CFF59FE /* ZZRenderModelRowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

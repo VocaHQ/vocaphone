@@ -21,6 +21,11 @@ enum VocaMetrics {
     static let fieldRadius: CGFloat = 12
     /// Large recording and hero surfaces only.
     static let heroRadius: CGFloat = 22
+
+    /// The smallest target iOS considers reliably tappable. A control below
+    /// this is not a small control, it is a control that gets missed — and what
+    /// the thumb hits instead is whatever is next to it.
+    static let minimumTarget: CGFloat = 44
 }
 
 /// A coherent state, decision, or task — never a generic wrapper.
@@ -196,6 +201,35 @@ struct VocaCopyButton: View {
             try? await Task.sleep(for: .seconds(2))
             didCopy = false
         }
+    }
+}
+
+/// The destructive action, sized to be aimed at.
+///
+/// Compact rather than full-width, and deliberately not sharing a footprint
+/// with the primary action above it. Two stacked full-width buttons put a
+/// destructive target directly beneath a constructive one, and a thumb that
+/// falls a few points short of Delete selects a model instead — which is the
+/// one mistake in this list that costs the user a download.
+///
+/// A tinted border rather than a filled one: it has to read as destructive
+/// without competing with the filled primary for the eye. The role also gives
+/// VoiceOver the destructive trait, which the plain text button it replaces
+/// never carried.
+struct VocaDestructiveButton: View {
+    let title: String
+    var symbol: String = "trash"
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: .destructive, action: action) {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, VocaMetrics.related)
+                .frame(minHeight: VocaMetrics.minimumTarget)
+        }
+        .buttonStyle(.bordered)
+        .tint(Color.vocaError)
     }
 }
 
