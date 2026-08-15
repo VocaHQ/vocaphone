@@ -25,10 +25,14 @@ struct KeyboardViewPreview<V: UIView>: UIViewRepresentable {
 /// The palette and metrics the extension resolves at runtime, so a preview is
 /// sized and coloured the way the keyboard will be rather than the way a canvas
 /// would default to.
+///
+/// `@MainActor`: on newer SDKs, `UITraitCollection`'s builder closure mutates
+/// `verticalSizeClass`, which UIKit now annotates as main-actor-only. Every
+/// real caller here is already on the main actor — a `View` body or a
+/// `UIViewRepresentable` method — so this just makes that explicit rather than
+/// implicit, which is what the stricter SDK requires.
+@MainActor
 enum KeyboardPreviewEnvironment {
-    /// `UITraitCollection`'s builder initializer is main-actor isolated, so
-    /// this is computed rather than stored: a `static let` would need a
-    /// nonisolated default value it cannot have.
     static var traits: UITraitCollection {
         UITraitCollection { $0.verticalSizeClass = .regular }
     }
