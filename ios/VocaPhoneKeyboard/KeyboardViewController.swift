@@ -23,11 +23,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var isBarExpanded = false
     private var barLayout = DictationBarLayout.status
     private var lastDocumentID: String?
-    /// The document the active session inserts into, as observed by this
-    /// keyboard instance. iOS issues a fresh `documentIdentifier` when the
-    /// keyboard is torn down and recreated, so the identifier stored in the
-    /// session record is only comparable while the instance that captured it
-    /// is still alive; each instance records its own target.
+    /// The document the active session inserts into, as observed during this
+    /// appearance of the keyboard. iOS issues a fresh `documentIdentifier` when
+    /// the keyboard is torn down and recreated, and can reissue one across an
+    /// app switch, so an identifier only means anything for as long as the
+    /// keyboard has been continuously on screen. It is released in
+    /// ``viewWillAppear(_:)`` and re-latched from the field the user has
+    /// returned to.
     private var sessionTargetDocumentID: String?
     private var palette = KeyboardPalette(isDark: false)
     private lazy var typing = TypingEngine()
@@ -156,6 +158,25 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // A recreated extension instance can inherit a session the previous one
         // started, so scan once on appear and let `render` decide about polling.
         applyDocumentTraits()
+        // A new appearance is a new field as far as this keyboard can tell.
+        //
+        // The insertion target was previously kept for the life of the
+        // extension instance, which made automatic insertion depend on
+        // something the user cannot see: whether iOS killed the keyboard during
+        // the hand-off. A killed extension came back, adopted the session and
+        // targeted whatever field the cursor was now in, so insertion always
+        // worked. A surviving one still held the identifier captured before the
+        // hand-off, and iOS reissues those across an app switch — so the same
+        // dictation, in the same field, silently parked itself behind an Insert
+        // button instead. Same action, two outcomes, decided by memory
+        // pressure.
+        //
+        // Releasing the target here makes both paths agree on the permissive
+        // one, which is what shipped for every killed extension already. The
+        // guard keeps the case it can actually observe: a cursor that moves to
+        // another field *while the keyboard is on screen* still parks the
+        // transcript rather than following the cursor.
+        sessionTargetDocumentID = nil
         installDarwinObservers()
         publishKeyboardStatus()
         // Full Access can be granted or revoked in Settings while this instance
@@ -643,10 +664,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// two known identifiers blocks insertion; an unknown identifier must not
     /// strand a transcript the user is waiting for.
     private func documentMatchesSessionTarget() -> Bool {
-        guard let target = sessionTargetDocumentID,
-              let current = currentDocumentID
-        else { return true }
-        return target == current
+        InsertionTarget.allowsInsertion(
+            target: sessionTargetDocumentID,
+            current: currentDocumentID
+        )
     }
 
     private func insert(_ record: inout SessionRecord, force: Bool = false) {
