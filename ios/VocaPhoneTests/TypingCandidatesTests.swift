@@ -389,6 +389,44 @@ struct TypingCandidatesTests {
         #expect(!TypingCandidates.strip(ctx).candidates.contains { $0.kind == .emoji })
     }
 
+    /// A word with a curated emoji is never autocorrected away.
+    ///
+    /// Most triggers are informal and absent from the shipped word list, so
+    /// without this the keyboard offers 😱 for "omg" and then replaces it with
+    /// a dictionary word on the next space — disagreeing with itself, in a way
+    /// the user only discovers after sending the message.
+    @Test func aWordWithAnEmojiIsNotCorrectedAway() {
+        var ctx = context("omg", emoji: "😱")
+        ctx.isKnownToChecker = false
+        ctx.isInWordList = false
+        ctx.systemGuesses = ["org"]
+        #expect(TypingCandidates.autocorrection(ctx) == nil)
+        #expect(TypingCandidates.strip(ctx).autocorrection == nil)
+        // The literal chip exists to warn about a pending replacement, so with
+        // nothing pending it does not take a slot either.
+        #expect(!TypingCandidates.strip(ctx).candidates.contains { $0.kind == .literal })
+    }
+
+    /// The exemption is the *word*, not the setting. Turning the chip off stops
+    /// a chip being drawn; it does not make "omg" a typo again.
+    @Test func theExemptionSurvivesTheSettingBeingOff() {
+        var ctx = context("omg", emoji: "😱")
+        ctx.emojiEnabled = false
+        ctx.isKnownToChecker = false
+        ctx.isInWordList = false
+        ctx.systemGuesses = ["org"]
+        #expect(TypingCandidates.autocorrection(ctx) == nil)
+    }
+
+    /// And a genuine typo that happens to be near a trigger is still corrected.
+    @Test func aTypoWithNoEmojiIsStillCorrected() {
+        var ctx = context("teh", emoji: nil)
+        ctx.isKnownToChecker = false
+        ctx.isInWordList = false
+        ctx.systemGuesses = ["the"]
+        #expect(TypingCandidates.autocorrection(ctx) == "the")
+    }
+
     /// The strip is off entirely in a password or code field, and the emoji
     /// must not be the one thing that survives that.
     @Test func aFieldThatRefusesIntelligenceGetsNoEmoji() {

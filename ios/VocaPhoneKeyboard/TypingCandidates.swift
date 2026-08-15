@@ -208,6 +208,18 @@ enum TypingCandidates {
               !context.assertedWords.contains(typed.lowercased())
         else { return nil }
 
+        // A word this keyboard has a curated emoji for is a word people type on
+        // purpose. Most of them — "omg", "lmao", "haha", "yay", "ugh", "meh",
+        // "congrats" — are absent from the shipped word list, so without this
+        // the keyboard would offer 😱 for "omg" while quietly preparing to turn
+        // it into "org" on the next space. Offering a suggestion for a word and
+        // correcting that same word away is the keyboard disagreeing with
+        // itself, and the user only finds out afterwards.
+        //
+        // Independent of whether the emoji chip is switched on: the setting
+        // controls whether a chip is drawn, not whether the word was meant.
+        guard context.emojiSuggestion == nil else { return nil }
+
         // Letters and apostrophes only. A token with a digit, an `@`, a slash or
         // an underscore is an identifier, a handle, a path or a password hint —
         // never something to "fix".
