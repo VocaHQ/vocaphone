@@ -650,9 +650,20 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     }
 
     private func insert(_ record: inout SessionRecord, force: Bool = false) {
-        guard !isPerformingInsertion else { return }
-        guard let transcript = record.transcript, !transcript.isEmpty else { return }
+        guard !isPerformingInsertion else {
+            DiagnosticLog.record(.insertionSkipped, metadata: .reason(.insertionInFlight))
+            return
+        }
+        guard let transcript = record.transcript, !transcript.isEmpty else {
+            DiagnosticLog.record(.insertionSkipped, metadata: .reason(.transcriptEmpty))
+            return
+        }
         guard force || documentMatchesSessionTarget() else {
+            // Parked rather than inserted. Which of the two identifiers changed
+            // is not knowable from here — iOS reissues them across a keyboard
+            // relaunch — so the log records that it happened at all, and the
+            // state change that follows records where the transcript went.
+            DiagnosticLog.record(.insertionSkipped, metadata: .reason(.targetFieldChanged))
             if record.state == .readyToInsert {
                 transition(&record, to: .targetContextChanged)
             }
