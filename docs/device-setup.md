@@ -4,10 +4,11 @@ Simulator success does not verify custom-keyboard installation, microphone
 handoff, background recording, App Group entitlements, or third-party text
 insertion. Complete these steps on the actual iPhone.
 
-New to the project? [iOS local setup](ios-local-setup.md) covers getting a
-build running at all — Simulator first, then a physical device — in plainer
-language than this page. Come back here once you have a build on your iPhone
-and want to run the full acceptance pass.
+New to the project? [The README's iPhone setup
+section](../README.md#5-configure-and-install-the-iphone-app) covers getting
+a build running at all — Simulator first, then a physical device — in
+plainer language than this page. Come back here once you have a build on
+your iPhone and want to run the full acceptance pass.
 
 ## Signing prerequisites
 
@@ -20,8 +21,9 @@ The bundle IDs, keyboard bundle ID, and App Group are already final — see
 2. Confirm the same App Group capability (`group.com.vocahq`) is enabled on
    all three. Automatic signing registers it under your team the first time,
    as long as your team has access to `com.vocahq.vocaphone` and friends —
-   see [iOS local setup](ios-local-setup.md#3-running-it-on-your-own-iphone)
-   if it doesn't.
+   see [the README's iPhone setup
+   section](../README.md#5-configure-and-install-the-iphone-app) if it
+   doesn't.
 3. Connect the iPhone, select it as the run destination, and run VocaPhoneApp.
 
 The connected iPhone, automatic development signing, App Group provisioning,

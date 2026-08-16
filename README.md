@@ -375,20 +375,45 @@ private personal deployment, but it is not mandatory. Follow
 
 ### 5. Configure and install the iPhone app
 
-The quickest path is the Simulator, and it needs no Apple account at all:
+The Simulator needs no Apple account at all:
 
 ```sh
-cd ios && just doctor && just run
+cd ios
+just doctor   # checks Xcode, xcodegen, and a simulator runtime are present
+just run      # generates the project, builds, boots a simulator, installs, launches
 ```
 
-[iOS local setup](docs/ios-local-setup.md) walks through that, adding the
-keyboard, and picking a transcription source, in plain language — start there
-if this is your first time opening the project. It also covers running on
-your own physical iPhone, including what to do if you don't have access to
-VocaHQ's Apple Developer team.
+`ios/project.yml` is the real project source; `just run` (and every other iOS
+recipe) regenerates `VocaPhone.xcodeproj` from it before building, so don't
+hand-edit the `.xcodeproj`. Prefer working in Xcode itself? `just edit` does
+the same regeneration, then opens it.
 
-Once you're testing on a real device, complete the acceptance checklist in
-[device setup](docs/device-setup.md).
+Add the keyboard the same way you would on a device: `just settings` opens
+iOS Settings on the simulator, then **General → Keyboard → Keyboards → Add
+New Keyboard → vocaphone**, with **Allow Full Access** turned on (see
+[privacy.md](docs/privacy.md#full-access) for exactly what that is and isn't
+used for). Typing, autocorrect, and swipe work immediately. For actual
+dictation, **Settings → Transcription → On this iPhone** plus a downloaded
+model is the fastest path with nothing else to configure, or point
+**Settings → Transcription → Gateway** at one you started in step 1.
+
+**On your own iPhone** (`just device`, phone connected and trusted): code
+signing has to already work in Xcode first. The project ships with VocaHQ's
+own identifiers (`com.vocahq.vocaphone` and friends, team `92962VK378` — see
+[decisions.md](docs/decisions.md)). If you have access to that team, select
+it on all three targets (VocaPhoneApp, VocaPhoneKeyboard,
+VocaPhoneLiveActivity) under **Signing & Capabilities**; automatic signing
+does the rest. If you don't — most outside contributors — either ask a
+maintainer to comment `/build ios` on your pull request for a signed ad-hoc
+IPA (see [CONTRIBUTING.md](CONTRIBUTING.md#on-demand-pr-builds-build)), or run
+it under your own free Apple ID by changing `bundleIdPrefix` and the three
+`PRODUCT_BUNDLE_IDENTIFIER`s in `ios/project.yml`, the App Group string in all
+three `.entitlements` files, and `AppConfiguration.swift`'s
+`appGroupIdentifier`/`keyboardBundleIdentifier` — don't commit that change.
+
+Grant microphone access on first launch, add the keyboard as above, and turn
+on Full Access. Complete the physical-device checklist in [device
+setup](docs/device-setup.md).
 
 ### 6. Or install the Android app
 
@@ -466,7 +491,6 @@ docs/                   Architecture, device setup, privacy, decisions, historic
 | [Android client](android/README.md) | Building the APK, guided setup, voice keyboard, and privacy boundaries |
 | [Gateway reference](server/README.md) | Native service, Compose, models, configuration, health, and CLI commands ([vocagateway](https://github.com/VocaHQ/vocagateway)) |
 | [Deployment](server/docs/deployment.md) | Native-vs-Docker performance, startup, upgrades, persistence, and backups |
-| [iOS local setup](docs/ios-local-setup.md) | Building and running the iOS app for the first time, Simulator or device |
 | [Device setup](docs/device-setup.md) | Apple signing, keyboard installation, and physical-device acceptance |
 | [TestFlight](docs/testflight.md) | App Store Connect setup, archiving, and TestFlight distribution |
 | [Tailscale](server/docs/tailscale.md) | Private HTTPS ingress for the gateway |
