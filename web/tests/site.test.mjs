@@ -158,7 +158,7 @@ test("availability and install paths are honest", () => {
     /href="https:\/\/github\.com\/VocaHQ\/vocaphone#build-and-test"/,
   );
   assert.doesNotMatch(iphoneHtml, /href="\/iphone\/device-setup"/);
-  assert.match(iphoneHtml, /There is no App Store or TestFlight build yet/);
+  assert.match(iphoneHtml, /There is no App Store or\s+TestFlight build yet/);
 });
 
 test("decorative product frames do not expose focusable controls", () => {
