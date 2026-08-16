@@ -29,7 +29,11 @@ def main():
                 history = json.load(f)
             if history:
                 prev_bytes = history[-1]["bytes"]
-        except (json.JSONDecodeError, KeyError, IndexError):
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            # TypeError covers valid JSON that isn't the list-of-entries shape
+            # this file is supposed to hold (e.g. a stale or incompatible
+            # cache) - degrade to "no recorded size" like any other malformed
+            # history file instead of crashing the job.
             prev_bytes = None
 
     lines = [f"### {args.label} size", ""]
