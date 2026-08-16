@@ -160,9 +160,13 @@ jobs:
           DERIVED_DATA: ${{ runner.temp }}/DerivedData
         run: |
           set -euo pipefail
-          app=$(find "$DERIVED_DATA/Build/Products" -maxdepth 2 -name 'VocaPhone.app' | head -1)
+          # The app target is named VocaPhoneApp (see ios/project.yml), and
+          # nothing overrides PRODUCT_NAME, so the built bundle is
+          # VocaPhoneApp.app - not VocaPhone.app, which is only the scheme
+          # and .xcodeproj name.
+          app=$(find "$DERIVED_DATA/Build/Products" -maxdepth 2 -name 'VocaPhoneApp.app' | head -1)
           if [ -z "$app" ]; then
-            echo "No VocaPhone.app found under $DERIVED_DATA/Build/Products" >&2
+            echo "No VocaPhoneApp.app found under $DERIVED_DATA/Build/Products" >&2
             exit 1
           fi
           bytes=$(find "$app" -type f -exec stat -f%z {} + | awk '{sum += $1} END {print sum}')
