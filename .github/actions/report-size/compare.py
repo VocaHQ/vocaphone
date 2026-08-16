@@ -6,7 +6,12 @@ import os
 
 def human(n):
     sign = "-" if n < 0 else ""
-    return f"{sign}{abs(n) / 1024:.1f} KiB"
+    n = float(abs(n))
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{sign}{int(n)} {unit}" if unit == "B" else f"{sign}{n:.1f} {unit}"
+        n /= 1024
+    return f"{sign}{n:.1f} GB"  # unreachable, satisfies static analysis
 
 
 def main():
