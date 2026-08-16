@@ -375,29 +375,20 @@ private personal deployment, but it is not mandatory. Follow
 
 ### 5. Configure and install the iPhone app
 
-Before signing under your own Apple account, replace these placeholders
-consistently in the Xcode project configuration and entitlements:
+The quickest path is the Simulator, and it needs no Apple account at all:
 
-- `com.vocahq.vocaphone`
-- `com.vocahq.vocaphone.keyboard`
-- `com.vocahq.vocaphone.liveactivity`
-- `group.com.vocahq`
+```sh
+cd ios && just doctor && just run
+```
 
-Then:
+[iOS local setup](docs/ios-local-setup.md) walks through that, adding the
+keyboard, and picking a transcription source, in plain language — start there
+if this is your first time opening the project. It also covers running on
+your own physical iPhone, including what to do if you don't have access to
+VocaHQ's Apple Developer team.
 
-1. Generate/open `ios/VocaPhone.xcodeproj` and select your Apple development team.
-2. Register the same App Group for the app, keyboard, and Live Activity targets.
-3. Install the containing app on the iPhone and grant microphone permission.
-4. Add the keyboard under **Settings → General → Keyboard → Keyboards** and enable
-   Full Access.
-5. Choose a transcription source in guided setup: download an on-device
-   speech-to-text model, **or** enter the reachable HTTP/HTTPS gateway URL and
-   bearer token under **Settings → Transcription → Gateway** and use
-   **Save and test**. Approve Local Network access when using a LAN host.
-   Either source alone is enough to dictate; the app says which one is in use
-   and where the audio goes.
-
-Complete the physical-device checklist in [device setup](docs/device-setup.md).
+Once you're testing on a real device, complete the acceptance checklist in
+[device setup](docs/device-setup.md).
 
 ### 6. Or install the Android app
 
@@ -475,6 +466,7 @@ docs/                   Architecture, device setup, privacy, decisions, historic
 | [Android client](android/README.md) | Building the APK, guided setup, voice keyboard, and privacy boundaries |
 | [Gateway reference](server/README.md) | Native service, Compose, models, configuration, health, and CLI commands ([vocagateway](https://github.com/VocaHQ/vocagateway)) |
 | [Deployment](server/docs/deployment.md) | Native-vs-Docker performance, startup, upgrades, persistence, and backups |
+| [iOS local setup](docs/ios-local-setup.md) | Building and running the iOS app for the first time, Simulator or device |
 | [Device setup](docs/device-setup.md) | Apple signing, keyboard installation, and physical-device acceptance |
 | [TestFlight](docs/testflight.md) | App Store Connect setup, archiving, and TestFlight distribution |
 | [Tailscale](server/docs/tailscale.md) | Private HTTPS ingress for the gateway |

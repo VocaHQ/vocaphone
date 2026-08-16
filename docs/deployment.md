@@ -15,7 +15,8 @@ Canonical guides (after `git submodule update --init --recursive`):
 
 Phone-specific setup (signing and keyboard) stays in this repository:
 
-- [Device setup](device-setup.md)
+- [iOS local setup](ios-local-setup.md) — first build, Simulator or device
+- [Device setup](device-setup.md) — physical-device acceptance checklist
 - [TestFlight](testflight.md) — App Store Connect setup, archiving, and upload
 - [Android client](../android/README.md)
 - [Troubleshooting (keyboard / mic / insertion)](troubleshooting.md)
