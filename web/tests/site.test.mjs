@@ -131,16 +131,34 @@ test("availability and install paths are honest", () => {
   assert.match(html, /Android 13 or newer/);
   assert.match(html, /iOS 17 or newer/);
   assert.match(html, /There is no App Store or TestFlight build today/);
-  assert.match(html, /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases"/);
+  assert.match(
+    html,
+    /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases\/tag\/v0\.1\.0-beta\.14"/,
+  );
+  assert.match(html, /v0\.1\.0-beta\.14/);
+  assert.match(html, /io\.github\.mrsunglasses\.localflow/);
   assert.match(html, /href="\/iphone\/"/);
   assert.match(html, /SHA256SUMS\.txt/);
   assert.doesNotMatch(html, /href="\/download\/android"/);
   assert.doesNotMatch(html, /releases\/latest/);
   assert.doesNotMatch(html, /free forever/i);
+  assert.doesNotMatch(html, /available on (the )?App Store/i);
+  assert.doesNotMatch(html, /available on TestFlight/i);
+  assert.doesNotMatch(html, /available on F-Droid/i);
 
   assert.match(iphoneHtml, /The gateway is optional/);
   assert.match(iphoneHtml, /No gateway address or token\s+is needed for this mode/);
   assert.match(iphoneHtml, /iOS does not permit[\s\S]*keyboard extensions to access the microphone/);
+  assert.match(
+    iphoneHtml,
+    /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/blob\/main\/docs\/device-setup\.md"/,
+  );
+  assert.match(
+    iphoneHtml,
+    /href="https:\/\/github\.com\/VocaHQ\/vocaphone#build-and-test"/,
+  );
+  assert.doesNotMatch(iphoneHtml, /href="\/iphone\/device-setup"/);
+  assert.match(iphoneHtml, /There is no App Store or TestFlight build yet/);
 });
 
 test("decorative product frames do not expose focusable controls", () => {
