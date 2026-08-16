@@ -27,7 +27,7 @@ this directory (see `.github/workflows/pages.yml`). Set Pages source to
 - Publish directory: `web`
 - Canonical URL expected by metadata: `https://vocaphone.vocahq.com/`
 
-Both `/` and `/iphone/` must resolve as HTML routes.
+Both `/`, `/iphone/`, and `/iphone/device-setup/` must resolve as HTML routes.
 
 The Android product images are the original 576×1280 screenshots from
 [VocaPhone PR #70](https://github.com/VocaHQ/vocaphone/pull/70). The website
