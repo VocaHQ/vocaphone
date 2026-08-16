@@ -476,6 +476,7 @@ docs/                   Architecture, device setup, privacy, decisions, historic
 | [Gateway reference](server/README.md) | Native service, Compose, models, configuration, health, and CLI commands ([vocagateway](https://github.com/VocaHQ/vocagateway)) |
 | [Deployment](server/docs/deployment.md) | Native-vs-Docker performance, startup, upgrades, persistence, and backups |
 | [Device setup](docs/device-setup.md) | Apple signing, keyboard installation, and physical-device acceptance |
+| [TestFlight](docs/testflight.md) | App Store Connect setup, archiving, and TestFlight distribution |
 | [Tailscale](server/docs/tailscale.md) | Private HTTPS ingress for the gateway |
 | [Architecture](docs/architecture.md) | Components, state transitions, engine boundary, and observability |
 | [Privacy](docs/privacy.md) | Audio lifecycle, authentication, metrics, and threat model |
