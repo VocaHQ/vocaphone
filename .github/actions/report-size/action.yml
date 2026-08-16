@@ -58,6 +58,7 @@ runs:
         COMPONENT: ${{ inputs.component }}
         REPORT_FILE: ${{ runner.temp }}/size-report-${{ inputs.component }}.md
       with:
+        github-token: ${{ inputs.github-token }}
         # A fork pull request gets a read-only token even though this step's
         # job declares pull-requests: write, so posting can 403. That's a
         # permissions gap in this run, not a broken report — the size is

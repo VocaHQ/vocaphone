@@ -8,7 +8,7 @@ on:
       # Prose next to the code it documents cannot break the build.
       - '!android/**.md'
       - '.github/actions/setup-android/action.yml'
-      - '.github/actions/report-size/action.yml'
+      - '.github/actions/report-size/**'
       - '.github/workflows/quality-android.yml'
   pull_request:
     branches: [main]
@@ -19,7 +19,7 @@ on:
       - 'android/**'
       - '!android/**.md'
       - '.github/actions/setup-android/action.yml'
-      - '.github/actions/report-size/action.yml'
+      - '.github/actions/report-size/**'
       - '.github/workflows/quality-android.yml'
   workflow_dispatch:
 

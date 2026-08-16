@@ -6,7 +6,7 @@ on:
     paths:
       - 'web/**'
       - '!web/**.md'
-      - '.github/actions/report-size/action.yml'
+      - '.github/actions/report-size/**'
       - '.github/workflows/quality-web.yml'
   pull_request:
     branches: [main]
@@ -16,7 +16,7 @@ on:
     paths:
       - 'web/**'
       - '!web/**.md'
-      - '.github/actions/report-size/action.yml'
+      - '.github/actions/report-size/**'
       - '.github/workflows/quality-web.yml'
   workflow_dispatch:
 
