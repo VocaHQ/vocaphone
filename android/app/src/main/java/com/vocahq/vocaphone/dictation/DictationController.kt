@@ -36,6 +36,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -521,24 +522,37 @@ class DictationController(
         if (configuration.localTranscriptionEnabled) {
             val session = incrementalReference.getAndSet(null)
             var preparedTranscript: LocalTranscription? = null
+            var partialTranscript: LocalTranscription? = null
             var timingRecorded = false
             if (session != null) {
                 _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
                 diagnostics.recordTiming("local_transcription_started", source.name)
                 timingRecorded = true
-                preparedTranscript = try {
-                    session.finish()
+                try {
+                    val incremental = session.finish()
+                    partialTranscript = incremental.transcript
                         .takeIf { it.text.isNotBlank() }
                         ?.let { LocalTranscription(it.text, it.language) }
-                        ?.also { diagnostics.recordTiming("local_incremental_ready", source.name) }
-                        ?: run {
-                            incrementalFallback.set(true)
-                            null
-                        }
+                    if (incremental.droppedAudibleChunk) {
+                        // A chunk that decoded to nothing is seconds of speech
+                        // missing from the middle of an otherwise fluent
+                        // transcript, which nothing downstream can see. The
+                        // whole-file decode levels the gain over the whole
+                        // recording and splits on different boundaries, so it
+                        // is the one that recovers them.
+                        diagnostics.recordTiming("local_incremental_dropped_chunk", source.name)
+                    } else {
+                        preparedTranscript = partialTranscript
+                            ?.also {
+                                diagnostics.recordTiming("local_incremental_ready", source.name)
+                            }
+                    }
+                    if (preparedTranscript == null) incrementalFallback.set(true)
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (_: Throwable) {
                     session.cancel()
                     incrementalFallback.set(true)
-                    null
                 }
             }
             if (incrementalSession != null && incrementalFallback.get()) {
@@ -552,6 +566,7 @@ class DictationController(
                 source = source,
                 generation = generation,
                 preparedTranscript = preparedTranscript,
+                partialTranscript = partialTranscript,
                 transcriptionTimingRecorded = timingRecorded,
             )
             return
@@ -680,6 +695,7 @@ class DictationController(
         source: DictationSource,
         generation: Int,
         preparedTranscript: LocalTranscription? = null,
+        partialTranscript: LocalTranscription? = null,
         transcriptionTimingRecorded: Boolean = false,
     ) {
         // Loading a model is seconds of silence with nothing on screen to explain
@@ -702,14 +718,23 @@ class DictationController(
             }
             val modelID = configuration.localModelId.takeIf { it.isNotEmpty() }
                 ?: error("Choose and download an on-device model first.")
-            val local = preparedTranscript
-                ?: localModels.transcribe(
+            val local = preparedTranscript ?: try {
+                localModels.transcribe(
                     wavFile,
                     modelID,
                     language,
                     configuration.transcriptionQuality,
                     configuration.customVocabulary,
                 )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                // Incomplete beats nothing. When the streaming path lost a
+                // chunk, this decode was the attempt to recover it; if the
+                // attempt cannot run at all, the text it did produce is still
+                // more use to the user than a failure.
+                partialTranscript ?: throw error
+            }
             val transcript = styleLocalTranscript(local, configuration)
             if (transcript.isEmpty()) {
                 throw GatewayException.emptyTranscript()

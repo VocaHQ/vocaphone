@@ -38,6 +38,7 @@ internal object SherpaLongAudio {
     private const val MIN_CHUNK_SECONDS = 4
     private const val MIN_SILENCE_RMS = 0.0125
     private const val SILENCE_RMS_RATIO = 0.18
+    private const val SILENT_CHUNK_RMS = 0.006
 
     fun chunks(samples: FloatArray): List<SherpaAudioChunk> {
         if (samples.size <= LONG_AUDIO_THRESHOLD_SECONDS * SAMPLE_RATE) {
@@ -139,6 +140,29 @@ internal object SherpaLongAudio {
         return quietStart.takeIf { it >= 0 && lowestRms <= threshold }
             ?.plus(frameSamples / 2)
             ?.coerceIn(minEnd, maxEnd)
+    }
+
+    /**
+     * Whether a chunk carries no audio worth decoding.
+     *
+     * Deliberately below the boundary-search silence floor: this skips only
+     * near-digital-silence, and keeps quiet speech. It answers "was anything
+     * lost when this chunk decoded to nothing", so a false positive would hide
+     * exactly the missing seconds it exists to find.
+     */
+    fun isEffectivelySilent(samples: FloatArray): Boolean {
+        if (samples.isEmpty()) return true
+        val frameSamples = SILENCE_FRAME_MILLIS * SAMPLE_RATE / 1_000
+        var loudest = 0.0
+        var start = 0
+        while (start < samples.size) {
+            loudest = maxOf(
+                loudest,
+                rms(samples, start, (start + frameSamples).coerceAtMost(samples.size)),
+            )
+            start += frameSamples
+        }
+        return loudest < SILENT_CHUNK_RMS
     }
 
     private fun rms(samples: FloatArray, start: Int, endExclusive: Int): Double {

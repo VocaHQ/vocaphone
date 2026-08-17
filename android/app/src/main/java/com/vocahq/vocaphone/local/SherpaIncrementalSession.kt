@@ -1,11 +1,29 @@
 package com.vocahq.vocaphone.local
 
+import com.vocahq.vocaphone.audio.SpeechAudioConditioning
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+
+/**
+ * What an incremental session decoded, and whether any of the recording is
+ * missing from it.
+ *
+ * A chunk that decodes to nothing takes its seconds out of the transcript
+ * without leaving a trace: the merge joins the chunks either side into text
+ * that reads as a whole sentence which happens to begin ten seconds in. The
+ * attention families drop a long chunk often enough for this to be the
+ * difference between a transcript and a plausible-looking lie, so the caller
+ * re-decodes the file rather than shipping the hole.
+ */
+internal data class SherpaIncrementalResult(
+    val transcript: SherpaTranscript,
+    val droppedAudibleChunk: Boolean,
+)
 
 /**
  * Decodes completed Sherpa chunks while AudioRecord is still capturing.
@@ -21,7 +39,7 @@ internal class SherpaIncrementalSession(
 ) {
     private val accepting = AtomicBoolean(true)
     private val frames = Channel<ShortArray>(capacity = MAX_RECORDING_FRAMES)
-    private val result: Deferred<SherpaTranscript> =
+    private val result: Deferred<SherpaIncrementalResult> =
         scope.async(Dispatchers.Default) { transcribe() }
 
     init {
@@ -32,7 +50,7 @@ internal class SherpaIncrementalSession(
     fun offer(frame: ShortArray): Boolean =
         accepting.get() && frames.trySend(frame).isSuccess
 
-    suspend fun finish(): SherpaTranscript {
+    suspend fun finish(): SherpaIncrementalResult {
         accepting.set(false)
         frames.close()
         return result.await()
@@ -44,13 +62,30 @@ internal class SherpaIncrementalSession(
         result.cancel()
     }
 
-    private suspend fun transcribe(): SherpaTranscript {
+    private suspend fun transcribe(): SherpaIncrementalResult {
         prepare()
         val audio = FloatSampleBuffer(
             initialCapacity = SherpaLongAudio.STREAMING_WINDOW_SECONDS * SherpaLongAudio.SAMPLE_RATE,
         )
         var transcript = SherpaTranscript.EMPTY
         var overlapsPrevious = false
+        var droppedAudibleChunk = false
+
+        suspend fun consume(chunk: FloatArray) {
+            // The gain a chunk is levelled with has to come from more than the
+            // chunk itself: one gain per chunk moves the level at every
+            // boundary, and a chunk that is all pause would be amplified into
+            // noise the model transcribes as words. The peak over everything
+            // captured so far is the closest a streaming chunk gets to the
+            // single gain the whole-file path applies, and it only ever grows,
+            // so the gain only ever settles.
+            val levelled = SpeechAudioConditioning.condition(chunk, audio.peak)
+            val decoded = decode(levelled)
+            if (decoded.text.isEmpty() && !SherpaLongAudio.isEffectivelySilent(levelled)) {
+                droppedAudibleChunk = true
+            }
+            transcript = transcript.append(decoded, deduplicateOverlap = overlapsPrevious)
+        }
 
         for (frame in frames) {
             audio.append(frame)
@@ -58,22 +93,17 @@ internal class SherpaIncrementalSession(
                 if (audio.size < STREAMING_WINDOW_SAMPLES) break
                 val available = audio.toFloatArray()
                 val split = SherpaLongAudio.nextStreamingSplit(available) ?: break
-                transcript = transcript.append(
-                    decode(available.copyOfRange(0, split.endExclusive)),
-                    deduplicateOverlap = overlapsPrevious,
-                )
+                consume(available.copyOfRange(0, split.endExclusive))
                 audio.discardPrefix(split.nextStart)
                 overlapsPrevious = split.nextStart < split.endExclusive
             }
         }
 
-        if (audio.size > 0) {
-            transcript = transcript.append(
-                decode(audio.toFloatArray()),
-                deduplicateOverlap = overlapsPrevious,
-            )
-        }
-        return transcript.copy(text = transcript.text.trim())
+        if (audio.size > 0) consume(audio.toFloatArray())
+        return SherpaIncrementalResult(
+            transcript = transcript.copy(text = transcript.text.trim()),
+            droppedAudibleChunk = droppedAudibleChunk,
+        )
     }
 
     private class FloatSampleBuffer(initialCapacity: Int) {
@@ -81,9 +111,17 @@ internal class SherpaIncrementalSession(
         var size: Int = 0
             private set
 
+        /** The loudest sample of everything appended, not only what is retained. */
+        var peak: Float = 0f
+            private set
+
         fun append(frame: ShortArray) {
             ensureCapacity(size + frame.size)
-            for (sample in frame) samples[size++] = sample / 32_768f
+            for (sample in frame) {
+                val value = sample / 32_768f
+                if (abs(value) > peak) peak = abs(value)
+                samples[size++] = value
+            }
         }
 
         fun discardPrefix(count: Int) {
