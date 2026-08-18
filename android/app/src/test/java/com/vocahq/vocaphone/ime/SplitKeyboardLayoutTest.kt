@@ -34,6 +34,16 @@ class SplitKeyboardLayoutTest {
     }
 
     @Test
+    fun `auto splits phone landscape and fold-cover landscape`() {
+        // Auto is "IME too wide for thumbs", not tablet-only. A phone or
+        // fold cover turned sideways is ~640-900 dp, so it splits. Do not
+        // raise this to sw600dp / 800 dp to spare landscape.
+        assertTrue(SplitKeyboardLayout.shouldSplit(SplitKeyboard.AUTO, 640))
+        assertTrue(SplitKeyboardLayout.shouldSplit(SplitKeyboard.AUTO, 800))
+        assertTrue(SplitKeyboardLayout.shouldSplit(SplitKeyboard.AUTO, 914))
+    }
+
+    @Test
     fun `always and never ignore width`() {
         assertTrue(SplitKeyboardLayout.shouldSplit(SplitKeyboard.ALWAYS, 360))
         assertFalse(SplitKeyboardLayout.shouldSplit(SplitKeyboard.NEVER, 1200))
@@ -82,21 +92,49 @@ class SplitKeyboardLayoutTest {
     @Test
     fun `spacebar becomes two space keys with a gap between them`() {
         val bottom = KeyboardLayouts.rows(KeyboardLayer.LETTERS, KeyboardEditorConfig.empty()).last()
+        assertFalse(
+            SplitKeyboardLayout.isSplitSpace(bottom.keys.first { it.type == KeyboardKeyType.SPACE }),
+        )
         val split = SplitKeyboardLayout.splitRow(bottom, 0.20f)
         val keys = split.items.filterIsInstance<SplitItem.Key>().map { it.key }
         val spaces = keys.filter { it.type == KeyboardKeyType.SPACE }
         assertEquals(2, spaces.size)
-        assertEquals(1, split.items.count { it is SplitItem.Gap })
-        assertTrue(split.items.indexOfFirst { it is SplitItem.Gap } > keys.indexOfFirst { it.type == KeyboardKeyType.SPACE })
-        assertEquals(
-            bottom.keys.map { it.type },
-            keys.map { it.type }.let { types ->
-                val firstSpace = types.indexOf(KeyboardKeyType.SPACE)
-                types.take(firstSpace + 1) + types.drop(firstSpace + 2)
-            },
-        )
+        assertTrue(spaces.all { SplitKeyboardLayout.isSplitSpace(it) })
+        assertGapBetweenSpaces(split.items)
         assertEquals(bottom.keys.first().id, keys.first().id)
         assertEquals(bottom.keys.last().id, keys.last().id)
+    }
+
+    @Test
+    fun `emoji bottom row splits the spacebar and leaves other keys in order`() {
+        val bottom = KeyboardLayouts.rows(KeyboardLayer.EMOJI, KeyboardEditorConfig.empty()).single()
+        val split = SplitKeyboardLayout.splitRow(bottom, 0.20f)
+        val keys = split.items.filterIsInstance<SplitItem.Key>().map { it.key }
+        assertEquals(
+            listOf(
+                KeyboardKeyType.LAYER_SWITCH,
+                KeyboardKeyType.SPACE,
+                KeyboardKeyType.SPACE,
+                KeyboardKeyType.DELETE,
+                KeyboardKeyType.RETURN,
+            ),
+            keys.map { it.type },
+        )
+        assertGapBetweenSpaces(split.items)
+        assertEquals("emoji-letters", keys.first().id)
+        assertEquals("return", keys.last().id)
+    }
+
+    private fun assertGapBetweenSpaces(items: List<SplitItem>) {
+        val gap = items.indexOfFirst { it is SplitItem.Gap }
+        assertEquals(1, items.count { it is SplitItem.Gap })
+        assertTrue(gap > 0 && gap < items.lastIndex)
+        val left = items[gap - 1] as SplitItem.Key
+        val right = items[gap + 1] as SplitItem.Key
+        assertEquals(KeyboardKeyType.SPACE, left.key.type)
+        assertEquals(KeyboardKeyType.SPACE, right.key.type)
+        assertTrue(SplitKeyboardLayout.isSplitSpace(left.key))
+        assertTrue(SplitKeyboardLayout.isSplitSpace(right.key))
     }
 
     @Test

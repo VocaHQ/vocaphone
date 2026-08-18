@@ -82,12 +82,20 @@ internal object SplitKeyboardLayout {
             right.sumOf { it.weight.toDouble() }.toFloat()
         return buildList {
             left.forEach { add(SplitItem.Key(it)) }
-            add(SplitItem.Key(space.copy(id = "${space.id}-left", weight = half)))
+            add(SplitItem.Key(space.copy(id = "${space.id}$LEFT_SUFFIX", weight = half)))
             add(SplitItem.Gap(spacerWeight(keyWeightSum, spacerFraction)))
-            add(SplitItem.Key(space.copy(id = "${space.id}-right", weight = half)))
+            add(SplitItem.Key(space.copy(id = "${space.id}$RIGHT_SUFFIX", weight = half)))
             right.forEach { add(SplitItem.Key(it)) }
         }
     }
+
+    /** Half of a split spacebar. The wordmark stays off these so it is not painted twice. */
+    fun isSplitSpace(key: KeyboardKey): Boolean =
+        key.type == KeyboardKeyType.SPACE &&
+            (key.id.endsWith(LEFT_SUFFIX) || key.id.endsWith(RIGHT_SUFFIX))
+
+    private const val LEFT_SUFFIX = "-left"
+    private const val RIGHT_SUFFIX = "-right"
 }
 
 internal data class SplitRow(

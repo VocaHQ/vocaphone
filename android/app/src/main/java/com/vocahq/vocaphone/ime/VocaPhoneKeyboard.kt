@@ -447,6 +447,8 @@ internal fun VocaPhoneKeyboard(
                             catalog = emojiCatalog,
                             recents = settings.emojiRecents,
                             category = emojiCategory,
+                            split = splitKeys,
+                            spacerFraction = spacerFraction,
                             onEmoji = { glyph ->
                                 handleKey(
                                     KeyboardKey(
@@ -485,7 +487,7 @@ internal fun VocaPhoneKeyboard(
                             editor = editor,
                             keyHeight = fittedKeyHeight,
                             showKeyHints = settings.numberKeyHintsEnabled,
-                            split = splitKeys && keyboardState.layer != KeyboardLayer.EMOJI,
+                            split = splitKeys,
                             spacerFraction = spacerFraction,
                             swipeEnabled = settings.swipeTypingEnabled &&
                                 keyboardState.layer == KeyboardLayer.LETTERS,
@@ -1481,6 +1483,8 @@ private fun EmojiLayer(
     catalog: List<EmojiEntry>,
     recents: List<String>,
     category: EmojiCategory,
+    split: Boolean = false,
+    spacerFraction: Float = SplitKeyboardLayout.MIN_SPACER_FRACTION,
     onEmoji: (String) -> Unit,
     onKey: (KeyboardKey) -> Unit,
     onKeyHold: (KeyboardKey, Long) -> Unit = { _, _ -> },
@@ -1505,6 +1509,8 @@ private fun EmojiLayer(
             state = state,
             editor = editor,
             keyHeight = keyHeight,
+            split = split,
+            spacerFraction = spacerFraction,
             onKey = onKey,
             onKeyHold = onKeyHold,
             onCursorMove = onCursorMove,
@@ -2054,7 +2060,9 @@ private fun KeyContent(
             ReturnKeyKind.GO -> KeyLabel("Go", tint, utility = true)
             ReturnKeyKind.SEND -> KeyLabel("Send", tint, utility = true)
         }
-        KeyboardKeyType.SPACE -> KeyLabel("VocaPhone", tint.copy(alpha = 0.78f), utility = true)
+        KeyboardKeyType.SPACE -> if (!SplitKeyboardLayout.isSplitSpace(key)) {
+            KeyLabel("VocaPhone", tint.copy(alpha = 0.78f), utility = true)
+        }
         KeyboardKeyType.LAYER_SWITCH -> KeyLabel(displayLabel, tint, utility = true)
         KeyboardKeyType.CHARACTER -> {
             if (hint == null) {
