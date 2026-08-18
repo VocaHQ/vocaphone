@@ -179,21 +179,54 @@ struct TelemetryTests {
         #expect(steps.count == TelemetrySetupStep.allCases.count)
     }
 
-    /// A milestone is a property of the install, not of the setting. Claiming it
-    /// only when reporting is on would let someone who opts in a month later
-    /// replay a first launch that already happened, inflating the denominator
-    /// every activation ratio is divided by.
-    @Test func aMilestoneMissedWhileOffIsNotReplayedWhenSwitchedOn() async {
+    /// The regression test for the defect that would have made this feature's
+    /// headline number permanently zero.
+    ///
+    /// Reporting is off by default and the opt-in is asked at the end of setup,
+    /// so `app_first_open` and every `setup_step_completed` happen *before* the
+    /// user can possibly say yes. Claiming milestones regardless of the switch
+    /// burnt them all while nothing could be sent, leaving
+    /// `first_dictation_ever / app_first_open` dividing by zero for every user
+    /// who ever opted in.
+    @Test func aMilestoneSkippedWhileOffStillFiresOnceReportingIsOn() async {
         let preferences = FakePreferences(enabled: false)
         let sink = RecordingSink()
         let telemetry = makeTelemetry(preferences: preferences, sink: sink)
 
+        // The real sequence: launch and finish setup with reporting off...
         telemetry.appFirstOpen()
+        for step in TelemetrySetupStep.allCases { telemetry.setupStepCompleted(step) }
+
+        await telemetry.setEnabled(true)
+
+        // ...then the next launch, and setup status being re-read.
+        telemetry.appFirstOpen()
+        for step in TelemetrySetupStep.allCases { telemetry.setupStepCompleted(step) }
+        await telemetry.flush()
+
+        #expect(
+            sink.records.filter { $0.eventName == "app_first_open" }.count == 1,
+            "the funnel denominator must survive an opt-in that comes after setup"
+        )
+        #expect(
+            sink.records.filter { $0.eventName == "setup_step_completed" }.count
+                == TelemetrySetupStep.allCases.count
+        )
+    }
+
+    /// Still once ever, though — being enabled does not re-arm a spent milestone.
+    @Test func aMilestoneAlreadySentIsNotSentAgain() async {
+        let preferences = FakePreferences(enabled: true)
+        let sink = RecordingSink()
+        let telemetry = makeTelemetry(preferences: preferences, sink: sink)
+
+        telemetry.appFirstOpen()
+        await telemetry.setEnabled(false)
         await telemetry.setEnabled(true)
         telemetry.appFirstOpen()
         await telemetry.flush()
 
-        #expect(sink.records.allSatisfy { $0.eventName != "app_first_open" })
+        #expect(sink.records.filter { $0.eventName == "app_first_open" }.count == 1)
     }
 
     // MARK: - Queue behaviour

@@ -17,9 +17,9 @@ package com.vocahq.vocaphone.telemetry
  * The `wire` values are what land in ClickHouse, so treat them as a published
  * schema: add new ones, never rename an existing one. `TelemetryParityTest`
  * holds them identical to the Swift copy in
- * `ios/VocaPhoneApp/Telemetry/TelemetryEvent.swift`; a drifted enum is a
- * silently broken funnel rather than a build failure, which is why the test
- * exists on both sides.
+ * `ios/VocaPhoneApp/Telemetry/TelemetryEvent.swift` by parsing that file
+ * directly; a drifted enum is a silently broken funnel rather than a build
+ * failure, which is why it is checked at all.
  */
 enum class TelemetryEvent(val wire: String) {
     /**

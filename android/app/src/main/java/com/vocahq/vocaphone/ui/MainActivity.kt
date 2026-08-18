@@ -266,7 +266,13 @@ fun VocaPhoneApp(
                 onOpenGateway = { showingGateway = true },
                 diagnosticEvents = viewModel::diagnosticEvents,
                 onClearDiagnosticEvents = viewModel::clearDiagnosticEvents,
-                onTelemetryEnabled = viewModel::setTelemetryEnabled,
+                // Answering the switch in Settings counts as answering the
+                // question, or the onboarding card keeps asking someone to opt
+                // into something they already turned on.
+                onTelemetryEnabled = { enabled ->
+                    viewModel.setTelemetryEnabled(enabled)
+                    viewModel.setTelemetryAsked()
+                },
                 telemetryPayload = viewModel::telemetryPayload,
                 telemetryPendingCount = viewModel::telemetryPendingCount,
                 telemetryDeliveryStatus = viewModel::telemetryDeliveryStatus,

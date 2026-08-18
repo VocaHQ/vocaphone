@@ -30,8 +30,9 @@ import org.json.JSONObject
  *
  * Sending less than the SDK sends is trivial when you own the request and
  * requires a fork when you do not. That is the main reason this client is
- * hand-rolled, and `TelemetrySystemPropsTest` fails the build if a field ever
- * creeps back in.
+ * hand-rolled, and `TelemetryTest` fails the build if a field ever creeps back
+ * in — see `no device identifier is ever sent` and the `systemProps` allowlist
+ * assertion beside it.
  */
 data class TelemetrySystemProps(
     val locale: String,

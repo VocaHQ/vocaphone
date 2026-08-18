@@ -39,14 +39,26 @@ struct UsageReportingSetupSection: View {
 
 /// The Privacy-screen section: the same words, the switch, and the viewer.
 struct UsageReportingSettingsSection: View {
-    @State private var isEnabled = UserDefaultsTelemetryPreferences().isEnabled
+    // Read from the app group rather than seeded once into @State: the setup
+    // card writes the same key, so a copy captured at init would show a stale
+    // value and write it back on the next flip.
+    @AppStorage(
+        UserDefaultsTelemetryPreferences.enabledKey,
+        store: UserDefaults(suiteName: AppConfiguration.appGroupIdentifier)
+    ) private var isEnabled = TelemetryConfig.defaultEnabled
     @State private var isShowingPayload = false
+
+    private let preferences = UserDefaultsTelemetryPreferences()
 
     var body: some View {
         Section {
             Toggle("Send anonymous usage data", isOn: $isEnabled)
                 .onChange(of: isEnabled) { _, enabled in
                     Task { await Telemetry.shared.setEnabled(enabled) }
+                    // Answering the switch here counts as answering the
+                    // question, or guided setup keeps asking someone to opt into
+                    // something they already turned on.
+                    preferences.hasBeenAsked = true
                 }
 
             Button(UsageReportingCopy.seeWhatIsSent) { isShowingPayload = true }

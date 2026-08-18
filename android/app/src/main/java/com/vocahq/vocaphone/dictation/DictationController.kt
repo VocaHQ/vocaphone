@@ -120,8 +120,16 @@ class DictationController(
      * writer is scoped to `runDictation` and the outcome is reported from
      * `deliver`/`fail` further down.
      */
+    /**
+     * Cleared on retry, because a retry re-transcribes a stored WAV without
+     * recording anything: the previous live capture's length would otherwise be
+     * reported as this dictation's, and after a process restart a retried
+     * 90-second dictation would report `under_10s`. Null means "no duration to
+     * report", and the outcome is sent without a bucket rather than with a
+     * wrong one.
+     */
     @Volatile
-    private var lastRecordingMillis: Long = 0
+    private var lastRecordingMillis: Long? = null
 
     init {
         scope.launch {
@@ -188,6 +196,9 @@ class DictationController(
     /** Re-sends audio that was preserved for a recoverable failure. */
     fun retry(sessionId: String) {
         if (pipeline?.isActive == true) return
+        // Nothing is recorded on this path, so the previous capture's length is
+        // not this dictation's.
+        lastRecordingMillis = null
         val generation = nextGeneration()
         pipeline = scope.launch {
             val record = history.find(sessionId) ?: return@launch
@@ -805,10 +816,12 @@ class DictationController(
         // is correct at this point, and whether the keyboard managed to commit
         // it is a separate question with its own failure path.
         telemetry.firstDictationEver()
-        telemetry.dictationSucceeded(
-            source = configuration.telemetrySource,
-            duration = TelemetryDurationBucket.of(lastRecordingMillis / 1_000.0),
-        )
+        lastRecordingMillis?.let { millis ->
+            telemetry.dictationSucceeded(
+                source = configuration.telemetrySource,
+                duration = TelemetryDurationBucket.of(millis / 1_000.0),
+            )
+        }
         val target = when (source) {
             DictationSource.IME -> imeInserter
             DictationSource.COMPANION_APP -> null

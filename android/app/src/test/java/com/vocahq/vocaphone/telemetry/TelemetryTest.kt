@@ -215,24 +215,60 @@ class TelemetryTest {
     }
 
     /**
-     * A milestone is a property of the install, not of the setting. Claiming it
-     * only when reporting is on would let someone who opts in a month later
-     * replay a first launch that already happened, inflating the denominator
-     * every activation ratio is divided by.
+     * The regression test for the defect that would have made this feature's
+     * headline number permanently zero.
+     *
+     * Reporting is off by default and the opt-in is asked at the end of setup,
+     * so `app_first_open` and every `setup_step_completed` happen *before* the
+     * user can possibly say yes. Claiming milestones regardless of the switch
+     * burnt them all while nothing could be sent, leaving
+     * `first_dictation_ever / app_first_open` dividing by zero for every user
+     * who ever opted in.
      */
     @Test
-    fun `a milestone missed while off is not replayed when switched on`() = runTest {
+    fun `a milestone skipped while off still fires once reporting is on`() = runTest {
         val preferences = FakePreferences(enabled = false)
         val sink = RecordingSink()
         val scope = TestScope(UnconfinedTestDispatcher(testScheduler))
         val telemetry = telemetry(preferences, sink, scope)
 
+        // The real sequence: launch and finish setup with reporting off...
         telemetry.appFirstOpen()
+        TelemetrySetupStep.entries.forEach { telemetry.setupStepCompleted(it) }
+
+        telemetry.applyEnabled(true)
+
+        // ...then the next launch, and setup status being re-read.
+        telemetry.appFirstOpen()
+        TelemetrySetupStep.entries.forEach { telemetry.setupStepCompleted(it) }
+        telemetry.flush()
+
+        assertEquals(
+            "the funnel denominator must survive an opt-in that comes after setup",
+            1,
+            sink.records.count { it.eventName == "app_first_open" },
+        )
+        assertEquals(
+            TelemetrySetupStep.entries.size,
+            sink.records.count { it.eventName == "setup_step_completed" },
+        )
+    }
+
+    /** Still once ever, though — being enabled does not re-arm a spent milestone. */
+    @Test
+    fun `a milestone already sent is not sent again`() = runTest {
+        val preferences = FakePreferences(enabled = true)
+        val sink = RecordingSink()
+        val scope = TestScope(UnconfinedTestDispatcher(testScheduler))
+        val telemetry = telemetry(preferences, sink, scope)
+
+        telemetry.appFirstOpen()
+        telemetry.applyEnabled(false)
         telemetry.applyEnabled(true)
         telemetry.appFirstOpen()
         telemetry.flush()
 
-        assertTrue(sink.records.none { it.eventName == "app_first_open" })
+        assertEquals(1, sink.records.count { it.eventName == "app_first_open" })
     }
 
     // MARK: - Queue behaviour

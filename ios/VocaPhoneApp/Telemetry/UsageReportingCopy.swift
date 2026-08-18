@@ -4,8 +4,10 @@ import Foundation
 ///
 /// Written once and used in both places they appear — the onboarding step and
 /// the Privacy settings screen — because a shorter paraphrase in one of them is
-/// how the two end up promising different things. `TelemetryCopyTests` pins the
-/// claims that have to survive a copy edit.
+/// how the two end up promising different things. Android's
+/// `UsageReportingCopyTest` pins the claims that have to survive a copy edit,
+/// and `TelemetryParityTest` compares this file against its Kotlin twin
+/// word-for-word.
 ///
 /// Held word-for-word alongside `UsageReportingCopy.kt` on Android. Two
 /// platforms making subtly different privacy promises about the same pipeline is
@@ -17,7 +19,7 @@ enum UsageReportingCopy {
     static let settingsTitle = "Usage reporting"
 
     static let whatIsSent = """
-        vocaphone is in beta and most problems never get reported. With this on, \
+        VocaPhone is in beta and most problems never get reported. With this on, \
         the app sends a short list of counters — which setup step you reached, \
         whether a dictation succeeded or failed and at which stage, which \
         on-device model you downloaded, and the app version — to a server \

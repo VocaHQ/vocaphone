@@ -29,8 +29,9 @@ import Foundation
 /// schema: add new ones, never rename an existing one. They are held identical
 /// to the Kotlin copy in
 /// `android/app/src/main/java/com/vocahq/vocaphone/telemetry/TelemetryEvent.kt`
-/// by `TelemetryParityTest` on both sides; a drifted enum is a silently broken
-/// funnel rather than a build failure, which is why the test exists twice.
+/// by `TelemetryParityTest`, which reads this file from the Android test suite
+/// so it runs without an iOS toolchain; a drifted enum is a silently broken
+/// funnel rather than a build failure, which is why it is checked at all.
 enum TelemetryEvent: String, CaseIterable, Sendable {
     /// Fired once ever, on the first launch after install. The denominator for
     /// every activation ratio, which is the only reason it exists: Aptabase

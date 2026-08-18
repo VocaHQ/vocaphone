@@ -274,13 +274,21 @@ final class Telemetry {
         _ props: [String: String] = [:],
         key: String? = nil
     ) {
-        let milestone = [event.rawValue, key].compactMap { $0 }.joined(separator: ":")
-        // Claimed before the enabled check on purpose: a milestone is a property
-        // of this install, not of this setting. Otherwise turning reporting on
-        // months later would replay a first launch that happened long ago and
-        // quietly inflate the denominator.
-        guard preferences.claimMilestone(milestone) else { return }
+        // The enabled check comes first, and the ordering is the whole point.
+        // Claiming the milestone before it burns the claim while reporting is
+        // off -- and because reporting is off by default and the opt-in is asked
+        // at the *end* of setup, `app_first_open` and every
+        // `setup_step_completed` would already be spent by the time anyone could
+        // say yes. The activation rate this feature exists to measure is
+        // `first_dictation_ever / app_first_open`, so a burnt denominator makes
+        // it permanently zero.
+        //
+        // Claiming only while enabled means a milestone fires on its first
+        // *observable* occurrence instead, which is the honest denominator:
+        // "installs we were allowed to watch", not "installs".
         guard preferences.isEnabled else { return }
+        let milestone = [event.rawValue, key].compactMap { $0 }.joined(separator: ":")
+        guard preferences.claimMilestone(milestone) else { return }
         enqueue(event, props)
     }
 

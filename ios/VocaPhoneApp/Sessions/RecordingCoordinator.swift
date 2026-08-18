@@ -150,6 +150,17 @@ final class RecordingCoordinator {
     private var captureStartedAt: Date?
     private var lastRecordingDuration: TimeInterval = 0
 
+    /// The last reported transcription route, so `source_selected` reports a
+    /// change rather than the mere fact that setup was re-read.
+    private var lastReportedSource: TelemetrySource?
+
+    private func reportSourceIfChanged(_ selected: SessionProcessingLocation) {
+        let source: TelemetrySource = selected == .onDevice ? .onDevice : .gateway
+        guard source != lastReportedSource else { return }
+        lastReportedSource = source
+        Telemetry.shared.sourceSelected(source)
+    }
+
     private func reportSetupProgress(_ status: SetupStatus) {
         if status.isSatisfied(.microphone) {
             Telemetry.shared.setupStepCompleted(.microphone)
@@ -159,10 +170,14 @@ final class RecordingCoordinator {
         }
         if status.isSatisfied(.source) {
             Telemetry.shared.setupStepCompleted(.source)
-            Telemetry.shared.sourceSelected(
-                status.source.selected == .onDevice ? .onDevice : .gateway
-            )
         }
+        // Deliberately not reported from here. `refreshSetupStatus` runs on any
+        // change to any field — microphone, keyboard, gateway health — and
+        // `source_selected` repeats by design, so emitting it here fired it over
+        // and over for someone who never touched the setting. Android reports it
+        // only where the source actually changes, and the two platforms' counts
+        // have to mean the same thing.
+        reportSourceIfChanged(status.source.selected)
         if status.isSatisfied(.firstDictation) {
             Telemetry.shared.firstDictationEver()
         }
@@ -651,7 +666,6 @@ final class RecordingCoordinator {
             // input — and without the claim the keyboard opens vocaphone on top
             // of a Quick Dictation that was seconds from recording.
             record.claimedAt = Date()
-            captureStartedAt = Date()
             // Resolved here because this is the process that knows the answer,
             // and written before any audio moves so the keyboard and the Live
             // Activity can name the same place the whole way through.
@@ -692,6 +706,11 @@ final class RecordingCoordinator {
                 && LocalTranscriptionPreferences.modelIdentifier.flatMap {
                     LocalModelCatalog.descriptor(for: $0)?.engine == .sherpaOnnx
                 } == true
+            // Stamped here, not at claim: permission prompts and a first
+            // on-device model load sit between the two and can take seconds,
+            // which would inflate every duration bucket by however long the
+            // user waited rather than spoke.
+            captureStartedAt = Date()
             let audioURL = try recorder.start(
                 sessionID: record.sessionID,
                 directory: directory,
