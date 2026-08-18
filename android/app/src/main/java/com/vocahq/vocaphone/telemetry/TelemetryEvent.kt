@@ -1,5 +1,10 @@
 package com.vocahq.vocaphone.telemetry
 
+import com.vocahq.vocaphone.core.TranscriptionQuality
+import com.vocahq.vocaphone.local.LocalModelCatalog
+import com.vocahq.vocaphone.local.LocalModelDescriptor
+import com.vocahq.vocaphone.settings.VocaPhoneSettings
+
 /**
  * The complete telemetry vocabulary.
  *
@@ -101,8 +106,100 @@ enum class TelemetrySource(val wire: String) {
  * vocabulary stays in the telemetry package and nothing in
  * `VocaPhoneSettings` has to know this feature exists.
  */
-val com.vocahq.vocaphone.settings.VocaPhoneSettings.telemetrySource: TelemetrySource
+val VocaPhoneSettings.telemetrySource: TelemetrySource
     get() = if (localTranscriptionEnabled) TelemetrySource.ON_DEVICE else TelemetrySource.GATEWAY
+
+/**
+ * How much decoding work the on-device engines were allowed to spend.
+ *
+ * Its own enum rather than a reuse of [TranscriptionQuality] for the same reason
+ * [TelemetryReason] is separate from the diagnostic categories: that type is a
+ * user-facing setting and is free to grow a case or rename one, while this is a
+ * wire format that cannot. It also needs a value the setting has no business
+ * having — [NOT_APPLICABLE], for the gateway route, which decides its own
+ * decoding and would be misdescribed by whatever happens to be selected locally.
+ */
+enum class TelemetryQuality(val wire: String) {
+    FAST("fast"),
+    BALANCED("balanced"),
+    ACCURATE("accurate"),
+
+    /**
+     * Transcription did not run on this phone, so the local accuracy setting did
+     * not apply to it.
+     */
+    NOT_APPLICABLE("not_applicable"),
+    ;
+
+    companion object {
+        fun of(quality: TranscriptionQuality?, source: TelemetrySource): TelemetryQuality =
+            if (source != TelemetrySource.ON_DEVICE || quality == null) {
+                NOT_APPLICABLE
+            } else {
+                when (quality) {
+                    TranscriptionQuality.FAST -> FAST
+                    TranscriptionQuality.BALANCED -> BALANCED
+                    TranscriptionQuality.ACCURATE -> ACCURATE
+                }
+            }
+    }
+}
+
+/**
+ * Which model a dictation actually ran on.
+ *
+ * `model_download_finished` already answers "which models get downloaded", which
+ * is a different and much weaker question: a download is a one-time act of
+ * optimism, and someone can fetch three models, use one, and go back to the
+ * gateway. Only the dictation events can say whether a performance fix landed on
+ * the model people are really dictating with.
+ *
+ * Not an enum, because the catalog is data rather than vocabulary and gains
+ * entries every release. The safety comes from pinning instead: anything the
+ * shipped [LocalModelCatalog] does not contain is reported as [UNKNOWN], so a
+ * sideloaded directory name or a stale identifier cannot reach the network even
+ * though the value begins life as a string.
+ */
+object TelemetryModelId {
+    /**
+     * Transcription ran on the user's own gateway, which never tells the app
+     * which model it loaded — and must not be asked, since that answer describes
+     * a machine rather than this install. A fixed value rather than an omitted
+     * property, so the column stays groupable instead of ragged.
+     */
+    const val GATEWAY = "gateway"
+
+    /**
+     * A model the shipped catalog does not contain: a sideloaded directory, or
+     * an entry withdrawn in a later release.
+     */
+    const val UNKNOWN = "unknown"
+
+    /**
+     * Pins a descriptor to the shipped catalog. Everything that reports a model
+     * goes through here, so there is one place to audit rather than two.
+     */
+    fun pinned(model: LocalModelDescriptor?): String =
+        model?.let { LocalModelCatalog.find(it.id)?.id } ?: UNKNOWN
+
+    /**
+     * What a dictation reports. Gateway sessions name the gateway rather than
+     * whichever model happens to be selected on this phone: attributing a
+     * session to a model that never touched it is worse than reporting nothing.
+     */
+    fun of(model: LocalModelDescriptor?, source: TelemetrySource): String =
+        if (source == TelemetrySource.ON_DEVICE) pinned(model) else GATEWAY
+}
+
+/**
+ * The model the current settings select, resolved against the shipped catalog.
+ *
+ * An extension for the same reason [telemetrySource] is one: the telemetry
+ * vocabulary stays in this package, and `VocaPhoneSettings` does not have to
+ * know this feature exists.
+ */
+val VocaPhoneSettings.telemetryModel: LocalModelDescriptor?
+    get() = LocalModelCatalog.find(localModelId)
 
 /**
  * How far a dictation got before it failed, drawn from the timing stages

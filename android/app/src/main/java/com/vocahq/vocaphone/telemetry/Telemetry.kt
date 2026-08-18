@@ -1,6 +1,6 @@
 package com.vocahq.vocaphone.telemetry
 
-import com.vocahq.vocaphone.local.LocalModelCatalog
+import com.vocahq.vocaphone.core.TranscriptionQuality
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.settings.SettingsRepository
 import java.time.Instant
@@ -93,14 +93,16 @@ class Telemetry internal constructor(
     fun sourceSelected(source: TelemetrySource) =
         record(TelemetryEvent.SOURCE_SELECTED, "source" to source.wire)
 
+    /**
+     * Takes the descriptor rather than its id so the value can only originate in
+     * the shipped catalog, and [TelemetryModelId.pinned] re-checks it against
+     * that catalog anyway. Every property whose value begins life as a string
+     * goes through that one function.
+     */
     fun modelDownloadFinished(model: LocalModelDescriptor, outcome: TelemetryDownloadOutcome) =
         record(
             TelemetryEvent.MODEL_DOWNLOAD_FINISHED,
-            // Re-checked against the shipped catalog rather than trusted. The
-            // parameter is already typed, but this is the one property whose
-            // value originates as a string, so it is the one worth pinning to a
-            // known set before it can reach the network.
-            "model_id" to (LocalModelCatalog.find(model.id)?.id ?: "unknown"),
+            "model_id" to TelemetryModelId.pinned(model),
             "outcome" to outcome.wire,
         )
 
@@ -111,22 +113,38 @@ class Telemetry internal constructor(
      */
     fun firstDictationEver() = recordOnce(TelemetryEvent.FIRST_DICTATION_EVER)
 
-    fun dictationSucceeded(source: TelemetrySource, duration: TelemetryDurationBucket) =
-        record(
-            TelemetryEvent.DICTATION_SUCCEEDED,
-            "source" to source.wire,
-            "duration_bucket" to duration.wire,
-        )
+    /**
+     * [model] and [quality] describe what this dictation was configured with,
+     * and both are mapped rather than passed through: [TelemetryModelId.of] and
+     * [TelemetryQuality.of] decide what a gateway session reports, so a call
+     * site cannot attribute one to a local model it never touched.
+     */
+    fun dictationSucceeded(
+        source: TelemetrySource,
+        duration: TelemetryDurationBucket,
+        model: LocalModelDescriptor?,
+        quality: TranscriptionQuality?,
+    ) = record(
+        TelemetryEvent.DICTATION_SUCCEEDED,
+        "source" to source.wire,
+        "duration_bucket" to duration.wire,
+        "model_id" to TelemetryModelId.of(model, source),
+        "quality" to TelemetryQuality.of(quality, source).wire,
+    )
 
     fun dictationFailed(
         stage: TelemetryStage,
         reason: TelemetryReason,
         source: TelemetrySource,
+        model: LocalModelDescriptor?,
+        quality: TranscriptionQuality?,
     ) = record(
         TelemetryEvent.DICTATION_FAILED,
         "stage" to stage.wire,
         "reason" to reason.wire,
         "source" to source.wire,
+        "model_id" to TelemetryModelId.of(model, source),
+        "quality" to TelemetryQuality.of(quality, source).wire,
     )
 
     // MARK: - The switch

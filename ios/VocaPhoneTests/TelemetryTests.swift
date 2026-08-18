@@ -116,7 +116,9 @@ struct TelemetryTests {
         telemetry.appFirstOpen()
         telemetry.setupStepCompleted(.microphone)
         telemetry.sourceSelected(.onDevice)
-        telemetry.dictationSucceeded(source: .onDevice, duration: .under10s)
+        telemetry.dictationSucceeded(
+            source: .onDevice, duration: .under10s, model: nil, quality: nil
+        )
         telemetry.firstDictationEver()
 
         #expect(telemetry.pendingCount == 0)
@@ -323,10 +325,25 @@ struct TelemetryTests {
         telemetry.setupFinished()
         telemetry.sourceSelected(.gateway)
         telemetry.firstDictationEver()
-        telemetry.dictationSucceeded(source: .gateway, duration: .over60s)
+        // Deliberately a path rather than a catalog entry: `model_id` is the one
+        // property whose value starts life as a string, so the leak check is
+        // only worth anything if it is handed something that would leak.
+        telemetry.dictationSucceeded(
+            source: .onDevice,
+            duration: .over60s,
+            model: Self.sideloadedModel,
+            quality: .accurate
+        )
         for reason in TelemetryReason.allCases {
-            telemetry.dictationFailed(stage: .upload, reason: reason, source: .gateway)
+            telemetry.dictationFailed(
+                stage: .upload,
+                reason: reason,
+                source: .onDevice,
+                model: Self.sideloadedModel,
+                quality: .accurate
+            )
         }
+        telemetry.modelDownloadFinished(model: Self.sideloadedModel, outcome: .integrityFailed)
 
         let shown = telemetry.pendingPayload()
         await telemetry.flush()
@@ -421,7 +438,9 @@ struct TelemetryTests {
             autoFlushDelay: .milliseconds(50)
         )
 
-        telemetry.dictationSucceeded(source: .onDevice, duration: .tenTo30s)
+        telemetry.dictationSucceeded(
+            source: .onDevice, duration: .tenTo30s, model: nil, quality: nil
+        )
         #expect(sink.records.isEmpty, "nothing leaves immediately")
 
         try await Task.sleep(for: .milliseconds(400))
@@ -444,7 +463,9 @@ struct TelemetryTests {
         )
 
         telemetry.firstDictationEver()
-        telemetry.dictationSucceeded(source: .gateway, duration: .under10s)
+        telemetry.dictationSucceeded(
+            source: .gateway, duration: .under10s, model: nil, quality: nil
+        )
         telemetry.sourceSelected(.gateway)
 
         try await Task.sleep(for: .milliseconds(400))
@@ -462,7 +483,9 @@ struct TelemetryTests {
         let sink = RecordingSink()
         let telemetry = makeTelemetry(preferences: preferences, sink: sink)
 
-        telemetry.dictationSucceeded(source: .gateway, duration: .over60s)
+        telemetry.dictationSucceeded(
+            source: .gateway, duration: .over60s, model: nil, quality: nil
+        )
         await telemetry.flush()
 
         let status = telemetry.deliveryStatus
@@ -560,6 +583,93 @@ struct TelemetryTests {
     /// fills with runs of a tree that corresponds to no release.
     @Test func aDebugBuildNeverTransmits() {
         #expect(!TelemetryConfig.canTransmit)
+    }
+
+    // MARK: - Which model ran, and how hard it worked
+
+    /// A model that is not in the shipped catalog, shaped like the thing that
+    /// would actually do damage if pinning ever stopped happening.
+    static let sideloadedModel = LocalModelDescriptor(
+        id: "/var/mobile/Containers/Data/whisper-secret",
+        displayName: "Sideloaded",
+        engine: .whisperKit,
+        tokenizerRepository: "openai/whisper-tiny",
+        sizeBytes: 1,
+        minimumRamGB: 1,
+        languages: "English",
+        englishOnly: true
+    )
+
+    @Test func anOnDeviceDictationNamesTheModelAndAccuracyItRanWith() async throws {
+        let preferences = FakePreferences(enabled: true)
+        let sink = RecordingSink()
+        let telemetry = makeTelemetry(preferences: preferences, sink: sink)
+        let model = try #require(LocalModelCatalog.all.first)
+
+        telemetry.dictationSucceeded(
+            source: .onDevice, duration: .under10s, model: model, quality: .accurate
+        )
+        await telemetry.flush()
+
+        let props = try #require(sink.records.first?.props)
+        #expect(props["model_id"] == model.id)
+        #expect(props["quality"] == "accurate")
+    }
+
+    /// The gateway is the user's own machine and never tells the app what it
+    /// loaded. Reporting whichever local model happens to be selected would
+    /// attribute the session to a model that never saw the audio — the exact
+    /// mistake that makes a "model X is slow" query wrong.
+    @Test func aGatewayDictationReportsTheGatewayRatherThanALocalModel() async throws {
+        let preferences = FakePreferences(enabled: true)
+        let sink = RecordingSink()
+        let telemetry = makeTelemetry(preferences: preferences, sink: sink)
+        let model = try #require(LocalModelCatalog.all.first)
+
+        telemetry.dictationSucceeded(
+            source: .gateway, duration: .under10s, model: model, quality: .fast
+        )
+        telemetry.dictationFailed(
+            stage: .upload,
+            reason: .gatewayUnreachable,
+            source: .gateway,
+            model: model,
+            quality: .fast
+        )
+        await telemetry.flush()
+
+        #expect(sink.records.count == 2)
+        for record in sink.records {
+            #expect(record.props["model_id"] == TelemetryModelID.gateway)
+            // The accuracy setting governs the local engines only, so claiming
+            // the gateway ran at "fast" would be a plain untruth.
+            #expect(record.props["quality"] == "not_applicable")
+        }
+    }
+
+    /// A sideloaded directory, or a catalog entry withdrawn in a later release,
+    /// lands in the `unknown` bucket rather than on the wire.
+    @Test func aModelOutsideTheShippedCatalogIsReportedAsUnknown() async throws {
+        let preferences = FakePreferences(enabled: true)
+        let sink = RecordingSink()
+        let telemetry = makeTelemetry(preferences: preferences, sink: sink)
+
+        telemetry.dictationSucceeded(
+            source: .onDevice,
+            duration: .under10s,
+            model: Self.sideloadedModel,
+            quality: .balanced
+        )
+        await telemetry.flush()
+
+        #expect(sink.records.first?.props["model_id"] == TelemetryModelID.unknown)
+    }
+
+    /// A dictation this process never claimed — one resumed after a relaunch —
+    /// knows neither value. Guessing at them would be worse than saying so.
+    @Test func anUnknownLocalConfigurationIsReportedRatherThanGuessed() {
+        #expect(TelemetryModelID.of(nil, source: .onDevice) == TelemetryModelID.unknown)
+        #expect(TelemetryQuality.of(nil, source: .onDevice) == .notApplicable)
     }
 
     // MARK: - Helpers

@@ -92,6 +92,35 @@ class TelemetryParityTest {
             TelemetryDownloadOutcome.entries.map { it.wire }.toSet(),
             swiftCases("TelemetryDownloadOutcome"),
         )
+        assertEquals(
+            TelemetryQuality.entries.map { it.wire }.toSet(),
+            swiftCases("TelemetryQuality"),
+        )
+    }
+
+    /**
+     * `model_id` is the one property whose values are not an enum on either
+     * platform, so the enum comparison above cannot see it. Its two sentinels
+     * are still wire values: a platform that renamed `unknown` would split one
+     * bucket into two and nothing else would notice.
+     */
+    @Test
+    fun `the model_id sentinels are identical on both platforms`() {
+        val swift = swiftSource("TelemetryEvent.swift")
+
+        listOf("gateway" to TelemetryModelId.GATEWAY, "unknown" to TelemetryModelId.UNKNOWN)
+            .forEach { (swiftName, kotlinValue) ->
+                val declared = Regex("""static let $swiftName\s*=\s*"([^"]+)"""")
+                    .find(swift)
+                    ?.groupValues
+                    ?.get(1)
+                    ?: error("Could not find TelemetryModelID.$swiftName in the Swift source")
+                assertEquals(
+                    "The $swiftName sentinel has drifted between platforms",
+                    kotlinValue,
+                    declared,
+                )
+            }
     }
 
     /**

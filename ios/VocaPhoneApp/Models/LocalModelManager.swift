@@ -564,16 +564,16 @@ final class LocalModelManager {
             downloadedModelIDs.insert(descriptor.id)
             persistPath(folder, for: descriptor.id)
             message = "\(descriptor.displayName) downloaded and verified."
-            Telemetry.shared.modelDownloadFinished(modelID: descriptor.id, outcome: .completed)
+            Telemetry.shared.modelDownloadFinished(model: descriptor, outcome: .completed)
         } catch is CancellationError {
             hasError = false
             message = "Model download canceled."
-            Telemetry.shared.modelDownloadFinished(modelID: descriptor.id, outcome: .cancelled)
+            Telemetry.shared.modelDownloadFinished(model: descriptor, outcome: .cancelled)
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled {
             hasError = false
             message = "Model download canceled."
-            Telemetry.shared.modelDownloadFinished(modelID: descriptor.id, outcome: .cancelled)
+            Telemetry.shared.modelDownloadFinished(model: descriptor, outcome: .cancelled)
             throw CancellationError()
         } catch {
             hasError = true
@@ -582,7 +582,7 @@ final class LocalModelManager {
             // download URL or a path inside the container, and the whole point
             // of the enum is that neither can get out.
             Telemetry.shared.modelDownloadFinished(
-                modelID: descriptor.id,
+                model: descriptor,
                 outcome: Self.downloadOutcome(for: error)
             )
             throw error

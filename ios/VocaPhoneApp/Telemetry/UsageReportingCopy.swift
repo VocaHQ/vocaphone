@@ -22,8 +22,8 @@ enum UsageReportingCopy {
         VocaPhone is in beta and most problems never get reported. With this on, \
         the app sends a short list of counters — which setup step you reached, \
         whether a dictation succeeded or failed and at which stage, which \
-        on-device model you downloaded, and the app version — to a server \
-        VocaHQ runs.
+        on-device model you downloaded, which one transcribed your speech and at \
+        what accuracy setting, and the app version — to a server VocaHQ runs.
         """
 
     /// The third sentence is the one worth keeping through every copy review. It

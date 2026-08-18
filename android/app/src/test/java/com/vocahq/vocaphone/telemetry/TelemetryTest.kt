@@ -1,5 +1,7 @@
 package com.vocahq.vocaphone.telemetry
 
+import com.vocahq.vocaphone.core.TranscriptionQuality
+import com.vocahq.vocaphone.local.LocalModelCatalog
 import java.time.Instant
 import java.util.Locale
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -141,7 +143,12 @@ class TelemetryTest {
         telemetry.appFirstOpen()
         telemetry.setupStepCompleted(TelemetrySetupStep.MICROPHONE)
         telemetry.sourceSelected(TelemetrySource.ON_DEVICE)
-        telemetry.dictationSucceeded(TelemetrySource.ON_DEVICE, TelemetryDurationBucket.UNDER_10S)
+        telemetry.dictationSucceeded(
+            TelemetrySource.ON_DEVICE,
+            TelemetryDurationBucket.UNDER_10S,
+            model = null,
+            quality = null,
+        )
         telemetry.firstDictationEver()
 
         assertEquals(0, telemetry.pendingCount())
@@ -419,9 +426,20 @@ class TelemetryTest {
         telemetry.setupFinished()
         telemetry.sourceSelected(TelemetrySource.GATEWAY)
         telemetry.firstDictationEver()
-        telemetry.dictationSucceeded(TelemetrySource.GATEWAY, TelemetryDurationBucket.OVER_60S)
+        telemetry.dictationSucceeded(
+            TelemetrySource.GATEWAY,
+            TelemetryDurationBucket.OVER_60S,
+            model = null,
+            quality = null,
+        )
         TelemetryReason.entries.forEach { reason ->
-            telemetry.dictationFailed(TelemetryStage.UPLOAD, reason, TelemetrySource.GATEWAY)
+            telemetry.dictationFailed(
+                TelemetryStage.UPLOAD,
+                reason,
+                TelemetrySource.GATEWAY,
+                model = null,
+                quality = null,
+            )
         }
 
         val payload = telemetry.pendingPayload()
@@ -488,7 +506,12 @@ class TelemetryTest {
             autoFlushDelayMillis = 5_000L,
         )
 
-        telemetry.dictationSucceeded(TelemetrySource.ON_DEVICE, TelemetryDurationBucket.TEN_TO_30S)
+        telemetry.dictationSucceeded(
+            TelemetrySource.ON_DEVICE,
+            TelemetryDurationBucket.TEN_TO_30S,
+            model = null,
+            quality = null,
+        )
         assertEquals("nothing leaves immediately", 0, sink.records.size)
 
         advanceTimeBy(6_000)
@@ -514,7 +537,12 @@ class TelemetryTest {
         )
 
         telemetry.firstDictationEver()
-        telemetry.dictationSucceeded(TelemetrySource.GATEWAY, TelemetryDurationBucket.UNDER_10S)
+        telemetry.dictationSucceeded(
+            TelemetrySource.GATEWAY,
+            TelemetryDurationBucket.UNDER_10S,
+            model = null,
+            quality = null,
+        )
         telemetry.sourceSelected(TelemetrySource.GATEWAY)
 
         advanceTimeBy(6_000)
@@ -537,7 +565,12 @@ class TelemetryTest {
         val scope = TestScope(UnconfinedTestDispatcher(testScheduler))
         val telemetry = telemetry(preferences, sink, scope)
 
-        telemetry.dictationSucceeded(TelemetrySource.GATEWAY, TelemetryDurationBucket.OVER_60S)
+        telemetry.dictationSucceeded(
+            TelemetrySource.GATEWAY,
+            TelemetryDurationBucket.OVER_60S,
+            model = null,
+            quality = null,
+        )
         telemetry.flush()
 
         val status = telemetry.deliveryStatus()
@@ -606,6 +639,98 @@ class TelemetryTest {
         val telemetry = telemetry(preferences, sink, scope)
 
         assertTrue(telemetry.deliveryStatus().contains("No send attempted yet"))
+    }
+
+    // MARK: - Which model ran, and how hard it worked
+
+    @Test
+    fun `an on-device dictation names the model and accuracy it ran with`() = runTest {
+        val sink = RecordingSink()
+        val scope = TestScope(UnconfinedTestDispatcher(testScheduler))
+        val telemetry = telemetry(FakePreferences(enabled = true), sink, scope)
+        val model = LocalModelCatalog.all.first()
+
+        telemetry.dictationSucceeded(
+            TelemetrySource.ON_DEVICE,
+            TelemetryDurationBucket.UNDER_10S,
+            model = model,
+            quality = TranscriptionQuality.ACCURATE,
+        )
+        telemetry.flush()
+
+        val props = sink.records.single().props
+        assertEquals(model.id, props["model_id"])
+        assertEquals("accurate", props["quality"])
+    }
+
+    /**
+     * The gateway is the user's own machine and never tells the app what it
+     * loaded. Reporting whichever local model happens to be selected would
+     * attribute the session to a model that never saw the audio -- the exact
+     * mistake that makes a "model X is slow" query wrong.
+     */
+    @Test
+    fun `a gateway dictation reports the gateway rather than a local model`() = runTest {
+        val sink = RecordingSink()
+        val scope = TestScope(UnconfinedTestDispatcher(testScheduler))
+        val telemetry = telemetry(FakePreferences(enabled = true), sink, scope)
+
+        telemetry.dictationSucceeded(
+            TelemetrySource.GATEWAY,
+            TelemetryDurationBucket.UNDER_10S,
+            model = LocalModelCatalog.all.first(),
+            quality = TranscriptionQuality.FAST,
+        )
+        telemetry.dictationFailed(
+            TelemetryStage.UPLOAD,
+            TelemetryReason.GATEWAY_UNREACHABLE,
+            TelemetrySource.GATEWAY,
+            model = LocalModelCatalog.all.first(),
+            quality = TranscriptionQuality.FAST,
+        )
+        telemetry.flush()
+
+        sink.records.forEach { record ->
+            assertEquals(TelemetryModelId.GATEWAY, record.props["model_id"])
+            // The accuracy setting governs the local engines only, so claiming
+            // the gateway ran at "fast" would be a plain untruth.
+            assertEquals("not_applicable", record.props["quality"])
+        }
+    }
+
+    /**
+     * The one property whose value starts life as a string. A sideloaded
+     * directory name or an identifier withdrawn from a later release must land
+     * in the `unknown` bucket rather than on the wire.
+     */
+    @Test
+    fun `a model outside the shipped catalog is reported as unknown`() = runTest {
+        val sink = RecordingSink()
+        val scope = TestScope(UnconfinedTestDispatcher(testScheduler))
+        val telemetry = telemetry(FakePreferences(enabled = true), sink, scope)
+
+        telemetry.dictationSucceeded(
+            TelemetrySource.ON_DEVICE,
+            TelemetryDurationBucket.UNDER_10S,
+            model = LocalModelCatalog.all.first().copy(id = "/data/user/0/whisper-secret"),
+            quality = TranscriptionQuality.BALANCED,
+        )
+        telemetry.flush()
+
+        assertEquals(TelemetryModelId.UNKNOWN, sink.records.single().props["model_id"])
+    }
+
+    /**
+     * A dictation this process never claimed -- one resumed after a restart --
+     * knows neither value. Guessing at them would be worse than saying so.
+     */
+    @Test
+    fun `an unknown local configuration is reported rather than guessed`() {
+        assertEquals(TelemetryModelId.UNKNOWN, TelemetryModelId.of(null, TelemetrySource.ON_DEVICE))
+        assertEquals(
+            TelemetryQuality.NOT_APPLICABLE,
+            TelemetryQuality.of(null, TelemetrySource.ON_DEVICE),
+        )
     }
 
     // MARK: - Duration is bucketed, never exact

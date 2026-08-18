@@ -136,16 +136,15 @@ final class Telemetry {
         record(.sourceSelected, ["source": source.rawValue])
     }
 
-    func modelDownloadFinished(modelID: String, outcome: TelemetryDownloadOutcome) {
+    /// Takes the descriptor rather than its identifier: the value can then only
+    /// originate in the shipped catalog, and ``TelemetryModelID/pinned(_:)``
+    /// re-checks it against that catalog before it goes anywhere. Every property
+    /// whose value begins life as a string goes through that one function.
+    func modelDownloadFinished(model: LocalModelDescriptor, outcome: TelemetryDownloadOutcome) {
         record(
             .modelDownloadFinished,
             [
-                // Pinned to the shipped catalog rather than trusted. This is the
-                // one property whose value originates as a string, so it is the
-                // one worth checking against a known set before it can reach the
-                // network.
-                "model_id": LocalModelCatalog.all.contains(where: { $0.id == modelID })
-                    ? modelID : "unknown",
+                "model_id": TelemetryModelID.pinned(model),
                 "outcome": outcome.rawValue,
             ]
         )
@@ -156,21 +155,44 @@ final class Telemetry {
     /// without any per-user identity.
     func firstDictationEver() { recordOnce(.firstDictationEver) }
 
-    func dictationSucceeded(source: TelemetrySource, duration: TelemetryDurationBucket) {
+    /// `model` and `quality` describe what the session was *claimed* with, not
+    /// what is selected now, and both are mapped rather than passed through:
+    /// ``TelemetryModelID/of(_:source:)`` and ``TelemetryQuality/of(_:source:)``
+    /// decide what a gateway session reports, so a call site cannot attribute
+    /// one to a local model it never touched.
+    func dictationSucceeded(
+        source: TelemetrySource,
+        duration: TelemetryDurationBucket,
+        model: LocalModelDescriptor?,
+        quality: TranscriptionQuality?
+    ) {
         record(
             .dictationSucceeded,
-            ["source": source.rawValue, "duration_bucket": duration.rawValue]
+            [
+                "source": source.rawValue,
+                "duration_bucket": duration.rawValue,
+                "model_id": TelemetryModelID.of(model, source: source),
+                "quality": TelemetryQuality.of(quality, source: source).rawValue,
+            ]
         )
     }
 
     func dictationFailed(
         stage: TelemetryStage,
         reason: TelemetryReason,
-        source: TelemetrySource
+        source: TelemetrySource,
+        model: LocalModelDescriptor?,
+        quality: TranscriptionQuality?
     ) {
         record(
             .dictationFailed,
-            ["stage": stage.rawValue, "reason": reason.rawValue, "source": source.rawValue]
+            [
+                "stage": stage.rawValue,
+                "reason": reason.rawValue,
+                "source": source.rawValue,
+                "model_id": TelemetryModelID.of(model, source: source),
+                "quality": TelemetryQuality.of(quality, source: source).rawValue,
+            ]
         )
     }
 

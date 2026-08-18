@@ -75,7 +75,9 @@ class TelemetryVocabularyTest {
             TelemetryStage.entries.map { it.wire } +
             TelemetryReason.entries.map { it.wire } +
             TelemetryDurationBucket.entries.map { it.wire } +
-            TelemetryDownloadOutcome.entries.map { it.wire }
+            TelemetryDownloadOutcome.entries.map { it.wire } +
+            TelemetryQuality.entries.map { it.wire } +
+            listOf(TelemetryModelId.GATEWAY, TelemetryModelId.UNKNOWN)
 
         values.forEach { value ->
             assertTrue(

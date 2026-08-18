@@ -155,10 +155,80 @@ enum TelemetryDurationBucket: String, CaseIterable, Sendable {
     }
 }
 
+/// How much decoding work the on-device engines were allowed to spend.
+///
+/// Its own enum rather than a reuse of ``TranscriptionQuality`` for the same
+/// reason ``TelemetryReason`` is separate from the diagnostic categories: that
+/// type is a user-facing setting and is free to grow a case or rename one,
+/// while this is a wire format that cannot. It also needs a value the setting
+/// has no business having — ``notApplicable``, for the gateway route, which
+/// decides its own decoding and would be misdescribed by whatever happens to be
+/// selected locally.
+enum TelemetryQuality: String, CaseIterable, Sendable {
+    case fast
+    case balanced
+    case accurate
+    /// Transcription did not run on this iPhone, so the local accuracy setting
+    /// did not apply to it.
+    case notApplicable = "not_applicable"
+
+    static func of(
+        _ quality: TranscriptionQuality?,
+        source: TelemetrySource
+    ) -> TelemetryQuality {
+        guard source == .onDevice, let quality else { return .notApplicable }
+        return switch quality {
+        case .fast: .fast
+        case .balanced: .balanced
+        case .accurate: .accurate
+        }
+    }
+}
+
 enum TelemetryDownloadOutcome: String, CaseIterable, Sendable {
     case completed
     case failed
     case cancelled
     /// The file downloaded but its SHA-256 did not match the pinned digest.
     case integrityFailed = "integrity_failed"
+}
+
+/// Which model a dictation actually ran on.
+///
+/// `model_download_finished` already answers "which models get downloaded",
+/// which is a different and much weaker question: a download is a one-time act
+/// of optimism, and someone can fetch three models, use one, and go back to the
+/// gateway. Only the dictation events can say whether a performance fix landed
+/// on the model people are really dictating with.
+///
+/// Not an enum, because the catalog is data rather than vocabulary and gains
+/// entries every release. The safety comes from pinning instead: anything the
+/// shipped ``LocalModelCatalog`` does not contain is reported as ``unknown``,
+/// so a sideloaded directory name or a stale identifier cannot reach the
+/// network even though the value begins life as a string.
+enum TelemetryModelID {
+    /// Transcription ran on the user's own gateway, which never tells the app
+    /// which model it loaded — and must not be asked, since that answer
+    /// describes a machine rather than this install. A fixed value rather than
+    /// an omitted property, so the column stays groupable instead of ragged.
+    static let gateway = "gateway"
+
+    /// A model the shipped catalog does not contain: a sideloaded directory, or
+    /// an entry withdrawn in a later release.
+    static let unknown = "unknown"
+
+    /// Pins a descriptor to the shipped catalog. Everything that reports a model
+    /// goes through here, so there is one place to audit rather than two.
+    static func pinned(_ descriptor: LocalModelDescriptor?) -> String {
+        guard let descriptor, LocalModelCatalog.all.contains(where: { $0.id == descriptor.id })
+        else { return unknown }
+        return descriptor.id
+    }
+
+    /// What a dictation reports. Gateway sessions name the gateway rather than
+    /// whichever model happens to be selected on this iPhone: attributing a
+    /// session to a model that never touched it is worse than reporting nothing.
+    static func of(_ descriptor: LocalModelDescriptor?, source: TelemetrySource) -> String {
+        source == .onDevice ? pinned(descriptor) : gateway
+    }
 }

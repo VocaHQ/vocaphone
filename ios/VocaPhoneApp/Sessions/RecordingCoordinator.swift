@@ -154,6 +154,28 @@ final class RecordingCoordinator {
     /// change rather than the mere fact that setup was re-read.
     private var lastReportedSource: TelemetrySource?
 
+    /// The on-device settings the work in flight was claimed with.
+    ///
+    /// Captured for exactly the reason the route is (see
+    /// ``selectedProcessingLocation()``): a model or accuracy changed between two
+    /// dictations must describe the next one, not rewrite the one already
+    /// running. Reading them again at report time would attribute a slow
+    /// dictation to whatever the user switched to *because* it was slow, which
+    /// inverts the signal the events exist to carry.
+    ///
+    /// Both stay `nil` for a session this process never claimed — one resumed
+    /// after a relaunch — and a nil model is reported as `unknown` rather than
+    /// guessed at.
+    private var claimedModel: LocalModelDescriptor?
+    private var claimedQuality: TranscriptionQuality?
+
+    private func captureClaimedTranscriptionSettings() {
+        claimedModel = LocalModelCatalog.descriptor(
+            for: LocalTranscriptionPreferences.modelIdentifier
+        )
+        claimedQuality = LocalTranscriptionPreferences.quality
+    }
+
     private func reportSourceIfChanged(_ selected: SessionProcessingLocation) {
         let source: TelemetrySource = selected == .onDevice ? .onDevice : .gateway
         guard source != lastReportedSource else { return }
@@ -519,6 +541,7 @@ final class RecordingCoordinator {
             style: KeyboardPreferences.writingStyle.rawValue
         )
         record.processingLocation = Self.selectedProcessingLocation()
+        captureClaimedTranscriptionSettings()
         do {
             try record.transition(to: .launchingApp)
             try store.save(record)
@@ -670,6 +693,7 @@ final class RecordingCoordinator {
             // and written before any audio moves so the keyboard and the Live
             // Activity can name the same place the whole way through.
             record.processingLocation = Self.selectedProcessingLocation()
+        captureClaimedTranscriptionSettings()
             try? store.save(record)
             clearQuickDictationMarker()
             activeRecord = record
@@ -885,6 +909,7 @@ final class RecordingCoordinator {
         // session claimed by an older build carries no route at all — either way
         // this is where the record stops being able to mislead.
         record.processingLocation = Self.selectedProcessingLocation()
+        captureClaimedTranscriptionSettings()
         try? store.save(record)
 
         // Local inference deliberately happens before the gateway guard. A
@@ -1139,7 +1164,9 @@ final class RecordingCoordinator {
         Telemetry.shared.dictationFailed(
             stage: TelemetryFailureMapping.stage(for: code),
             reason: TelemetryFailureMapping.reason(for: code),
-            source: record.telemetrySource
+            source: record.telemetrySource,
+            model: claimedModel,
+            quality: claimedQuality
         )
         do {
             try record.transition(to: state)
@@ -1163,7 +1190,9 @@ final class RecordingCoordinator {
         // why the outcome is reported from this method rather than twice.
         Telemetry.shared.dictationSucceeded(
             source: record.telemetrySource,
-            duration: .of(lastRecordingDuration)
+            duration: .of(lastRecordingDuration),
+            model: claimedModel,
+            quality: claimedQuality
         )
         refreshSetupStatus()
         message = record.sourceDocumentID == "in-app-test"

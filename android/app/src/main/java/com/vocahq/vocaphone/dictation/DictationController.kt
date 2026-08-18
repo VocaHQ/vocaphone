@@ -37,6 +37,7 @@ import com.vocahq.vocaphone.telemetry.Telemetry
 import com.vocahq.vocaphone.telemetry.TelemetryDurationBucket
 import com.vocahq.vocaphone.telemetry.TelemetryReason
 import com.vocahq.vocaphone.telemetry.TelemetryStage
+import com.vocahq.vocaphone.telemetry.telemetryModel
 import com.vocahq.vocaphone.telemetry.telemetrySource
 import java.io.File
 import java.util.UUID
@@ -838,6 +839,8 @@ class DictationController(
             telemetry.dictationSucceeded(
                 source = configuration.telemetrySource,
                 duration = TelemetryDurationBucket.of(millis / 1_000.0),
+                model = configuration.telemetryModel,
+                quality = configuration.transcriptionQuality,
             )
         }
         val target = when (source) {
@@ -921,6 +924,8 @@ class DictationController(
             stage = telemetryStage(error),
             reason = telemetryReason(error),
             source = configuration.telemetrySource,
+            model = configuration.telemetryModel,
+            quality = configuration.transcriptionQuality,
         )
         history.recordFailure(
             sessionId = sessionId.toString(),
