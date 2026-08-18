@@ -278,8 +278,12 @@ class Telemetry internal constructor(
      * happens with no activity on screen, so the background transition
      * [TelemetryFlushScheduler] waits for never comes — without this, those
      * events sat in the queue until the process died. Superseding the previous
-     * job rather than stacking one per event keeps a burst to a single request.
+     * job rather than stacking one per event keeps a burst to a single request
+     * — synchronised because events are recorded on `Dispatchers.Default`, and
+     * two unsynchronised callers here would each leave a live job behind and
+     * send the same burst twice.
      */
+    @Synchronized
     private fun scheduleFlush() {
         val delayMillis = autoFlushDelayMillis ?: return
         flushJob?.cancel()

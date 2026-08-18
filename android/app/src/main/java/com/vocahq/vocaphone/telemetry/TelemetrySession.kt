@@ -11,7 +11,10 @@ import kotlin.random.Random
  * ordered relative to each other; it is not an install ID and must never become
  * one. See [TelemetryConfig] for why there is no persistent identifier here.
  *
- * Not thread-safe on its own — [Telemetry] serialises access.
+ * Synchronised, because [Telemetry] does not serialise access: it records on
+ * `Dispatchers.Default`, so two events arriving together genuinely run on
+ * different threads. Unsynchronised, a burst could double-mint the id and split
+ * one sitting across two sessions.
  */
 internal class TelemetrySession(
     private val now: () -> Long = System::currentTimeMillis,
@@ -21,6 +24,7 @@ internal class TelemetrySession(
     private var lastTouchedMillis: Long = now()
 
     /** The current session, rotating first if the app has been idle long enough. */
+    @Synchronized
     fun currentId(): String {
         val timestamp = now()
         if (timestamp - lastTouchedMillis >= TIMEOUT_MILLIS) {
@@ -34,6 +38,7 @@ internal class TelemetrySession(
      * Forces a new session. Used when reporting is switched off and on again,
      * so a re-enable cannot be stitched to the events that preceded it.
      */
+    @Synchronized
     fun rotate() {
         id = mint()
         lastTouchedMillis = now()
