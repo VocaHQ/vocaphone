@@ -916,6 +916,7 @@ final class LocalModelManager {
                 task: .transcribe,
                 language: requested,
                 temperature: 0,
+                temperatureIncrementOnFallback: quality.whisperKitTemperatureIncrement,
                 temperatureFallbackCount: quality.whisperKitTemperatureFallbackCount,
                 usePrefillPrompt: true,
                 usePrefillCache: true,
@@ -925,6 +926,9 @@ final class LocalModelManager {
                 // has to ask for detection in so many words.
                 detectLanguage: requested == nil,
                 skipSpecialTokens: true,
+                // Timestamp tokens are not shown, but Whisper needs to predict
+                // them to stop cleanly instead of repeating into padded audio.
+                withoutTimestamps: false,
                 promptTokens: promptTokens,
                 // WhisperKit defaults this off where Whisper itself defaults it
                 // on. Leaving it off lets a window open on a blank token, which

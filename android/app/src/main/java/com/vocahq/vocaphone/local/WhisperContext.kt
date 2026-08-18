@@ -18,6 +18,7 @@ internal class WhisperContext private constructor(private var pointer: Long) {
         language: String,
         quality: TranscriptionQuality,
         prompt: String,
+        cropAudioContext: Boolean,
     ): LocalTranscription =
         withContext(scope.coroutineContext) {
             check(pointer != 0L) { "Whisper context has been released" }
@@ -27,8 +28,8 @@ internal class WhisperContext private constructor(private var pointer: Long) {
                 samples,
                 if (language == "auto") "auto" else language,
                 quality.whisperBeamSize,
-                quality.whisperTemperatureFallback,
-                WhisperCpuConfig.whisperAudioContext(samples.size),
+                quality.whisperTemperatureIncrement,
+                if (cropAudioContext) WhisperCpuConfig.whisperAudioContext(samples.size) else 0,
                 prompt,
             )
             // A failed decode returns no segments, which would otherwise be
@@ -88,10 +89,10 @@ internal object WhisperCpuConfig {
      * Below roughly this much context the decoder degenerates whatever the audio
      * length, so short dictations stop here rather than shrinking to fit.
      */
-    private const val MINIMUM_AUDIO_CONTEXT = 448
+    private const val MINIMUM_AUDIO_CONTEXT = 768
 
     /** How much context to ask for beyond the audio itself. */
-    private const val AUDIO_CONTEXT_MARGIN = 1.5
+    private const val AUDIO_CONTEXT_MARGIN = 2.0
 
     /**
      * The encoder window to ask for, or zero to leave whisper's default.
@@ -104,9 +105,9 @@ internal object WhisperCpuConfig {
      * The margin is what makes this safe rather than merely fast. Sized close to
      * the speech, the decoder falls into a repetition loop, and the temperature
      * retries that follow leave the dictation both slower than it started and
-     * wrong — so this asks for half as much context again as the audio needs, and
-     * never less than [MINIMUM_AUDIO_CONTEXT]. Past twenty seconds the full window
-     * is the smaller ask, and long recordings whisper already splits into
+     * wrong — so this asks for twice as much context as the audio needs, and never
+     * less than [MINIMUM_AUDIO_CONTEXT]. Past fifteen seconds the full window is
+     * the smaller ask, and long recordings whisper already splits into
      * thirty-second windows are left exactly as they were.
      */
     internal fun whisperAudioContext(sampleCount: Int): Int {
