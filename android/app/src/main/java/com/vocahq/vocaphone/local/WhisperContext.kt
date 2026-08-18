@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.local
 
+import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.TranscriptionQuality
 import java.util.concurrent.Executors
 import kotlin.math.ceil
@@ -19,12 +20,13 @@ internal class WhisperContext private constructor(private var pointer: Long) {
         quality: TranscriptionQuality,
         prompt: String,
         cropAudioContext: Boolean,
+        threads: Int,
     ): LocalTranscription =
         withContext(scope.coroutineContext) {
             check(pointer != 0L) { "Whisper context has been released" }
             val status = WhisperLib.fullTranscribe(
                 pointer,
-                WhisperCpuConfig.preferredThreadCount,
+                threads,
                 samples,
                 if (language == "auto") "auto" else language,
                 quality.whisperBeamSize,
@@ -45,9 +47,13 @@ internal class WhisperContext private constructor(private var pointer: Long) {
                         append(WhisperLib.getTextSegment(pointer, index))
                     }
                 }.trim(),
-                // Only meaningful when "auto" was asked for; otherwise it echoes
-                // the request back, which is the same answer either way.
-                language = WhisperLib.getDetectedLanguage(pointer),
+                // Detection is meaningful only for Automatic. With an explicit
+                // selection, the user's requested output language remains the
+                // contract even if the engine reports something contradictory.
+                language = ModelLanguageSupport.transcriptLanguage(
+                    requested = language,
+                    reported = WhisperLib.getDetectedLanguage(pointer),
+                ),
             )
         }
 
@@ -67,17 +73,25 @@ internal class WhisperContext private constructor(private var pointer: Long) {
 }
 
 internal object WhisperCpuConfig {
-    val preferredThreadCount: Int
-        get() = whisperThreadCount(Runtime.getRuntime().availableProcessors())
+    fun preferredThreadCount(modelID: String): Int = whisperThreadCount(
+        availableProcessors = Runtime.getRuntime().availableProcessors(),
+        modelID = modelID,
+    )
 
     /**
-     * Whisper's encoder is the dominant cost on phones. Keep two cores free for
-     * Android and the UI, but let an eight-core POCO-class device use six for
-     * the actual model pass; capping it at four leaves sustained CPU throughput
-     * unused and makes even greedy decoding feel stalled.
+     * Quantized Tiny through Small finish soon enough to use six workers
+     * profitably. Full-precision Small and every larger model sustain the load
+     * long enough that recruiting the efficiency cores heats a heterogeneous
+     * phone and throttles the following pass. A POCO F1 running the same
+     * 6.6-second full-precision Small sample twice measured 20.8/45.9 seconds
+     * with six workers and 16.4/18.7 seconds with four.
      */
-    internal fun whisperThreadCount(availableProcessors: Int): Int =
-        (availableProcessors - 2).coerceIn(2, 6)
+    internal fun whisperThreadCount(availableProcessors: Int, modelID: String): Int {
+        val modelClass = whisperClass(modelID)
+        val fullPrecisionSmall = modelClass == 3 && "-q" !in modelID
+        val ceiling = if (fullPrecisionSmall || modelClass >= 4) 4 else 6
+        return (availableProcessors - 2).coerceIn(2, ceiling)
+    }
 
     /** 20 ms of audio at 16 kHz, which is one unit of whisper's encoder window. */
     private const val SAMPLES_PER_AUDIO_CONTEXT = 320

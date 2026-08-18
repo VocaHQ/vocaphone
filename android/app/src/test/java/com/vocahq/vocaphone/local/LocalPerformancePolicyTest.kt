@@ -9,9 +9,11 @@ class LocalPerformancePolicyTest {
 
     @Test
     fun `whisper worker count is capped for sustained phone inference`() {
-        assertEquals(2, WhisperCpuConfig.whisperThreadCount(4))
-        assertEquals(6, WhisperCpuConfig.whisperThreadCount(8))
-        assertEquals(6, WhisperCpuConfig.whisperThreadCount(16))
+        assertEquals(2, WhisperCpuConfig.whisperThreadCount(4, "base-q5_1"))
+        assertEquals(6, WhisperCpuConfig.whisperThreadCount(8, "base-q5_1"))
+        assertEquals(6, WhisperCpuConfig.whisperThreadCount(8, "small-q5_1"))
+        assertEquals(4, WhisperCpuConfig.whisperThreadCount(8, "small"))
+        assertEquals(4, WhisperCpuConfig.whisperThreadCount(16, "large-v3-q5_0"))
     }
 
     @Test
