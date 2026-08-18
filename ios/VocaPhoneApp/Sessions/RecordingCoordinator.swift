@@ -130,6 +130,42 @@ final class RecordingCoordinator {
         // every observer, so the comparison earns its keep.
         guard refreshed != setupStatus else { return }
         setupStatus = refreshed
+        reportSetupProgress(refreshed)
+    }
+
+    /// Reports each setup step the first time it is satisfied.
+    ///
+    /// Driven from the refreshed status rather than from the buttons that start
+    /// each step, because every one of them is finished somewhere else — iOS
+    /// Settings, a permission alert, the keyboard itself — and comes back as
+    /// state rather than as a callback. Each step is a once-ever milestone
+    /// inside `Telemetry`, so the several-times-a-second refresh this method
+    /// runs under reports nothing after the first time.
+    /// When capture began, and how long the last completed capture ran.
+    ///
+    /// `SessionRecord` carries `createdAt`/`updatedAt`, but neither is the
+    /// recording length — a session that waits on a model load or a slow upload
+    /// would report a duration far longer than anyone spoke for. This is the
+    /// microphone's own clock, and it only feeds the bucketed telemetry value.
+    private var captureStartedAt: Date?
+    private var lastRecordingDuration: TimeInterval = 0
+
+    private func reportSetupProgress(_ status: SetupStatus) {
+        if status.isSatisfied(.microphone) {
+            Telemetry.shared.setupStepCompleted(.microphone)
+        }
+        if status.isSatisfied(.keyboard) {
+            Telemetry.shared.setupStepCompleted(.keyboard)
+        }
+        if status.isSatisfied(.source) {
+            Telemetry.shared.setupStepCompleted(.source)
+            Telemetry.shared.sourceSelected(
+                status.source.selected == .onDevice ? .onDevice : .gateway
+            )
+        }
+        if status.isSatisfied(.firstDictation) {
+            Telemetry.shared.firstDictationEver()
+        }
     }
 
     /// The selected route and everything known about whether it can work.
@@ -615,6 +651,7 @@ final class RecordingCoordinator {
             // input — and without the claim the keyboard opens vocaphone on top
             // of a Quick Dictation that was seconds from recording.
             record.claimedAt = Date()
+            captureStartedAt = Date()
             // Resolved here because this is the process that knows the answer,
             // and written before any audio moves so the keyboard and the Live
             // Activity can name the same place the whole way through.
@@ -782,6 +819,10 @@ final class RecordingCoordinator {
             keepAudioSessionActive: true
         ) ?? resolvedAudioURL(for: record)
         DiagnosticLog.record(.captureStopped)
+        if let started = captureStartedAt {
+            lastRecordingDuration = Date().timeIntervalSince(started)
+            captureStartedAt = nil
+        }
         if wasRecording {
             // Feedback is optional and should never sit in front of gateway work.
             Task { await soundFeedback.play(.stop) }
@@ -1072,6 +1113,11 @@ final class RecordingCoordinator {
             .operationFailed,
             metadata: .error(diagnosticErrorCode(for: code, state: state))
         )
+        Telemetry.shared.dictationFailed(
+            stage: TelemetryFailureMapping.stage(for: code),
+            reason: TelemetryFailureMapping.reason(for: code),
+            source: record.telemetrySource
+        )
         do {
             try record.transition(to: state)
             record.error = SessionFailure(code: code, message: failureMessage, recoverable: recoverable)
@@ -1090,6 +1136,12 @@ final class RecordingCoordinator {
     /// a trial run once one has arrived.
     private func markTranscriptDelivered(for record: SessionRecord) {
         KeyboardPreferences.hasCompletedFirstDictation = true
+        // Both the gateway route and the on-device route converge here, which is
+        // why the outcome is reported from this method rather than twice.
+        Telemetry.shared.dictationSucceeded(
+            source: record.telemetrySource,
+            duration: .of(lastRecordingDuration)
+        )
         refreshSetupStatus()
         message = record.sourceDocumentID == "in-app-test"
             ? "Transcript ready. Your gateway is working end to end."
