@@ -33,6 +33,16 @@ internal object SherpaLongAudio {
     const val OVERLAP_MILLIS = 500
     const val STREAMING_WINDOW_SECONDS = TARGET_CHUNK_SECONDS + 2
 
+    /**
+     * A chunk shorter than this answering with no tokens is ordinary rather
+     * than a loss: it is the half second of retained overlap a recording that
+     * ends just after a boundary leaves behind, or a fragment of a word. Longer
+     * than this and an empty answer is suspicious -- which is why it is also the
+     * bar [SherpaEmptyChunkRecovery] uses before it bothers retrying a chunk as
+     * two halves.
+     */
+    const val MIN_SUSPECT_CHUNK_SECONDS = 6
+
     private const val SILENCE_FRAME_MILLIS = 100
     private const val SILENCE_SEARCH_MILLIS = 2_000
     private const val MIN_CHUNK_SECONDS = 4
@@ -142,16 +152,8 @@ internal object SherpaLongAudio {
             ?.coerceIn(minEnd, maxEnd)
     }
 
-    /**
-     * Whether a chunk carries no audio worth decoding.
-     *
-     * Deliberately below the boundary-search silence floor: this skips only
-     * near-digital-silence, and keeps quiet speech. It answers "was anything
-     * lost when this chunk decoded to nothing", so a false positive would hide
-     * exactly the missing seconds it exists to find.
-     */
-    fun isEffectivelySilent(samples: FloatArray): Boolean {
-        if (samples.isEmpty()) return true
+    /** The loudest 100 ms frame in [samples], as RMS. */
+    fun loudestFrame(samples: FloatArray): Double {
         val frameSamples = SILENCE_FRAME_MILLIS * SAMPLE_RATE / 1_000
         var loudest = 0.0
         var start = 0
@@ -162,8 +164,37 @@ internal object SherpaLongAudio {
             )
             start += frameSamples
         }
-        return loudest < SILENT_CHUNK_RMS
+        return loudest
     }
+
+    /**
+     * Whether there is nothing here worth handing to a model.
+     *
+     * The floor is deliberately below the boundary-search silence threshold: it
+     * skips only near-digital-silence and keeps quiet speech. Erring this way
+     * costs a decode of a pause; erring the other way drops speech, which is
+     * the whole failure this file exists to avoid.
+     */
+    fun isEffectivelySilent(samples: FloatArray): Boolean =
+        samples.isEmpty() || isEffectivelySilent(loudestFrame(samples))
+
+    fun isEffectivelySilent(loudestFrame: Double): Boolean = loudestFrame < SILENT_CHUNK_RMS
+
+    /**
+     * Whether a chunk carries speech rather than the room between sentences.
+     *
+     * [loudestFrameSoFar] is the loudest frame heard earlier in the same
+     * recording. No absolute floor separates a quiet room from quiet speech --
+     * one room's noise sits above another room's whisper -- but the distance
+     * between a pause and the speech around it holds across recordings, which
+     * is why the boundary search scales its own threshold the same way.
+     *
+     * Only asked about a chunk that already decoded to nothing, and only to
+     * decide whether that is worth re-reading the whole file over. Room tone
+     * answering with no tokens is not a loss; it is the correct answer.
+     */
+    fun carriesSpeech(loudestFrame: Double, loudestFrameSoFar: Double): Boolean =
+        loudestFrame >= maxOf(SILENT_CHUNK_RMS, loudestFrameSoFar * SILENCE_RMS_RATIO)
 
     private fun rms(samples: FloatArray, start: Int, endExclusive: Int): Double {
         if (endExclusive <= start) return 0.0

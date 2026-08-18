@@ -23,7 +23,19 @@ import kotlinx.coroutines.channels.Channel
 internal data class SherpaIncrementalResult(
     val transcript: SherpaTranscript,
     val droppedAudibleChunk: Boolean,
-)
+) {
+    /**
+     * Whether a whole-file re-decode is worth taking over this result.
+     *
+     * The re-decode exists to recover seconds the streaming pass lost, and it
+     * is only evidence of that if it came back with more. The same model that
+     * dropped a chunk in one pass drops one in the other -- over a recording
+     * with a long pause in it, routinely -- so taking the second pass on faith
+     * trades a hole for a bigger one, and the user watches a finished sentence
+     * lose its opening half.
+     */
+    fun supersededBy(wholeFile: String): Boolean = wholeFile.length > transcript.text.length
+}
 
 /**
  * Decodes completed Sherpa chunks while AudioRecord is still capturing.
@@ -70,8 +82,23 @@ internal class SherpaIncrementalSession(
         var transcript = SherpaTranscript.EMPTY
         var overlapsPrevious = false
         var droppedAudibleChunk = false
+        // The loudest frame of everything decoded so far, which is what a later
+        // chunk's level is judged against. Read before this chunk contributes
+        // to it, so a pause is compared with the speech around it and never
+        // with itself.
+        var loudestFrame = 0.0
 
         suspend fun consume(chunk: FloatArray) {
+            // Silence is judged on the capture as it arrived, and so has to be
+            // measured before `condition` levels the array in place. That gain
+            // multiplies a quiet recording by as much as eight, and a floor
+            // meant for microphone levels reads amplified room tone as speech
+            // -- which buys a decode, the two more the empty-chunk recovery
+            // adds on top, and then the whole-file re-run the flag below asks
+            // the caller for. All to transcribe a pause.
+            val level = SherpaLongAudio.loudestFrame(chunk)
+            if (SherpaLongAudio.isEffectivelySilent(level)) return
+
             // The gain a chunk is levelled with has to come from more than the
             // chunk itself: one gain per chunk moves the level at every
             // boundary, and a chunk that is all pause would be amplified into
@@ -81,9 +108,23 @@ internal class SherpaIncrementalSession(
             // so the gain only ever settles.
             val levelled = SpeechAudioConditioning.condition(chunk, audio.peak)
             val decoded = decode(levelled)
-            if (decoded.text.isEmpty() && !SherpaLongAudio.isEffectivelySilent(levelled)) {
+
+            // Only a chunk long enough that the recovery has already tried and
+            // failed, and loud enough next to the rest of the recording to have
+            // held speech, is a hole worth re-reading the file for. Below those
+            // bars an empty answer is routine -- the retained overlap, the
+            // fragment of a word a recording ending just after a boundary
+            // leaves, the room tone while someone pauses to think -- and
+            // treating it as a loss spends a second pass over the whole
+            // recording to find out it was right the first time.
+            if (decoded.text.isEmpty() &&
+                chunk.size >
+                SherpaLongAudio.MIN_SUSPECT_CHUNK_SECONDS * SherpaLongAudio.SAMPLE_RATE &&
+                SherpaLongAudio.carriesSpeech(level, loudestFrame)
+            ) {
                 droppedAudibleChunk = true
             }
+            loudestFrame = maxOf(loudestFrame, level)
             transcript = transcript.append(decoded, deduplicateOverlap = overlapsPrevious)
         }
 

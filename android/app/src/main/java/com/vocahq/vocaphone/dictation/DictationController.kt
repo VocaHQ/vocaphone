@@ -28,6 +28,7 @@ import com.vocahq.vocaphone.gateway.GatewayStreamingPolicy
 import com.vocahq.vocaphone.gateway.StreamingUnavailableException
 import com.vocahq.vocaphone.local.LocalModelManager
 import com.vocahq.vocaphone.local.LocalTranscription
+import com.vocahq.vocaphone.local.SherpaIncrementalResult
 import com.vocahq.vocaphone.local.SherpaIncrementalSession
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.settings.SettingsRepository
@@ -550,6 +551,7 @@ class DictationController(
             val session = incrementalReference.getAndSet(null)
             var preparedTranscript: LocalTranscription? = null
             var partialTranscript: LocalTranscription? = null
+            var incrementalOutcome: SherpaIncrementalResult? = null
             var timingRecorded = false
             if (session != null) {
                 _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
@@ -557,6 +559,7 @@ class DictationController(
                 timingRecorded = true
                 try {
                     val incremental = session.finish()
+                    incrementalOutcome = incremental
                     partialTranscript = incremental.transcript
                         .takeIf { it.text.isNotBlank() }
                         ?.let { LocalTranscription(it.text, it.language) }
@@ -594,6 +597,7 @@ class DictationController(
                 generation = generation,
                 preparedTranscript = preparedTranscript,
                 partialTranscript = partialTranscript,
+                incrementalOutcome = incrementalOutcome,
                 transcriptionTimingRecorded = timingRecorded,
             )
             return
@@ -723,6 +727,7 @@ class DictationController(
         generation: Int,
         preparedTranscript: LocalTranscription? = null,
         partialTranscript: LocalTranscription? = null,
+        incrementalOutcome: SherpaIncrementalResult? = null,
         transcriptionTimingRecorded: Boolean = false,
     ) {
         // Loading a model is seconds of silence with nothing on screen to explain
@@ -746,13 +751,22 @@ class DictationController(
             val modelID = configuration.localModelId.takeIf { it.isNotEmpty() }
                 ?: error("Choose and download an on-device model first.")
             val local = preparedTranscript ?: try {
-                localModels.transcribe(
+                val wholeFile = localModels.transcribe(
                     wavFile,
                     modelID,
                     language,
                     configuration.transcriptionQuality,
                     configuration.customVocabulary,
                 )
+                // Taken only when it recovered something. A second pass that
+                // came back with less than the streaming one already had has
+                // dropped a chunk of its own, and shipping it would cut a
+                // sentence the user watched being said.
+                if (incrementalOutcome?.supersededBy(wholeFile.text) == false) {
+                    partialTranscript ?: wholeFile
+                } else {
+                    wholeFile
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {

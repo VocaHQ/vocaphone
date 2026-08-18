@@ -158,8 +158,6 @@ private extension SherpaFamily {
 }
 
 private enum SherpaEmptyChunkRecovery {
-    private static let minimumRetrySamples = 6 * SherpaLongAudio.sampleRate
-
     static func decode(
         samples: [Float], decodeOnce: ([Float]) -> SherpaTranscript
     ) -> SherpaTranscript {
@@ -169,7 +167,9 @@ private enum SherpaEmptyChunkRecovery {
             text: attempt.text.trimmingCharacters(in: .whitespacesAndNewlines),
             language: attempt.language
         )
-        guard first.text.isEmpty, samples.count > minimumRetrySamples else { return first }
+        guard first.text.isEmpty,
+              samples.count > SherpaLongAudio.minimumSuspectChunkSamples
+        else { return first }
         let midpoint = samples.count / 2
         return decodeOnce(Array(samples[..<midpoint]))
             .appending(decodeOnce(Array(samples[midpoint...])), deduplicateOverlap: false)
