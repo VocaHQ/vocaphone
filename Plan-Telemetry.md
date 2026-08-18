@@ -363,7 +363,9 @@ another.
 | Where does setup stall? | `setup_step_completed{step}`, one-shot per step: `keyboard`, `microphone`, `notifications`, `source` |
 | How many installs ever reach a first transcript? | `count(first_dictation_ever) ÷ count(app_first_open)` |
 | On-device or gateway? | `source_selected{source}` |
-| Which local models get used, and do downloads finish? | `model_download_finished{model_id, outcome}` — `model_id` from the shipped catalog enum, never a path |
+| Do model downloads finish? | `model_download_finished{model_id, outcome}` — `model_id` pinned to the shipped catalog, never a path |
+| Which local models actually get *used*? | `dictation_succeeded{model_id}` and `dictation_failed{model_id}`. Downloads are a weak proxy for this and were the original answer here: a download is a one-time act of optimism, and someone can fetch three models, use one, and go back to the gateway. `gateway` where transcription did not run on the phone |
+| Is a performance fix landing, and at what accuracy? | `dictation_succeeded{model_id, quality, duration_bucket}` — `quality` is `not_applicable` for gateway sessions, which decide their own decoding |
 | Where does dictation fail? | `dictation_failed{stage, reason, source}`, `reason` drawn from the existing `DiagnosticReason` vocabulary |
 | Does the 120 s cap bite? | `dictation_succeeded{duration_bucket}` |
 | Which OS majors still matter? | `systemProps.osVersion`, major only |
@@ -658,6 +660,48 @@ someone finds it.
 iOS extension via the App Group queue, sender still app-side only, keyboard
 privacy manifest updated. Only after Phases 1–5 have been stable for a release.
 
+**Phase 7 — make the shipped claims true.** Added after Phases 1, 3, 4 and 5
+landed and the gap between what the docs assert and what has been verified
+became the largest remaining risk in the feature. Ordered by what it costs to be
+wrong, not by effort:
+
+1. **Correct `docs/privacy.md` where it overclaims.** Done. It asserted that the
+   ingest path "is handled by rate limiting" in the present tense while §13
+   listed that as outstanding, and it claimed a ClickHouse TTL without a number
+   and a no-raw-IP guarantee nobody had checked. The three server-side claims now
+   sit in a table with the command that would establish each and a status column
+   that currently reads "not yet verified". The table is deliberately awkward to
+   look at, which is the point: it converts an unverified claim from something
+   invisible into something that nags.
+2. **Put the deployment in the repository.** Done, as `telemetry/` — §14's open
+   question 2 answered by "it being public matters more than where". The compose
+   file is a template until it is reconciled against the live instance, which
+   predates the directory; `telemetry/README.md` says so at the top and carries
+   the one command that reconciles them. A compose file in the repo that does not
+   match production would be worse than none, because it would read as
+   documentation while being fiction.
+3. **The §3.3 audit itself.** Server-side, needs host access, cannot be done from
+   this tree. `telemetry/README.md` has the ClickHouse queries written as
+   discovery — `SHOW TABLES`, `DESCRIBE`, a whole sample row, a sweep of every
+   address-shaped column name — rather than as confirmation of an assumed schema,
+   because an audit that only looks where it expects to find nothing is not one.
+   Date each row of the `docs/privacy.md` table as it is done.
+4. **Set the TTL and rate limit the ingest path.** Both are one proxy or
+   ClickHouse statement, both are in the runbook, and both are currently claimed
+   or implied in a public document.
+5. **Console paperwork (§10).** The in-repo half is already done — the app
+   target's `PrivacyInfo.xcprivacy` declares Product Interaction, not linked, not
+   tracking, analytics purpose, and the keyboard and Live Activity manifests are
+   correctly empty. What is left is App Store Connect's nutrition label and Play
+   Data safety, including the "users can choose whether this data is collected"
+   checkbox that only the §7 toggle makes truthfully tickable. This gates the next
+   release rather than a later one.
+6. **Consume `model_id` and `quality`.** The dictation events now carry which
+   shipped model transcribed and at which accuracy setting (§5). Nothing reads
+   them yet, and an event nobody queries is a cost with no benefit — it widened
+   the payload and bought nothing until there is a saved query for failure rate
+   and duration bucket grouped by `model_id`, on-device rows only.
+
 ### Kill switch
 
 No remote config needed: turn the endpoint off server-side and the client fails
@@ -779,10 +823,19 @@ otherwise inflate the duration bucket. Failure-code translation lives in
 testable — the coordinator drags the audio stack into any target that compiles
 it.
 
-**Still outstanding:** Phase 2's ClickHouse audit (§3.3 step 3), proxy rate
-limiting on the ingest path (§13), Play Data safety and App Store Connect
-nutrition-label declarations (§10, console work), and the Phase 6 keyboard
-`insertion_skipped` events.
+**Still outstanding:** everything in Phase 7 from step 3 down — the §3.3
+ClickHouse audit, the TTL, proxy rate limiting on the ingest path (§13), the
+Play Data safety and App Store Connect nutrition-label declarations (§10,
+console work), and a query that reads `model_id` — plus the Phase 6 keyboard
+`insertion_skipped` events. Steps 1 and 2 of Phase 7 are done: `docs/privacy.md`
+no longer claims the rate limiting exists, and the deployment now lives in
+`telemetry/`.
+
+Of §14's open questions, 1 and 4 are settled — `docs/decisions.md:40` carries the
+reversal explicitly — and 2 is answered by `telemetry/`. Question 3, whether to
+add a `channel` prop to tell TestFlight from the App Store, is still open, and
+the case against it has not weakened: it is one more correlating bit on a small
+population, and `appVersion` already separates most of what it would separate.
 
 ---
 

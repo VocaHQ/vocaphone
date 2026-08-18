@@ -194,12 +194,19 @@ funnels. The setup funnel is reconstructed from ratios of once-ever counters
 A closed vocabulary, enforced by the type system rather than by review. Neither
 platform's telemetry API has a parameter that accepts a string, so a call site
 cannot pass a transcript, a URL or a token even by mistake; tests on both sides
-fail the build if that stops being true.
+fail the build if that stops being true. The model identifier is the one value
+that begins life as a string, and both platforms pin it against the shipped
+catalog before it can reach the network.
 
 - Which setup step was reached, and whether setup finished
 - Which transcription source was selected — on-device or gateway, never which
   gateway
 - Which shipped on-device model was downloaded, and whether it completed
+- Which shipped on-device model actually transcribed a dictation, and at which
+  of the three accuracy settings. A gateway dictation reports `gateway` for
+  both, because the gateway decides its own model and decoding and is never
+  asked; anything outside the shipped catalog reports `unknown` rather than the
+  value it was given
 - Whether a dictation succeeded or failed, at which stage, and for what reason,
   drawn from a fixed list of causes
 - Recording length **bucketed** (`<10s`, `10–30s`, `30–60s`, `60s+`), never exact
@@ -217,6 +224,17 @@ it. Play Console and App Store Connect already report the device distribution fo
 every install, and model plus exact OS build plus locale is a usable fingerprint
 at beta population sizes — which would undo most of what the daily salt rotation
 achieves. Omitting it is the main reason the sender is hand-rolled.
+
+**The model identifier is the one value with real cardinality**, and it is worth
+being straight about that. The catalog is dozens of entries rather than the two
+a source selection has, and several models are language-locked, so reporting one
+softly implies what language somebody speaks. Two things keep this from mattering
+much: the language subtag is already sent and says the same thing more directly,
+and Aptabase's daily salt rotation means today's events cannot be joined to
+tomorrow's whatever they contain. It is a real widening of the payload, not a
+neutral one, and the honest summary is that it buys the ability to tell whether a
+performance fix landed at the cost of a value that is not quite as inert as a
+bucketed duration.
 
 ### Where it does not run
 
@@ -258,8 +276,28 @@ opt-out rate.
 
 ### On the server
 
-The reverse proxy passes the client address because Aptabase needs it to compute
-the daily hash, and does not log it. Events age out on a ClickHouse TTL.
+By design: the reverse proxy passes the client address because Aptabase needs it
+to compute the daily rotating hash, the ingest path's access logs do not retain
+it, and events age out on a ClickHouse TTL.
+
+By design is not the same as verified, and the difference is the entire reason
+this backend is self-hosted. These are claims about infrastructure rather than
+about code in this repository, so no amount of reading this tree establishes
+them — and a claim nobody has checked is exactly the vendor promise self-hosting
+was meant to replace. Each is listed below with what would establish it and
+whether that has been done. The table is meant to be uncomfortable to read while
+it still says "not yet verified".
+
+| Claim | What establishes it | Status |
+| --- | --- | --- |
+| Aptabase receives the client address but persists no raw IP | Inspect the ClickHouse events schema and a sample row; confirm no column holds an address | Not yet verified |
+| The ingest path's access logs do not record addresses | Read the proxy configuration for the ingest location | Not yet verified |
+| Events age out on a ClickHouse TTL | Read the `TTL` clause off the events table. The intended retention is 180 days | Not yet verified |
+| The ingest path is rate limited | Read the proxy configuration | Not in place yet |
+
+`telemetry/README.md` carries the exact commands for each row. When one is done,
+replace its status with the date it was checked — a date is the only form of
+this claim that means anything.
 
 The ingest key compiled into the apps (`A-SH-…`) is deliberately not a secret.
 It can append events and nothing else — it cannot read the dashboard, change an
@@ -267,8 +305,9 @@ app, or reach any other endpoint — and it ships inside every binary, so it is
 extractable from any store download. Keeping it out of the repository would hide
 it from contributors and from nobody else. The exposure it does create is
 someone posting junk events to skew the beta numbers, which is a data-quality
-problem rather than a privacy one, and is handled by rate limiting the ingest
-path at the proxy and by rotating the key if it is ever abused. It is unrelated
+problem rather than a privacy one. The answer to it is rate limiting the ingest
+path at the proxy, which is not in place yet, and rotating the key if it is ever
+abused. It is unrelated
 to the gateway bearer token, which is a real secret and lives in the iOS
 Keychain and the Android Keystore.
 
