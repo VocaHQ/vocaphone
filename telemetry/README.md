@@ -33,11 +33,11 @@ eight-service stack (`docs/decisions.md:53`):
 Ingest and dashboard share a hostname. The clients only ever speak to
 `/api/v0/events`; see `TelemetryConfig` on either platform.
 
-## The Phase 2 verification, step by step
+## Verifying what `docs/privacy.md` claims
 
-`Plan-Telemetry.md` §3.3 asks for four things to be established and dated. Each
-is a claim currently sitting unverified in `docs/privacy.md`. Run these, then
-replace that table's status column with the date.
+Four things need to be established and dated. Each is a claim currently sitting
+unverified in the table in [`docs/privacy.md`](../docs/privacy.md). Run these,
+then replace that table's status column with the date it was checked.
 
 Everything below assumes you are on the host, in this directory.
 
@@ -146,6 +146,35 @@ against real client behaviour before applying it: both clients debounce a flush
 by five seconds and batch up to `TelemetryConfig.maxBatch` events per request, so
 a single active user is nowhere near 30 requests a minute.
 
+## Confirming events actually arrive
+
+Two things were learned against the live instance and are worth keeping in front
+of whoever next tries to confirm this works.
+
+**A `200` from the ingest does not mean anything was stored.** Measured: a bogus
+`App-Key` returns 200, *no* `App-Key` returns 200, and only malformed JSON
+returns 400. The endpoint answers 200 to anything well-formed and silently drops
+events whose key does not map to a registered app. The clients drop a batch on
+4xx too, so an emptied client queue is not evidence either. **Every client-side
+signal available is indistinguishable between "stored" and "silently
+discarded"** — the only authority is this server: ClickHouse rows, or the
+dashboard.
+
+```sh
+docker compose exec aptabase_events_db clickhouse-client \
+  --query "SELECT event_name, count() FROM aptabase.events
+           WHERE timestamp > now() - INTERVAL 1 HOUR GROUP BY event_name"
+```
+
+**The dashboard splits Debug and Release, and the default is easy to misread.**
+An orange `Debug Data` ribbon and a bug/rocket toggle in the top right decide
+which bucket you are looking at, and the split comes purely from the `isDebug`
+flag in the payload. Both clients send `isDebug: false` in release builds and
+transmit nothing at all from debug builds, so **every real event is in Release**
+— while a hand-rolled probe sent with `isDebug: true` lands in the other bucket
+and looks like proof the pipeline works. Check which mode is selected before
+concluding anything.
+
 ## Bringing the real config in
 
 The instance predates this directory, so do this before trusting anything here:
@@ -191,9 +220,9 @@ hide it from contributors and from nobody else.
 
 ## Pinning
 
-`Plan-Telemetry.md` §13 lists `ghcr.io/aptabase/aptabase:main` shifting
-underneath us as a risk, and a floating tag on the thing that receives user data
-is a bad place to find out. Pin by digest and upgrade deliberately:
+`ghcr.io/aptabase/aptabase:main` moves whenever upstream does, and a floating tag
+on the service that receives user data is a bad place to discover a schema
+change. Pin by digest and upgrade deliberately:
 
 ```sh
 docker buildx imagetools inspect ghcr.io/aptabase/aptabase:main --format '{{.Manifest.Digest}}'
@@ -208,7 +237,7 @@ change because a registry moved.
 1. Read Aptabase's release notes for schema migrations.
 2. Snapshot Postgres (`docker compose exec aptabase_db pg_dump -U aptabase aptabase | gzip > …`).
 3. Update the digest, `docker compose up -d`, watch `docker compose logs -f aptabase`.
-4. Re-run step 1 of the verification above. A migration is exactly when a column
+4. Re-run step 1 of [the privacy verification](#verifying-what-docsprivacymd-claims). A migration is exactly when a column
    that stores an address could appear, and the whole claim rests on nobody
    having checked in a year.
 
@@ -219,3 +248,34 @@ with a separate hostname, a real bearer token and the user's audio; this one has
 counters and no credentials worth stealing. A failure here must never surface in
 either app — both clients fail closed and drop events rather than showing a user
 an error about a feature they did not ask for.
+
+## Still to do
+
+Carried over from the telemetry rollout plan, which this directory replaces.
+Ordered by what it costs to be wrong:
+
+1. **The audit above**, and the TTL, and the ingest rate limit — every one of
+   them is a claim already sitting in a public document.
+2. **Console paperwork.** The in-repo half is done: the iOS app target's
+   `PrivacyInfo.xcprivacy` declares Product Interaction, not linked, not
+   tracking, analytics purpose, and the keyboard and Live Activity manifests are
+   correctly empty. What is left is the App Store Connect nutrition label and
+   Play Data safety, including the "users can choose whether this data is
+   collected" checkbox that only the in-app toggle makes truthfully tickable.
+   This gates the next release rather than a later one.
+3. **Read `model_id` and `quality`.** The dictation events carry which shipped
+   model transcribed and at what accuracy setting, and nothing queries them yet.
+   An event nobody reads is a cost with no benefit — it widened the payload and
+   buys nothing until there is a saved query for failure rate and duration bucket
+   grouped by `model_id`, on-device rows only.
+4. **Keyboard `insertion_skipped` events (later).** The hardest failure in the
+   product to reproduce, and the one thing v1 knowingly gave up. The constraint
+   is fixed: the iOS extension writes to the shared App Group queue and never
+   opens a socket, the containing app stays the only sender, and the keyboard's
+   `NSPrivacyCollectedDataTypes` is revisited only then. A Full Access keyboard
+   that can open a socket is the scariest thing this product could ship,
+   whatever is actually in the packet.
+
+Still open: whether to add a `channel` prop to tell TestFlight from the App
+Store. The case against it has not weakened — it is one more correlating bit on
+a small population, and `appVersion` already separates most of what it would.

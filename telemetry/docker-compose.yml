@@ -68,8 +68,9 @@ services:
       nofile:
         soft: 262144
         hard: 262144
-    # Plan-Telemetry.md §13: "ClickHouse eats the VPS". Cap it here rather than
-    # discovering the ceiling when the gateway on the same box starts swapping.
+    # ClickHouse is the memory-hungry component of the three. Cap it here rather
+    # than discovering the ceiling when the gateway on the same box starts
+    # swapping.
     deploy:
       resources:
         limits:

@@ -37,9 +37,9 @@ a documented hard cutover — see
 
 ## Reversed: anonymous usage reporting (August 2026)
 
-`Plan-Beta-Release.md` called the absence of analytics and crash reporting
-"correct and non-negotiable" for 0.1.0. That position is deliberately reversed
-here, and the reversal is recorded rather than left to be discovered in a diff.
+The 0.1.0 beta plan called the absence of analytics and crash reporting "correct
+and non-negotiable". That position is deliberately reversed here, and the
+reversal is recorded rather than left to be discovered in a diff.
 
 **What changed.** The beta has no feedback channel that does not require the user
 to write an email, so the one question it cannot answer is where setup breaks for
@@ -57,8 +57,9 @@ either binary, nothing sent by default, and nothing sent that is not a counter.
 | F-Droid | Compiled out: no sender, host, credential or switch survives R8, verified by scanning the release dex | Keeps the listing clear of the `Tracking` anti-feature without relying on a runtime check, and leaves the reproducible build's dependency graph unchanged |
 | iOS keyboard | Reports nothing; the code is not in the extension's target | A Full Access keyboard that can open a socket is the scariest thing this product could ship, whatever is in the packet |
 
-Full detail in [privacy.md](privacy.md#usage-reporting); the reasoning that led
-here is in `Plan-Telemetry.md`.
+Full detail in [privacy.md](privacy.md#usage-reporting); the backend that
+receives it, and what has and has not been verified about it, is in
+[`telemetry/`](../telemetry/README.md).
 
 ## Implemented assumptions
 
