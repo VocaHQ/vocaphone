@@ -108,17 +108,62 @@ class SherpaIncrementalSessionTest {
 
     @Test
     fun theGainComesFromTheRecordingAndNotFromTheChunk() = runTest {
-        // A pause between two loud passages. Levelling it on its own peak would
-        // amplify the room by eight and let the model transcribe the noise.
+        // Loud speech, then a passage far quieter but still plainly speech.
         val loud = tone(seconds = 13.0, amplitude = 0.5f)
-        val quiet = ShortArray(SherpaLongAudio.SAMPLE_RATE * 12) { 32 }
+        val quiet = tone(seconds = 16.0, amplitude = 0.03f)
         val peaks = mutableListOf<Float>()
         run(loud + quiet, this) { chunk ->
             peaks += chunk.fold(0f) { peak, sample -> maxOf(peak, abs(sample)) }
             SherpaTranscript("spoken")
         }
 
+        // The quiet passage keeps its place under the loud one. Levelling it on
+        // its own peak would have pushed it to the 0.85 target, which is how a
+        // pause becomes noise the model transcribes as words.
         assertTrue(peaks.size > 1)
-        assertTrue(peaks.last() < 0.01f)
+        assertTrue(peaks.last() > 0.03f)
+        assertTrue(peaks.last() < 0.1f)
+    }
+
+    @Test
+    fun aShortTailThatDecodesToNothingIsNotADroppedChunk() = runTest {
+        val sizes = mutableListOf<Int>()
+        val result = run(tone(seconds = 22.0, amplitude = 0.4f), this) { chunk ->
+            sizes += chunk.size
+            // A recording that ends just after a boundary leaves the half
+            // second of retained overlap and a fragment of a word behind, and
+            // that answers with no tokens all the time.
+            if (chunk.size < 6 * SherpaLongAudio.SAMPLE_RATE) {
+                SherpaTranscript("")
+            } else {
+                SherpaTranscript("spoken")
+            }
+        }
+
+        assertTrue(sizes.last() < 6 * SherpaLongAudio.SAMPLE_RATE)
+        // Calling that a loss re-runs the whole recording through the model at
+        // finish, which is the exact wait the streaming path exists to remove.
+        assertFalse(result.droppedAudibleChunk)
+    }
+
+    @Test
+    fun trailingRoomToneIsNeitherDecodedNorCountedAsALoss() = runTest {
+        // Quiet speech, so the levelling gain reaches its eight-times ceiling --
+        // enough to lift room tone over a threshold meant for capture levels.
+        val speech = tone(seconds = 13.0, amplitude = 0.05f)
+        val roomTone = ShortArray(SherpaLongAudio.SAMPLE_RATE * 16) { index ->
+            if (index % 2 == 0) 65 else -65
+        }
+        var decoded = 0
+        val result = run(speech + roomTone, this) {
+            decoded += 1
+            if (decoded > 2) SherpaTranscript("") else SherpaTranscript("spoken")
+        }
+
+        // Nothing was said over those ten seconds, so there was nothing to
+        // lose, and asking the model anyway costs a decode plus the two the
+        // empty-chunk recovery would add on top.
+        assertEquals(2, decoded)
+        assertFalse(result.droppedAudibleChunk)
     }
 }

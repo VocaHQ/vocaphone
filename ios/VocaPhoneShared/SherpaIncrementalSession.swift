@@ -57,9 +57,24 @@ final class SherpaIncrementalSession: @unchecked Sendable {
         var peak: Float = 0
 
         func consume(_ chunk: [Float]) {
+            // Silence is judged on the capture as it arrived. The levelling
+            // below multiplies a quiet recording by as much as eight, and a
+            // floor meant for microphone levels reads amplified room tone as
+            // speech — which buys a decode, the two more the empty-chunk
+            // recovery adds on top, and then the whole-file re-run the flag
+            // asks the caller for. All to transcribe a pause.
+            guard !SherpaLongAudio.isEffectivelySilent(chunk) else { return }
             let levelled = SpeechAudioConditioning.condition(chunk, peak: peak)
             let decoded = decode(levelled)
-            if decoded.text.isEmpty, !SherpaLongAudio.isEffectivelySilent(levelled) {
+            // Only a chunk long enough that the recovery has already tried and
+            // failed is a hole worth re-reading the file for. Below that bar an
+            // empty answer is routine — it is the retained overlap, or the
+            // fragment of a word a recording ending just after a boundary
+            // leaves — and treating it as a loss would spend a second pass over
+            // the whole recording on almost every dictation.
+            if decoded.text.isEmpty,
+               chunk.count > SherpaLongAudio.minimumSuspectChunkSamples
+            {
                 droppedAudibleChunk = true
             }
             transcript = transcript.appending(decoded, deduplicateOverlap: overlapsPrevious)

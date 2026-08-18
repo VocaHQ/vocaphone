@@ -9,6 +9,13 @@ enum SherpaLongAudio {
     static let targetChunkSeconds = 10
     static let maxChunkSeconds = 14
     static let overlapSamples = sampleRate / 2
+    /// A chunk shorter than this answering with no tokens is ordinary rather
+    /// than a loss: it is the half second of retained overlap a recording that
+    /// ends just after a boundary leaves behind, or a fragment of a word.
+    /// Longer than this and an empty answer is suspicious — which is why it is
+    /// also the bar `SherpaEmptyChunkRecovery` uses before it bothers retrying
+    /// a chunk as two halves.
+    static let minimumSuspectChunkSamples = 6 * sampleRate
     static let streamingWindowSeconds = targetChunkSeconds + 2
 
     struct Chunk {
