@@ -476,7 +476,13 @@ struct TelemetryTests {
     /// A 200 from Aptabase means the JSON parsed, not that the events were
     /// stored — an unknown app key gets the same 200 — so this line must not
     /// claim delivery.
-    @Test func aSuccessfulSendIsDescribedAsAcceptedNotStored() async {
+    /// The status line is shown to every user on the "See what's sent" screen,
+    /// not just to whoever is debugging delivery, so it must not tell someone to
+    /// check a dashboard they do not have. It also must not claim more than the
+    /// device actually knows: Aptabase answers 200 to a batch it silently
+    /// discards — an unknown app key gets the same 200 as a good one — so "sent"
+    /// is honest and "stored" is not a claim this device can make.
+    @Test func aSuccessfulSendSaysItWasSentWithoutInstructingTheUserToCheckADashboard() async {
         let preferences = FakePreferences(enabled: true)
         let sink = RecordingSink()
         let telemetry = makeTelemetry(preferences: preferences, sink: sink)
@@ -484,8 +490,15 @@ struct TelemetryTests {
         telemetry.sourceSelected(.onDevice)
         await telemetry.flush()
 
-        #expect(telemetry.deliveryStatus.contains("accepted"))
-        #expect(telemetry.deliveryStatus.contains("dashboard"))
+        #expect(telemetry.deliveryStatus.contains("sent"))
+        #expect(
+            !telemetry.deliveryStatus.contains("dashboard"),
+            "an ordinary user has no dashboard to check"
+        )
+        #expect(
+            !telemetry.deliveryStatus.contains("stored"),
+            "the device cannot confirm storage, only that the server accepted the batch"
+        )
     }
 
     @Test func anUnreachableServerSaysSoRatherThanClaimingSuccess() async {

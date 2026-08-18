@@ -555,8 +555,16 @@ class TelemetryTest {
      * JSON parsed, not that the events were stored -- an unknown app key gets
      * the same 200 as a good one -- so this line must not claim delivery.
      */
+    /**
+     * The status line is shown to every user on the "See what's sent" screen,
+     * not just to whoever is debugging delivery, so it must not tell someone to
+     * check a dashboard they do not have. It also must not claim more than the
+     * device actually knows: Aptabase answers 200 to a batch it silently
+     * discards -- an unknown app key gets the same 200 as a good one -- so
+     * "sent" is honest and "stored" is not a claim this device can make.
+     */
     @Test
-    fun `a successful send is described as accepted, not as stored`() = runTest {
+    fun `a successful send says it was sent, without instructing the user to check a dashboard`() = runTest {
         val preferences = FakePreferences(enabled = true)
         val sink = RecordingSink()
         val scope = TestScope(UnconfinedTestDispatcher(testScheduler))
@@ -566,8 +574,15 @@ class TelemetryTest {
         telemetry.flush()
 
         val status = telemetry.deliveryStatus()
-        assertTrue(status.contains("accepted"))
-        assertTrue("it must point at the dashboard as the authority", status.contains("dashboard"))
+        assertTrue(status.contains("sent"))
+        assertFalse(
+            "an ordinary user has no dashboard to check",
+            status.contains("dashboard"),
+        )
+        assertFalse(
+            "the device cannot confirm storage, only that the server accepted the batch",
+            status.contains("stored"),
+        )
     }
 
     @Test

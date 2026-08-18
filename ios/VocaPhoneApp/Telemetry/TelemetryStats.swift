@@ -51,12 +51,17 @@ struct TelemetryStats {
         formatter.dateFormat = "HH:mm:ss"
         line += "\nLast attempt \(formatter.string(from: lastAttemptAt)) — "
         switch lastOutcome {
-        // Deliberately hedged. The server answers 200 to a batch it silently
-        // discards — an unknown app key gets the same 200 as a good one — so the
-        // honest claim is that it was accepted, not that it was stored. Only the
-        // dashboard can confirm the rest.
+        // "Sent", not "stored": the server answers 200 to a batch it silently
+        // discards — an unknown app key gets the same 200 as a good one — so
+        // "accepted" is the honest claim and "stored" is not one this device can
+        // make. That distinction used to be spelled out here as "check the
+        // dashboard to confirm it was stored", which was written for debugging
+        // on a physical phone and shipped by mistake: an ordinary user has no
+        // dashboard, and telling them to check one they cannot reach reads as
+        // broken. The nuance stays in this comment for whoever debugs delivery
+        // next; the user only needs to know it left the phone.
         case .delivered:
-            line += "the server accepted it (check the dashboard to confirm it was stored)"
+            line += "sent to the server"
         case .rejected:
             line += "the server refused it; the batch was dropped"
         case .unavailable:
