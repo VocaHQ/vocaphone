@@ -53,6 +53,47 @@ class SherpaIncrementalSessionTest {
         return session.finish()
     }
 
+    /** Room between sentences: above the near-silence floor, as a real room is. */
+    private fun room(seconds: Double): ShortArray {
+        val count = (SherpaLongAudio.SAMPLE_RATE * seconds).toInt()
+        return ShortArray(count) { if (it % 2 == 0) 262 else -262 }
+    }
+
+    /**
+     * What a transducer does: words for a chunk with speech in it, nothing for
+     * a chunk of room tone. Reads the levelled audio the session hands over,
+     * where speech has been brought to the 0.85 target and a pause has not.
+     */
+    private fun healthyModel(chunk: FloatArray): SherpaTranscript {
+        val peak = chunk.fold(0f) { loudest, sample -> maxOf(loudest, abs(sample)) }
+        return SherpaTranscript(if (peak > 0.3f) "spoken" else "")
+    }
+
+    @Test
+    fun aHealthyModelNeverPaysForASecondPass() = runTest {
+        // Every shape an ordinary dictation takes. None of them may set the
+        // flag: it costs the whole recording decoded again at finish, which is
+        // the entire wait this path exists to remove, and the fast families pay
+        // most of their finish time to it.
+        val shapes = listOf(
+            "one sentence" to tone(seconds = 5.0, amplitude = 0.4f),
+            "past a boundary" to tone(seconds = 22.0, amplitude = 0.4f),
+            "left running after the last word" to
+                tone(seconds = 20.0, amplitude = 0.4f) + room(seconds = 10.0),
+            "a long pause to think" to
+                tone(seconds = 10.0, amplitude = 0.4f) + room(seconds = 12.0) +
+                tone(seconds = 10.0, amplitude = 0.4f),
+            "unbroken" to tone(seconds = 40.0, amplitude = 0.4f),
+        )
+
+        for ((name, samples) in shapes) {
+            val result = run(samples, this) { healthyModel(it) }
+
+            assertFalse("$name asked for a second pass", result.droppedAudibleChunk)
+            assertTrue("$name lost its words", result.transcript.text.startsWith("spoken"))
+        }
+    }
+
     @Test
     fun aChunkThatDecodesToNothingIsReported() = runTest {
         var decoded = 0
@@ -144,6 +185,40 @@ class SherpaIncrementalSessionTest {
         // Calling that a loss re-runs the whole recording through the model at
         // finish, which is the exact wait the streaming path exists to remove.
         assertFalse(result.droppedAudibleChunk)
+    }
+
+    @Test
+    fun aPauseInTheMiddleOfARecordingIsNotADroppedChunk() = runTest {
+        // Room tone loud enough to clear the near-silence floor, which is what
+        // a real room sounds like between two sentences. It is decoded, because
+        // skipping it would risk skipping quiet speech -- but it decoding to
+        // nothing is the right answer, not a loss.
+        val speech = tone(seconds = 13.0, amplitude = 0.4f)
+        val roomTone = ShortArray(SherpaLongAudio.SAMPLE_RATE * 16) { index ->
+            if (index % 2 == 0) 655 else -655
+        }
+        var decoded = 0
+        val result = run(speech + roomTone, this) {
+            decoded += 1
+            if (decoded > 2) SherpaTranscript("") else SherpaTranscript("spoken")
+        }
+
+        assertEquals(3, decoded)
+        assertFalse(result.droppedAudibleChunk)
+    }
+
+    @Test
+    fun theWholeFileRetryIsOnlyTakenWhenItRecoveredSomething() {
+        val streamed = SherpaIncrementalResult(
+            transcript = SherpaTranscript("the opening half and the rest of it"),
+            droppedAudibleChunk = true,
+        )
+
+        assertTrue(streamed.supersededBy("the opening half and the rest of it, and more"))
+        // The retry lost the opening half, which is the failure it was asked to
+        // fix. Shipping it would cut a sentence the user watched being said.
+        assertFalse(streamed.supersededBy("the rest of it"))
+        assertFalse(streamed.supersededBy(""))
     }
 
     @Test

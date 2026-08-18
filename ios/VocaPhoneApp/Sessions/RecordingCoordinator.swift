@@ -989,10 +989,13 @@ final class RecordingCoordinator {
                     || droppedLocalChunks
                 {
                     do {
-                        transcribed = try await localModels.transcribe(
+                        let wholeFile = try await localModels.transcribe(
                             audioURL: audioURL,
                             language: record.language
                         )
+                        transcribed = incrementalResult.supersededBy(wholeFile.text)
+                            ? wholeFile
+                            : partial
                     } catch {
                         // Incomplete beats nothing, but only when there is
                         // something, and never for a session the user has

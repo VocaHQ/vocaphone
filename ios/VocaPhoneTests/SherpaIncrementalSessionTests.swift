@@ -32,6 +32,47 @@ struct SherpaIncrementalSessionTests {
         }
     }
 
+    /// Room between sentences: above the near-silence floor, as a real room is.
+    private static func room(seconds: Double) -> [Float] {
+        let count = Int(Double(sampleRate) * seconds)
+        return (0..<count).map { $0 % 2 == 0 ? 0.008 : -0.008 }
+    }
+
+    /// What a transducer does: words for a chunk with speech in it, nothing for
+    /// a chunk of room tone. Reads the levelled audio the session hands over,
+    /// where speech has been brought to the 0.85 target and a pause has not.
+    private static func healthyModel(_ chunk: [Float]) -> SherpaTranscript {
+        let peak = chunk.reduce(Float(0)) { max($0, abs($1)) }
+        return SherpaTranscript(text: peak > 0.3 ? "spoken" : "")
+    }
+
+    @Test func aHealthyModelNeverPaysForASecondPass() async {
+        // Every shape an ordinary dictation takes. None of them may set the
+        // flag: it costs the whole recording decoded again at finish, which is
+        // the entire wait this path exists to remove, and the fast families pay
+        // most of their finish time to it.
+        let shapes: [(String, [Float])] = [
+            ("one sentence", Self.tone(seconds: 5, amplitude: 0.4)),
+            ("past a boundary", Self.tone(seconds: 22, amplitude: 0.4)),
+            ("left running after the last word",
+             Self.tone(seconds: 20, amplitude: 0.4) + Self.room(seconds: 10)),
+            ("a long pause to think",
+             Self.tone(seconds: 10, amplitude: 0.4) + Self.room(seconds: 12)
+                + Self.tone(seconds: 10, amplitude: 0.4)),
+            ("unbroken", Self.tone(seconds: 40, amplitude: 0.4)),
+        ]
+
+        for (name, samples) in shapes {
+            let session = SherpaIncrementalSession(chunks: Self.stream(samples)) {
+                Self.healthyModel($0)
+            }
+            let result = await session.finish()
+
+            #expect(!result.droppedAudibleChunk, "\(name) asked for a second pass")
+            #expect(result.transcript.text.hasPrefix("spoken"), "\(name) lost its words")
+        }
+    }
+
     @Test func aChunkThatDecodesToNothingIsReported() async {
         let decoded = OSAllocatedCounter()
         let session = SherpaIncrementalSession(
@@ -125,6 +166,39 @@ struct SherpaIncrementalSessionTests {
         // Calling that a loss re-runs the whole recording through the model at
         // finish, which is the exact wait the streaming path exists to remove.
         #expect(!result.droppedAudibleChunk)
+    }
+
+    @Test func aPauseInTheMiddleOfARecordingIsNotADroppedChunk() async {
+        // Room tone loud enough to clear the near-silence floor, which is what
+        // a real room sounds like between two sentences. It is decoded, because
+        // skipping it would risk skipping quiet speech — but it decoding to
+        // nothing is the right answer, not a loss.
+        var samples = Self.tone(seconds: 13, amplitude: 0.4)
+        samples += (0..<(Self.sampleRate * 16)).map { $0 % 2 == 0 ? 0.02 : -0.02 }
+        let decoded = RecordedSizes()
+        let session = SherpaIncrementalSession(chunks: Self.stream(samples)) { chunk in
+            decoded.record(chunk.count)
+            return decoded.recorded.count > 2
+                ? SherpaTranscript(text: "")
+                : SherpaTranscript(text: "spoken")
+        }
+        let result = await session.finish()
+
+        #expect(decoded.recorded.count == 3)
+        #expect(!result.droppedAudibleChunk)
+    }
+
+    @Test func theWholeFileRetryIsOnlyTakenWhenItRecoveredSomething() {
+        let streamed = SherpaIncrementalResult(
+            transcript: SherpaTranscript(text: "the opening half and the rest of it"),
+            droppedAudibleChunk: true
+        )
+
+        #expect(streamed.supersededBy("the opening half and the rest of it, and more"))
+        // The retry lost the opening half, which is the failure it was asked to
+        // fix. Shipping it would cut a sentence the user watched being said.
+        #expect(!streamed.supersededBy("the rest of it"))
+        #expect(!streamed.supersededBy(""))
     }
 
     @Test func trailingRoomToneIsNeitherDecodedNorCountedAsALoss() async {
