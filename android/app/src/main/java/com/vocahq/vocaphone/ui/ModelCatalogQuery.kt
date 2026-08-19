@@ -36,6 +36,39 @@ fun LocalModelDescriptor.catalogMeta(recommended: Boolean = false): String = bui
     if (recommended) append(" · recommended")
 }
 
+/** Size and languages only. First-run does not need engine or hardware. */
+fun LocalModelDescriptor.setupMeta(): String = "$sizeLabel · $languages"
+
+/**
+ * What the model picker puts on the page.
+ *
+ * Compact setup keeps the catalog off the page until More models is opened.
+ * Settings always shows the filtered catalog inline.
+ */
+data class ModelPickerSections(
+    val recommended: LocalModelDescriptor?,
+    val installed: List<LocalModelDescriptor>,
+    val catalog: List<LocalModelDescriptor>,
+    val showCatalog: Boolean,
+)
+
+fun modelPickerSections(
+    recommended: LocalModelDescriptor,
+    showRecommended: Boolean,
+    installed: List<LocalModelDescriptor>,
+    available: List<LocalModelDescriptor>,
+    compact: Boolean,
+    catalogOpen: Boolean,
+): ModelPickerSections {
+    val showCatalog = !compact || catalogOpen
+    return ModelPickerSections(
+        recommended = recommended.takeIf { showRecommended },
+        installed = installed,
+        catalog = if (showCatalog) available else emptyList(),
+        showCatalog = showCatalog,
+    )
+}
+
 fun filterModelCatalog(
     models: List<LocalModelDescriptor>,
     query: String,

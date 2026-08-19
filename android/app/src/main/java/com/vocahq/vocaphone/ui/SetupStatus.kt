@@ -43,6 +43,10 @@ data class SetupStatus(
     val isReadyToDictate: Boolean
         get() = remainingSteps.isEmpty()
 
+    /** Plain remaining-step line under Start dictating. */
+    val stillToDo: String
+        get() = "Still to do: " + remainingSteps.joinToString { it.label }
+
     companion object {
         fun read(context: Context, gatewayConfigured: Boolean): SetupStatus {
             val ime = ImeSetup.read(context)
