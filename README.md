@@ -8,7 +8,7 @@
 
 [![Status: Android beta / iOS source](https://img.shields.io/badge/status-Android%20beta%20%2F%20iOS%20source-yellow)](#status)
 [![Privacy: on-device / optional gateway](https://img.shields.io/badge/privacy-on--device%20%2F%20optional%20gateway-success)](#privacy-and-platform-boundaries)
-[![Release](https://img.shields.io/github/v/release/VocaHQ/vocaphone)](https://github.com/VocaHQ/vocaphone/releases/latest)
+[![Release](https://img.shields.io/github/v/release/VocaHQ/vocaphone?include_prereleases)](https://github.com/VocaHQ/vocaphone/releases/latest)
 [![vocaphone.vocahq.com](https://img.shields.io/badge/site-vocaphone.vocahq.com-1a7f4e)](https://vocaphone.vocahq.com)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/discord/1538633755877580810?logo=discord&logoColor=white&label=Discord)](https://discord.gg/UMJduhcqn)
