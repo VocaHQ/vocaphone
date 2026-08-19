@@ -128,7 +128,13 @@ fun LocalModelPicker(
         )
     }
 
-    if (state.downloading != null || state.preparing != null) {
+    if (
+        showPickerBusyBanner(
+            downloadingId = state.downloading,
+            preparingName = state.preparing,
+            recommended = sections.recommended,
+        )
+    ) {
         ModelBusyBanner(state = state, onCancelDownload = onCancelDownload)
     }
 

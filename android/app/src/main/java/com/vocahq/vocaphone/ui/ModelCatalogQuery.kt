@@ -52,6 +52,21 @@ data class ModelPickerSections(
     val showCatalog: Boolean,
 )
 
+/** One progress UI: the recommended card owns its own download or load. */
+fun showPickerBusyBanner(
+    downloadingId: String?,
+    preparingName: String?,
+    recommended: LocalModelDescriptor?,
+): Boolean {
+    if (preparingName != null) {
+        return recommended == null || preparingName != recommended.displayName
+    }
+    if (downloadingId != null) {
+        return recommended == null || downloadingId != recommended.id
+    }
+    return false
+}
+
 fun modelPickerSections(
     recommended: LocalModelDescriptor,
     showRecommended: Boolean,

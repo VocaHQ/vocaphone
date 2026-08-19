@@ -43,9 +43,9 @@ data class SetupStatus(
     val isReadyToDictate: Boolean
         get() = remainingSteps.isEmpty()
 
-    /** Plain remaining-step line under Start dictating. */
-    val stillToDo: String
-        get() = "Still to do: " + remainingSteps.joinToString { it.label }
+    /** Short labels for chips under the header progress. */
+    val remainingLabels: List<String>
+        get() = remainingSteps.map { it.label }
 
     companion object {
         fun read(context: Context, gatewayConfigured: Boolean): SetupStatus {

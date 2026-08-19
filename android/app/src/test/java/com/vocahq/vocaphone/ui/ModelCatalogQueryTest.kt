@@ -3,6 +3,7 @@ package com.vocahq.vocaphone.ui
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelEngine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -129,5 +130,33 @@ class ModelCatalogQueryTest {
 
         assertTrue(sections.showCatalog)
         assertTrue(sections.catalog.size == available.size)
+    }
+
+    @Test
+    fun recommendedDownloadDoesNotAlsoShowTheBusyBanner() {
+        val recommended = LocalModelCatalog.find("tiny-q5_1")!!
+
+        assertFalse(
+            showPickerBusyBanner(
+                downloadingId = recommended.id,
+                preparingName = null,
+                recommended = recommended,
+            ),
+        )
+        assertFalse(
+            showPickerBusyBanner(
+                downloadingId = null,
+                preparingName = recommended.displayName,
+                recommended = recommended,
+            ),
+        )
+        assertTrue(
+            showPickerBusyBanner(
+                downloadingId = "large-v3-turbo-q5_0",
+                preparingName = null,
+                recommended = recommended,
+            ),
+        )
+        assertFalse(showPickerBusyBanner(null, null, recommended))
     }
 }

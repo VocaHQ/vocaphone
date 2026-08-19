@@ -27,9 +27,6 @@ class SetupCopyTest {
         val copy = listOf(
             SetupCopy.TITLE,
             SetupCopy.INTRO,
-            SetupCopy.USE_GATEWAY,
-            SetupCopy.GATEWAY_SETTINGS,
-            SetupCopy.USING_GATEWAY,
             SetupCopy.START,
             MORE_MODELS_LABEL,
         )

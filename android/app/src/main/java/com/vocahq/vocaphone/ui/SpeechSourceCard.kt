@@ -31,6 +31,7 @@ fun SpeechSourceCard(
     onOpenGateway: () -> Unit,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onOpenModels: (() -> Unit)? = null,
+    compact: Boolean = false,
 ) {
     val context = LocalContext.current
     val localModel = LocalModelCatalog.find(settings.localModelId)
@@ -45,12 +46,14 @@ fun SpeechSourceCard(
     val localOn = copy.localSelected
 
     FeaturedCard {
-        Text("Speech", style = MaterialTheme.typography.titleSmall)
-        Text(
-            "Transcribe on this phone, or send audio to a gateway you run.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (!compact) {
+            Text("Speech", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Transcribe on this phone, or send audio to a gateway you run.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -59,7 +62,11 @@ fun SpeechSourceCard(
                 title = "On this phone",
                 subtitle = copy.localDetail,
                 selected = localOn,
-                onClick = { onLocalTranscriptionEnabled(true) },
+                onClick = {
+                    val choice = speechSourceSelection(true, settings.isConfigured)
+                    onLocalTranscriptionEnabled(choice.localEnabled)
+                    if (choice.openGateway) onOpenGateway()
+                },
                 modifier = Modifier.weight(1f),
             )
             SourceChoiceTile(
@@ -67,11 +74,23 @@ fun SpeechSourceCard(
                 subtitle = copy.gatewayDetail,
                 selected = !localOn,
                 onClick = {
-                    onLocalTranscriptionEnabled(false)
-                    if (!settings.isConfigured) onOpenGateway()
+                    val choice = speechSourceSelection(false, settings.isConfigured)
+                    onLocalTranscriptionEnabled(choice.localEnabled)
+                    if (choice.openGateway) onOpenGateway()
                 },
                 modifier = Modifier.weight(1f),
             )
+        }
+        if (compact) {
+            if (!localOn) {
+                TextButton(
+                    onClick = onOpenGateway,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                ) {
+                    Text(if (settings.isConfigured) "Gateway settings" else "Set up a gateway")
+                }
+            }
+            return@FeaturedCard
         }
         if (localOn) {
             if (localModel != null) {

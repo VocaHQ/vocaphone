@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,8 +15,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,9 +37,6 @@ internal object SetupCopy {
     val LOGO = R.drawable.ic_vocaphone_logo
     const val TITLE = "Set up VocaPhone"
     const val INTRO = "Turn on the keyboard, allow the microphone, then download a model."
-    const val USE_GATEWAY = "Use a gateway instead"
-    const val GATEWAY_SETTINGS = "Gateway settings"
-    const val USING_GATEWAY = "Using your gateway."
     const val START = "Start dictating"
 
     fun keyboardStatus(status: ImeSetupStatus): String = when {
@@ -64,6 +62,7 @@ fun SetupScreen(
     settings: VocaPhoneSettings,
     localModels: LocalModelState,
     onOpenGateway: () -> Unit,
+    onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
     onDownloadLocalModel: (LocalModelDescriptor) -> Unit,
     onDownloadAndUseLocalModel: (LocalModelDescriptor) -> Unit,
@@ -122,32 +121,21 @@ fun SetupScreen(
             }
 
             Section("Speech") {
-                if (!settings.localTranscriptionEnabled && settings.isConfigured) {
-                    Text(
-                        SetupCopy.USING_GATEWAY,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                LocalModelPicker(
-                    state = localModels,
-                    selectedModelId = settings.localModelId,
+                SpeechSourceCard(
+                    settings = settings,
                     compact = true,
-                    onSelect = onLocalModel,
-                    onDownload = onDownloadLocalModel,
-                    onDownloadAndUse = onDownloadAndUseLocalModel,
-                    onCancelDownload = onCancelLocalModelDownload,
+                    onOpenGateway = onOpenGateway,
+                    onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
                 )
-                TextButton(
-                    onClick = onOpenGateway,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                ) {
-                    Text(
-                        if (settings.isConfigured) {
-                            SetupCopy.GATEWAY_SETTINGS
-                        } else {
-                            SetupCopy.USE_GATEWAY
-                        },
+                if (settings.localTranscriptionEnabled) {
+                    LocalModelPicker(
+                        state = localModels,
+                        selectedModelId = settings.localModelId,
+                        compact = true,
+                        onSelect = onLocalModel,
+                        onDownload = onDownloadLocalModel,
+                        onDownloadAndUse = onDownloadAndUseLocalModel,
+                        onCancelDownload = onCancelLocalModelDownload,
                     )
                 }
             }
@@ -189,13 +177,6 @@ fun SetupScreen(
                 enabled = status.isReadyToDictate,
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (!status.isReadyToDictate) {
-                Text(
-                    status.stillToDo,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
@@ -244,5 +225,25 @@ private fun SetupProgress(status: SetupStatus, modifier: Modifier = Modifier) {
             progress = { status.completedStepCount.toFloat() / status.stepCount },
             modifier = Modifier.fillMaxWidth(),
         )
+        if (status.remainingLabels.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                status.remainingLabels.forEach { label ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
