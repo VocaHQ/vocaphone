@@ -23,6 +23,7 @@ class DiagnosticsReportTest {
         lastEngine = "moonshine:en",
         lastEngineReady = true,
         lastStreamingSupported = true,
+        localTranscriptionEnabled = false,
     )
 
     private val ready = SetupStatus(
