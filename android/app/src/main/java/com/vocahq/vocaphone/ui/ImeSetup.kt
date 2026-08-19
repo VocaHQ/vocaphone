@@ -43,7 +43,8 @@ object ImeSetup {
 
     /**
      * The secure settings that change as someone turns the keyboard on and then
-     * chooses it, in the order guided setup asks for them.
+     * chooses it. Both are needed: the step is two system changes, and watching
+     * only the second leaves the checklist stuck on the first.
      *
      * Watching these is what makes the checklist notice. Coming back to the app
      * is not a reliable signal for either half: the picker is a system dialog

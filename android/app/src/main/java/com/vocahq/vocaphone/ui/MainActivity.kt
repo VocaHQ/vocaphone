@@ -32,10 +32,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.flow.filter
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.ui.theme.VocaPhoneTheme
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filter
 
 class MainActivity : ComponentActivity() {
     private val launchIntents = MutableStateFlow<Intent?>(null)

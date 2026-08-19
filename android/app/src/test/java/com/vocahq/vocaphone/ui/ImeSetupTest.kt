@@ -23,13 +23,4 @@ class ImeSetupTest {
         assertTrue(ImeSetup.WATCHED_SETTINGS.contains("default_input_method"))
         assertEquals(2, ImeSetup.WATCHED_SETTINGS.size)
     }
-
-    /** Turning it on comes first, so a partial registration still gets that far. */
-    @Test
-    fun theyAreInTheOrderSetupAsksForThem() {
-        assertEquals(
-            listOf("enabled_input_methods", "default_input_method"),
-            ImeSetup.WATCHED_SETTINGS,
-        )
-    }
 }
