@@ -120,6 +120,10 @@ def normalise(text: str) -> list[str]:
     tone" is findable by "light". Everything else that is not a letter or digit
     goes: the shipped file carries tokens like "flag:" and "tone," that only
     match today because both clients happen to compare by prefix.
+
+    ASCII-only, which is right for the English annotations and wrong for any
+    other locale — generating one would have to keep the letters of its script
+    rather than the a-z range.
     """
     lowered = unicodedata.normalize("NFKC", text).lower()
     return [token for token in re.split(r"[^a-z0-9]+", lowered) if token]
@@ -209,7 +213,18 @@ def build(keep_skin_tones: bool) -> tuple[list[str], dict[str, int]]:
 
     for line in read_source("emoji-test.txt").splitlines():
         if line.startswith("# group:"):
-            category = CATEGORIES.get(line.split(":", 1)[1].strip())
+            group = line.split(":", 1)[1].strip()
+            # A group Unicode adds later would otherwise be dropped in silence,
+            # taking every emoji in it with no tab to show they are missing.
+            # "Component" is the one that is meant to go: bare skin-tone and
+            # hair modifiers, which are not selectable on their own.
+            if group not in CATEGORIES and group != "Component":
+                raise SystemExit(
+                    f"emoji-test.txt has a group this generator does not know: "
+                    f"{group!r}. Add it to CATEGORIES, or to the line above if "
+                    f"it is deliberately not shown."
+                )
+            category = CATEGORIES.get(group)
             continue
         match = EMOJI_TEST_LINE.match(line)
         # Only fully-qualified sequences: the rest are the same emoji written
@@ -284,6 +299,7 @@ def main() -> int:
     print(
         f"Emoji {EMOJI_VERSION}, CLDR {CLDR_TAG}: {len(lines)} entries "
         f"({stats['skipped_tone']} toned sequences left out, "
+        f"{stats['skipped_component']} components, "
         f"{stats['no_annotation']} without a CLDR annotation)",
         file=sys.stderr,
     )
