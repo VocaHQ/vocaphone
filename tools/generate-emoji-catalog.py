@@ -18,15 +18,21 @@ Two upstream sources replace that:
     languages if emoji search is ever offered in more than English.
 
 CLDR is deliberately literal, so a handful of useful search terms are not in it:
-nobody annotates a flag with "country". Those live in `extras.tsv` next to this
-script — a short, reviewable list, rather than a rule that quietly edits
+nobody annotates a flag with "country". Those live in `emoji-extras.tsv` next
+to this script — a short, reviewable list, rather than a rule that quietly edits
 upstream data.
 
-Usage:
-    tools/generate-emoji-catalog.py --check     # fail if the catalog is stale
-    tools/generate-emoji-catalog.py --write     # rewrite it
+Both sources are vendored under tools/unicode/ rather than downloaded when
+this runs. The catalog they produce is shipped in the APK and the IPA, F-Droid
+rebuilds it from this tree and compares the result, and a check that reaches
+the network fails on someone else's outage and silently changes meaning when
+upstream edits a file in place. `--refresh` is the one command that goes out,
+and its diff is the record of what changed.
 
-Sources are cached under .cache/ after the first download.
+Usage:
+    tools/generate-emoji-catalog.py --check      # fail if the catalog is stale
+    tools/generate-emoji-catalog.py --write      # rewrite it
+    tools/generate-emoji-catalog.py --refresh    # re-download the vendored sources
 """
 
 from __future__ import annotations
@@ -45,12 +51,20 @@ from pathlib import Path
 EMOJI_VERSION = "16.0"
 CLDR_TAG = "release-47"
 
-EMOJI_TEST_URL = f"https://unicode.org/Public/emoji/{EMOJI_VERSION}/emoji-test.txt"
-CLDR_BASE = f"https://raw.githubusercontent.com/unicode-org/cldr/{CLDR_TAG}/common"
-ANNOTATION_URLS = {
-    "annotations": f"{CLDR_BASE}/annotations/en.xml",
-    "annotationsDerived": f"{CLDR_BASE}/annotationsDerived/en.xml",
+_CLDR_BASE = f"https://raw.githubusercontent.com/unicode-org/cldr/{CLDR_TAG}/common"
+
+# Vendored filename to where --refresh fetches it from.
+SOURCE_URLS = {
+    "emoji-test.txt": (
+        f"https://unicode.org/Public/emoji/{EMOJI_VERSION}/emoji-test.txt"
+    ),
+    "annotations-en.xml": f"{_CLDR_BASE}/annotations/en.xml",
+    "annotationsDerived-en.xml": f"{_CLDR_BASE}/annotationsDerived/en.xml",
 }
+
+# annotations holds the single code points, annotationsDerived the sequences —
+# flags, keycaps, and every ZWJ combination. Both are needed for full coverage.
+ANNOTATION_FILES = ("annotations-en.xml", "annotationsDerived-en.xml")
 
 # Unicode's group names, mapped to the category ids the two keyboards use.
 # "Component" — the bare skin-tone and hair modifiers — has no group of its own
@@ -72,7 +86,7 @@ SKIN_TONES = "\U0001F3FB\U0001F3FC\U0001F3FD\U0001F3FE\U0001F3FF"
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 CATALOG = REPOSITORY_ROOT / "assets" / "keyboard" / "emoji" / "catalog.tsv"
 EXTRAS = Path(__file__).resolve().parent / "emoji-extras.tsv"
-CACHE = Path(__file__).resolve().parent / ".cache"
+SOURCES = Path(__file__).resolve().parent / "unicode"
 
 EMOJI_TEST_LINE = re.compile(
     r"^(?P<codepoints>[0-9A-F ]+);\s*(?P<status>\S+)\s*#\s*(?P<glyph>\S+)\s+"
@@ -80,14 +94,23 @@ EMOJI_TEST_LINE = re.compile(
 )
 
 
-def fetch(name: str, url: str) -> str:
-    CACHE.mkdir(exist_ok=True)
-    cached = CACHE / name
-    if not cached.exists():
-        print(f"  downloading {url}", file=sys.stderr)
+def read_source(name: str) -> str:
+    path = SOURCES / name
+    if not path.exists():
+        raise SystemExit(
+            f"{path.relative_to(REPOSITORY_ROOT)} is missing. "
+            "Run tools/generate-emoji-catalog.py --refresh"
+        )
+    return path.read_text(encoding="utf-8")
+
+
+def refresh() -> None:
+    """Re-download the vendored sources, so a version bump is one diff."""
+    SOURCES.mkdir(exist_ok=True)
+    for name, url in SOURCE_URLS.items():
+        print(f"  {url}", file=sys.stderr)
         with urllib.request.urlopen(url, timeout=120) as response:
-            cached.write_bytes(response.read())
-    return cached.read_text(encoding="utf-8")
+            (SOURCES / name).write_bytes(response.read())
 
 
 def normalise(text: str) -> list[str]:
@@ -106,8 +129,8 @@ def load_annotations() -> dict[str, list[str]]:
     """Glyph to its CLDR name followed by its keywords, in CLDR's own order."""
     keywords: dict[str, list[str]] = {}
     names: dict[str, str] = {}
-    for name, url in ANNOTATION_URLS.items():
-        root = ElementTree.fromstring(fetch(f"{name}-en.xml", url))
+    for name in ANNOTATION_FILES:
+        root = ElementTree.fromstring(read_source(name))
         for annotation in root.iter("annotation"):
             glyph = annotation.get("cp")
             if glyph is None:
@@ -184,7 +207,7 @@ def build(keep_skin_tones: bool) -> tuple[list[str], dict[str, int]]:
     stats = {"skipped_component": 0, "skipped_tone": 0, "no_annotation": 0}
     category = None
 
-    for line in fetch("emoji-test.txt", EMOJI_TEST_URL).splitlines():
+    for line in read_source("emoji-test.txt").splitlines():
         if line.startswith("# group:"):
             category = CATEGORIES.get(line.split(":", 1)[1].strip())
             continue
@@ -226,6 +249,14 @@ def main() -> int:
         action="store_true",
         help="exit non-zero if the catalog differs from what this would generate",
     )
+    mode.add_argument(
+        "--refresh",
+        action="store_true",
+        help=(
+            "re-download the vendored Unicode and CLDR sources; the only mode "
+            "that touches the network"
+        ),
+    )
     parser.add_argument(
         "--skin-tones",
         choices=("inline", "base"),
@@ -238,6 +269,14 @@ def main() -> int:
         ),
     )
     arguments = parser.parse_args()
+
+    if arguments.refresh:
+        refresh()
+        print(
+            f"refreshed tools/unicode/ from Emoji {EMOJI_VERSION} and CLDR "
+            f"{CLDR_TAG}. Review the diff, then --write."
+        )
+        return 0
 
     lines, stats = build(keep_skin_tones=arguments.skin_tones == "inline")
     generated = "\n".join(lines) + "\n"
