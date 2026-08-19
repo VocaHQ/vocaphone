@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.ui
 
+import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,6 +9,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SetupCopyTest {
+
+    @Test
+    fun setupLogoIsTheExistingVectorNotTheAdaptiveMipmap() {
+        assertEquals(R.drawable.ic_vocaphone_logo, SetupCopy.LOGO)
+        assertTrue(SetupCopy.LOGO != R.mipmap.ic_launcher)
+    }
 
     @Test
     fun firstRunDefaultsToOnThisPhone() {

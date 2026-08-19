@@ -32,6 +32,8 @@ import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 
 internal object SetupCopy {
+    /** Vector mark. Adaptive mipmaps crash painterResource. */
+    val LOGO = R.drawable.ic_vocaphone_logo
     const val TITLE = "Set up VocaPhone"
     const val INTRO = "Turn on the keyboard, allow the microphone, then download a model."
     const val USE_GATEWAY = "Use a gateway instead"
@@ -87,7 +89,7 @@ fun SetupScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Image(
-                    painter = painterResource(R.mipmap.ic_launcher),
+                    painter = painterResource(SetupCopy.LOGO),
                     contentDescription = "VocaPhone",
                     modifier = Modifier.size(56.dp),
                 )
