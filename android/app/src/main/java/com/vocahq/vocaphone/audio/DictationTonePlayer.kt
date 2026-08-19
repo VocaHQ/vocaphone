@@ -5,8 +5,6 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.VibratorManager
-import android.view.HapticFeedbackConstants
-import android.view.View
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.DictationTone
 import kotlinx.coroutines.delay
@@ -21,13 +19,22 @@ class DictationTonePlayer(context: Context) {
     private val appContext = context.applicationContext
     private val gate = Mutex()
 
+    // USAGE_ASSISTANT, not USAGE_ASSISTANCE_SONIFICATION. Sonification is
+    // routed to STREAM_SYSTEM, which most phones alias to the ringer, so every
+    // cue was decoded, handed to AudioFlinger and then muted the moment the
+    // phone sat in vibrate mode or the system-volume index was 0 -- silent
+    // preview button, silent dictation, nothing in the log. A cue that answers
+    // a deliberate tap belongs on the volume the user actually keeps up, and
+    // anyone who wants silence picks the Off tone.
+    private val attributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
+
     fun haptic() {
         val vibrator = appContext.getSystemService(VibratorManager::class.java)?.defaultVibrator
-        if (vibrator != null && vibrator.hasVibrator()) {
-            vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
-            return
-        }
-        View(appContext).performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        if (vibrator == null || !vibrator.hasVibrator()) return
+        vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
     }
 
     suspend fun playStart(tone: DictationTone) = play(tone.startRes())
@@ -43,10 +50,6 @@ class DictationTonePlayer(context: Context) {
     private suspend fun play(resId: Int?) {
         if (resId == null) return
         gate.withLock {
-            val attributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
             val player = try {
                 MediaPlayer.create(appContext, resId, attributes, 0)
             } catch (_: Throwable) {
