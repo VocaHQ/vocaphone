@@ -40,17 +40,11 @@ enum class DictationTone(val id: String) {
 
         /**
          * Null or blank is an unset preference and becomes [DEFAULT]. Off is
-         * only Off when that id was actually saved. The retired default id
-         * maps onto Voca.
+         * only Off when that id was actually saved.
          */
         fun fromStored(value: String?): DictationTone {
             if (value.isNullOrBlank()) return DEFAULT
-            if (value.equals(LEGACY_DEFAULT_ID, ignoreCase = true)) return VOCA
             return entries.firstOrNull { it.id.equals(value, ignoreCase = true) } ?: DEFAULT
         }
-
-        // Retired stored id for the Voca pair. Kept so an already-written
-        // preference still loads as Voca instead of looking unknown.
-        private const val LEGACY_DEFAULT_ID = "fifth"
     }
 }

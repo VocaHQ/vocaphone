@@ -41,9 +41,8 @@ class DictationToneTest {
     }
 
     @Test
-    fun `a leftover retired default id lands on Voca`() {
-        assertEquals(DictationTone.VOCA, DictationTone.fromStored("fifth"))
-        assertEquals(DictationTone.VOCA, DictationTone.fromStored("Fifth"))
+    fun `an unknown stored id lands on Voca`() {
+        assertEquals(DictationTone.VOCA, DictationTone.fromStored("no-such-tone"))
     }
 
     @Test
