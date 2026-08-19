@@ -1824,7 +1824,7 @@ private fun RowScope.KeyButton(
     val background = when {
         isReturnAction -> MaterialTheme.colorScheme.primary
         activeShift -> MaterialTheme.colorScheme.primaryContainer
-        key.type in setOf(KeyboardKeyType.CHARACTER, KeyboardKeyType.SPACE) ->
+        key.type == KeyboardKeyType.CHARACTER || key.type == KeyboardKeyType.SPACE ->
             MaterialTheme.colorScheme.surfaceContainerHighest
         else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }

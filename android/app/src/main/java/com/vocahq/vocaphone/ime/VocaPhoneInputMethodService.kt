@@ -84,6 +84,10 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var editorConfig by mutableStateOf(KeyboardEditorConfig.empty())
     private var lastCandidatesStart = -1
     private var lastCandidatesEnd = -1
+    private var lastSelStart = -1
+    private var lastSelEnd = -1
+
+    private val editorTextRefresh = Runnable { refreshEditorText() }
 
     override fun onCreate() {
         super.onCreate()
@@ -149,6 +153,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         editorSession += 1
         lastCandidatesStart = -1
         lastCandidatesEnd = -1
+        lastSelStart = attribute?.initialSelStart ?: -1
+        lastSelEnd = attribute?.initialSelEnd ?: -1
         val cursorCapsMode = runCatching {
             currentInputConnection?.getCursorCapsMode(currentInputType) ?: 0
         }.getOrDefault(0)
@@ -202,11 +208,19 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         )
         lastCandidatesStart = candidatesStart
         lastCandidatesEnd = candidatesEnd
+        lastSelStart = newSelStart
+        lastSelEnd = newSelEnd
         if (userMove) {
             currentInputConnection?.finishComposingText()
             editorConfig = editorConfig.copy(cursorSync = editorConfig.cursorSync + 1)
         }
-        refreshEditorText()
+        // Selecting text is rare and the shift key changes meaning once there
+        // is a selection, so that one reads straight away. Typing conflates.
+        if (EditorSelectionSync.mustReadSelection(newSelStart, newSelEnd)) {
+            refreshEditorText()
+        } else {
+            scheduleEditorTextRefresh()
+        }
     }
 
     override fun onFinishInput() {
@@ -215,6 +229,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         editorSession += 1
         lastCandidatesStart = -1
         lastCandidatesEnd = -1
+        lastSelStart = -1
+        lastSelEnd = -1
+        mainHandler.removeCallbacks(editorTextRefresh)
         editorConfig = KeyboardEditorConfig.empty().copy(sessionId = editorSession)
         super.onFinishInput()
     }
@@ -293,7 +310,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             }
             KeyboardCommand.CycleSelectionCase -> cycleSelectionCase()
         }
-        refreshEditorText()
+        scheduleEditorTextRefresh()
     }
 
     private fun commitSuggestion(word: String, replaceWord: Boolean) {
@@ -315,7 +332,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         // Finishing first commits the stub, then this would insert in front of it.
         connection.commitText("$word ", 1)
         syncShiftFromCursor()
-        refreshEditorText()
+        scheduleEditorTextRefresh()
     }
 
     private fun commitEmojiSuggestion(emoji: String) {
@@ -338,7 +355,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         }
         recordEmojiRecent(emoji)
         syncShiftFromCursor()
-        refreshEditorText()
+        scheduleEditorTextRefresh()
     }
 
     private fun pasteClipboard(text: String = visibleClipboard.value?.fullText.orEmpty()) {
@@ -354,7 +371,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         ignoredClipboardText = text
         if (visibleClipboard.value?.fullText == text) visibleClipboard.value = null
         syncShiftFromCursor()
-        refreshEditorText()
+        scheduleEditorTextRefresh()
     }
 
     private fun pasteClipboardImage(mime: String, relativePath: String): Boolean {
@@ -406,10 +423,41 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         }
     }
 
+    /**
+     * Asks for the text around the cursor once typing settles, rather than on
+     * the frame that has a key to draw.
+     *
+     * [InputConnection.getTextBeforeCursor] and its neighbours are blocking
+     * round trips into the app being typed into, and the moment just after
+     * pushing an edit is the worst one to make them: that app's main thread is
+     * busy applying the edit, so the read queues behind it. Measured on a POCO
+     * F1 typing into Messages, that was 7 to 16 ms per keystroke against a
+     * 16.7 ms frame — the whole budget, spent unevenly depending on how busy
+     * the other app happened to be, which is what made it read as a stutter
+     * rather than as lag.
+     *
+     * Deferring alone is not enough, because the read is just as slow wherever
+     * it lands; it only stops being slow *here*. So this also conflates: each
+     * keystroke cancels the pending read and posts another, and a run of them
+     * costs one read after the last, not one per letter. Nothing on the other
+     * side needs to be fresher than that — the composing prefix the strip is
+     * built from lives in the keyboard's own state, and what this supplies is
+     * the surrounding context, which changes a word at a time.
+     */
+    private fun scheduleEditorTextRefresh() {
+        mainHandler.removeCallbacks(editorTextRefresh)
+        mainHandler.postDelayed(editorTextRefresh, EDITOR_TEXT_REFRESH_DELAY_MS)
+    }
+
     private fun refreshEditorText() {
-        val selected = runCatching {
-            currentInputConnection?.getSelectedText(0)?.toString().orEmpty()
-        }.getOrDefault("")
+        mainHandler.removeCallbacks(editorTextRefresh)
+        val selected = if (EditorSelectionSync.mustReadSelection(lastSelStart, lastSelEnd)) {
+            runCatching {
+                currentInputConnection?.getSelectedText(0)?.toString().orEmpty()
+            }.getOrDefault("")
+        } else {
+            ""
+        }
         if (!visibleSettings.value.suggestionsEnabled || editorConfig.sensitive) {
             visibleEditorText.value = EditorTextWindow(selected = selected)
             return
@@ -630,5 +678,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     private companion object {
         const val MAX_CURSOR_STEPS_PER_EVENT = 12
+
+        /**
+         * Long enough that a burst of typing collapses into one read, short
+         * enough that it has landed before anyone who paused looks up.
+         */
+        const val EDITOR_TEXT_REFRESH_DELAY_MS = 50L
     }
 }
