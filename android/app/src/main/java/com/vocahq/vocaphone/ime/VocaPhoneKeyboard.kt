@@ -210,6 +210,12 @@ internal fun VocaPhoneKeyboard(
     // keystroke, which cancels a scan still running for the previous one, so a
     // fast typist computes a strip for the word they stopped on rather than for
     // every letter on the way there.
+    //
+    // The trade is that the strip is one frame behind the key, so for that
+    // frame it offers the previous keystroke's words. Tapping one in that
+    // window would commit a suggestion for the word as it was a letter ago —
+    // reachable in principle, sixteen milliseconds wide in practice, and the
+    // same trade every keyboard that does this off the main thread makes.
     var suggestionStrip by remember(editor.sessionId) { mutableStateOf(SuggestionStrip(emptyList())) }
     LaunchedEffect(
         composeWords,

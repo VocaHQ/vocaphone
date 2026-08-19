@@ -95,7 +95,7 @@ internal class SuggestionDictionary(
         for (index in words.indices) {
             val length = lengths[index]
             if (length < minLen || length > maxLen) continue
-            if (Integer.bitCount(typedMask xor letterMasks[index]) > MAX_LETTER_DIFFERENCE) continue
+            if ((typedMask xor letterMasks[index]).countOneBits() > MAX_LETTER_DIFFERENCE) continue
             val word = words[index]
             if (word == lower) continue
             val distance = SuggestionEngine.editDistance(lower, word, max = 2, scratch = scratch)
@@ -318,11 +318,28 @@ internal object SuggestionEngine {
      */
     internal class EditDistanceScratch(maxRightLength: Int) {
         var previousPrevious = IntArray(maxRightLength + 1)
+            private set
         var previous = IntArray(maxRightLength + 1)
+            private set
         var current = IntArray(maxRightLength + 1)
+            private set
 
-        fun grown(columns: Int): EditDistanceScratch =
-            if (previous.size > columns) this else EditDistanceScratch(columns)
+        /**
+         * Grows in place rather than handing back a bigger one, so a caller
+         * that held onto this keeps the rows that grew.
+         *
+         * Returning a replacement looked equivalent and was not: `similar`
+         * binds its scratch once and reuses it for a whole scan, so it would
+         * have kept the undersized one and allocated a replacement per
+         * candidate — the exact cost this class exists to remove, with nothing
+         * failing to say so.
+         */
+        fun fit(columns: Int) {
+            if (previous.size > columns) return
+            previousPrevious = IntArray(columns + 1)
+            previous = IntArray(columns + 1)
+            current = IntArray(columns + 1)
+        }
     }
 
     internal fun editDistance(left: String, right: String, max: Int): Int =
@@ -337,10 +354,10 @@ internal object SuggestionEngine {
         if (left == right) return 0
         if (kotlin.math.abs(left.length - right.length) > max) return max + 1
         val columns = right.length
-        val rows = scratch.grown(columns)
-        var previousPrevious = rows.previousPrevious
-        var previous = rows.previous
-        var current = rows.current
+        scratch.fit(columns)
+        var previousPrevious = scratch.previousPrevious
+        var previous = scratch.previous
+        var current = scratch.current
         // Only the prefix this candidate uses is reset; the tail is never read.
         for (index in 0..columns) {
             previousPrevious[index] = 0
