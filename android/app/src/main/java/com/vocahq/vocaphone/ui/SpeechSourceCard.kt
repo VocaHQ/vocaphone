@@ -3,8 +3,11 @@ package com.vocahq.vocaphone.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -55,7 +58,9 @@ fun SpeechSourceCard(
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Max),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             SourceChoiceTile(
@@ -67,7 +72,7 @@ fun SpeechSourceCard(
                     onLocalTranscriptionEnabled(choice.localEnabled)
                     if (choice.openGateway) onOpenGateway()
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
             )
             SourceChoiceTile(
                 title = "Gateway",
@@ -78,7 +83,7 @@ fun SpeechSourceCard(
                     onLocalTranscriptionEnabled(choice.localEnabled)
                     if (choice.openGateway) onOpenGateway()
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
         if (compact) {
@@ -161,7 +166,9 @@ private fun SourceChoiceTile(
         border = if (selected) BorderStroke(1.dp, colors.primary) else null,
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
