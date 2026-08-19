@@ -2,22 +2,20 @@ package com.vocahq.vocaphone.audio
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
+import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.View
+import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.DictationTone
-import kotlin.math.max
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Plays a tone's start or stop cue. Empty PCM (Off) is a silent no-op so a
- * preview cannot crash. Haptics are separate: they fire even when the tone
- * is Off.
+ * Plays the shipped start/stop WAV for a tone. Off has no file and is silent.
+ * Haptics are separate: they fire even when the tone is Off.
  */
 class DictationTonePlayer(context: Context) {
     private val appContext = context.applicationContext
@@ -32,9 +30,9 @@ class DictationTonePlayer(context: Context) {
         View(appContext).performHapticFeedback(HapticFeedbackConstants.CONFIRM)
     }
 
-    suspend fun playStart(tone: DictationTone) = play(DictationToneSynth.start(tone))
+    suspend fun playStart(tone: DictationTone) = play(tone.startRes())
 
-    suspend fun playStop(tone: DictationTone) = play(DictationToneSynth.stop(tone))
+    suspend fun playStop(tone: DictationTone) = play(tone.stopRes())
 
     /** Start cue, then stop cue. Off stays silent. */
     suspend fun preview(tone: DictationTone) {
@@ -42,48 +40,54 @@ class DictationTonePlayer(context: Context) {
         playStop(tone)
     }
 
-    private suspend fun play(samples: ShortArray) {
-        if (samples.isEmpty()) return
+    private suspend fun play(resId: Int?) {
+        if (resId == null) return
         gate.withLock {
-            val track = try {
-                buildTrack(samples)
+            val attributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            val player = try {
+                MediaPlayer.create(appContext, resId, attributes, 0)
             } catch (_: Throwable) {
                 return@withLock
-            }
+            } ?: return@withLock
             try {
-                track.write(samples, 0, samples.size)
-                track.play()
-                delay(samples.size * 1000L / DictationToneSynth.SAMPLE_RATE + 24)
-                track.stop()
+                player.start()
+                delay(player.duration.toLong().coerceAtLeast(0) + 24)
             } catch (_: Throwable) {
                 // A missed cue must never fail a dictation.
             } finally {
-                track.release()
+                player.release()
             }
         }
     }
+}
 
-    private fun buildTrack(samples: ShortArray): AudioTrack {
-        val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        val format = AudioFormat.Builder()
-            .setSampleRate(DictationToneSynth.SAMPLE_RATE)
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-            .build()
-        val bytes = samples.size * 2
-        val minBuffer = AudioTrack.getMinBufferSize(
-            DictationToneSynth.SAMPLE_RATE,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        return AudioTrack.Builder()
-            .setAudioAttributes(attributes)
-            .setAudioFormat(format)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setBufferSizeInBytes(max(bytes, minBuffer))
-            .build()
-    }
+private fun DictationTone.startRes(): Int? = when (this) {
+    DictationTone.LIFT -> R.raw.dictation_tone_lift_start
+    DictationTone.FLICK -> R.raw.dictation_tone_flick_start
+    DictationTone.EMBER -> R.raw.dictation_tone_ember_start
+    DictationTone.STEP -> R.raw.dictation_tone_step_start
+    DictationTone.VOCA -> R.raw.dictation_tone_voca_start
+    DictationTone.SOFT -> R.raw.dictation_tone_soft_start
+    DictationTone.CHIRP -> R.raw.dictation_tone_chirp_start
+    DictationTone.SCALE -> R.raw.dictation_tone_scale_start
+    DictationTone.DROP -> R.raw.dictation_tone_drop_start
+    DictationTone.GLASS -> R.raw.dictation_tone_glass_start
+    DictationTone.OFF -> null
+}
+
+private fun DictationTone.stopRes(): Int? = when (this) {
+    DictationTone.LIFT -> R.raw.dictation_tone_lift_stop
+    DictationTone.FLICK -> R.raw.dictation_tone_flick_stop
+    DictationTone.EMBER -> R.raw.dictation_tone_ember_stop
+    DictationTone.STEP -> R.raw.dictation_tone_step_stop
+    DictationTone.VOCA -> R.raw.dictation_tone_voca_stop
+    DictationTone.SOFT -> R.raw.dictation_tone_soft_stop
+    DictationTone.CHIRP -> R.raw.dictation_tone_chirp_stop
+    DictationTone.SCALE -> R.raw.dictation_tone_scale_stop
+    DictationTone.DROP -> R.raw.dictation_tone_drop_stop
+    DictationTone.GLASS -> R.raw.dictation_tone_glass_stop
+    DictationTone.OFF -> null
 }
