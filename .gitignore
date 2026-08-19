@@ -54,3 +54,7 @@ android/*.hprof
 
 # Local Netlify folder
 .netlify
+
+# Pinned Unicode and CLDR sources, re-downloaded on demand by
+# tools/generate-emoji-catalog.py.
+tools/.cache/
