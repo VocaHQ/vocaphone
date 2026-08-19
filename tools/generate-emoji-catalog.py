@@ -42,13 +42,15 @@ import re
 import sys
 import unicodedata
 import urllib.request
-# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 # defusedxml would be a dependency for a script that has none, to parse two
-# files committed in this repository. What the rule is actually about is entity
-# expansion, and `parse_annotations` below refuses any document that declares
-# an entity or carries an internal DTD subset — which is where both an XXE and
-# a billion-laughs payload have to live. CLDR's own `<!DOCTYPE ldml SYSTEM ...>`
-# is external, and ElementTree has not fetched external DTDs since 3.7.1.
+# files committed in this repository. What the XXE rule is actually about is
+# entity expansion, and `parse_annotations` below refuses any document that
+# declares an entity or carries an internal DTD subset — which is where both an
+# XXE and a billion-laughs payload have to live. CLDR's own
+# `<!DOCTYPE ldml SYSTEM ...>` is external, and ElementTree has not fetched
+# external DTDs since 3.7.1. The marker has to sit on the line directly above
+# the import; anything between the two and Semgrep stops associating them.
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
@@ -126,6 +128,7 @@ def refresh() -> None:
         if not url.startswith("https://"):
             raise SystemExit(f"refusing to fetch {name} over {url!r}")
         print(f"  {url}", file=sys.stderr)
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urllib.request.urlopen(url, timeout=120) as response:
             (SOURCES / name).write_bytes(response.read())
 
