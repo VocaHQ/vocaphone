@@ -51,8 +51,21 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private val visibleSettings = MutableStateFlow(VocaPhoneSettings())
     private val visibleClipboard = MutableStateFlow<ClipboardChip?>(null)
     private val visibleEditorText = MutableStateFlow(EditorTextWindow())
-    private val suggestionDictionary by lazy { SuggestionDictionary.load(assets) }
-    private val emojiCatalog by lazy { EmojiCatalog.load(assets) }
+    /**
+     * Typing data, loaded off the thread that draws the keyboard.
+     *
+     * Both were `by lazy`, and the first thing to touch them was composition:
+     * bringing the keyboard up for the first time parsed a ten thousand word
+     * list, its bigram table and a four thousand entry emoji catalog — roughly
+     * three hundred kilobytes of assets — inside the first frame. Nothing could
+     * be drawn until it finished.
+     *
+     * Both surfaces already render without them: the strip takes a nullable
+     * dictionary and the emoji panel an empty catalog, so the keyboard appears
+     * immediately and gains suggestions a moment later.
+     */
+    private val suggestionDictionary = MutableStateFlow<SuggestionDictionary?>(null)
+    private val emojiCatalog = MutableStateFlow<List<EmojiEntry>>(emptyList())
     private val mainHandler = Handler(Looper.getMainLooper())
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener { refreshClipboard() }
     private val preferenceWrites by lazy {
@@ -88,6 +101,12 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 refreshClipboard()
             }
         }
+        scope.launch(Dispatchers.Default) {
+            // Failures are silent on purpose: a keyboard that cannot read its
+            // word list still types, and there is no screen here to report on.
+            suggestionDictionary.value = runCatching { SuggestionDictionary.load(assets) }.getOrNull()
+            emojiCatalog.value = runCatching { EmojiCatalog.load(assets) }.getOrNull().orEmpty()
+        }
     }
 
     @Composable
@@ -97,6 +116,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val isPreferenceWritePending by preferenceWrites.pending.collectAsState()
         val clipboard by visibleClipboard.collectAsState()
         val editorText by visibleEditorText.collectAsState()
+        val dictionary by suggestionDictionary.collectAsState()
+        val emojis by emojiCatalog.collectAsState()
         VocaPhoneKeyboard(
             dictationState = dictationState,
             editor = editorConfig,
@@ -104,8 +125,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             isPreferenceWritePending = isPreferenceWritePending,
             clipboard = clipboard,
             editorText = editorText,
-            suggestions = suggestionDictionary,
-            emojiCatalog = emojiCatalog,
+            suggestions = dictionary,
+            emojiCatalog = emojis,
             onCommand = ::handleCommand,
             onMicTap = ::toggleDictation,
             onOpenApp = { openCompanion() },
