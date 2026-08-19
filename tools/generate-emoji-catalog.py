@@ -42,6 +42,13 @@ import re
 import sys
 import unicodedata
 import urllib.request
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
+# defusedxml would be a dependency for a script that has none, to parse two
+# files committed in this repository. What the rule is actually about is entity
+# expansion, and `parse_annotations` below refuses any document that declares
+# an entity or carries an internal DTD subset — which is where both an XXE and
+# a billion-laughs payload have to live. CLDR's own `<!DOCTYPE ldml SYSTEM ...>`
+# is external, and ElementTree has not fetched external DTDs since 3.7.1.
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
@@ -88,6 +95,11 @@ CATALOG = REPOSITORY_ROOT / "assets" / "keyboard" / "emoji" / "catalog.tsv"
 EXTRAS = Path(__file__).resolve().parent / "emoji-extras.tsv"
 SOURCES = Path(__file__).resolve().parent / "unicode"
 
+# An internal DTD subset: <!DOCTYPE name [ ... ]>, as opposed to the external
+# SYSTEM form CLDR ships. Entity declarations can only appear inside one.
+INTERNAL_DTD_SUBSET = re.compile(r"<!DOCTYPE[^>\[]*\[")
+ENTITY_DECLARATION = re.compile(r"<!ENTITY", re.IGNORECASE)
+
 EMOJI_TEST_LINE = re.compile(
     r"^(?P<codepoints>[0-9A-F ]+);\s*(?P<status>\S+)\s*#\s*(?P<glyph>\S+)\s+"
     r"E(?P<version>\d+\.\d+)\s+(?P<name>.+)$"
@@ -108,6 +120,11 @@ def refresh() -> None:
     """Re-download the vendored sources, so a version bump is one diff."""
     SOURCES.mkdir(exist_ok=True)
     for name, url in SOURCE_URLS.items():
+        # The URLs are built from the pinned constants above and nothing else,
+        # but urllib would honour a file:// or a plaintext one if that ever
+        # stopped being true, and this is the line that would have to notice.
+        if not url.startswith("https://"):
+            raise SystemExit(f"refusing to fetch {name} over {url!r}")
         print(f"  {url}", file=sys.stderr)
         with urllib.request.urlopen(url, timeout=120) as response:
             (SOURCES / name).write_bytes(response.read())
@@ -129,12 +146,29 @@ def normalise(text: str) -> list[str]:
     return [token for token in re.split(r"[^a-z0-9]+", lowered) if token]
 
 
+def parse_annotations(name: str) -> ElementTree.Element:
+    """A vendored CLDR annotation file, parsed once its DTD is known to be inert.
+
+    See the note on the ElementTree import. The check is cheap and exact: an
+    entity has to be declared to be referenced, and a declaration has to sit in
+    an internal DTD subset, so refusing both leaves nothing for an expansion
+    attack to stand on.
+    """
+    text = read_source(name)
+    if INTERNAL_DTD_SUBSET.search(text) or ENTITY_DECLARATION.search(text):
+        raise SystemExit(
+            f"{name} carries an internal DTD subset or an entity declaration. "
+            "CLDR does not ship either; refusing to parse it."
+        )
+    return ElementTree.fromstring(text)
+
+
 def load_annotations() -> dict[str, list[str]]:
     """Glyph to its CLDR name followed by its keywords, in CLDR's own order."""
     keywords: dict[str, list[str]] = {}
     names: dict[str, str] = {}
     for name in ANNOTATION_FILES:
-        root = ElementTree.fromstring(read_source(name))
+        root = parse_annotations(name)
         for annotation in root.iter("annotation"):
             glyph = annotation.get("cp")
             if glyph is None:
