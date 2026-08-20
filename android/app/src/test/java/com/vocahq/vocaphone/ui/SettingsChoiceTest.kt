@@ -2,6 +2,7 @@ package com.vocahq.vocaphone.ui
 
 import com.vocahq.vocaphone.core.DictationTone
 import com.vocahq.vocaphone.core.MicrophonePreference
+import com.vocahq.vocaphone.core.WritingStyle
 import com.vocahq.vocaphone.settings.AudioRetention
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,5 +46,6 @@ class SettingsChoiceTest {
         DictationTone.entries.forEach { assertTrue(it.detail.isNotBlank()) }
         MicrophonePreference.entries.forEach { assertTrue(it.detail.isNotBlank()) }
         AudioRetention.entries.forEach { assertTrue(it.detail.isNotBlank()) }
+        WritingStyle.entries.forEach { assertTrue(it.detail.isNotBlank()) }
     }
 }

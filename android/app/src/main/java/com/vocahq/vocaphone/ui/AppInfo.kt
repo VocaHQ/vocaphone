@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.StatFs
+import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.GatewayEndpoint
 import com.vocahq.vocaphone.local.LOCAL_MODELS_DIR
 import com.vocahq.vocaphone.local.LocalModelCatalog
@@ -35,8 +36,7 @@ const val ABOUT_CLEAR_EVENT_LOG = "Clear event log"
 
 const val ABOUT_TAGLINE = "Voice-to-text for Android and iPhone, kept on this phone."
 
-const val ABOUT_STATUS =
-    "Android public beta. iPhone is a source build, not on the App Store."
+const val ABOUT_STATUS = "Public beta. Android 13 and newer."
 
 const val ABOUT_ON_DEVICE =
     "Speech is transcribed on this phone first. A gateway is optional " +
@@ -53,8 +53,7 @@ const val ABOUT_FEEDBACK_NOTE =
 /**
  * A tap target on About.
  *
- * [icon] is for VocaDesign vectors when they land in res/drawable. Until then
- * the buttons show the label only. Do not invent brand marks here.
+ * [icon] is a VocaDesign vocahq/social mark. Do not invent brand marks here.
  */
 data class AboutLink(
     val label: String,
@@ -71,9 +70,9 @@ val ABOUT_FAMILY_LINKS = listOf(
 )
 
 val ABOUT_CONTACT_LINKS = listOf(
-    AboutLink("Discord", DISCORD_URL),
-    AboutLink("X @vocahq", X_URL),
-    AboutLink(CONTACT_EMAIL, CONTACT_MAILTO),
+    AboutLink("Discord", DISCORD_URL, R.drawable.ic_social_discord),
+    AboutLink("X", X_URL, R.drawable.ic_social_x),
+    AboutLink("Email", CONTACT_MAILTO, R.drawable.ic_social_mail),
 )
 
 const val ABOUT_PRIVACY_NOTE =

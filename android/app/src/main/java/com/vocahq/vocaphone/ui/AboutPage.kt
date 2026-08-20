@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -221,7 +220,7 @@ fun AboutPage(
     }
 }
 
-/** Labeled now. Shows [AboutLink.icon] when a VocaDesign vector is wired in. */
+/** Labeled text button. Official VocaDesign marks render at 16 dp. */
 @Composable
 private fun AboutLinkButton(link: AboutLink, context: Context) {
     TextButton(onClick = { context.openHttpUrl(link.url) }) {
@@ -230,7 +229,7 @@ private fun AboutLinkButton(link: AboutLink, context: Context) {
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(16.dp),
             )
             Spacer(Modifier.width(8.dp))
         }
@@ -239,8 +238,7 @@ private fun AboutLinkButton(link: AboutLink, context: Context) {
 }
 
 /**
- * Primer's default GitHub button: dark on light, light on dark, 6 dp corners,
- * mark plus label.
+ * Filled teal Talk-to-us action. Brand fill #0F6B57, cream label #F2F6F2.
  */
 @Composable
 private fun GitHubButton(
@@ -248,9 +246,8 @@ private fun GitHubButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
-    val container = if (dark) Color(0xFFF6F8FA) else Color(0xFF24292F)
-    val content = if (dark) Color(0xFF24292F) else Color(0xFFFFFFFF)
+    val container = Color(0xFF0F6B57)
+    val content = Color(0xFFF2F6F2)
     Button(
         onClick = onClick,
         modifier = modifier.height(48.dp),
@@ -261,9 +258,9 @@ private fun GitHubButton(
         ),
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_github),
+            painter = painterResource(R.drawable.ic_social_github),
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
             tint = content,
         )
         Spacer(Modifier.width(8.dp))

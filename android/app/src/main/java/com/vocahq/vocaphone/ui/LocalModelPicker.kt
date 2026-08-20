@@ -370,27 +370,35 @@ private fun ModelCatalogSearch(
         label = { Text("Find a model") },
         placeholder = { Text("Name, language, or engine") },
     )
-    SettingDropdown(
-        options = ModelEngineFilter.entries,
-        selected = engineFilter,
-        label = { it.displayName },
-        detail = { "" },
-        onSelect = onEngine,
-    )
-    SettingDropdown(
-        options = ModelSizeFilter.entries,
-        selected = sizeFilter,
-        label = { it.displayName },
-        detail = { "" },
-        onSelect = onSize,
-    )
-    SettingDropdown(
-        options = ModelLanguageFilter.entries,
-        selected = languageFilter,
-        label = { it.displayName },
-        detail = { "" },
-        onSelect = onLanguage,
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChipMenu(
+            unselectedLabel = ModelEngineFilter.ALL.displayName,
+            options = ModelEngineFilter.entries,
+            selected = engineFilter,
+            label = { it.displayName },
+            isDefault = { it == ModelEngineFilter.ALL },
+            onSelect = onEngine,
+        )
+        FilterChipMenu(
+            unselectedLabel = ModelSizeFilter.ANY.displayName,
+            options = ModelSizeFilter.entries,
+            selected = sizeFilter,
+            label = { it.displayName },
+            isDefault = { it == ModelSizeFilter.ANY },
+            onSelect = onSize,
+        )
+        FilterChipMenu(
+            unselectedLabel = ModelLanguageFilter.ANY.displayName,
+            options = ModelLanguageFilter.entries,
+            selected = languageFilter,
+            label = { it.displayName },
+            isDefault = { it == ModelLanguageFilter.ANY },
+            onSelect = onLanguage,
+        )
+    }
 }
 
 @Composable

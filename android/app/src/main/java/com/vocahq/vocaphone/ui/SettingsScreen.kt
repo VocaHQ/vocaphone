@@ -32,7 +32,6 @@ import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.CustomVocabulary
 import com.vocahq.vocaphone.core.DictationTone
 import com.vocahq.vocaphone.core.MicrophonePreference
-import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.TranscriptionQuality
 import com.vocahq.vocaphone.core.WritingStyle
@@ -123,7 +122,7 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
     ) {
         when (page) {
@@ -134,18 +133,10 @@ fun SettingsScreen(
                     onOpenModels = { onPageChange(SettingsPage.MODELS) },
                     onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
                 )
-                val languageRestriction = ModelLanguageSupport.restriction(
-                    settings.activeModelLanguages,
-                    settings.activeModelDetectsLanguage,
-                    onDevice = settings.localTranscriptionEnabled,
-                )
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SettingsMenuRow(
                         title = "Language",
-                        supporting = listOfNotNull(
-                            settings.effectiveLanguage.displayName,
-                            languageRestriction,
-                        ).joinToString(" · "),
+                        supporting = settings.effectiveLanguage.displayName,
                         icon = R.drawable.ic_language,
                         onClick = { pickingLanguage = true },
                     )
@@ -314,15 +305,18 @@ fun SettingsScreen(
             }
 
             SettingsPage.DICTATION -> {
-                Section(
-                    title = "Writing style",
-                    supporting = "${settings.style.detail}\n${settings.style.example}",
-                ) {
-                    ChipChoiceRow(
+                Section(title = "Writing style") {
+                    SettingDropdown(
                         options = WritingStyle.entries,
                         selected = settings.style,
                         label = { it.displayName },
+                        detail = { it.detail },
                         onSelect = onStyle,
+                    )
+                    Text(
+                        settings.style.example,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Section(
@@ -340,7 +334,9 @@ fun SettingsScreen(
                         detail = { it.detail },
                         onSelect = onDictationTone,
                     )
-                    TonePreviewMeter(active = tonePreviewListening)
+                    if (tonePreviewListening) {
+                        TonePreviewMeter(active = true)
+                    }
                     SecondaryButton(
                         text = if (tonePreviewListening) "Stop preview" else "Preview",
                         onClick = { onPreviewDictationTone(settings.dictationTone) },
@@ -445,9 +441,8 @@ private fun MicrophoneSection(
             if (!status.changeable) {
                 "Finish the current dictation before changing microphones."
             } else {
-                "Unavailable options have no matching microphone connected. " +
-                    "Android has the final say on routing, so the input above " +
-                    "is what capture actually used."
+                "Unavailable options have no matching mic. " +
+                    "Android has the final say on routing."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -477,11 +472,13 @@ private fun CustomVocabularySection(
             "unlikely to know. One per line, or separated by commas.",
     ) {
         if (whisperWarning != null) {
-            Text(
-                whisperWarning,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            Notice(tone = NoticeTone.Attention) {
+                Text(whisperWarning, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "This list is kept for when you switch back to a Whisper model.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
         OutlinedTextField(
             value = draft,
@@ -493,19 +490,19 @@ private fun CustomVocabularySection(
             minLines = 3,
             maxLines = 6,
         )
-        Text(
-            if (whisperOnly) {
-                "This list is kept for when you switch back to a Whisper model."
-            } else if (terms.isEmpty()) {
-                "No custom words. Transcription is unchanged."
-            } else {
-                "${terms.size} word${if (terms.size == 1) "" else "s"} will bias the decoder. " +
-                    "This nudges spelling rather than guaranteeing it, and a very long " +
-                    "list starts to crowd out the speech itself."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (!whisperOnly) {
+            Text(
+                if (terms.isEmpty()) {
+                    "No custom words. Transcription is unchanged."
+                } else {
+                    "${terms.size} word${if (terms.size == 1) "" else "s"} will bias the decoder. " +
+                        "This nudges spelling rather than guaranteeing it, and a very long " +
+                        "list starts to crowd out the speech itself."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         SecondaryButton(
             text = "Save words",
             onClick = { onSave(draft) },

@@ -1,7 +1,10 @@
 package com.vocahq.vocaphone.ui
 
+import com.vocahq.vocaphone.R
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,15 +43,21 @@ class AboutCopyTest {
             listOf(FAMILY_SITE_URL, VOCALINUX_URL, VOCAMAC_URL, WEBSITE_URL, VOCAGATEWAY_SITE_URL),
             ABOUT_FAMILY_LINKS.map { it.url },
         )
-        assertEquals(
-            listOf("Discord", "X @vocahq", CONTACT_EMAIL),
-            ABOUT_CONTACT_LINKS.map { it.label },
-        )
+        ABOUT_FAMILY_LINKS.forEach { assertNull(it.icon) }
+        assertEquals(listOf("Discord", "X", "Email"), ABOUT_CONTACT_LINKS.map { it.label })
         assertEquals(
             listOf(DISCORD_URL, X_URL, CONTACT_MAILTO),
             ABOUT_CONTACT_LINKS.map { it.url },
         )
-        (ABOUT_FAMILY_LINKS + ABOUT_CONTACT_LINKS).forEach { assertNull(it.icon) }
+        assertEquals(
+            listOf(
+                R.drawable.ic_social_discord,
+                R.drawable.ic_social_x,
+                R.drawable.ic_social_mail,
+            ),
+            ABOUT_CONTACT_LINKS.map { it.icon },
+        )
+        ABOUT_CONTACT_LINKS.forEach { assertFalse(it.label.contains("Twitter", ignoreCase = true)) }
     }
 
     @Test
@@ -57,11 +66,11 @@ class AboutCopyTest {
         assertEquals("Report a bug or idea", ABOUT_REPORT_BUG)
         assertTrue(ABOUT_TAGLINE.contains("Android"))
         assertTrue(ABOUT_TAGLINE.contains("iPhone"))
-        assertTrue(ABOUT_STATUS.contains("Android public beta"))
-        assertTrue(ABOUT_STATUS.contains("source build"))
-        assertTrue(ABOUT_STATUS.contains("App Store"))
+        assertTrue(ABOUT_STATUS.contains("Public beta"))
+        assertTrue(ABOUT_STATUS.contains("Android 13"))
         assertFalse(ABOUT_STATUS.contains("Play Store", ignoreCase = true))
         assertFalse(ABOUT_STATUS.contains("production", ignoreCase = true))
+        assertFalse(ABOUT_STATUS.contains("App Store"))
         assertTrue(ABOUT_ON_DEVICE.contains("on this phone first"))
         assertTrue(ABOUT_ON_DEVICE.contains("optional"))
         assertTrue(ABOUT_ON_DEVICE.contains("self-hosted"))
@@ -90,6 +99,35 @@ class AboutCopyTest {
         ) + ABOUT_FAMILY_LINKS.map { it.label } + ABOUT_CONTACT_LINKS.map { it.label }) {
             assertFalse(text.contains("—"))
             assertFalse(text.contains("–"))
+        }
+    }
+
+    @Test
+    fun `talk-to-us marks keep the official VocaDesign paths`() {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .firstOrNull { File(it, "android/brand/vocahq/social/discord.svg").isFile }
+            ?: error("Could not locate android/brand/vocahq/social from ${File("").absolutePath}")
+        val brand = File(root, "android/brand/vocahq/social")
+        val drawable = File(root, "android/app/src/main/res/drawable")
+        listOf(
+            "discord" to "ic_social_discord.xml",
+            "x" to "ic_social_x.xml",
+            "github" to "ic_social_github.xml",
+            "mail" to "ic_social_mail.xml",
+        ).forEach { (stem, xmlName) ->
+            val svg = File(brand, "$stem.svg").readText()
+            assertTrue("$stem.svg must be 24 viewBox", svg.contains("viewBox=\"0 0 24 24\""))
+            assertTrue("$stem.svg must use currentColor", svg.contains("fill=\"currentColor\""))
+            assertFalse("$stem.svg must not hard-code blurple", svg.contains("#5865F2", ignoreCase = true))
+            assertFalse("$stem.svg must not hard-code X black as a brand fill", svg.contains("fill=\"#000\""))
+            val path = Regex("""<path fill="currentColor" d="([^"]+)"""")
+                .find(svg)
+                ?.groupValues
+                ?.get(1)
+            assertNotNull("$stem.svg is missing a currentColor path", path)
+            val xml = File(drawable, xmlName).readText()
+            assertTrue("$xmlName must keep the official $stem path", xml.contains(path!!))
+            assertTrue("$xmlName must stay 24 viewport", xml.contains("android:viewportWidth=\"24\""))
         }
     }
 }

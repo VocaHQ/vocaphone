@@ -45,12 +45,14 @@ object UsageReportingCopy {
 
     const val SETTINGS_TITLE = "Usage reporting"
 
+    const val SETTINGS_SUMMARY = "Counters only. No transcripts or audio."
+
+    const val SHEET_TITLE = "What's sent"
+
     const val WHAT_IS_SENT =
-        "VocaPhone is in beta, and most problems never get reported. With this on, " +
-            "the app sends a short list of counters to a server VocaHQ runs: which " +
-            "setup step you reached, whether a dictation succeeded or failed and at " +
-            "which stage, which on-device model you downloaded, which one transcribed " +
-            "your speech and at what accuracy setting, and the app version."
+        "With this on, the app sends counters to a server VocaHQ runs: which " +
+            "setup step you reached, whether a dictation succeeded or failed, which " +
+            "model you used, and the app version."
 
     /**
      * The third sentence is the one worth keeping through every copy review. It
@@ -66,9 +68,8 @@ object UsageReportingCopy {
             "sent tomorrow."
 
     const val OPT_OUT_IS_LOGGED =
-        "Turning this off sends one last event recording that you turned it off, " +
-            "then discards anything still waiting. That final event is how we know " +
-            "how many people opt out."
+        "Turning this off sends one last event, then discards anything still " +
+            "waiting. That is how we know how many people opt out."
 
     const val NO_IDENTIFIER =
         "There is no reporting ID to reset, because there is never one stored."
@@ -82,8 +83,7 @@ object UsageReportingCopy {
     const val CHANGE_LATER = "You can change this any time in Settings, Usage reporting."
 
     const val SAMPLE_LABEL =
-        "Sample JSON. Nothing has been sent yet. This is the shape of a typical " +
-            "event, not a real one."
+        "Nothing has been sent yet. This is the shape of a typical event, not a real one."
 
     const val REAL_LABEL = "Last event queued or sent."
 
@@ -161,7 +161,7 @@ fun UsageReportingSection(
 
     Section(
         title = UsageReportingCopy.SETTINGS_TITLE,
-        supporting = UsageReportingCopy.WHAT_IS_SENT,
+        supporting = UsageReportingCopy.SETTINGS_SUMMARY,
         modifier = modifier,
     ) {
         SettingToggle(
@@ -170,21 +170,9 @@ fun UsageReportingSection(
             checked = enabled,
             onCheckedChange = onEnabled,
         )
-        Text(
-            UsageReportingCopy.WHAT_IS_NEVER_SENT,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            UsageReportingCopy.NO_IDENTIFIER + " " + UsageReportingCopy.OPT_OUT_IS_LOGGED,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        SecondaryButton(
-            text = UsageReportingCopy.SEE_WHAT_IS_SENT,
-            onClick = { showingPayload = true },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        TextButton(onClick = { showingPayload = true }) {
+            Text(UsageReportingCopy.SEE_WHAT_IS_SENT)
+        }
     }
     if (showingPayload) {
         UsagePayloadSheet(
@@ -214,9 +202,17 @@ fun UsagePayloadSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Text(UsageReportingCopy.SHEET_TITLE, style = MaterialTheme.typography.titleMedium)
             Text(
                 if (inspect.isSample) UsageReportingCopy.SAMPLE_LABEL else UsageReportingCopy.REAL_LABEL,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(UsageReportingCopy.WHAT_IS_SENT, style = MaterialTheme.typography.bodySmall)
+            Text(UsageReportingCopy.WHAT_IS_NEVER_SENT, style = MaterialTheme.typography.bodySmall)
+            Text(
+                UsageReportingCopy.NO_IDENTIFIER + " " + UsageReportingCopy.OPT_OUT_IS_LOGGED,
+                style = MaterialTheme.typography.bodySmall,
             )
             PendingPayloadView(
                 payload = inspect.json,

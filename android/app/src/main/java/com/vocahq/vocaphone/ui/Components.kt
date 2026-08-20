@@ -1,6 +1,7 @@
 package com.vocahq.vocaphone.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -428,6 +430,53 @@ fun <T> SettingDropdown(
                         expanded = false
                     },
                     enabled = optionEnabled(option),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A compact filter. The chip shows the default label until a value is picked,
+ * then the value. The menu is how M3 keeps a filter row from overflowing.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun <T> FilterChipMenu(
+    unselectedLabel: String,
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    isDefault: (T) -> Boolean,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        FilterChip(
+            selected = !isDefault(selected),
+            onClick = { expanded = true },
+            label = {
+                Text(if (isDefault(selected)) unselectedLabel else label(selected))
+            },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            border = null,
+            colors = FilterChipDefaults.filterChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                labelColor = MaterialTheme.colorScheme.onSurface,
+                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(label(option)) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    },
                 )
             }
         }
