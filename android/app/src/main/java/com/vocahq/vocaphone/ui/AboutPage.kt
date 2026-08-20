@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -186,28 +187,30 @@ fun AboutPage(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        PrimaryButton(
-            text = ABOUT_COPY_DIAGNOSTICS,
-            onClick = {
-                context.copyDiagnostics(
-                    diagnosticsReport(
-                        appInfo,
-                        settings,
-                        setup,
-                        diagnosticEvents(),
-                        onDevice,
-                    ),
-                )
-            },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
-        TextButton(
-            onClick = onClearDiagnosticEvents,
-            colors = ButtonDefaults.textButtonColors(
-                contentColor = MaterialTheme.colorScheme.error,
-            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(ABOUT_CLEAR_EVENT_LOG)
+            SecondaryButton(
+                text = ABOUT_COPY_DIAGNOSTICS,
+                onClick = {
+                    context.copyDiagnostics(
+                        diagnosticsReport(
+                            appInfo,
+                            settings,
+                            setup,
+                            diagnosticEvents(),
+                            onDevice,
+                        ),
+                    )
+                },
+                modifier = Modifier.weight(1f),
+            )
+            SecondaryButton(
+                text = ABOUT_CLEAR_EVENT_LOG,
+                onClick = onClearDiagnosticEvents,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
