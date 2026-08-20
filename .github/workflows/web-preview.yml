@@ -1,0 +1,146 @@
+name: Website preview
+
+# Deploys web/ to a Cloudflare Pages preview on every pull request that
+# touches it, and comments the URL. GitHub Pages cannot do this: it serves one
+# site per repository and this one's slot is production on vocaphone.vocahq.com,
+# so a preview deployed there would replace the live site rather than sit
+# beside it.
+#
+# The preview is not a merge gate. quality-web.yml runs npm run check and is
+# what has to pass; this only shows you the thing.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-preview.yml'
+
+permissions:
+  contents: read
+  # Lets the URL comment be posted and updated in place.
+  pull-requests: write
+
+concurrency:
+  # One preview per pull request. A superseded push is a preview nobody will
+  # look at, so let the newer one cancel it.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    # A fork pull request gets no secrets at all, so the deploy below cannot
+    # work there and would only fail loudly on someone else's contribution.
+    # Skipping keeps their pull request green; a maintainer sees the preview
+    # after pushing the branch to this repository.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The same gate the deploy job on main runs. Publishing a preview of a
+      # site that fails its own checks wastes the reviewer's time.
+      - name: Check site
+        working-directory: web
+        run: npm run check
+
+      # Secrets are unreadable from a step-level if:, so this turns their
+      # presence into something the steps below can branch on.
+      - name: Note whether Cloudflare is configured
+        id: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo 'CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is unset, so no preview was deployed.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Deploy the preview
+        id: deploy
+        if: steps.cloudflare.outputs.configured == 'true'
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # web/ is uploaded whole, exactly as pages.yml hands it to GitHub
+          # Pages, so the preview is the same file tree production serves.
+          #
+          # --branch is what Cloudflare keys a preview deployment on. It must
+          # not be the production branch name, or this would deploy over the
+          # Pages project's production alias.
+          command: >-
+            pages deploy web
+            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT || 'vocaphone-web' }}
+            --branch=pr-${{ github.event.pull_request.number }}
+
+      - name: Comment the preview URL
+        if: steps.cloudflare.outputs.configured == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          # The per-deployment URL, which points at this exact commit and stays
+          # reachable after later pushes. wrangler also prints an alias URL for
+          # the branch; that one always shows the newest deploy.
+          PREVIEW_URL: ${{ steps.deploy.outputs.deployment-url }}
+          COMMIT: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = '<!-- vocaphone-web-preview -->';
+            const url = process.env.PREVIEW_URL;
+            if (!url) {
+              core.warning('wrangler reported no deployment URL, so there is nothing to comment.');
+              return;
+            }
+            const short = process.env.COMMIT.slice(0, 7);
+            const body = [
+              marker,
+              `**Website preview:** ${url}`,
+              '',
+              `Built from \`${short}\`. Every push to this pull request deploys a new one and updates this comment.`,
+            ].join('\n');
+            // Same swallow-the-failure reasoning as report-size: a comment is
+            // not worth failing a run that already produced the preview, and
+            // the URL is in the job summary either way.
+            try {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                per_page: 100,
+              });
+              const existing = comments.find(c => c.body && c.body.startsWith(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  body,
+                });
+              }
+            } catch (err) {
+              core.warning(`Could not post the preview comment: ${err.message}`);
+            }
+
+      - name: Record the preview in the job summary
+        if: steps.cloudflare.outputs.configured == 'true'
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          set -euo pipefail
+          printf 'Website preview: %s\n' "${PREVIEW_URL:-not reported by wrangler}" >> "$GITHUB_STEP_SUMMARY"
