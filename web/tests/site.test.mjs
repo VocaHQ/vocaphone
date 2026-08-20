@@ -13,6 +13,12 @@ const sitemap = readFileSync(join(siteRoot, "sitemap.xml"), "utf8");
 const css = readFileSync(join(siteRoot, "styles.css"), "utf8");
 const script = readFileSync(join(siteRoot, "script.js"), "utf8");
 
+function heroActions(source) {
+  const match = source.match(/<div class="hero-actions">[\s\S]*?<\/div>/);
+  assert.ok(match, "hero actions missing");
+  return match[0];
+}
+
 function androidInstallBlock(source) {
   const match = source.match(
     /<article class="install-card reveal">[\s\S]*?<h3>Android<\/h3>[\s\S]*?<\/article>/,
@@ -160,6 +166,19 @@ test("availability and install paths are honest", () => {
   assert.doesNotMatch(html, /free forever/i);
   assert.doesNotMatch(html, /available on (the )?App Store/i);
   assert.doesNotMatch(html, /available on F-Droid/i);
+
+  // Both ways to install are offered before the fold, not just the Android
+  // one. The hero is where most visitors decide, so an iPhone owner reaching
+  // "see how it works" without ever being shown TestFlight is the bug.
+  const hero = heroActions(html);
+  assert.ok(
+    hero.includes("https://testflight.apple.com/join/wd85wQ3W"),
+    "hero is missing the TestFlight link",
+  );
+  assert.ok(
+    hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/v0.1.0"),
+    "hero is missing the Android release link",
+  );
 
   const androidCard = androidInstallBlock(html);
   const uninstallAt = androidCard.indexOf("io.github.mrsunglasses.localflow");
