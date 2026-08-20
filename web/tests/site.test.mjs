@@ -141,7 +141,11 @@ test("real Android product screenshots are present", () => {
 test("availability and install paths are honest", () => {
   assert.match(html, /Android 13 or newer/);
   assert.match(html, /iOS 17 or newer/);
-  assert.match(html, /There is no App Store or TestFlight build today/);
+  // iOS is on a public TestFlight track, so the old "no TestFlight build"
+  // line went with it. What still has to be true is that the link is real and
+  // that the App Store, which VocaPhone is not on, is not implied.
+  assert.match(html, /href="https:\/\/testflight\.apple\.com\/join\/wd85wQ3W"/);
+  assert.match(html, /There is\s+no App Store release yet/);
   assert.match(
     html,
     /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases\/tag\/v0\.1\.0"/,
@@ -155,7 +159,6 @@ test("availability and install paths are honest", () => {
   assert.doesNotMatch(html, /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases"/);
   assert.doesNotMatch(html, /free forever/i);
   assert.doesNotMatch(html, /available on (the )?App Store/i);
-  assert.doesNotMatch(html, /available on TestFlight/i);
   assert.doesNotMatch(html, /available on F-Droid/i);
 
   const androidCard = androidInstallBlock(html);
@@ -178,17 +181,20 @@ test("availability and install paths are honest", () => {
     iphoneHtml,
     /href="https:\/\/github\.com\/VocaHQ\/vocaphone#build-and-test"/,
   );
-  assert.match(iphoneHtml, /There is no App Store or\s+TestFlight build yet/);
+  assert.match(iphoneHtml, /href="https:\/\/testflight\.apple\.com\/join\/wd85wQ3W"/);
+  assert.match(iphoneHtml, /There is no App Store release yet/);
+  // The guide is the path that always works, so it must keep saying why it is
+  // still here now that a one-tap install exists next to it.
+  assert.match(iphoneHtml, /expires after\s+90 days/);
 
   assert.ok(existsSync(join(siteRoot, "iphone/device-setup/index.html")));
-  assert.match(deviceSetupHtml, /There is no App Store or\s+TestFlight\s+build today/);
+  assert.match(deviceSetupHtml, /href="https:\/\/testflight\.apple\.com\/join\/wd85wQ3W"/);
   assert.match(deviceSetupHtml, /iOS 17 or newer/);
   assert.match(deviceSetupHtml, /keyboard extensions cannot use the microphone/);
   assert.match(deviceSetupHtml, /companion app\s+records/i);
   assert.match(deviceSetupHtml, /model still runs on the iPhone/);
   assert.match(deviceSetupHtml, /gateway is never required/);
   assert.doesNotMatch(deviceSetupHtml, /available on (the )?App Store/i);
-  assert.doesNotMatch(deviceSetupHtml, /available on TestFlight/i);
 });
 
 test("decorative product frames do not expose focusable controls", () => {

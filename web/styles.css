@@ -2615,6 +2615,13 @@ svg {
   justify-content: center;
 }
 
+/* The iPhone card offers TestFlight and the source guide side by side. These
+   buttons are full width, so a second one lands directly against the first,
+   and .button carries a 5px drop shadow that would sit under it. */
+.install-card .button + .button {
+  margin-top: 12px;
+}
+
 .install-note {
   margin: 16px 2px 0;
   color: var(--muted);
