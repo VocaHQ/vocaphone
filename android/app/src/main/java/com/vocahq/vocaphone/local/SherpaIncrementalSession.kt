@@ -85,7 +85,11 @@ internal class SherpaIncrementalSession(
         var overlapsPrevious = false
         var droppedAudibleChunk = false
         var conditioningChanged = false
-        var lastDecodedPeak = 0f
+        // The gain the first decoded window was levelled with. `gainFor` is
+        // monotonically non-increasing in the running peak, so comparing every
+        // later window against this one measures the total drift rather than
+        // one step of it.
+        var firstAppliedGain = 0f
         var loudestFrame = 0.0
 
         suspend fun consume(chunk: FloatArray) {
@@ -93,9 +97,15 @@ internal class SherpaIncrementalSession(
             if (SherpaLongAudio.isEffectivelySilent(level)) return
 
             // A running peak is the closest safe approximation to the
-            // recording-wide gain. If it changes after a prior window, the
-            // complete-WAV path must take over so every word gets one gain.
-            if (lastDecodedPeak > 0f && audio.peak > lastDecodedPeak + PEAK_EPSILON) {
+            // recording-wide gain, and it moves on almost every recording:
+            // anyone who gets louder as they go raises it. What the model
+            // actually hears is the gain, which mostly does not move, so that
+            // is what is compared. Past the tolerance the complete-WAV path
+            // takes over and every word is levelled once.
+            val gain = SpeechAudioConditioning.gainFor(audio.peak)
+            if (firstAppliedGain > 0f &&
+                maxOf(firstAppliedGain, gain) / minOf(firstAppliedGain, gain) > MAX_GAIN_DRIFT
+            ) {
                 conditioningChanged = true
             }
             val levelled = SpeechAudioConditioning.conditionStreaming(chunk, audio.peak)
@@ -106,7 +116,7 @@ internal class SherpaIncrementalSession(
             ) {
                 droppedAudibleChunk = true
             }
-            lastDecodedPeak = maxOf(lastDecodedPeak, audio.peak)
+            if (firstAppliedGain == 0f) firstAppliedGain = gain
             loudestFrame = maxOf(loudestFrame, level)
             transcript = transcript.append(decoded, deduplicateOverlap = overlapsPrevious)
         }
@@ -171,6 +181,20 @@ internal class SherpaIncrementalSession(
     private companion object {
         // AudioCapture emits one 100 ms frame; the app stops at five minutes.
         const val MAX_RECORDING_FRAMES = 3_100
-        const val PEAK_EPSILON = 0.0001f
+
+        /**
+         * How far the streaming gain may drift before the complete WAV has to
+         * take over.
+         *
+         * Two is 6 dB. A gain is a constant offset in every log-mel channel,
+         * which per-feature normalization mostly removes and volume
+         * augmentation trains through, so 6 dB across a transcript is not what
+         * makes one window read differently from the next. What this is
+         * guarding against is the eight-fold spread the gain ceiling allows
+         * between a whisper and a shout, and that still trips it. Tighter than
+         * this and ordinary speech dynamics -- anyone who warms up as they talk
+         * -- send every recording to the slow path.
+         */
+        const val MAX_GAIN_DRIFT = 2f
     }
 }

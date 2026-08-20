@@ -77,7 +77,7 @@ object SpeechAudioConditioning {
 
         // Already loud enough. Attenuating a hot recording cannot undo whatever
         // clipping it arrived with, and quiet is the problem worth solving.
-        val gain = (TARGET_PEAK / peak).coerceAtMost(MAX_GAIN)
+        val gain = gainFor(peak)
         if (gain <= 1f) return samples
 
         for (index in samples.indices) {
@@ -89,19 +89,34 @@ object SpeechAudioConditioning {
     /**
      * Levels one streaming chunk with the loudest raw sample seen so far.
      *
-     * This is only for the latency path. The complete-WAV path above remains
-     * authoritative whenever the running peak changes after a chunk has been
-     * decoded, because a single recording-wide gain is more accurate than a
-     * sequence of gains that move at chunk boundaries.
+     * This is only for the latency path. The complete-WAV path above stays
+     * authoritative whenever the gain moves materially between chunks, because
+     * a single recording-wide gain is more accurate than a sequence of gains
+     * that step at chunk boundaries.
      */
     fun conditionStreaming(samples: FloatArray, peakSoFar: Float): FloatArray {
-        if (samples.isEmpty() || peakSoFar < SILENCE_PEAK) return samples
+        if (samples.isEmpty()) return samples
 
-        val gain = (TARGET_PEAK / peakSoFar).coerceAtMost(MAX_GAIN)
+        val gain = gainFor(peakSoFar)
         if (gain <= 1f) return samples
 
         for (index in samples.indices) samples[index] *= gain
         return samples
+    }
+
+    /**
+     * The gain [conditionStreaming] applies for [peak]. 1 means untouched.
+     *
+     * Exposed so the streaming caller can compare the gains it actually used
+     * rather than the running peak they came from. That peak grows on nearly
+     * every recording -- anyone who gets louder as they go moves it -- while
+     * the gain it derives usually does not, and the gain is what reaches the
+     * model. Treating peak growth as a level change made the latency path
+     * discard its work almost every time.
+     */
+    fun gainFor(peak: Float): Float {
+        if (peak < SILENCE_PEAK) return 1f
+        return (TARGET_PEAK / peak).coerceIn(1f, MAX_GAIN)
     }
 
     /** One AudioRecord frame: enough signal to derive a meaningful level. */

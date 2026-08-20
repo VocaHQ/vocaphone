@@ -64,10 +64,25 @@ class SherpaLongAudioTest {
         assertFalse(first.overlapsPrevious)
         assertTrue(first.endExclusive in silenceStart..silenceEnd)
         assertTrue(second.overlapsPrevious)
+        // A found quiet run still hands context to the next chunk, just less of
+        // it than a guessed boundary needs.
         assertEquals(
             first.endExclusive -
-                SherpaLongAudio.OVERLAP_MILLIS * SherpaLongAudio.SAMPLE_RATE / 1_000,
+                SherpaLongAudio.SILENCE_OVERLAP_MILLIS * SherpaLongAudio.SAMPLE_RATE / 1_000,
             second.start,
+        )
+    }
+
+    @Test
+    fun `a guessed boundary keeps the wider overlap`() {
+        val samples = FloatArray(52 * SherpaLongAudio.SAMPLE_RATE) { 0.2f }
+
+        val chunks = SherpaLongAudio.chunks(samples)
+
+        assertEquals(
+            chunks.first().endExclusive -
+                SherpaLongAudio.OVERLAP_MILLIS * SherpaLongAudio.SAMPLE_RATE / 1_000,
+            chunks[1].start,
         )
     }
 
@@ -91,7 +106,7 @@ class SherpaLongAudioTest {
         val decodedSizes = mutableListOf<Int>()
         var shortResult = 0
         val transcript = SherpaEmptyChunkRecovery.decode(
-            samples = FloatArray(10 * SherpaLongAudio.SAMPLE_RATE),
+            samples = FloatArray(10 * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
             decodeOnce = { samples ->
                 decodedSizes += samples.size
                 SherpaTranscript(
@@ -111,36 +126,48 @@ class SherpaLongAudioTest {
     }
 
     @Test
-    fun `an empty five second speech tail is retried`() {
+    fun `an empty short chunk is not worth a retry`() {
         val decodedSizes = mutableListOf<Int>()
-        var part = 0
-        val transcript = SherpaEmptyChunkRecovery.decode(
-            samples = FloatArray(5 * SherpaLongAudio.SAMPLE_RATE),
+        SherpaEmptyChunkRecovery.decode(
+            samples = FloatArray(5 * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
             decodeOnce = { samples ->
                 decodedSizes += samples.size
-                SherpaTranscript(
-                    if (samples.size > 3 * SherpaLongAudio.SAMPLE_RATE) "" else "part ${++part}",
-                )
+                SherpaTranscript.EMPTY
             },
         )
 
-        assertEquals("part 1 part 2", transcript.text)
-        assertEquals(listOf(80_000, 44_000, 44_000), decodedSizes)
+        // Below the suspect bar an empty answer is ordinary -- a fragment of a
+        // word, or the retained overlap a recording ending just after a
+        // boundary leaves -- and length is not what dropped it.
+        assertEquals(listOf(80_000), decodedSizes)
     }
 
     @Test
-    fun `an empty long window can recover at quarter size`() {
-        var part = 0
-        val transcript = SherpaEmptyChunkRecovery.decode(
+    fun `a silent chunk is never retried`() {
+        val decodedSizes = mutableListOf<Int>()
+        SherpaEmptyChunkRecovery.decode(
             samples = FloatArray(10 * SherpaLongAudio.SAMPLE_RATE),
             decodeOnce = { samples ->
-                SherpaTranscript(
-                    if (samples.size > 3 * SherpaLongAudio.SAMPLE_RATE) "" else "part ${++part}",
-                )
+                decodedSizes += samples.size
+                SherpaTranscript.EMPTY
             },
         )
 
-        assertEquals("part 1 part 2 part 3 part 4", transcript.text)
+        assertEquals(listOf(160_000), decodedSizes)
+    }
+
+    @Test
+    fun `a half that is still empty is not subdivided again`() {
+        val decodedSizes = mutableListOf<Int>()
+        SherpaEmptyChunkRecovery.decode(
+            samples = FloatArray(14 * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
+            decodeOnce = { samples ->
+                decodedSizes += samples.size
+                SherpaTranscript.EMPTY
+            },
+        )
+
+        assertEquals(listOf(224_000, 116_000, 116_000), decodedSizes)
     }
 
     @Test

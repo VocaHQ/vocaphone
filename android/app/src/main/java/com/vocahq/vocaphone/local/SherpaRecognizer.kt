@@ -193,42 +193,42 @@ internal data class SherpaTranscript(val text: String, val language: String = ""
 /**
  * Some attention-based models occasionally return no tokens for a longer
  * waveform even though shorter speech from the same recording is recognized.
- * Retry only that empty chunk as overlapping smaller streams, down to bounded
- * short windows; successful chunks never pay the extra inference cost.
+ * Retry only that empty chunk as two overlapping smaller streams; successful
+ * chunks never pay the extra inference cost.
  */
 internal object SherpaEmptyChunkRecovery {
-    private const val MAX_SPLIT_DEPTH = 2
 
     fun decode(
         samples: FloatArray,
         decodeOnce: (FloatArray) -> SherpaTranscript,
-    ): SherpaTranscript = decode(samples, 0, decodeOnce)
-
-    private fun decode(
-        samples: FloatArray,
-        depth: Int,
-        decodeOnce: (FloatArray) -> SherpaTranscript,
     ): SherpaTranscript {
         val firstAttempt = decodeOnce(samples)
+        // Length is what this recovers from, so a window that is not long
+        // enough to be dropped for its length has nothing to recover. Room
+        // tone is the other ordinary reason for an empty answer, and the
+        // cheapest thing to rule out before spending two more decodes: the
+        // scan costs a pass over the samples, the retry costs inference.
         if (firstAttempt.text.isNotEmpty() ||
-            depth >= MAX_SPLIT_DEPTH ||
-            samples.size <= SherpaLongAudio.MIN_RECOVERY_CHUNK_MILLIS *
-            SherpaLongAudio.SAMPLE_RATE / 1_000
+            samples.size <=
+            SherpaLongAudio.MIN_SUSPECT_CHUNK_SECONDS * SherpaLongAudio.SAMPLE_RATE ||
+            SherpaLongAudio.isEffectivelySilent(samples)
         ) {
             return firstAttempt
         }
 
-        // Retain context on both sides of the recovery boundary. The old
+        // Retain context on both sides of the recovery boundary. A plain
         // midpoint split could rescue an empty window while still deleting the
-        // word crossing its exact centre.
+        // word crossing its exact centre. One split and no more: a half-length
+        // window that is still empty is not being lost to its length, and
+        // subdividing again multiplies the decodes for nothing.
         val midpoint = samples.size / 2
         val halfOverlap = SherpaLongAudio.OVERLAP_MILLIS *
             SherpaLongAudio.SAMPLE_RATE / 2_000
         val leftEnd = (midpoint + halfOverlap).coerceAtMost(samples.size)
         val rightStart = (midpoint - halfOverlap).coerceAtLeast(0)
-        return decode(samples.copyOfRange(0, leftEnd), depth + 1, decodeOnce)
+        return decodeOnce(samples.copyOfRange(0, leftEnd))
             .append(
-                decode(samples.copyOfRange(rightStart, samples.size), depth + 1, decodeOnce),
+                decodeOnce(samples.copyOfRange(rightStart, samples.size)),
                 deduplicateOverlap = true,
             )
     }

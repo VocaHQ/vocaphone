@@ -24,21 +24,45 @@ internal data class SherpaStreamingSplit(
  * fast path for a sentence, but attention-based models become disproportionately
  * expensive as the waveform grows. The boundary search prefers a sustained
  * 300 ms quiet run around the target so normal speech is not cut in half. Every
- * boundary retains 500 ms of context: a low-energy phoneme can look like
- * silence, and deleting overlap on that guess was enough to lose a boundary
- * word. The transcript merger removes repeated words from the retained context.
+ * boundary retains context either way, because deleting it on a classification
+ * was enough to lose a boundary word; how much depends on how well the boundary
+ * is evidenced. The transcript merger removes the repeated words back out.
  */
 internal object SherpaLongAudio {
     const val SAMPLE_RATE = 16_000
     const val LONG_AUDIO_THRESHOLD_SECONDS = 12
     const val TARGET_CHUNK_SECONDS = 10
     const val MAX_CHUNK_SECONDS = 14
+
+    /**
+     * Retained across a boundary the search had to guess at. A low-energy
+     * phoneme can sit where the audio looks quiet, so a guessed cut keeps
+     * enough of the previous window to decode a word it may have split.
+     */
     const val OVERLAP_MILLIS = 500
+
+    /**
+     * Retained across a boundary a sustained quiet run was actually found at.
+     * The cut lands in the middle of that run, so 150 ms of measured silence
+     * already sits on each side of it and a word cannot be straddling it. This
+     * still keeps that silence plus a margin, and every 300 ms saved here is
+     * audio the model does not decode twice.
+     */
+    const val SILENCE_OVERLAP_MILLIS = 200
+
     const val STREAMING_WINDOW_SECONDS = TARGET_CHUNK_SECONDS + 2
 
-    /** Smallest empty window worth subdividing to recover audible speech. */
-    const val MIN_RECOVERY_CHUNK_MILLIS = 1_500
-    /** Empty windows longer than this are suspicious in the latency path. */
+    /**
+     * The bar above which a window answering with no tokens is suspicious.
+     *
+     * Below it an empty answer is ordinary rather than a loss: the half second
+     * of retained overlap a recording ending just after a boundary leaves
+     * behind, or a fragment of a word. Both callers need the same bar --
+     * [SherpaEmptyChunkRecovery] before it spends two more decodes on a retry,
+     * and the streaming session before it sends the caller to the whole-file
+     * decode -- because both are asking the same question about the same
+     * window.
+     */
     const val MIN_SUSPECT_CHUNK_SECONDS = 6
 
     private const val SILENCE_FRAME_MILLIS = 100
@@ -56,7 +80,8 @@ internal object SherpaLongAudio {
 
         val targetSamples = TARGET_CHUNK_SECONDS * SAMPLE_RATE
         val maxSamples = MAX_CHUNK_SECONDS * SAMPLE_RATE
-        val overlapSamples = OVERLAP_MILLIS * SAMPLE_RATE / 1_000
+        val guessedOverlapSamples = OVERLAP_MILLIS * SAMPLE_RATE / 1_000
+        val foundOverlapSamples = SILENCE_OVERLAP_MILLIS * SAMPLE_RATE / 1_000
         val minChunkSamples = MIN_CHUNK_SECONDS * SAMPLE_RATE
         val chunks = mutableListOf<SherpaAudioChunk>()
         var start = 0
@@ -80,9 +105,12 @@ internal object SherpaLongAudio {
             val end = silence ?: idealEnd
             chunks += SherpaAudioChunk(start, end, overlapsPrevious)
             // Boundary classification is deliberately not trusted with audio
-            // ownership. Even a real pause can be shorter than the recognizer's
-            // context, while a quiet consonant can satisfy an RMS threshold.
-            start = (end - overlapSamples).coerceAtLeast(start + 1)
+            // ownership: a quiet consonant can satisfy an RMS threshold, and
+            // dropping the overlap on that guess loses the word. It is trusted
+            // with how much to retain, which is only a question of cost.
+            val retainedSamples =
+                if (silence != null) foundOverlapSamples else guessedOverlapSamples
+            start = (end - retainedSamples).coerceAtLeast(start + 1)
             overlapsPrevious = true
         }
         return chunks
@@ -96,7 +124,6 @@ internal object SherpaLongAudio {
         val targetSamples = TARGET_CHUNK_SECONDS * SAMPLE_RATE
         if (samples.size < STREAMING_WINDOW_SECONDS * SAMPLE_RATE) return null
 
-        val overlapSamples = OVERLAP_MILLIS * SAMPLE_RATE / 1_000
         val silence = findSilenceBoundary(
             samples = samples,
             start = 0,
@@ -105,12 +132,14 @@ internal object SherpaLongAudio {
             maxEnd = STREAMING_WINDOW_SECONDS * SAMPLE_RATE,
         )
         val end = silence ?: targetSamples
+        // Retain context on the same terms as the authoritative finish-time
+        // path, including at a boundary that looks quiet: a low-energy phoneme
+        // can sit inside an RMS silence run. A found run needs less of it.
+        val retainedSamples =
+            (if (silence != null) SILENCE_OVERLAP_MILLIS else OVERLAP_MILLIS) * SAMPLE_RATE / 1_000
         return SherpaStreamingSplit(
             endExclusive = end,
-            // Keep the same overlap guarantee as the authoritative finish-time
-            // path, even when the boundary looks quiet. A low-energy phoneme
-            // can still sit inside an RMS silence run.
-            nextStart = (end - overlapSamples).coerceAtLeast(1),
+            nextStart = (end - retainedSamples).coerceAtLeast(1),
         )
     }
 
@@ -195,8 +224,8 @@ internal object SherpaLongAudio {
 
 /** Joins text from overlapped chunks without writing the repeated boundary words. */
 internal object SherpaTranscriptMerger {
-    // The audio overlap is half a second. A much wider text match can only be
-    // a phrase the speaker genuinely repeated, not duplicated boundary audio.
+    // The audio overlap is half a second at most. A much wider text match can
+    // only be a phrase the speaker genuinely repeated, not duplicated audio.
     private const val MAX_OVERLAP_WORDS = 4
 
     fun append(existing: String, next: String, deduplicateOverlap: Boolean = true): String {
