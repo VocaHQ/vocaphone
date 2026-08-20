@@ -32,6 +32,7 @@ import com.vocahq.vocaphone.gateway.GatewayStreamingPolicy
 import com.vocahq.vocaphone.gateway.StreamingUnavailableException
 import com.vocahq.vocaphone.local.LocalModelManager
 import com.vocahq.vocaphone.local.LocalTranscription
+import com.vocahq.vocaphone.local.SherpaIncrementalSession
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.settings.SettingsRepository
 import com.vocahq.vocaphone.telemetry.Telemetry
@@ -46,6 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -282,6 +284,24 @@ class DictationController(
         val client = token?.let { GatewayClient(configuration.gatewayUrl, it) }
         val sessionFinishSignal = finishSignal
         val frames = Channel<ShortArray>(capacity = FILE_FRAME_BUFFER_CAPACITY)
+        val selectedLocalModelID = configuration.localModelId.takeIf { it.isNotEmpty() }
+        val incrementalSession = if (configuration.localTranscriptionEnabled) {
+            selectedLocalModelID?.let { modelID ->
+                localModels.startIncrementalSession(
+                    modelID = modelID,
+                    language = configuration.effectiveLanguage.wireValue,
+                    scope = scope,
+                    quality = configuration.transcriptionQuality,
+                )
+            }
+        } else {
+            null
+        }
+        val incrementalReference = AtomicReference<SherpaIncrementalSession?>(incrementalSession)
+        val incrementalFallback = AtomicBoolean(false)
+        if (incrementalSession != null) {
+            diagnostics.recordTiming("local_incremental_started", source.name)
+        }
         val shouldAttemptStreaming = client != null && GatewayStreamingPolicy.shouldAttemptStreaming(
             supported = configuration.lastStreamingSupported,
             checkedAtMillis = configuration.lastEngineCheckedAtMillis,
@@ -326,6 +346,16 @@ class DictationController(
                     )
                     sessionFinishSignal.complete(Unit)
                 }
+                // The WAV keeps the cue for the authoritative path, but the
+                // latency candidate starts after it just like the old gate did.
+                if (SystemClock.elapsedRealtime() > cueQuietAt.get()) {
+                    incrementalReference.get()?.let { session ->
+                        if (!session.offer(frame) && incrementalReference.compareAndSet(session, null)) {
+                            incrementalFallback.set(true)
+                            session.cancel()
+                        }
+                    }
+                }
                 if (streamAcceptingFrames.get() &&
                     streamFrames?.trySend(frame)?.isFailure == true
                 ) {
@@ -348,6 +378,7 @@ class DictationController(
         cuePlayed.set(cueQuietAt.get() > cueStartedAt)
         if (!recorder.start()) {
             announceStopped(configuration.dictationTone)
+            incrementalReference.getAndSet(null)?.cancel()
             frames.close()
             streamFrames?.close()
             writer.close()
@@ -489,6 +520,7 @@ class DictationController(
         }
 
         if (cancelRequested) {
+            incrementalReference.getAndSet(null)?.cancel()
             stream?.cancel()
             wavFile.delete()
             reset()
@@ -505,6 +537,7 @@ class DictationController(
                 heardSomething.get() &&
                 writer.durationMillis >= MINIMUM_RECORDING_MILLIS
             if (!salvageable) {
+                incrementalReference.getAndSet(null)?.cancel()
                 stream?.cancel()
                 wavFile.delete()
                 fail(
@@ -525,6 +558,7 @@ class DictationController(
         _state.update { it.copy(phase = DictationPhase.FINALIZING, level = 0f) }
 
         if (writer.durationMillis < MINIMUM_RECORDING_MILLIS) {
+            incrementalReference.getAndSet(null)?.cancel()
             stream?.cancel()
             wavFile.delete()
             // A tap that captured nothing is not a failure the user has to
@@ -537,6 +571,7 @@ class DictationController(
         // microphone another app holds. Transcribing it would spend the wait to
         // report an empty transcript, which says nothing the user can act on.
         if (!heardSomething.get()) {
+            incrementalReference.getAndSet(null)?.cancel()
             stream?.cancel()
             wavFile.delete()
             fail(
@@ -555,6 +590,39 @@ class DictationController(
         }
 
         if (configuration.localTranscriptionEnabled) {
+            val session = incrementalReference.getAndSet(null)
+            var preparedTranscript: LocalTranscription? = null
+            var timingRecorded = false
+            if (session != null) {
+                _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
+                diagnostics.recordTiming("local_transcription_started", source.name)
+                timingRecorded = true
+                try {
+                    val incremental = session.finish()
+                    if (incremental.isSafe) {
+                        preparedTranscript = LocalTranscription(
+                            incremental.transcript.text,
+                            incremental.transcript.language,
+                        )
+                        diagnostics.recordTiming("local_incremental_ready", source.name)
+                    } else {
+                        if (incremental.droppedAudibleChunk) {
+                            diagnostics.recordTiming("local_incremental_dropped_chunk", source.name)
+                        }
+                        if (incremental.conditioningChanged) {
+                            diagnostics.recordTiming("local_incremental_unstable_gain", source.name)
+                        }
+                        incrementalFallback.set(true)
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    incrementalFallback.set(true)
+                }
+            }
+            if (incrementalSession != null && incrementalFallback.get()) {
+                diagnostics.recordTiming("local_incremental_fallback", source.name)
+            }
             deliverLocal(
                 sessionId = sessionId,
                 wavFile = wavFile,
@@ -563,6 +631,8 @@ class DictationController(
                 source = source,
                 generation = generation,
                 conditioningStartSample = cueAnalysisStartSample,
+                preparedTranscript = preparedTranscript,
+                transcriptionTimingRecorded = timingRecorded,
             )
             return
         }
@@ -690,6 +760,8 @@ class DictationController(
         source: DictationSource,
         generation: Int,
         conditioningStartSample: Int = 0,
+        preparedTranscript: LocalTranscription? = null,
+        transcriptionTimingRecorded: Boolean = false,
     ) {
         // Loading a model is seconds of silence with nothing on screen to explain
         // it, and changing the accuracy setting makes it happen again. Mirroring
@@ -706,17 +778,15 @@ class DictationController(
         }
         try {
             _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
-            diagnostics.recordTiming("local_transcription_started", source.name)
+            if (!transcriptionTimingRecorded) {
+                diagnostics.recordTiming("local_transcription_started", source.name)
+            }
             val modelID = configuration.localModelId.takeIf { it.isNotEmpty() }
                 ?: error("Choose and download an on-device model first.")
-            // The complete WAV is the only source that has an auditable sample
-            // count and one recording-wide conditioning pass. The former
-            // incremental path could return fluent-looking text after silently
-            // dropping a short or partially decoded chunk, then choose between
-            // two incomplete transcripts by character count. Accuracy is the
-            // contract here, so speculative during-recording text no longer
-            // bypasses this authoritative decode.
-            val local = localModels.transcribe(
+            // A complete-WAV decode remains the recovery path. The incremental
+            // candidate is only passed here after it proved that every audible
+            // window was decoded with a stable running gain.
+            val local = preparedTranscript ?: localModels.transcribe(
                 wavFile,
                 modelID,
                 language,

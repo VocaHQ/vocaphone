@@ -27,6 +27,19 @@ class SherpaLongAudioTest {
     }
 
     @Test
+    fun `streaming split releases a bounded prefix with overlap`() {
+        val split = SherpaLongAudio.nextStreamingSplit(
+            FloatArray(SherpaLongAudio.STREAMING_WINDOW_SECONDS * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
+        )
+
+        assertEquals(10 * SherpaLongAudio.SAMPLE_RATE, split?.endExclusive)
+        assertEquals(
+            9 * SherpaLongAudio.SAMPLE_RATE + 500 * SherpaLongAudio.SAMPLE_RATE / 1_000,
+            split?.nextStart,
+        )
+    }
+
+    @Test
     fun `the physical-device eighteen second regression is never one decode`() {
         val samples = FloatArray(18 * SherpaLongAudio.SAMPLE_RATE) { 0.2f }
 

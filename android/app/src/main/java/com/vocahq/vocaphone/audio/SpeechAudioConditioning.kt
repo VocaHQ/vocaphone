@@ -86,6 +86,24 @@ object SpeechAudioConditioning {
         return samples
     }
 
+    /**
+     * Levels one streaming chunk with the loudest raw sample seen so far.
+     *
+     * This is only for the latency path. The complete-WAV path above remains
+     * authoritative whenever the running peak changes after a chunk has been
+     * decoded, because a single recording-wide gain is more accurate than a
+     * sequence of gains that move at chunk boundaries.
+     */
+    fun conditionStreaming(samples: FloatArray, peakSoFar: Float): FloatArray {
+        if (samples.isEmpty() || peakSoFar < SILENCE_PEAK) return samples
+
+        val gain = (TARGET_PEAK / peakSoFar).coerceAtMost(MAX_GAIN)
+        if (gain <= 1f) return samples
+
+        for (index in samples.indices) samples[index] *= gain
+        return samples
+    }
+
     /** One AudioRecord frame: enough signal to derive a meaningful level. */
     private const val MIN_ANALYSIS_SAMPLES = CaptureFormat.SAMPLE_RATE / 10
 }

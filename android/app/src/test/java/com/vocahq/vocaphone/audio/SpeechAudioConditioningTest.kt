@@ -74,4 +74,14 @@ class SpeechAudioConditioningTest {
 
         assertEquals(0.85f, peak(conditioned), 0.02f)
     }
+
+    @Test
+    fun `streaming conditioning uses the running peak instead of per chunk gain`() {
+        val conditioned = SpeechAudioConditioning.conditionStreaming(
+            tone(peak = 0.1f),
+            peakSoFar = 0.2f,
+        )
+
+        assertEquals(0.425f, peak(conditioned), 0.02f)
+    }
 }

@@ -168,6 +168,26 @@ class LocalModelManager(
     fun directoryFor(model: LocalModelDescriptor): File = File(modelRoot, model.id)
 
     /**
+     * Starts the bounded Sherpa latency path. Whisper keeps its finish-time
+     * decoder because its native context has a different streaming contract.
+     */
+    internal fun startIncrementalSession(
+        modelID: String,
+        language: String,
+        scope: CoroutineScope,
+        quality: TranscriptionQuality = TranscriptionQuality.DEFAULT,
+    ): SherpaIncrementalSession? {
+        val model = LocalModelCatalog.find(modelID) ?: return null
+        if (model.engine != LocalModelEngine.SHERPA_ONNX) return null
+        val resolved = if (model.englishOnly) "en" else language
+        return SherpaIncrementalSession(
+            scope = scope,
+            prepare = { prepareEngine(model, resolved, quality) },
+            decode = { samples -> decodePreparedSherpa(samples, model.id, resolved, quality) },
+        )
+    }
+
+    /**
      * Starts a download on [downloadScope] so leaving setup or settings does
      * not cancel it. Only [cancelDownload] stops an in-flight job.
      */
@@ -448,6 +468,23 @@ class LocalModelManager(
             model.cropsAudioContext,
             WhisperCpuConfig.preferredThreadCount(model.id),
         ) ?: error("Local transcription engine is not loaded")
+    }
+
+    private suspend fun decodePreparedSherpa(
+        samples: FloatArray,
+        modelID: String,
+        resolvedLanguage: String,
+        quality: TranscriptionQuality,
+    ): SherpaTranscript = engineMutex.withLock {
+        check(
+            loadedModelID == modelID &&
+                loadedLanguage == resolvedLanguage &&
+                loadedQuality == quality,
+        ) {
+            "On-device model changed during transcription"
+        }
+        val recognizer = sherpaRecognizer ?: error("Sherpa transcription engine is not loaded")
+        withContext(Dispatchers.Default) { recognizer.transcribeChunk(samples) }
     }
 
     suspend fun transcribe(

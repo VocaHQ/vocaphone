@@ -11,6 +11,12 @@ internal data class SherpaAudioChunk(
     val overlapsPrevious: Boolean,
 )
 
+/** A stable prefix that can be decoded while the microphone keeps recording. */
+internal data class SherpaStreamingSplit(
+    val endExclusive: Int,
+    val nextStart: Int,
+)
+
 /**
  * Keeps sherpa offline models away from unbounded encoder/decoder sequences.
  *
@@ -28,9 +34,12 @@ internal object SherpaLongAudio {
     const val TARGET_CHUNK_SECONDS = 10
     const val MAX_CHUNK_SECONDS = 14
     const val OVERLAP_MILLIS = 500
+    const val STREAMING_WINDOW_SECONDS = TARGET_CHUNK_SECONDS + 2
 
     /** Smallest empty window worth subdividing to recover audible speech. */
     const val MIN_RECOVERY_CHUNK_MILLIS = 1_500
+    /** Empty windows longer than this are suspicious in the latency path. */
+    const val MIN_SUSPECT_CHUNK_SECONDS = 6
 
     private const val SILENCE_FRAME_MILLIS = 100
     private const val SILENCE_RUN_FRAMES = 3
@@ -77,6 +86,32 @@ internal object SherpaLongAudio {
             overlapsPrevious = true
         }
         return chunks
+    }
+
+    /**
+     * Returns one bounded prefix after enough future audio exists to inspect a
+     * complete silence-search window. The caller retains [nextStart] onward.
+     */
+    fun nextStreamingSplit(samples: FloatArray): SherpaStreamingSplit? {
+        val targetSamples = TARGET_CHUNK_SECONDS * SAMPLE_RATE
+        if (samples.size < STREAMING_WINDOW_SECONDS * SAMPLE_RATE) return null
+
+        val overlapSamples = OVERLAP_MILLIS * SAMPLE_RATE / 1_000
+        val silence = findSilenceBoundary(
+            samples = samples,
+            start = 0,
+            idealEnd = targetSamples,
+            minEnd = MIN_CHUNK_SECONDS * SAMPLE_RATE,
+            maxEnd = STREAMING_WINDOW_SECONDS * SAMPLE_RATE,
+        )
+        val end = silence ?: targetSamples
+        return SherpaStreamingSplit(
+            endExclusive = end,
+            // Keep the same overlap guarantee as the authoritative finish-time
+            // path, even when the boundary looks quiet. A low-energy phoneme
+            // can still sit inside an RMS silence run.
+            nextStart = (end - overlapSamples).coerceAtLeast(1),
+        )
     }
 
     private fun findSilenceBoundary(
@@ -142,6 +177,10 @@ internal object SherpaLongAudio {
         samples.isEmpty() || isEffectivelySilent(loudestFrame(samples))
 
     fun isEffectivelySilent(loudestFrame: Double): Boolean = loudestFrame < SILENT_CHUNK_RMS
+
+    /** Whether a silent decode is suspicious compared with earlier speech. */
+    fun carriesSpeech(loudestFrame: Double, loudestFrameSoFar: Double): Boolean =
+        loudestFrame >= maxOf(SILENT_CHUNK_RMS, loudestFrameSoFar * SILENCE_RMS_RATIO)
 
     private fun rms(samples: FloatArray, start: Int, endExclusive: Int): Double {
         if (endExclusive <= start) return 0.0
