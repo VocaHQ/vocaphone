@@ -304,6 +304,13 @@ svg {
   stroke-width: 1.8;
 }
 
+/* The Apple mark is a solid shape rather than the line drawing the phone
+   glyph beside it is, so it opts out of the shared stroke treatment. */
+.button svg.mark-solid {
+  fill: currentColor;
+  stroke: none;
+}
+
 .button-primary {
   color: white;
   background: var(--brand);
@@ -619,8 +626,11 @@ svg {
 .wave-doodle i:nth-child(5) { height: 22px; }
 
 .wave-one {
-  top: 469px;
-  left: 28%;
+  /* The copy column is centred and grows with the viewport, so anything
+     parked near the middle lands on the lede or the buttons at some width.
+     This sits out in the left margin under the message bubble instead. */
+  top: 566px;
+  left: 12%;
   transform: rotate(-3deg);
 }
 
@@ -917,8 +927,13 @@ svg {
 
 .local-sticker {
   position: absolute;
-  top: 76px;
-  left: -40px;
+  /* Clear of the contact row above it, and inside the frame: the parent is a
+     .window with overflow: hidden, so the negative offset this used to carry
+     was clipped into "SCRIBED ON / IS PHONE" rather than hanging over the
+     edge. The conversation is right-aligned, so the left of the message area
+     is the empty part. */
+  top: 112px;
+  left: 20px;
   padding: 13px 18px;
   color: #2b3a32;
   background: #dfecc6;
@@ -3407,8 +3422,26 @@ svg {
   to { transform: translateX(-50%); }
 }
 
+/* The headline is centred and clamp-sized, so it reaches the cards parked in
+   the side margins well before the layout itself gets narrow. Fading them, as
+   this used to, left the collision in place and only made it fainter. */
+@media (max-width: 1330px) {
+  .mini-message,
+  .language-note {
+    display: none;
+  }
+}
+
 @media (max-width: 1180px) {
   .system-strip {
+    display: none;
+  }
+
+  /* The install row carries three buttons now that iPhone has a build of its
+     own, so it reaches the folder and the ascii tag that used to sit clear of
+     it on either side. */
+  .folder-one,
+  .face-two {
     display: none;
   }
 
@@ -3423,12 +3456,6 @@ svg {
 
   .local-card {
     transform: scale(0.86) rotate(3deg);
-  }
-
-  .mini-message,
-  .language-note {
-    opacity: 0.65;
-    transform: scale(0.82);
   }
 
   .route-visual {

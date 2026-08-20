@@ -175,6 +175,9 @@ test("availability and install paths are honest", () => {
     hero.includes("https://testflight.apple.com/join/wd85wQ3W"),
     "hero is missing the TestFlight link",
   );
+  // The Apple mark is filled, not stroked like the phone glyph beside it, and
+  // .button svg sets stroke by default, so it needs the class to render solid.
+  assert.match(hero, /<svg class="mark-solid"/);
   assert.ok(
     hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/v0.1.0"),
     "hero is missing the Android release link",
