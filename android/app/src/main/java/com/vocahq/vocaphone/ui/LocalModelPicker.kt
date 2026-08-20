@@ -92,11 +92,9 @@ fun LocalModelPicker(
         filtered.any { it.id == recommended.id }
     }
     val installedModels = if (compact) {
-        usable.filter { it.id in state.downloaded && it.id != recommended.id }
+        pickerInstalledModels(usable, state.downloaded)
     } else {
-        filtered.filter {
-            it.id in state.downloaded && !(recommendedVisible && it.id == recommended.id)
-        }
+        pickerInstalledModels(filtered, state.downloaded)
     }
     val availableModels = filtered.filter {
         it.id !in state.downloaded && !(recommendedVisible && it.id == recommended.id)
@@ -372,22 +370,25 @@ private fun ModelCatalogSearch(
         label = { Text("Find a model") },
         placeholder = { Text("Name, language, or engine") },
     )
-    ChipChoiceRow(
+    SettingDropdown(
         options = ModelEngineFilter.entries,
         selected = engineFilter,
         label = { it.displayName },
+        detail = { "" },
         onSelect = onEngine,
     )
-    ChipChoiceRow(
+    SettingDropdown(
         options = ModelSizeFilter.entries,
         selected = sizeFilter,
         label = { it.displayName },
+        detail = { "" },
         onSelect = onSize,
     )
-    ChipChoiceRow(
+    SettingDropdown(
         options = ModelLanguageFilter.entries,
         selected = languageFilter,
         label = { it.displayName },
+        detail = { "" },
         onSelect = onLanguage,
     )
 }

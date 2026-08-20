@@ -20,6 +20,10 @@ const val NEW_ISSUE_URL = "https://github.com/VocaHQ/vocaphone/issues/new/choose
 /** Quick start, engines, and pairing for a self-hosted gateway. */
 const val GATEWAY_GUIDE_URL = "https://github.com/VocaHQ/vocagateway"
 
+const val ABOUT_PROJECT_BUTTON = "VocaPhone"
+const val ABOUT_COPY_DIAGNOSTICS = "Copy diagnostics"
+const val ABOUT_CLEAR_EVENT_LOG = "Clear event log"
+
 const val ABOUT_TAGLINE = "Voice dictation for Android and iPhone."
 
 const val ABOUT_FAMILY_NOTE =

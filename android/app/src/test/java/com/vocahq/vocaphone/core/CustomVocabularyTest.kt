@@ -49,4 +49,12 @@ class CustomVocabularyTest {
             assertTrue("`$term` should be whole", term.matches(Regex("Supercalifragilistic\\d+")))
         }
     }
+
+    @Test
+    fun `a non-whisper model gets a clear warning`() {
+        val note = CustomVocabulary.whisperOnlyWarning("Parakeet")
+        assertEquals("Parakeet is not Whisper. Custom words only apply to Whisper models.", note)
+        assertEquals(null, CustomVocabulary.whisperOnlyWarning(null))
+        assertEquals(null, CustomVocabulary.whisperOnlyWarning(""))
+    }
 }

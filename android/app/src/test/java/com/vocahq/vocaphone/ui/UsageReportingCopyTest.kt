@@ -78,4 +78,28 @@ class UsageReportingCopyTest {
     fun `the settings screen explains why there is no reset button`() {
         assertTrue(UsageReportingCopy.NO_IDENTIFIER.lowercase().contains("no reporting id"))
     }
+
+    @Test
+    fun `user-facing usage copy skips em dashes`() {
+        listOf(
+            UsageReportingCopy.TITLE,
+            UsageReportingCopy.WHAT_IS_SENT,
+            UsageReportingCopy.WHAT_IS_NEVER_SENT,
+            UsageReportingCopy.OPT_OUT_IS_LOGGED,
+            UsageReportingCopy.NO_IDENTIFIER,
+            UsageReportingCopy.SEE_WHAT_IS_SENT,
+            UsageReportingCopy.CHANGE_LATER,
+            UsageReportingCopy.SAMPLE_LABEL,
+            UsageReportingCopy.REAL_LABEL,
+        ).forEach { line ->
+            assertFalse(line.contains("—"))
+            assertFalse(line.contains("–"))
+        }
+    }
+
+    @Test
+    fun `the sample label says it is a sample`() {
+        assertTrue(UsageReportingCopy.SAMPLE_LABEL.lowercase().contains("sample"))
+        assertFalse(UsageReportingCopy.REAL_LABEL.lowercase().contains("sample"))
+    }
 }

@@ -94,7 +94,7 @@ fun AboutPage(
                 modifier = Modifier.weight(1f),
             )
             GitHubButton(
-                label = "vocaphone",
+                label = ABOUT_PROJECT_BUTTON,
                 onClick = { context.openHttpUrl(PROJECT_URL) },
                 modifier = Modifier.weight(1f),
             )
@@ -175,22 +175,31 @@ fun AboutPage(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        SecondaryButton(
-            text = "Copy diagnostics",
-            onClick = {
-                context.copyDiagnostics(
-                    diagnosticsReport(
-                        appInfo,
-                        settings,
-                        setup,
-                        diagnosticEvents(),
-                        onDevice,
-                    ),
-                )
-            },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
-        TextButton(onClick = onClearDiagnosticEvents) { Text("Clear event log") }
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SecondaryButton(
+                text = ABOUT_COPY_DIAGNOSTICS,
+                onClick = {
+                    context.copyDiagnostics(
+                        diagnosticsReport(
+                            appInfo,
+                            settings,
+                            setup,
+                            diagnosticEvents(),
+                            onDevice,
+                        ),
+                    )
+                },
+                modifier = Modifier.weight(1f),
+            )
+            SecondaryButton(
+                text = ABOUT_CLEAR_EVENT_LOG,
+                onClick = onClearDiagnosticEvents,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 

@@ -1,10 +1,18 @@
 package com.vocahq.vocaphone.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.R
@@ -34,6 +43,9 @@ import com.vocahq.vocaphone.settings.AudioRetention
 import com.vocahq.vocaphone.settings.KeyboardHeight
 import com.vocahq.vocaphone.settings.SplitKeyboard
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
+import com.vocahq.vocaphone.telemetry.TelemetryInspectPayload
+import kotlin.math.abs
+import kotlin.math.sin
 
 enum class SettingsPage(val title: String) {
     HOME("Settings"),
@@ -65,6 +77,7 @@ fun SettingsScreen(
     onStyle: (WritingStyle) -> Unit,
     onDictationTone: (DictationTone) -> Unit,
     onPreviewDictationTone: (DictationTone) -> Unit,
+    tonePreviewListening: Boolean,
     onMicrophone: (MicrophonePreference) -> Unit,
     onAudioRetention: (AudioRetention) -> Unit,
     onTranscriptionQuality: (TranscriptionQuality) -> Unit,
@@ -91,7 +104,7 @@ fun SettingsScreen(
     diagnosticEvents: () -> String,
     onClearDiagnosticEvents: () -> Unit,
     onTelemetryEnabled: (Boolean) -> Unit,
-    telemetryPayload: () -> String,
+    telemetryInspect: () -> TelemetryInspectPayload,
     telemetryPendingCount: () -> Int,
     telemetryDeliveryStatus: () -> String,
     page: SettingsPage,
@@ -320,15 +333,18 @@ fun SettingsScreen(
                         "Off plays nothing."
                     },
                 ) {
-                    ChipChoiceRow(
+                    SettingDropdown(
                         options = DictationTone.entries,
                         selected = settings.dictationTone,
                         label = { it.displayName },
+                        detail = { it.detail },
                         onSelect = onDictationTone,
                     )
+                    TonePreviewMeter(active = tonePreviewListening)
                     SecondaryButton(
-                        text = "Preview",
+                        text = if (tonePreviewListening) "Stop preview" else "Preview",
                         onClick = { onPreviewDictationTone(settings.dictationTone) },
+                        enabled = settings.dictationTone.playsCues,
                     )
                 }
                 MicrophoneSection(
@@ -337,14 +353,15 @@ fun SettingsScreen(
                     onSelect = onMicrophone,
                 )
                 Section(
-                    title = "Audio retention",
+                    title = "Audio and transcript retention",
                     supporting = "Successful dictations delete their audio immediately. A " +
                         "failed one keeps it only this long, so Retry still works.",
                 ) {
-                    ChipChoiceRow(
+                    SettingDropdown(
                         options = AudioRetention.entries,
                         selected = settings.audioRetention,
                         label = { it.displayName },
+                        detail = { it.detail },
                         onSelect = onAudioRetention,
                     )
                 }
@@ -354,7 +371,7 @@ fun SettingsScreen(
                 UsageReportingSection(
                     enabled = settings.telemetryEnabled,
                     onEnabled = onTelemetryEnabled,
-                    payload = telemetryPayload,
+                    inspect = telemetryInspect,
                     pendingCount = telemetryPendingCount,
                     deliveryStatus = telemetryDeliveryStatus,
                 )
@@ -412,12 +429,14 @@ private fun MicrophoneSection(
         title = "Microphone",
         supporting = if (attached) selected.detail else selected.unavailableDetail,
     ) {
-        ChipChoiceRow(
+        SettingDropdown(
             options = MicrophonePreference.entries,
             selected = selected,
             label = { it.displayName },
+            detail = { if (it in status.available) it.detail else it.unavailableDetail },
             onSelect = onSelect,
-            enabled = { status.changeable && (it in status.available || it == selected) },
+            enabled = status.changeable,
+            optionEnabled = { it in status.available || it == selected },
         )
 
         InfoRow("Input in use", status.inUseLabel(selected))
@@ -426,7 +445,7 @@ private fun MicrophoneSection(
             if (!status.changeable) {
                 "Finish the current dictation before changing microphones."
             } else {
-                "Greyed-out options have no matching microphone connected. " +
+                "Unavailable options have no matching microphone connected. " +
                     "Android has the final say on routing, so the input above " +
                     "is what capture actually used."
             },
@@ -449,23 +468,35 @@ private fun CustomVocabularySection(
 ) {
     var draft by remember(vocabulary) { mutableStateOf(vocabulary) }
     val terms = remember(draft) { CustomVocabulary.terms(draft) }
+    val whisperWarning = CustomVocabulary.whisperOnlyWarning(unsupportedModel)
+    val whisperOnly = whisperWarning != null
 
     Section(
-        title = "Custom words",
-        supporting = "Names, places and jargon an on-device Whisper model is " +
+        title = "Custom words and phrases",
+        supporting = "Names, places, and jargon an on-device Whisper model is " +
             "unlikely to know. One per line, or separated by commas.",
     ) {
+        if (whisperWarning != null) {
+            Text(
+                whisperWarning,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !whisperOnly,
             label = { Text("Words and phrases") },
             placeholder = { Text("Kanishk\nVocaHQ\nTailscale") },
             minLines = 3,
             maxLines = 6,
         )
         Text(
-            if (terms.isEmpty()) {
+            if (whisperOnly) {
+                "This list is kept for when you switch back to a Whisper model."
+            } else if (terms.isEmpty()) {
                 "No custom words. Transcription is unchanged."
             } else {
                 "${terms.size} word${if (terms.size == 1) "" else "s"} will bias the decoder. " +
@@ -475,19 +506,51 @@ private fun CustomVocabularySection(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (unsupportedModel != null && terms.isNotEmpty()) {
-            Text(
-                "$unsupportedModel cannot use these words. Only Whisper models take a " +
-                    "vocabulary; the list is kept for when you switch back to one.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
         SecondaryButton(
             text = "Save words",
             onClick = { onSave(draft) },
-            enabled = draft != vocabulary,
+            enabled = !whisperOnly && draft != vocabulary,
         )
+    }
+}
+
+@Composable
+private fun TonePreviewMeter(active: Boolean, modifier: Modifier = Modifier) {
+    val color = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.outlineVariant
+    val wave by rememberInfiniteTransition(label = "tone-preview").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "tone-preview-phase",
+    )
+    Canvas(
+        modifier
+            .fillMaxWidth()
+            .height(48.dp),
+    ) {
+        val bars = 28
+        val gap = 3.dp.toPx()
+        val barWidth = ((size.width - gap * (bars - 1)) / bars).coerceAtLeast(1f)
+        repeat(bars) { index ->
+            val phase = (wave + index / bars.toFloat()) % 1f
+            val heightFactor = if (active) {
+                0.2f + 0.8f * abs(sin((phase * 2f + index * 0.35f) * Math.PI.toFloat()))
+            } else {
+                0.18f
+            }
+            val barHeight = size.height * heightFactor
+            val x = index * (barWidth + gap)
+            drawLine(
+                color = if (active) color else muted,
+                start = Offset(x + barWidth / 2f, (size.height - barHeight) / 2f),
+                end = Offset(x + barWidth / 2f, (size.height + barHeight) / 2f),
+                strokeWidth = barWidth,
+            )
+        }
     }
 }
 

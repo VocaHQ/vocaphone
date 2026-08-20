@@ -29,9 +29,25 @@ class AboutCopyTest {
 
     @Test
     fun `about copy skips em dashes`() {
-        for (text in listOf(ABOUT_TAGLINE, ABOUT_FAMILY_NOTE, ABOUT_FEEDBACK_NOTE)) {
+        for (text in listOf(
+            ABOUT_TAGLINE,
+            ABOUT_FAMILY_NOTE,
+            ABOUT_FEEDBACK_NOTE,
+            ABOUT_PRIVACY_NOTE,
+            ABOUT_DIAGNOSTICS_NOTE,
+            ABOUT_PROJECT_BUTTON,
+            ABOUT_COPY_DIAGNOSTICS,
+            ABOUT_CLEAR_EVENT_LOG,
+        )) {
             assertFalse(text.contains("—"))
             assertFalse(text.contains("–"))
         }
+    }
+
+    @Test
+    fun `the project button is VocaPhone`() {
+        assertEquals("VocaPhone", ABOUT_PROJECT_BUTTON)
+        assertFalse(ABOUT_PROJECT_BUTTON.contains(" "))
+        assertFalse(ABOUT_PROJECT_BUTTON.equals("vocaphone"))
     }
 }
