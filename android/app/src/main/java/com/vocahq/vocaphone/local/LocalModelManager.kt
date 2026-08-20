@@ -327,26 +327,6 @@ class LocalModelManager(
     }
 
     /**
-     * Starts preloading and consuming Sherpa audio immediately. Whisper keeps
-     * its existing finish-time path because it has a separate native engine.
-     */
-    internal fun startIncrementalSession(
-        modelID: String,
-        language: String,
-        scope: CoroutineScope,
-        quality: TranscriptionQuality = TranscriptionQuality.DEFAULT,
-    ): SherpaIncrementalSession? {
-        val model = LocalModelCatalog.find(modelID) ?: return null
-        if (model.engine != LocalModelEngine.SHERPA_ONNX) return null
-        val resolved = if (model.englishOnly) "en" else language
-        return SherpaIncrementalSession(
-            scope = scope,
-            prepare = { prepareEngine(model, resolved, quality) },
-            decode = { samples -> decodePreparedSherpa(samples, model.id, resolved, quality) },
-        )
-    }
-
-    /**
      * Loads the engine before a dictation needs it.
      *
      * Model loading is measured in seconds, and until now it always happened on
@@ -368,14 +348,17 @@ class LocalModelManager(
         language: String,
         quality: TranscriptionQuality = TranscriptionQuality.DEFAULT,
         vocabulary: String = "",
+        conditioningStartSample: Int = 0,
     ): LocalTranscription {
         val model = LocalModelCatalog.find(modelID) ?: error("Unknown local model: $modelID")
         val resolved = if (model.englishOnly) "en" else language
         prepareEngine(model, resolved, quality)
-        // Safe here and not on the incremental path: this is the whole recording,
-        // so one gain covers all of it.
+        // One gain and one DC-offset correction cover the complete recording.
+        // Sherpa used to have a separate during-recording path that could apply
+        // different conditioning and silently omit a window; the complete WAV
+        // is deliberately authoritative now.
         return decodePrepared(
-            SpeechAudioConditioning.condition(samples),
+            SpeechAudioConditioning.condition(samples, conditioningStartSample),
             model,
             resolved,
             quality,
@@ -467,35 +450,20 @@ class LocalModelManager(
         ) ?: error("Local transcription engine is not loaded")
     }
 
-    private suspend fun decodePreparedSherpa(
-        samples: FloatArray,
-        modelID: String,
-        resolvedLanguage: String,
-        quality: TranscriptionQuality,
-    ): SherpaTranscript = engineMutex.withLock {
-        check(
-            loadedModelID == modelID &&
-                loadedLanguage == resolvedLanguage &&
-                loadedQuality == quality,
-        ) {
-            "On-device model changed during transcription"
-        }
-        val recognizer = sherpaRecognizer ?: error("Sherpa transcription engine is not loaded")
-        withContext(Dispatchers.Default) { recognizer.transcribeChunk(samples) }
-    }
-
     suspend fun transcribe(
         wavFile: File,
         modelID: String,
         language: String,
         quality: TranscriptionQuality = TranscriptionQuality.DEFAULT,
         vocabulary: String = "",
+        conditioningStartSample: Int = 0,
     ): LocalTranscription = transcribe(
         withContext(Dispatchers.IO) { readWavSamples(wavFile) },
         modelID,
         language,
         quality,
         vocabulary,
+        conditioningStartSample,
     )
 
     private fun readWavSamples(file: File): FloatArray {

@@ -7,7 +7,7 @@ import android.content.pm.PackageManager
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.vocahq.vocaphone.audio.AudioCapture
-import com.vocahq.vocaphone.audio.CueMuting
+import com.vocahq.vocaphone.audio.CueTiming
 import com.vocahq.vocaphone.audio.CaptureFormat
 import com.vocahq.vocaphone.audio.DictationTonePlayer
 import com.vocahq.vocaphone.audio.MicrophoneInterruptedException
@@ -32,8 +32,6 @@ import com.vocahq.vocaphone.gateway.GatewayStreamingPolicy
 import com.vocahq.vocaphone.gateway.StreamingUnavailableException
 import com.vocahq.vocaphone.local.LocalModelManager
 import com.vocahq.vocaphone.local.LocalTranscription
-import com.vocahq.vocaphone.local.SherpaIncrementalResult
-import com.vocahq.vocaphone.local.SherpaIncrementalSession
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.settings.SettingsRepository
 import com.vocahq.vocaphone.telemetry.Telemetry
@@ -48,7 +46,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -285,24 +282,6 @@ class DictationController(
         val client = token?.let { GatewayClient(configuration.gatewayUrl, it) }
         val sessionFinishSignal = finishSignal
         val frames = Channel<ShortArray>(capacity = FILE_FRAME_BUFFER_CAPACITY)
-        val selectedLocalModelID = configuration.localModelId.takeIf { it.isNotEmpty() }
-        val incrementalSession = if (configuration.localTranscriptionEnabled) {
-            selectedLocalModelID?.let { modelID ->
-                localModels.startIncrementalSession(
-                    modelID = modelID,
-                    language = configuration.effectiveLanguage.wireValue,
-                    scope = scope,
-                    quality = configuration.transcriptionQuality,
-                )
-            }
-        } else {
-            null
-        }
-        val incrementalReference = AtomicReference<SherpaIncrementalSession?>(incrementalSession)
-        val incrementalFallback = AtomicBoolean(false)
-        if (incrementalSession != null) {
-            diagnostics.recordTiming("local_incremental_started", source.name)
-        }
         val shouldAttemptStreaming = client != null && GatewayStreamingPolicy.shouldAttemptStreaming(
             supported = configuration.lastStreamingSupported,
             checkedAtMillis = configuration.lastEngineCheckedAtMillis,
@@ -318,9 +297,9 @@ class DictationController(
         val streamAcceptingFrames = AtomicBoolean(streamFrames != null)
         val droppedStreamFrames = AtomicInteger()
         val batchFallbackRecorded = AtomicBoolean()
-        // The mark at which the opening cue stops sounding. Frames before it
-        // are the speaker, not the speaker's voice.
         val cueQuietAt = AtomicLong(0L)
+        val cueOverlapSamples = AtomicInteger()
+        val cuePlayed = AtomicBoolean(false)
         fun recordBatchFallback() {
             if (batchFallbackRecorded.compareAndSet(false, true)) {
                 diagnostics.recordTiming("batch_fallback", source.name)
@@ -331,22 +310,28 @@ class DictationController(
             context = context,
             preference = configuration.microphone,
             onFrame = { samples, count ->
-                if (CueMuting.keepsFrame(SystemClock.elapsedRealtime(), cueQuietAt.get())) {
-                    val frame = samples.copyOf(count)
-                    if (frames.trySend(frame).isFailure) {
-                        captureError.compareAndSet(
-                            null,
-                            IllegalStateException("Audio processing could not keep up."),
-                        )
-                        sessionFinishSignal.complete(Unit)
-                    }
-                    if (streamAcceptingFrames.get() &&
-                        streamFrames?.trySend(frame)?.isFailure == true
-                    ) {
-                        droppedStreamFrames.incrementAndGet()
-                        streamAcceptingFrames.set(false)
-                        streamFrames.cancel()
-                    }
+                // Captured speech is authoritative. The old cue gate threw away
+                // every frame under the start tone, including the first word
+                // when a user quite reasonably began speaking on that tone.
+                // A recognizer can ignore a short non-speech cue; it cannot
+                // reconstruct microphone samples the app deleted.
+                val frame = samples.copyOf(count)
+                if (SystemClock.elapsedRealtime() <= cueQuietAt.get()) {
+                    cueOverlapSamples.addAndGet(count)
+                }
+                if (frames.trySend(frame).isFailure) {
+                    captureError.compareAndSet(
+                        null,
+                        IllegalStateException("Audio processing could not keep up."),
+                    )
+                    sessionFinishSignal.complete(Unit)
+                }
+                if (streamAcceptingFrames.get() &&
+                    streamFrames?.trySend(frame)?.isFailure == true
+                ) {
+                    droppedStreamFrames.incrementAndGet()
+                    streamAcceptingFrames.set(false)
+                    streamFrames.cancel()
                 }
             },
             onError = { error ->
@@ -355,14 +340,14 @@ class DictationController(
             },
         )
         capture = recorder
-        // The cue sounds while AudioRecord warms up rather than before it, so
-        // most of its length costs nothing, and onFrame drops whatever the
-        // microphone hears until it falls quiet. See CueMuting for why the
-        // remainder is then waited out rather than announced through.
+        // The cue still overlaps AudioRecord warm-up so it adds little startup
+        // latency, but captured frames are retained. Waiting only controls the
+        // listening state and haptic; it no longer controls audio ownership.
+        val cueStartedAt = SystemClock.elapsedRealtime()
         cueQuietAt.set(cues.startCue(configuration.dictationTone))
+        cuePlayed.set(cueQuietAt.get() > cueStartedAt)
         if (!recorder.start()) {
             announceStopped(configuration.dictationTone)
-            incrementalReference.getAndSet(null)?.cancel()
             frames.close()
             streamFrames?.close()
             writer.close()
@@ -386,8 +371,13 @@ class DictationController(
         // Whatever the warm-up did not already cover. The haptic goes here
         // rather than with the cue because it is the "speak now" signal, and
         // now is when speaking starts being recorded.
-        delay(CueMuting.waitMillis(cueQuietAt.get(), SystemClock.elapsedRealtime()))
+        delay(CueTiming.waitMillis(cueQuietAt.get(), SystemClock.elapsedRealtime()))
         cues.haptic()
+        val cueAnalysisStartSample = CueTiming.conditioningStartSample(
+            cueOverlapSamples = cueOverlapSamples.get(),
+            frameSamples = CaptureFormat.SAMPLE_RATE / 10,
+            cuePlayed = cuePlayed.get(),
+        )
 
         val captureStartedAt = SystemClock.elapsedRealtime()
         _state.value = DictationState(
@@ -410,12 +400,6 @@ class DictationController(
                     SilentCapture.heardSomething(PcmConversion.peak(frame, frame.size))
                 ) {
                     heardSomething.set(true)
-                }
-                incrementalReference.get()?.let { session ->
-                    if (!session.offer(frame) && incrementalReference.compareAndSet(session, null)) {
-                        incrementalFallback.set(true)
-                        session.cancel()
-                    }
                 }
                 val level = PcmConversion.level(frame, frame.size)
                 _state.update { current ->
@@ -505,7 +489,6 @@ class DictationController(
         }
 
         if (cancelRequested) {
-            incrementalReference.getAndSet(null)?.cancel()
             stream?.cancel()
             wavFile.delete()
             reset()
@@ -522,7 +505,6 @@ class DictationController(
                 heardSomething.get() &&
                 writer.durationMillis >= MINIMUM_RECORDING_MILLIS
             if (!salvageable) {
-                incrementalReference.getAndSet(null)?.cancel()
                 stream?.cancel()
                 wavFile.delete()
                 fail(
@@ -543,7 +525,6 @@ class DictationController(
         _state.update { it.copy(phase = DictationPhase.FINALIZING, level = 0f) }
 
         if (writer.durationMillis < MINIMUM_RECORDING_MILLIS) {
-            incrementalReference.getAndSet(null)?.cancel()
             stream?.cancel()
             wavFile.delete()
             // A tap that captured nothing is not a failure the user has to
@@ -556,7 +537,6 @@ class DictationController(
         // microphone another app holds. Transcribing it would spend the wait to
         // report an empty transcript, which says nothing the user can act on.
         if (!heardSomething.get()) {
-            incrementalReference.getAndSet(null)?.cancel()
             stream?.cancel()
             wavFile.delete()
             fail(
@@ -575,46 +555,6 @@ class DictationController(
         }
 
         if (configuration.localTranscriptionEnabled) {
-            val session = incrementalReference.getAndSet(null)
-            var preparedTranscript: LocalTranscription? = null
-            var partialTranscript: LocalTranscription? = null
-            var incrementalOutcome: SherpaIncrementalResult? = null
-            var timingRecorded = false
-            if (session != null) {
-                _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
-                diagnostics.recordTiming("local_transcription_started", source.name)
-                timingRecorded = true
-                try {
-                    val incremental = session.finish()
-                    incrementalOutcome = incremental
-                    partialTranscript = incremental.transcript
-                        .takeIf { it.text.isNotBlank() }
-                        ?.let { LocalTranscription(it.text, it.language) }
-                    if (incremental.droppedAudibleChunk) {
-                        // A chunk that decoded to nothing is seconds of speech
-                        // missing from the middle of an otherwise fluent
-                        // transcript, which nothing downstream can see. The
-                        // whole-file decode levels the gain over the whole
-                        // recording and splits on different boundaries, so it
-                        // is the one that recovers them.
-                        diagnostics.recordTiming("local_incremental_dropped_chunk", source.name)
-                    } else {
-                        preparedTranscript = partialTranscript
-                            ?.also {
-                                diagnostics.recordTiming("local_incremental_ready", source.name)
-                            }
-                    }
-                    if (preparedTranscript == null) incrementalFallback.set(true)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Throwable) {
-                    session.cancel()
-                    incrementalFallback.set(true)
-                }
-            }
-            if (incrementalSession != null && incrementalFallback.get()) {
-                diagnostics.recordTiming("local_incremental_fallback", source.name)
-            }
             deliverLocal(
                 sessionId = sessionId,
                 wavFile = wavFile,
@@ -622,10 +562,7 @@ class DictationController(
                 configuration = configuration,
                 source = source,
                 generation = generation,
-                preparedTranscript = preparedTranscript,
-                partialTranscript = partialTranscript,
-                incrementalOutcome = incrementalOutcome,
-                transcriptionTimingRecorded = timingRecorded,
+                conditioningStartSample = cueAnalysisStartSample,
             )
             return
         }
@@ -752,10 +689,7 @@ class DictationController(
         configuration: VocaPhoneSettings,
         source: DictationSource,
         generation: Int,
-        preparedTranscript: LocalTranscription? = null,
-        partialTranscript: LocalTranscription? = null,
-        incrementalOutcome: SherpaIncrementalResult? = null,
-        transcriptionTimingRecorded: Boolean = false,
+        conditioningStartSample: Int = 0,
     ) {
         // Loading a model is seconds of silence with nothing on screen to explain
         // it, and changing the accuracy setting makes it happen again. Mirroring
@@ -772,37 +706,24 @@ class DictationController(
         }
         try {
             _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
-            if (!transcriptionTimingRecorded) {
-                diagnostics.recordTiming("local_transcription_started", source.name)
-            }
+            diagnostics.recordTiming("local_transcription_started", source.name)
             val modelID = configuration.localModelId.takeIf { it.isNotEmpty() }
                 ?: error("Choose and download an on-device model first.")
-            val local = preparedTranscript ?: try {
-                val wholeFile = localModels.transcribe(
-                    wavFile,
-                    modelID,
-                    language,
-                    configuration.transcriptionQuality,
-                    configuration.customVocabulary,
-                )
-                // Taken only when it recovered something. A second pass that
-                // came back with less than the streaming one already had has
-                // dropped a chunk of its own, and shipping it would cut a
-                // sentence the user watched being said.
-                if (incrementalOutcome?.supersededBy(wholeFile.text) == false) {
-                    partialTranscript ?: wholeFile
-                } else {
-                    wholeFile
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                // Incomplete beats nothing. When the streaming path lost a
-                // chunk, this decode was the attempt to recover it; if the
-                // attempt cannot run at all, the text it did produce is still
-                // more use to the user than a failure.
-                partialTranscript ?: throw error
-            }
+            // The complete WAV is the only source that has an auditable sample
+            // count and one recording-wide conditioning pass. The former
+            // incremental path could return fluent-looking text after silently
+            // dropping a short or partially decoded chunk, then choose between
+            // two incomplete transcripts by character count. Accuracy is the
+            // contract here, so speculative during-recording text no longer
+            // bypasses this authoritative decode.
+            val local = localModels.transcribe(
+                wavFile,
+                modelID,
+                language,
+                configuration.transcriptionQuality,
+                configuration.customVocabulary,
+                conditioningStartSample,
+            )
             val transcript = styleLocalTranscript(local, configuration)
             if (transcript.isEmpty()) {
                 throw GatewayException.emptyTranscript()

@@ -55,4 +55,23 @@ class SpeechAudioConditioningTest {
     fun `an empty recording is handled`() {
         assertEquals(0, SpeechAudioConditioning.condition(FloatArray(0)).size)
     }
+
+    @Test
+    fun `a loud start cue does not prevent quiet speech from being levelled`() {
+        val cue = tone(peak = 0.9f, count = 3_200)
+        val speech = tone(peak = 0.1f, count = 16_000)
+        val conditioned = SpeechAudioConditioning.condition(cue + speech, cue.size)
+
+        val speechPeak = conditioned.copyOfRange(cue.size, conditioned.size).maxOf { abs(it) }
+        assertTrue(speechPeak > 0.75f)
+        assertTrue(peak(conditioned) <= 1f)
+    }
+
+    @Test
+    fun `a cue marker past a very short utterance falls back to all audio`() {
+        val short = tone(peak = 0.2f, count = 800)
+        val conditioned = SpeechAudioConditioning.condition(short, analysisStartSample = 800)
+
+        assertEquals(0.85f, peak(conditioned), 0.02f)
+    }
 }
