@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,7 +28,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.R
-import com.vocahq.vocaphone.core.CustomVocabulary
 import com.vocahq.vocaphone.core.DictationTone
 import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.TranscriptionLanguage
@@ -80,7 +78,6 @@ fun SettingsScreen(
     onMicrophone: (MicrophonePreference) -> Unit,
     onAudioRetention: (AudioRetention) -> Unit,
     onTranscriptionQuality: (TranscriptionQuality) -> Unit,
-    onCustomVocabulary: (String) -> Unit,
     onNumberRow: (Boolean) -> Unit,
     onKeyboardHeight: (KeyboardHeight) -> Unit,
     onSplitKeyboard: (SplitKeyboard) -> Unit,
@@ -209,13 +206,6 @@ fun SettingsScreen(
                         onSelect = onTranscriptionQuality,
                     )
                 }
-                CustomVocabularySection(
-                    vocabulary = settings.customVocabulary,
-                    onSave = onCustomVocabulary,
-                    unsupportedModel = localModel
-                        ?.takeIf { settings.localTranscriptionEnabled && !it.supportsCustomVocabulary }
-                        ?.displayName,
-                )
             }
 
             SettingsPage.KEYBOARD -> {
@@ -446,67 +436,6 @@ private fun MicrophoneSection(
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/**
- * The list is edited locally and saved on request rather than on every
- * keystroke: the terms are parsed at inference time, and a half-typed name
- * being persisted mid-word is a spelling nobody asked to be biased toward.
- */
-@Composable
-private fun CustomVocabularySection(
-    vocabulary: String,
-    onSave: (String) -> Unit,
-    unsupportedModel: String?,
-) {
-    var draft by remember(vocabulary) { mutableStateOf(vocabulary) }
-    val terms = remember(draft) { CustomVocabulary.terms(draft) }
-    val whisperWarning = CustomVocabulary.whisperOnlyWarning(unsupportedModel)
-    val whisperOnly = whisperWarning != null
-
-    Section(
-        title = "Custom words and phrases",
-        supporting = "Names, places, and jargon an on-device Whisper model is " +
-            "unlikely to know. One per line, or separated by commas.",
-    ) {
-        if (whisperWarning != null) {
-            Notice(tone = NoticeTone.Attention) {
-                Text(whisperWarning, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "This list is kept for when you switch back to a Whisper model.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-        OutlinedTextField(
-            value = draft,
-            onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !whisperOnly,
-            label = { Text("Words and phrases") },
-            placeholder = { Text("Kanishk\nVocaHQ\nTailscale") },
-            minLines = 3,
-            maxLines = 6,
-        )
-        if (!whisperOnly) {
-            Text(
-                if (terms.isEmpty()) {
-                    "No custom words. Transcription is unchanged."
-                } else {
-                    "${terms.size} word${if (terms.size == 1) "" else "s"} will bias the decoder. " +
-                        "This nudges spelling rather than guaranteeing it, and a very long " +
-                        "list starts to crowd out the speech itself."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        SecondaryButton(
-            text = "Save words",
-            onClick = { onSave(draft) },
-            enabled = !whisperOnly && draft != vocabulary,
         )
     }
 }

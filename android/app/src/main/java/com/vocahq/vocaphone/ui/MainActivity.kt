@@ -269,7 +269,6 @@ fun VocaPhoneApp(
                 onMicrophone = { viewModel.setMicrophone(it) },
                 onAudioRetention = { viewModel.setAudioRetention(it) },
                 onTranscriptionQuality = { viewModel.setTranscriptionQuality(it) },
-                onCustomVocabulary = { viewModel.setCustomVocabulary(it) },
                 onNumberRow = { viewModel.setNumberRowEnabled(it) },
                 onKeyboardHeight = { viewModel.setKeyboardHeight(it) },
                 onSplitKeyboard = { viewModel.setSplitKeyboard(it) },
