@@ -4,17 +4,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -25,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -34,9 +33,12 @@ import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 
+private val AboutTeal = Color(0xFF0F6B57)
+private val AboutCream = Color(0xFFF2F6F2)
+
 /**
- * Settings → About. Same three blocks as VocaWin: this app, the family, then
- * talk to us. Device diagnostics stay underneath.
+ * Settings → About. Shared family language, Material 3 Settings chrome.
+ * Header, Part of VocaHQ, Talk to us, then Phone-only Privacy and Device.
  */
 @Composable
 fun AboutPage(
@@ -50,56 +52,39 @@ fun AboutPage(
 ) {
     val context = LocalContext.current
 
-    Section(title = "This app") {
-        FeaturedCard {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_vocaphone_logo),
-                    contentDescription = null,
-                    modifier = Modifier.size(88.dp),
-                )
-                Text(
-                    ABOUT_WORDMARK,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                if (appInfo.versionName.isNotEmpty()) {
-                    Text(
-                        "Version ${appInfo.versionName} (${appInfo.versionCode})",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    ABOUT_STATUS,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    ABOUT_TAGLINE,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    ABOUT_ON_DEVICE,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-                TextButton(onClick = { context.openHttpUrl(WEBSITE_URL) }) {
-                    Text("vocaphone.vocahq.com")
-                }
-            }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_vocaphone_logo),
+            contentDescription = "VocaPhone",
+            modifier = Modifier
+                .padding(top = 8.dp, bottom = 4.dp)
+                .size(80.dp),
+            contentScale = ContentScale.Fit,
+        )
+        Text(
+            ABOUT_WORDMARK,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        if (appInfo.versionName.isNotEmpty()) {
+            Text(
+                "Version ${appInfo.versionName} (${appInfo.versionCode})",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Text(
-            ABOUT_PRIVACY_NOTE,
+            ABOUT_TAGLINE,
             style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
         )
+        TextButton(onClick = { context.openHttpUrl(WEBSITE_URL) }) {
+            Text("vocaphone.vocahq.com")
+        }
     }
 
     Section(
@@ -108,8 +93,8 @@ fun AboutPage(
     ) {
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             ABOUT_FAMILY_LINKS.forEach { link ->
                 AboutLinkButton(link, context)
@@ -121,20 +106,28 @@ fun AboutPage(
         title = "Talk to us",
         supporting = ABOUT_FEEDBACK_NOTE,
     ) {
-        GitHubButton(
+        ReportBugButton(
             label = ABOUT_REPORT_BUG,
             onClick = { context.openHttpUrl(NEW_ISSUE_URL) },
             modifier = Modifier.fillMaxWidth(),
         )
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             ABOUT_CONTACT_LINKS.forEach { link ->
                 AboutLinkButton(link, context)
             }
         }
+    }
+
+    Section(title = "Privacy") {
+        Text(
+            ABOUT_PRIVACY_NOTE,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 
     Section("Device") {
@@ -193,42 +186,38 @@ fun AboutPage(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(
+        PrimaryButton(
+            text = ABOUT_COPY_DIAGNOSTICS,
+            onClick = {
+                context.copyDiagnostics(
+                    diagnosticsReport(
+                        appInfo,
+                        settings,
+                        setup,
+                        diagnosticEvents(),
+                        onDevice,
+                    ),
+                )
+            },
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        )
+        TextButton(
+            onClick = onClearDiagnosticEvents,
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = MaterialTheme.colorScheme.error,
+            ),
         ) {
-            SecondaryButton(
-                text = ABOUT_COPY_DIAGNOSTICS,
-                onClick = {
-                    context.copyDiagnostics(
-                        diagnosticsReport(
-                            appInfo,
-                            settings,
-                            setup,
-                            diagnosticEvents(),
-                            onDevice,
-                        ),
-                    )
-                },
-                modifier = Modifier.weight(1f),
-            )
-            SecondaryButton(
-                text = ABOUT_CLEAR_EVENT_LOG,
-                onClick = onClearDiagnosticEvents,
-                modifier = Modifier.weight(1f),
-            )
+            Text(ABOUT_CLEAR_EVENT_LOG)
         }
     }
 }
 
-/** Labeled text button. Official VocaDesign marks render at 16 dp. */
+/** Official VocaDesign marks at 16 dp. Family links are text only. */
 @Composable
 private fun AboutLinkButton(link: AboutLink, context: Context) {
-    // Dark Win-style text links use #0F6B57. currentColor follows this tint.
-    val ink = Color(0xFF0F6B57)
     TextButton(
         onClick = { context.openHttpUrl(link.url) },
-        colors = ButtonDefaults.textButtonColors(contentColor = ink),
+        colors = ButtonDefaults.textButtonColors(contentColor = AboutTeal),
     ) {
         val icon = link.icon
         if (icon != null) {
@@ -236,7 +225,7 @@ private fun AboutLinkButton(link: AboutLink, context: Context) {
                 painter = painterResource(icon),
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
-                tint = ink,
+                tint = AboutTeal,
             )
             Spacer(Modifier.width(8.dp))
         }
@@ -244,35 +233,28 @@ private fun AboutLinkButton(link: AboutLink, context: Context) {
     }
 }
 
-/**
- * Filled Report a bug. Dark Win-style: cream on charcoal. Light: cream on #0F6B57.
- */
 @Composable
-private fun GitHubButton(
+private fun ReportBugButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
-    val container = if (dark) Color(0xFF242424) else Color(0xFF0F6B57)
-    val content = Color(0xFFF2F6F2)
     Button(
         onClick = onClick,
         modifier = modifier.height(48.dp),
-        shape = RoundedCornerShape(6.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = container,
-            contentColor = content,
+            containerColor = AboutTeal,
+            contentColor = AboutCream,
         ),
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_social_github),
             contentDescription = null,
             modifier = Modifier.size(16.dp),
-            tint = content,
+            tint = AboutCream,
         )
         Spacer(Modifier.width(8.dp))
-        Text(label, fontWeight = FontWeight.SemiBold)
+        Text(label)
     }
 }
 

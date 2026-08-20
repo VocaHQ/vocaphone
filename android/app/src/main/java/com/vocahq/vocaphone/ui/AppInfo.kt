@@ -34,7 +34,7 @@ const val ABOUT_REPORT_BUG = "Report a bug or idea"
 const val ABOUT_COPY_DIAGNOSTICS = "Copy diagnostics"
 const val ABOUT_CLEAR_EVENT_LOG = "Clear event log"
 
-const val ABOUT_TAGLINE = "Voice-to-text for Android and iPhone, kept on this phone."
+const val ABOUT_TAGLINE = "Voice-to-text for Android, kept on this phone."
 
 const val ABOUT_STATUS = "Public beta. Android 13 and newer."
 
@@ -43,8 +43,10 @@ const val ABOUT_ON_DEVICE =
         "self-hosted compute. On-device dictation never calls it."
 
 const val ABOUT_FAMILY_NOTE =
-    "VocaPhone is one of the VocaHQ apps. The same dictation already runs on " +
-        "Linux as VocaLinux, on macOS as VocaMac, and on Windows as VocaWin."
+    "VocaPhone is one of the VocaHQ apps. VocaLinux is available now, " +
+        "VocaMac is in beta, and VocaWin is a developer alpha. This APK is " +
+        "the Android beta. iOS 17+ is a source build in the same repo. " +
+        "VocaGateway is Early."
 
 const val ABOUT_FEEDBACK_NOTE =
     "Bugs, feedback, and feature ideas open a new GitHub issue. You pick the " +
@@ -77,20 +79,11 @@ val ABOUT_CONTACT_LINKS = listOf(
 
 const val ABOUT_PRIVACY_NOTE =
     "The keyboard types through Android's text connection. Dictation does not " +
-        "read the field.\n\n" +
-        "With Suggestions on, the keyboard looks at about 32 characters before " +
-        "and after the cursor so it can guess the next word. That snippet stays " +
-        "on this phone. It is not logged and it is not sent to the gateway. " +
-        "Swipe typing compares your finger path to the English word list on the " +
-        "phone and does not read the field.\n\n" +
-        "The clipboard chip and history read clips only on this phone, and only " +
-        "while the keyboard is open. Long-press the chip to hide it. Those clips " +
-        "are never logged.\n\n" +
-        "Audio goes to a model on this phone or to the gateway you set up. There " +
-        "is no cloud transcription and no third-party analytics. Usage reporting " +
-        "is off unless you turn it on under Dictation, and it sends counters to a " +
-        "server VocaHQ self-hosts, never your speech or your text. Nothing is " +
-        "copied to the clipboard unless you tap Copy."
+        "read the field. With Suggestions on, the keyboard looks at about 32 " +
+        "characters around the cursor on this phone.\n\n" +
+        "Audio goes to a model on this phone or to the gateway you set up. " +
+        "There is no cloud transcription. Usage reporting is off unless you " +
+        "turn it on under Dictation, and then it sends counters only."
 
 const val ABOUT_DIAGNOSTICS_NOTE =
     "The copied report has the app version, setup state, and the hardware " +
