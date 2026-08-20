@@ -16,24 +16,65 @@ const val ORG_URL = "https://github.com/VocaHQ"
 const val PROJECT_URL = "https://github.com/VocaHQ/vocaphone"
 const val WEBSITE_URL = "https://vocaphone.vocahq.com"
 const val NEW_ISSUE_URL = "https://github.com/VocaHQ/vocaphone/issues/new/choose"
+const val FAMILY_SITE_URL = "https://vocahq.com"
+const val VOCALINUX_URL = "https://vocalinux.com"
+const val VOCAMAC_URL = "https://vocamac.com"
+const val VOCAGATEWAY_SITE_URL = "https://vocagateway.vocahq.com"
+const val DISCORD_URL = "https://discord.gg/UMJduhcqn"
+const val X_URL = "https://x.com/vocahq"
+const val CONTACT_EMAIL = "hello@vocahq.com"
+const val CONTACT_MAILTO = "mailto:hello@vocahq.com"
 
 /** Quick start, engines, and pairing for a self-hosted gateway. */
 const val GATEWAY_GUIDE_URL = "https://github.com/VocaHQ/vocagateway"
 
-const val ABOUT_PROJECT_BUTTON = "VocaPhone"
+const val ABOUT_WORDMARK = "VocaPhone"
+const val ABOUT_REPORT_BUG = "Report a bug or idea"
 const val ABOUT_COPY_DIAGNOSTICS = "Copy diagnostics"
 const val ABOUT_CLEAR_EVENT_LOG = "Clear event log"
 
-const val ABOUT_TAGLINE = "Voice dictation for Android and iPhone."
+const val ABOUT_TAGLINE = "Voice-to-text for Android and iPhone, kept on this phone."
+
+const val ABOUT_STATUS =
+    "Android public beta. iPhone is a source build, not on the App Store."
+
+const val ABOUT_ON_DEVICE =
+    "Speech is transcribed on this phone first. A gateway is optional " +
+        "self-hosted compute. On-device dictation never calls it."
 
 const val ABOUT_FAMILY_NOTE =
     "VocaPhone is one of the VocaHQ apps. The same dictation already runs on " +
-        "Linux as VocaLinux and on macOS as VocaMac. Windows is on the way, " +
-        "and the iPhone build lives in this project too."
+        "Linux as VocaLinux, on macOS as VocaMac, and on Windows as VocaWin."
 
 const val ABOUT_FEEDBACK_NOTE =
     "Bugs, feedback, and feature ideas open a new GitHub issue. You pick the " +
         "template on the next screen."
+
+/**
+ * A tap target on About.
+ *
+ * [icon] is for VocaDesign vectors when they land in res/drawable. Until then
+ * the buttons show the label only. Do not invent brand marks here.
+ */
+data class AboutLink(
+    val label: String,
+    val url: String,
+    val icon: Int? = null,
+)
+
+val ABOUT_FAMILY_LINKS = listOf(
+    AboutLink("vocahq.com", FAMILY_SITE_URL),
+    AboutLink("vocalinux.com", VOCALINUX_URL),
+    AboutLink("vocamac.com", VOCAMAC_URL),
+    AboutLink("vocaphone.vocahq.com", WEBSITE_URL),
+    AboutLink("vocagateway.vocahq.com", VOCAGATEWAY_SITE_URL),
+)
+
+val ABOUT_CONTACT_LINKS = listOf(
+    AboutLink("Discord", DISCORD_URL),
+    AboutLink("X @vocahq", X_URL),
+    AboutLink(CONTACT_EMAIL, CONTACT_MAILTO),
+)
 
 const val ABOUT_PRIVACY_NOTE =
     "The keyboard types through Android's text connection. Dictation does not " +

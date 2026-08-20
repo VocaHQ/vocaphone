@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,8 +35,8 @@ import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 
 /**
- * Settings → About. Hero, family, source links, then the privacy and
- * diagnostics blocks that were already here.
+ * Settings → About. Same three blocks as VocaWin: this app, the family, then
+ * talk to us. Device diagnostics stay underneath.
  */
 @Composable
 fun AboutPage(
@@ -49,74 +50,91 @@ fun AboutPage(
 ) {
     val context = LocalContext.current
 
-    FeaturedCard {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_vocaphone_logo),
-                contentDescription = null,
-                modifier = Modifier.size(88.dp),
-            )
-            Text("VocaPhone", style = MaterialTheme.typography.headlineSmall)
-            if (appInfo.versionName.isNotEmpty()) {
+    Section(title = "This app") {
+        FeaturedCard {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_vocaphone_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(88.dp),
+                )
                 Text(
-                    "Version ${appInfo.versionName} (${appInfo.versionCode})",
+                    ABOUT_WORDMARK,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (appInfo.versionName.isNotEmpty()) {
+                    Text(
+                        "Version ${appInfo.versionName} (${appInfo.versionCode})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    ABOUT_STATUS,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    ABOUT_TAGLINE,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    ABOUT_ON_DEVICE,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
-            }
-            Text(
-                ABOUT_TAGLINE,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            TextButton(onClick = { context.openHttpUrl(WEBSITE_URL) }) {
-                Text("vocaphone.vocahq.com")
+                TextButton(onClick = { context.openHttpUrl(WEBSITE_URL) }) {
+                    Text("vocaphone.vocahq.com")
+                }
             }
         }
+        Text(
+            ABOUT_PRIVACY_NOTE,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 
     Section(
         title = "Part of VocaHQ",
         supporting = ABOUT_FAMILY_NOTE,
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            GitHubButton(
-                label = "VocaHQ",
-                onClick = { context.openHttpUrl(ORG_URL) },
-                modifier = Modifier.weight(1f),
-            )
-            GitHubButton(
-                label = ABOUT_PROJECT_BUTTON,
-                onClick = { context.openHttpUrl(PROJECT_URL) },
-                modifier = Modifier.weight(1f),
-            )
+            ABOUT_FAMILY_LINKS.forEach { link ->
+                AboutLinkButton(link, context)
+            }
         }
     }
 
     Section(
-        title = "Feedback",
+        title = "Talk to us",
         supporting = ABOUT_FEEDBACK_NOTE,
     ) {
-        PrimaryButton(
-            text = "Report a bug or idea",
+        GitHubButton(
+            label = ABOUT_REPORT_BUG,
             onClick = { context.openHttpUrl(NEW_ISSUE_URL) },
             modifier = Modifier.fillMaxWidth(),
         )
-    }
-
-    Section("Privacy") {
-        Text(
-            ABOUT_PRIVACY_NOTE,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ABOUT_CONTACT_LINKS.forEach { link ->
+                AboutLinkButton(link, context)
+            }
+        }
     }
 
     Section("Device") {
@@ -200,6 +218,23 @@ fun AboutPage(
                 modifier = Modifier.weight(1f),
             )
         }
+    }
+}
+
+/** Labeled now. Shows [AboutLink.icon] when a VocaDesign vector is wired in. */
+@Composable
+private fun AboutLinkButton(link: AboutLink, context: Context) {
+    TextButton(onClick = { context.openHttpUrl(link.url) }) {
+        val icon = link.icon
+        if (icon != null) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(link.label)
     }
 }
 
