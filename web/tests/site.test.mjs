@@ -175,9 +175,11 @@ test("availability and install paths are honest", () => {
     hero.includes("https://testflight.apple.com/join/wd85wQ3W"),
     "hero is missing the TestFlight link",
   );
-  // The Apple mark is filled, not stroked like the phone glyph beside it, and
+  // The Apple mark is filled, not stroked like the Android one beside it, and
   // .button svg sets stroke by default, so it needs the class to render solid.
   assert.match(hero, /<svg class="mark-solid"/);
+  assert.match(hero, /<use href="#mark-android"/);
+  assert.match(hero, /<use href="#mark-apple"/);
   assert.ok(
     hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/v0.1.0"),
     "hero is missing the Android release link",
@@ -217,6 +219,25 @@ test("availability and install paths are honest", () => {
   assert.match(deviceSetupHtml, /model still runs on the iPhone/);
   assert.match(deviceSetupHtml, /gateway is never required/);
   assert.doesNotMatch(deviceSetupHtml, /available on (the )?App Store/i);
+});
+
+test("every platform mark points at a symbol that exists", () => {
+  // A <use> naming an id that is not there renders nothing at all and reports
+  // no error, so a typo would be invisible until someone looked at the page.
+  const defined = [...html.matchAll(/<symbol id="([^"]+)"/g)].map(m => m[1]);
+  assert.ok(defined.includes("mark-android"), "android symbol missing");
+  assert.ok(defined.includes("mark-apple"), "apple symbol missing");
+
+  const used = [...html.matchAll(/<use href="#([^"]+)"/g)].map(m => m[1]);
+  assert.ok(used.length >= 8, `expected the marks to be used, saw ${used.length}`);
+  for (const id of new Set(used)) {
+    assert.ok(defined.includes(id), `<use href="#${id}"> has no matching symbol`);
+  }
+
+  // The sprite must not be display:none, which stops <use> resolving in some
+  // engines; it is taken out of the flow by size instead.
+  assert.match(html, /<svg class="mark-sprite"/);
+  assert.doesNotMatch(css, /\.mark-sprite\s*\{[^}]*display:\s*none/);
 });
 
 test("decorative product frames do not expose focusable controls", () => {

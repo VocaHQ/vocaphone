@@ -294,6 +294,13 @@ svg {
   box-shadow: 0 2px 0 rgb(20 35 28 / 15%);
 }
 
+.mark-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
 .button svg {
   width: 20px;
   height: 20px;
@@ -2382,6 +2389,12 @@ svg {
   font-size: 8px;
 }
 
+.platform-symbol svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
 .phone-frame {
   position: relative;
   width: 292px;
@@ -2536,14 +2549,25 @@ svg {
   line-height: 1.6;
 }
 
-.platform-card > a {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  margin-left: 10px;
-  color: var(--brand-dark);
+.platform-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 0 2px;
+}
+
+/* A card is a smaller surface than the hero, so the shared button runs at a
+   reduced size here rather than dominating the copy above it. */
+.platform-card-actions .button {
+  min-height: 42px;
+  padding: 0 16px;
   font-size: 13px;
-  font-weight: 700;
+}
+
+.platform-card-actions .button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .install-section {
