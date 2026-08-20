@@ -61,6 +61,23 @@ class AboutCopyTest {
     }
 
     @Test
+    fun `talk-to-us hrefs match the VocaDesign social README`() {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .firstOrNull { File(it, "android/brand/vocahq/social/README.md").isFile }
+            ?: error("Could not locate android/brand/vocahq/social/README.md")
+        val readme = File(root, "android/brand/vocahq/social/README.md").readText()
+        assertTrue(readme.contains("https://discord.gg/UMJduhcqn"))
+        assertTrue(readme.contains("https://x.com/vocahq"))
+        assertTrue(readme.contains("hello@vocahq.com"))
+        assertTrue(readme.contains("Label it X, not Twitter"))
+        assertEquals("https://discord.gg/UMJduhcqn", DISCORD_URL)
+        assertEquals("https://x.com/vocahq", X_URL)
+        assertEquals("mailto:hello@vocahq.com", CONTACT_MAILTO)
+        assertEquals("https://github.com/VocaHQ/vocaphone/issues/new/choose", NEW_ISSUE_URL)
+        assertTrue(NEW_ISSUE_URL.startsWith("https://github.com/VocaHQ/vocaphone/issues"))
+    }
+
+    @Test
     fun `about copy names the family and stays honest about status`() {
         assertEquals("VocaPhone", ABOUT_WORDMARK)
         assertEquals("Report a bug or idea", ABOUT_REPORT_BUG)

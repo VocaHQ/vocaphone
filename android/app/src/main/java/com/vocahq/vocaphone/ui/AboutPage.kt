@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -223,13 +224,19 @@ fun AboutPage(
 /** Labeled text button. Official VocaDesign marks render at 16 dp. */
 @Composable
 private fun AboutLinkButton(link: AboutLink, context: Context) {
-    TextButton(onClick = { context.openHttpUrl(link.url) }) {
+    // Dark Win-style text links use #0F6B57. currentColor follows this tint.
+    val ink = Color(0xFF0F6B57)
+    TextButton(
+        onClick = { context.openHttpUrl(link.url) },
+        colors = ButtonDefaults.textButtonColors(contentColor = ink),
+    ) {
         val icon = link.icon
         if (icon != null) {
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
+                tint = ink,
             )
             Spacer(Modifier.width(8.dp))
         }
@@ -238,7 +245,7 @@ private fun AboutLinkButton(link: AboutLink, context: Context) {
 }
 
 /**
- * Filled teal Talk-to-us action. Brand fill #0F6B57, cream label #F2F6F2.
+ * Filled Report a bug. Dark Win-style: cream on charcoal. Light: cream on #0F6B57.
  */
 @Composable
 private fun GitHubButton(
@@ -246,7 +253,8 @@ private fun GitHubButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val container = Color(0xFF0F6B57)
+    val dark = isSystemInDarkTheme()
+    val container = if (dark) Color(0xFF242424) else Color(0xFF0F6B57)
     val content = Color(0xFFF2F6F2)
     Button(
         onClick = onClick,
