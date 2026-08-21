@@ -49,7 +49,7 @@ struct SwipeBackCoach: View {
                             .foregroundStyle(Color.onBrand)
                     }
                     .offset(x: -width * 0.31 + progress * width * 0.52, y: -26)
-                    .opacity(reduceMotion ? 0 : 1 - progress * 0.45)
+                    .opacity(reduceMotion ? 0 : 1 - Double(progress) * 0.45)
 
                     Capsule()
                         .fill(Color.vocaPrimaryText.opacity(0.72))
