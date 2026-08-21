@@ -53,7 +53,7 @@ revert — decide which before archiving.
 3. **Age rating**: answer the questionnaire; nothing in the app needs an
    18+ rating on content grounds, but consider the setup burden (the app is
    non-functional without a gateway the tester runs themselves) when writing
-   TestFlight's "What to Test" notes — see §4.
+   TestFlight's "What to Test" notes — see §5.
 4. Publish a **privacy policy URL**. [privacy.md](privacy.md) is thorough and
    ready to publish (GitHub Pages on this repo, or any static host); App Store
    Connect requires a live URL, not a repo-relative link.
@@ -100,7 +100,60 @@ xcrun altool --upload-package build/export/VocaPhoneApp.ipa \
 `teamID: 92962VK378`; `--apiKey`/`--apiIssuer` are an App Store Connect API
 key (Users and Access → Integrations), not an Apple ID password.
 
-## 4. TestFlight distribution
+A Mac with Xcode signed into team `92962VK378` can skip the API key and
+archive unsigned, then let export create the cloud-managed Apple
+Distribution certificate:
+
+```console
+cd ios && just gen
+xcodebuild -project VocaPhone.xcodeproj -scheme VocaPhone \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath build/VocaPhone.xcarchive \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO archive
+xcodebuild -exportArchive -archivePath build/VocaPhone.xcarchive \
+  -exportPath build/export -exportOptionsPlist exportOptions.plist \
+  -allowProvisioningUpdates
+```
+
+Automatic *development* signing fails here if the team has no registered
+iPhone; the unsigned archive plus export path does not need one.
+
+## 4. GitHub tag uploads
+
+The Android tag workflow already builds APKs and, when configured, uploads
+the AAB to Play Internal testing. `.github/workflows/ios-release.yml` does
+the iOS half of the same tag: archive and upload to App Store Connect /
+TestFlight. It never submits for App Review and never promotes past
+TestFlight.
+
+Same tag shapes as Android: `v0.1.0-beta.21` or `v0.1.0`. Do **not** mint a
+`v1.0.0` tag for an iOS marketing version of 1.0 — `android-release.yml`
+requires the tag to match Android `versionName`, which is `0.1.0` today.
+
+Before tagging:
+
+1. Bump `CURRENT_PROJECT_VERSION` in `ios/project.yml` (App Store Connect
+   rejects a reused build number) and run `just ios gen`.
+2. Leave `MARKETING_VERSION` at `1.0` until the App Store listing itself
+   needs a new user-visible version. That number is independent of the git
+   tag and of Android `versionName`.
+3. Commit the regenerated `project.pbxproj`.
+
+Repository secrets (all three, or the job skips the way Play skips without
+`PLAY_SERVICE_ACCOUNT_JSON`):
+
+| Secret | What |
+| --- | --- |
+| `APP_STORE_CONNECT_API_KEY` | Body of the `.p8` (including `BEGIN PRIVATE KEY`) |
+| `APP_STORE_CONNECT_API_KEY_ID` | Key ID from Users and Access → Integrations |
+| `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID on that same page |
+
+Create the key with the **App Manager** role so Xcode can mint a
+cloud-managed Apple Distribution certificate and App Store profiles. An
+iOS-only drop without a new Android GitHub Release is Actions → iOS
+TestFlight → Run workflow.
+
+## 5. TestFlight distribution
 
 **Internal testing** (up to 100 App Store Connect users on the team) is the
 right first track: it skips Beta App Review entirely, so a build is available
@@ -125,7 +178,7 @@ configured, Settings → Transcription → On this iPhone still works end to
 end."* — assuming the on-device model path is functional without a gateway;
 confirm that's still true before writing it.
 
-## 5. After the first build lands
+## 6. After the first build lands
 
 - Add testers under **TestFlight → Internal Testing** (App Store Connect
   Users and Access role, not a separate tester list, for internal groups).

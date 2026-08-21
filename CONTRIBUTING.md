@@ -188,6 +188,12 @@ tester's device UDID):
 Without those secrets, `/build` still produces the Android APK and notes that
 iOS was skipped. You can also run the workflow manually under Actions → PR Build.
 
+A version tag (`v0.1.0`, `v0.1.0-beta.21`, …) publishes Android as today and,
+when App Store Connect API key secrets are set, also uploads that commit's iOS
+build to TestFlight. See [TestFlight](docs/testflight.md#4-github-tag-uploads).
+Do not tag `v1.0.0` just because the iOS marketing version is 1.0 — the Android
+release workflow requires the tag to match `versionName`.
+
 ## Community
 
 [Discord](https://discord.gg/t6muquAJbm) is the fastest place to talk with

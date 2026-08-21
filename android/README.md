@@ -65,7 +65,10 @@ sherpa models are hidden from the picker when the library is absent.
 
 ## GitHub releases
 
-Pushing a version tag runs `.github/workflows/android-release.yml`. Both shapes
+Pushing a version tag runs `.github/workflows/android-release.yml`. The same
+tag also runs `.github/workflows/ios-release.yml`, which uploads that commit's
+iOS build to TestFlight when the App Store Connect API key secrets are set
+(see [TestFlight](../docs/testflight.md#4-github-tag-uploads)). Both shapes
 build identically and semver decides how each is published: a tag with a hyphen
 in it, such as `v0.1.0-beta.20`, becomes a GitHub prerelease, and a plain
 `v0.1.0` becomes the latest release. Generated notes span the previous tag of

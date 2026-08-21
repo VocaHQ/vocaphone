@@ -1,0 +1,171 @@
+name: iOS TestFlight
+
+# Pushing a version tag (the same tags that publish Android) archives the
+# iOS app and uploads it to App Store Connect / TestFlight. Semver still
+# belongs to the git tag and to Android's versionName; iOS keeps its own
+# MARKETING_VERSION / CURRENT_PROJECT_VERSION pair, because App Store Connect
+# rejects a reused build number for com.vocahq.vocaphone.
+#
+# The upload is skipped when the App Store Connect API key secrets are empty,
+# matching how android-release.yml skips Play when PLAY_SERVICE_ACCOUNT_JSON
+# is unset. This job never submits for App Store review and never promotes
+# past TestFlight — that stays a Console decision.
+#
+# workflow_dispatch covers an iOS-only drop that should not mint a new
+# Android GitHub Release.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+  HOMEBREW_NO_ENV_HINTS: '1'
+  IOS_TEAM_ID: 92962VK378
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      upload: ${{ steps.check.outputs.upload }}
+    steps:
+      - id: check
+        env:
+          ASC_KEY_SET: ${{ secrets.APP_STORE_CONNECT_API_KEY != '' && secrets.APP_STORE_CONNECT_API_KEY_ID != '' && secrets.APP_STORE_CONNECT_ISSUER_ID != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$ASC_KEY_SET" = true ]; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "upload=false" >> "$GITHUB_OUTPUT"
+          echo "APP_STORE_CONNECT_API_KEY, APP_STORE_CONNECT_API_KEY_ID, and"
+          echo "APP_STORE_CONNECT_ISSUER_ID are not all set. Skipping the"
+          echo "TestFlight upload. Create an App Store Connect API key with the"
+          echo "App Manager role (Users and Access → Integrations) and store"
+          echo "the .p8 body, Key ID, and Issuer ID as those three secrets."
+          echo "See docs/testflight.md."
+
+  testflight:
+    needs: gate
+    if: needs.gate.outputs.upload == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcodegen generate --spec project.yml
+          git diff --exit-code -- VocaPhone.xcodeproj/project.pbxproj
+
+      - name: Write App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          # xcodebuild and altool both look here. The filename is the Key ID.
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          key_path="$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s\n' "$APP_STORE_CONNECT_API_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Ensure the iOS device platform is installed
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          # Xcode 16+ splits the simulator runtime out of the SDK. actool
+          # refuses to compile the Live Activity catalog without one, and
+          # generic/platform=iOS is ineligible until the platform is present.
+          if xcodebuild -project VocaPhone.xcodeproj -scheme VocaPhone \
+            -showdestinations 2>/dev/null | grep -q 'name:Any iOS Device'; then
+            echo "Any iOS Device destination is available"
+            exit 0
+          fi
+          echo "Downloading the iOS platform"
+          xcodebuild -downloadPlatform iOS
+
+      - name: Archive (unsigned) then export to App Store Connect
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          DERIVED_DATA: ${{ runner.temp }}/DerivedData
+          ARCHIVE_PATH: ${{ runner.temp }}/VocaPhone.xcarchive
+        working-directory: ios
+        run: |
+          set -euo pipefail
+
+          # Automatic *development* signing demands a registered device.
+          # Archive unsigned, then let export create the cloud-managed
+          # Apple Distribution certificate and App Store profiles. Same
+          # split as a local TestFlight upload on a Mac with no iPhone.
+          xcodebuild \
+            -project VocaPhone.xcodeproj \
+            -scheme VocaPhone \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            -archivePath "$ARCHIVE_PATH" \
+            -disableAutomaticPackageResolution \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive
+
+          version="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$ARCHIVE_PATH/Info.plist")"
+          build="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$ARCHIVE_PATH/Info.plist")"
+          echo "Archived ${version} (${build})"
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>${IOS_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+            <key>destination</key>
+            <string>upload</string>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$RUNNER_TEMP/ipa" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+          echo "Uploaded ${version} (${build}) to App Store Connect. TestFlight processing usually takes a few minutes."
