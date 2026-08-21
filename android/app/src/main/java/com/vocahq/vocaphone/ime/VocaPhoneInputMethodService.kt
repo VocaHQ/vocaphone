@@ -105,6 +105,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         scope.launch {
             container.settings.settings.collect { settings ->
                 visibleSettings.value = settings
+                if (ignoredClipboardText == null && settings.dismissedClipboardText.isNotEmpty()) {
+                    ignoredClipboardText = settings.dismissedClipboardText
+                }
                 refreshClipboard()
             }
         }
@@ -408,7 +411,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             currentInputConnection?.commitText(text, 1) == true
         }
         if (!pasted) return
-        ignoredClipboardText = text
+        rememberDismissedClip(text)
         if (visibleClipboard.value?.fullText == text) visibleClipboard.value = null
         syncShiftFromCursor()
         scheduleEditorTextRefresh()
@@ -430,9 +433,18 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     private fun dismissClipboard() {
-        ignoredClipboardText = visibleClipboard.value?.fullText ?: return
+        val text = visibleClipboard.value?.fullText ?: return
+        rememberDismissedClip(text)
         visibleClipboard.value = null
     }
+
+    private fun rememberDismissedClip(text: String) {
+        ignoredClipboardText = text
+        persistPreference { container.settings.setDismissedClipboardText(text) }
+    }
+
+    private fun dismissedClip(settings: VocaPhoneSettings): String? =
+        ignoredClipboardText ?: settings.dismissedClipboardText.takeIf { it.isNotEmpty() }
 
     private fun removeClipboardHistory(text: String) {
         persistPreference { container.settings.removeClipboardHistory(text) }
@@ -613,7 +625,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             persistPreference { container.settings.recordClipboardHistory(text) }
         }
         visibleClipboard.value = text.takeIf {
-            settings.clipboardChipEnabled && it != ignoredClipboardText
+            KeyboardChrome.offersClipboardChip(it, dismissedClip(settings), settings.clipboardChipEnabled)
         }?.let { value ->
             ClipboardChip(
                 preview = KeyboardChrome.clipboardPreview(value),
@@ -627,7 +639,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val reused = lastRecordedClip
         if (source == lastImageSource && reused != null && ClipboardHistory.isImage(reused)) {
             visibleClipboard.value = reused.takeIf {
-                settings.clipboardChipEnabled && it != ignoredClipboardText
+                KeyboardChrome.offersClipboardChip(it, dismissedClip(settings), settings.clipboardChipEnabled)
             }?.let {
                 ClipboardChip(
                     preview = "Image",
@@ -653,7 +665,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 lastRecordedClip = encoded
             }
             visibleClipboard.value = encoded.takeIf {
-                settings.clipboardChipEnabled && it != ignoredClipboardText
+                KeyboardChrome.offersClipboardChip(it, dismissedClip(settings), settings.clipboardChipEnabled)
             }?.let {
                 ClipboardChip(preview = "Image", fullText = it, imagePath = relative)
             }

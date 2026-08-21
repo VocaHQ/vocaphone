@@ -3,10 +3,6 @@ package com.vocahq.vocaphone.ime
 import android.graphics.BitmapFactory
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -1524,24 +1520,11 @@ private fun ClipboardChipButton(
     imagePath: String? = null,
 ) {
     val view = LocalView.current
-    var dismissing by remember(preview) { mutableStateOf(false) }
-    LaunchedEffect(dismissing) {
-        if (dismissing) {
-            delay(180)
-            onLongClick()
-        }
-    }
-    AnimatedVisibility(
-        visible = !dismissing,
-        enter = fadeIn(),
-        exit = fadeOut() + shrinkHorizontally(),
-        modifier = modifier,
-    ) {
     // Material 3 input chip: label + trailing remove, fixed height, ellipsis
     // instead of growing with the clip. Centered in the suggestion strip so a
     // short paste and a long one occupy the same slot.
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .height(ClipboardChipHeight)
             .widthIn(min = ClipboardChipMinWidth, max = ClipboardChipMaxWidth),
         shape = RoundedCornerShape(percent = 50),
@@ -1597,7 +1580,7 @@ private fun ClipboardChipButton(
                     }
                     .clickable {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        dismissing = true
+                        onLongClick()
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -1609,7 +1592,6 @@ private fun ClipboardChipButton(
                 )
             }
         }
-    }
     }
 }
 

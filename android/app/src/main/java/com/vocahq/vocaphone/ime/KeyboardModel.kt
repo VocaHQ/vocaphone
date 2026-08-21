@@ -156,6 +156,16 @@ internal object KeyboardChrome {
         alreadyPasted: Boolean = false,
     ): ClipboardChip? = clipboard.takeIf { !alreadyPasted && !startedTyping }
 
+    /**
+     * Dismissing the chip hides that clip until a different one is copied.
+     * Switching apps re-reads the same primary clip; that must not bring it back.
+     */
+    fun offersClipboardChip(
+        clipText: String?,
+        ignoredText: String?,
+        chipEnabled: Boolean,
+    ): Boolean = chipEnabled && !clipText.isNullOrEmpty() && clipText != ignoredText
+
     /** Short label on the chip. JSON is named instead of dumping the first keys. */
     fun clipboardPreview(text: String): String {
         val compact = text.replace('\n', ' ').trim()

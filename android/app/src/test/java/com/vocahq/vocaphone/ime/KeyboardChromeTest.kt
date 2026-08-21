@@ -32,6 +32,26 @@ class KeyboardChromeTest {
     }
 
     /**
+     * Hiding the IME re-reads the same primary clip. A dismissed chip must stay
+     * down until a different copy, not come back on the next app.
+     */
+    @Test
+    fun `a dismissed clip stays hidden until a different copy`() {
+        assertTrue(KeyboardChrome.offersClipboardChip("hello", ignoredText = null, chipEnabled = true))
+        assertFalse(
+            KeyboardChrome.offersClipboardChip("hello", ignoredText = "hello", chipEnabled = true),
+        )
+        assertTrue(
+            KeyboardChrome.offersClipboardChip("new copy", ignoredText = "hello", chipEnabled = true),
+        )
+        assertFalse(KeyboardChrome.offersClipboardChip(null, ignoredText = null, chipEnabled = true))
+        assertFalse(KeyboardChrome.offersClipboardChip("", ignoredText = null, chipEnabled = true))
+        assertFalse(
+            KeyboardChrome.offersClipboardChip("hello", ignoredText = null, chipEnabled = false),
+        )
+    }
+
+    /**
      * The regression. `DictationBar` renders the clip chip and the suggestion
      * strip into the same row and reaches the clipboard branch first, so a chip
      * that outlives the empty field sits where the word suggestions belong for
