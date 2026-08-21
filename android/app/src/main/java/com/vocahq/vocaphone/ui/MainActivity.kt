@@ -8,8 +8,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -101,7 +103,7 @@ private fun BrandedAppBarTitle(text: String) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun VocaPhoneApp(
     viewModel: VocaPhoneViewModel = viewModel(),
@@ -168,6 +170,7 @@ fun VocaPhoneApp(
     }
 
     val showSetup = !settings.onboardingComplete && !showingGateway
+    val imeVisible = WindowInsets.isImeVisible
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -276,7 +279,7 @@ fun VocaPhoneApp(
             )
         },
         bottomBar = {
-            if (!showSetup && !showingGateway) {
+            if (!showSetup && !showingGateway && !imeVisible) {
                 NavigationBar {
                     Destination.entries.forEach { entry ->
                         NavigationBarItem(
