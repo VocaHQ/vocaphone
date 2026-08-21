@@ -28,6 +28,10 @@ class SetupCopyTest {
             SetupCopy.TITLE,
             SetupCopy.INTRO,
             SetupCopy.START,
+            SetupCopy.BROWSE_MODELS,
+            SetupCopy.BROWSE_MODELS_DETAIL,
+            SetupCopy.BROWSE_SHEET_TITLE,
+            SetupCopy.BROWSE_SHEET_SUPPORTING,
             MORE_MODELS_LABEL,
         )
         copy.forEach { line ->

@@ -43,7 +43,7 @@ import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
 
-internal const val MORE_MODELS_LABEL = "More models"
+internal const val MORE_MODELS_LABEL = SetupCopy.BROWSE_MODELS
 
 /**
  * The on-device model list, shared by setup and settings.
@@ -182,11 +182,17 @@ fun LocalModelPicker(
                 onInspect = { inspecting = it },
             )
         }
-        TextButton(
-            onClick = { catalogOpen = true },
-            contentPadding = PaddingValues(horizontal = 0.dp),
-        ) {
-            Text(MORE_MODELS_LABEL)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            SecondaryButton(
+                text = SetupCopy.BROWSE_MODELS,
+                onClick = { catalogOpen = true },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                SetupCopy.BROWSE_MODELS_DETAIL,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     } else {
         ModelCatalogSearch(
@@ -230,7 +236,12 @@ fun LocalModelPicker(
                     .padding(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(MORE_MODELS_LABEL, style = MaterialTheme.typography.titleLarge)
+                Text(SetupCopy.BROWSE_SHEET_TITLE, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    SetupCopy.BROWSE_SHEET_SUPPORTING,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 ModelCatalogSearch(
                     query = query,
                     onQuery = { query = it },
@@ -247,6 +258,7 @@ fun LocalModelPicker(
                     state = state,
                     selectedModelId = selectedModelId,
                     onInspect = { inspecting = it },
+                    elevated = true,
                 )
             }
         }
@@ -339,6 +351,11 @@ private fun RecommendedModelCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Text(
+            model.recommendationWhy(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (showActions) {
             ModelActions(
                 model = model,
@@ -415,6 +432,7 @@ private fun AvailableModelCatalog(
     state: LocalModelState,
     selectedModelId: String,
     onInspect: (LocalModelDescriptor) -> Unit,
+    elevated: Boolean = false,
 ) {
     ModelSectionHeading(
         if (available.isEmpty()) "Catalog" else "Catalog (${available.size})",
@@ -435,6 +453,7 @@ private fun AvailableModelCatalog(
             state = state,
             selectedModelId = selectedModelId,
             onInspect = onInspect,
+            elevated = elevated,
         )
     }
 }
@@ -483,6 +502,7 @@ private fun ModelTileGrid(
     state: LocalModelState,
     selectedModelId: String,
     onInspect: (LocalModelDescriptor) -> Unit,
+    elevated: Boolean = false,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         models.chunked(2).forEach { row ->
@@ -501,6 +521,7 @@ private fun ModelTileGrid(
                         progress = state.progress,
                         onClick = { onInspect(model) },
                         modifier = Modifier.weight(1f),
+                        elevated = elevated,
                     )
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -518,12 +539,19 @@ private fun ModelTile(
     progress: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    elevated: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     Surface(
         modifier = modifier.fillMaxHeight(),
         onClick = onClick,
-        color = if (selected) colors.primaryContainer else colors.surfaceContainerLow,
+        color = if (selected) {
+            colors.primaryContainer
+        } else if (elevated) {
+            colors.surfaceContainerHigh
+        } else {
+            colors.surfaceContainerLow
+        },
         shape = MaterialTheme.shapes.large,
         border = if (selected) BorderStroke(1.dp, colors.primary) else null,
     ) {

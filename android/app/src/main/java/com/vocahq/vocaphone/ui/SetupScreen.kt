@@ -6,7 +6,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -35,6 +33,12 @@ internal object SetupCopy {
     const val TITLE = "Set up VocaPhone"
     const val INTRO = "Turn on the keyboard, allow the microphone, then download a model."
     const val START = "Start dictating"
+    const val BROWSE_MODELS = "Browse other models"
+    const val BROWSE_MODELS_DETAIL =
+        "English-only, smaller, or Whisper models also fit this phone."
+    const val BROWSE_SHEET_TITLE = "Other models"
+    const val BROWSE_SHEET_SUPPORTING =
+        "These also run on this phone. The recommendation is still the default."
 
     fun keyboardStatus(status: ImeSetupStatus): String = when {
         status.selected -> "VocaPhone is the selected keyboard."
@@ -87,12 +91,11 @@ fun SetupScreen(
                 Image(
                     painter = painterResource(SetupCopy.LOGO),
                     contentDescription = "VocaPhone",
-                    modifier = Modifier.size(56.dp),
+                    modifier = Modifier.size(64.dp),
                 )
-                Text(SetupCopy.TITLE, style = MaterialTheme.typography.headlineSmall)
                 Text(
                     SetupCopy.INTRO,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SetupProgress(status)
@@ -223,25 +226,6 @@ private fun SetupProgress(status: SetupStatus, modifier: Modifier = Modifier) {
             progress = { status.completedStepCount.toFloat() / status.stepCount },
             modifier = Modifier.fillMaxWidth(),
         )
-        if (status.remainingLabels.isNotEmpty()) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                status.remainingLabels.forEach { label ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        )
-                    }
-                }
-            }
-        }
+        // Remaining work is the checklist below. Chips here only repeated it.
     }
 }

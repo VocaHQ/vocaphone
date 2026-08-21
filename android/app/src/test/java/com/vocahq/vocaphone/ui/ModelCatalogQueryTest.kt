@@ -62,6 +62,21 @@ class ModelCatalogQueryTest {
     }
 
     @Test
+    fun recommendationWhyNamesTheFitWithoutHardware() {
+        val parakeet = LocalModelCatalog.find("parakeet-tdt-0.6b-v3")!!
+        val why = parakeet.recommendationWhy()
+        assertTrue(why.contains("fastest multilingual"))
+        assertTrue(why.contains("this phone"))
+        assertTrue(!why.contains("RAM"))
+        assertTrue(!why.contains("GHz"))
+        assertTrue(!why.contains("cores"))
+        assertTrue(!why.contains("—"))
+        val whisper = LocalModelCatalog.find("tiny-q5_1")!!
+        assertTrue(whisper.recommendationWhy().contains("Whisper"))
+        assertTrue(!whisper.recommendationWhy().contains("SHA-256"))
+    }
+
+    @Test
     fun setupMetaIsOnlySizeAndLanguages() {
         val model = LocalModelCatalog.find("tiny-q5_1")!!
         val meta = model.setupMeta()

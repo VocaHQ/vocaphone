@@ -17,7 +17,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -410,6 +410,7 @@ fun ChecklistRow(
     actionLabel: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
+    actionColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -440,7 +441,7 @@ fun ChecklistRow(
             TextButton(
                 onClick = onAction,
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = LocalContentColor.current,
+                    contentColor = actionColor,
                 ),
             ) { Text(actionLabel) }
         }

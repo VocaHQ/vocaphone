@@ -79,11 +79,18 @@ fun SpeechSourceCard(
                 )
             }
         }
-        Text(
-            if (localOn) copy.localDetail else copy.gatewayDetail,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        val statusLine = when {
+            compact && localOn && localModel == null -> null
+            localOn -> copy.localDetail
+            else -> copy.gatewayDetail
+        }
+        if (statusLine != null) {
+            Text(
+                statusLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (compact) {
             if (!localOn) {
                 TextButton(
