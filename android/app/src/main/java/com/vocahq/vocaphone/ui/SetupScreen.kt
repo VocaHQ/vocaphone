@@ -177,6 +177,15 @@ fun SetupScreen(
 internal fun ImeSetupCard(status: ImeSetupStatus, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val action = SetupCopy.keyboardAction(status)
+    if (action == null) {
+        Text(
+            SetupCopy.keyboardStatus(status),
+            modifier = modifier,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
     Notice(modifier = modifier) {
         Text("VocaPhone keyboard", style = MaterialTheme.typography.titleSmall)
         Text(
@@ -184,19 +193,17 @@ internal fun ImeSetupCard(status: ImeSetupStatus, modifier: Modifier = Modifier)
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
-        if (action != null) {
-            SecondaryButton(
-                text = action,
-                onClick = {
-                    if (status.enabled) {
-                        ImeSetup.showPicker(context)
-                    } else {
-                        ImeSetup.openSettings(context)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        SecondaryButton(
+            text = action,
+            onClick = {
+                if (status.enabled) {
+                    ImeSetup.showPicker(context)
+                } else {
+                    ImeSetup.openSettings(context)
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

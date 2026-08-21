@@ -71,6 +71,19 @@ class KeyboardChromeTest {
      * are free to drift apart.
      */
     @Test
+    fun `json clips are named instead of dumping the first keys`() {
+        assertEquals(
+            "Copied JSON",
+            KeyboardChrome.clipboardPreview("""{"timestamp": "2026-08-20"}"""),
+        )
+        assertEquals(
+            "Copied JSON",
+            KeyboardChrome.clipboardPreview("[\n  1, 2\n]"),
+        )
+        assertEquals("hello there everyone!", KeyboardChrome.clipboardPreview("hello there everyone!"))
+    }
+
+    @Test
     fun `an armed swipe word is always typing, so the chip is already gone`() {
         val before = "the quick "
         assertTrue(KeyboardChrome.swipeWordArmed("quick", before, ""))

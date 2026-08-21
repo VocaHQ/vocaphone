@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -72,6 +73,7 @@ fun DictateScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
@@ -90,18 +92,20 @@ fun DictateScreen(
             )
         }
 
-        Section(
-            title = "Dictate",
-            supporting = listOf(
-                settings.language.displayName,
-                settings.style.displayName,
-                if (settings.localTranscriptionEnabled) {
-                    LocalModelCatalog.find(settings.localModelId)?.displayName ?: "On this phone"
-                } else {
-                    settings.gatewayUrl.ifEmpty { "No gateway" }
-                },
-            ).joinToString(" · "),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                listOf(
+                    settings.language.displayName,
+                    settings.style.displayName,
+                    if (settings.localTranscriptionEnabled) {
+                        LocalModelCatalog.find(settings.localModelId)?.displayName ?: "On this phone"
+                    } else {
+                        settings.gatewayUrl.ifEmpty { "No gateway" }
+                    },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(state.statusText, style = MaterialTheme.typography.bodyLarge)
 
             if (state.isRecording) {
@@ -191,10 +195,10 @@ fun DictateScreen(
             OutlinedTextField(
                 value = scratchpad,
                 onValueChange = { scratchpad = it },
-                modifier = Modifier.fillMaxWidth().height(220.dp),
+                modifier = Modifier.fillMaxWidth().height(160.dp),
                 label = { Text("Your text") },
             )
-            SecondaryButton(
+            DestructiveButton(
                 text = "Clear",
                 onClick = { scratchpad = TextFieldValue() },
                 enabled = scratchpad.text.isNotEmpty(),

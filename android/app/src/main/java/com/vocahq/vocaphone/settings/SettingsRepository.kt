@@ -88,7 +88,7 @@ enum class KeyboardHeight(
     val keyHeightDp: Int,
     val dictationBarDp: Int,
 ) {
-    COMPACT("compact", 42, 48),
+    COMPACT("compact", 42, 52),
     DEFAULT("default", 48, 52),
     TALL("tall", 56, 58),
     ;

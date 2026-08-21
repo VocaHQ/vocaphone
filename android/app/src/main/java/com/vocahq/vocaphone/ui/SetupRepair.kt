@@ -43,7 +43,6 @@ fun SetupRepair(
             Text(
                 "Dictation stays paused until these are back.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             missing.forEach { step ->
                 when (step) {

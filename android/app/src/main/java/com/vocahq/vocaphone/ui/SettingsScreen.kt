@@ -130,16 +130,16 @@ fun SettingsScreen(
                 SpeechSourceCard(
                     settings = settings,
                     onOpenGateway = onOpenGateway,
-                    onOpenModels = { onPageChange(SettingsPage.MODELS) },
                     onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsMenuGroup {
                     SettingsMenuRow(
                         title = "Language",
                         supporting = settings.effectiveLanguage.displayName,
                         icon = R.drawable.ic_language,
                         onClick = { pickingLanguage = true },
                     )
+                    SettingsMenuDivider()
                     SettingsMenuRow(
                         title = "Models",
                         supporting = when {
@@ -151,6 +151,7 @@ fun SettingsScreen(
                         icon = R.drawable.ic_models,
                         onClick = { onPageChange(SettingsPage.MODELS) },
                     )
+                    SettingsMenuDivider()
                     SettingsMenuRow(
                         title = "Keyboard",
                         supporting = buildString {
@@ -171,13 +172,15 @@ fun SettingsScreen(
                         icon = R.drawable.ic_keyboard,
                         onClick = { onPageChange(SettingsPage.KEYBOARD) },
                     )
-                SettingsMenuRow(
-                    title = "Dictation",
-                    supporting = "${settings.style.displayName} · ${settings.dictationTone.displayName} · ${settings.microphone.displayName}",
-                    icon = R.drawable.ic_dictation,
-                    onClick = { onPageChange(SettingsPage.DICTATION) },
-                )
-                SettingsMenuRow(
+                    SettingsMenuDivider()
+                    SettingsMenuRow(
+                        title = "Dictation",
+                        supporting = "${settings.style.displayName} · ${settings.dictationTone.displayName} · ${settings.microphone.displayName}",
+                        icon = R.drawable.ic_dictation,
+                        onClick = { onPageChange(SettingsPage.DICTATION) },
+                    )
+                    SettingsMenuDivider()
+                    SettingsMenuRow(
                         title = "About",
                         supporting = "VocaPhone ${appInfo.versionName}",
                         icon = R.drawable.ic_about,
@@ -187,16 +190,6 @@ fun SettingsScreen(
             }
 
             SettingsPage.MODELS -> {
-                LocalModelPicker(
-                    state = localModels,
-                    selectedModelId = settings.localModelId,
-                    usingGateway = !settings.localTranscriptionEnabled,
-                    onSelect = onLocalModel,
-                    onDownload = onDownloadLocalModel,
-                    onDownloadAndUse = onDownloadAndUseLocalModel,
-                    onCancelDownload = onCancelLocalModelDownload,
-                    onDelete = onDeleteLocalModel,
-                )
                 Section(
                     title = "Accuracy",
                     supporting = "${settings.transcriptionQuality.detail}\n" +
@@ -209,6 +202,16 @@ fun SettingsScreen(
                         onSelect = onTranscriptionQuality,
                     )
                 }
+                LocalModelPicker(
+                    state = localModels,
+                    selectedModelId = settings.localModelId,
+                    usingGateway = !settings.localTranscriptionEnabled,
+                    onSelect = onLocalModel,
+                    onDownload = onDownloadLocalModel,
+                    onDownloadAndUse = onDownloadAndUseLocalModel,
+                    onCancelDownload = onCancelLocalModelDownload,
+                    onDelete = onDeleteLocalModel,
+                )
             }
 
             SettingsPage.KEYBOARD -> {
@@ -241,6 +244,8 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                Section("Typing") {
                     SettingToggle(
                         title = "Suggestions",
                         detail = "Local English word completions and next-word guesses. " +
@@ -274,10 +279,12 @@ fun SettingsScreen(
                         checked = settings.swipeTypingEnabled,
                         onCheckedChange = onSwipeTyping,
                     )
+                }
+                Section("Clipboard") {
                     SettingToggle(
                         title = "Clipboard chip",
                         detail = "Clipboard icon plus a preview of the current clip. " +
-                            "Tap to paste. Long press to dismiss it.",
+                            "Tap to paste. Tap the × to dismiss it.",
                         checked = settings.clipboardChipEnabled,
                         onCheckedChange = onClipboardChip,
                     )
@@ -289,7 +296,7 @@ fun SettingsScreen(
                         onCheckedChange = onClipboardHistory,
                     )
                     if (settings.clipboardHistory.isNotEmpty()) {
-                        SecondaryButton(
+                        DestructiveButton(
                             "Clear clipboard history (${settings.clipboardHistory.size})",
                             onClick = onClearClipboardHistory,
                         )
@@ -346,12 +353,16 @@ fun SettingsScreen(
                     supporting = "Successful dictations delete their audio immediately. A " +
                         "failed one keeps it only this long, so Retry still works.",
                 ) {
-                    SettingDropdown(
+                    ChipChoiceRow(
                         options = AudioRetention.entries,
                         selected = settings.audioRetention,
                         label = { it.displayName },
-                        detail = { it.detail },
                         onSelect = onAudioRetention,
+                    )
+                    Text(
+                        settings.audioRetention.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 // Next to audio retention rather than under About: both answer
@@ -377,9 +388,34 @@ fun SettingsScreen(
                 SpeechSourceCard(
                     settings = settings,
                     onOpenGateway = onOpenGateway,
-                    onOpenModels = { onPageChange(SettingsPage.MODELS) },
                     onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
+                    showTitle = false,
+                    showGatewayActions = false,
                 )
+                SettingsMenuGroup {
+                    SettingsMenuRow(
+                        title = "Models",
+                        supporting = when {
+                            !settings.localTranscriptionEnabled ->
+                                "Off while you use a gateway"
+                            localModel != null -> localModel.displayName
+                            else -> "Download a model for this phone"
+                        },
+                        icon = R.drawable.ic_models,
+                        onClick = { onPageChange(SettingsPage.MODELS) },
+                    )
+                    SettingsMenuDivider()
+                    SettingsMenuRow(
+                        title = "Gateway",
+                        supporting = if (settings.isConfigured) {
+                            "Saved. Opens the address and token."
+                        } else {
+                            "Not set up"
+                        },
+                        icon = R.drawable.ic_connection,
+                        onClick = onOpenGateway,
+                    )
+                }
             }
 
             SettingsPage.ABOUT -> {
@@ -435,7 +471,9 @@ private fun MicrophoneSection(
             optionEnabled = { it in status.available || it == selected },
         )
 
-        InfoRow("Input in use", status.inUseLabel(selected))
+        if (status.recording || status.route != null) {
+            InfoRow("Input in use", status.inUseLabel(selected))
+        }
 
         Text(
             if (!status.changeable) {
@@ -472,7 +510,7 @@ private fun CustomVocabularySection(
             "unlikely to know. One per line, or separated by commas.",
     ) {
         if (whisperWarning != null) {
-            Notice(tone = NoticeTone.Attention) {
+            Notice(tone = NoticeTone.Warning) {
                 Text(whisperWarning, style = MaterialTheme.typography.bodyMedium)
                 Text(
                     "This list is kept for when you switch back to a Whisper model.",

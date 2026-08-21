@@ -3,12 +3,12 @@ package com.vocahq.vocaphone.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -127,6 +127,13 @@ fun LocalModelPicker(
         )
     }
 
+    if (!compact && selectedModel != null) {
+        Text(
+            "In use · ${selectedModel.displayName} · ${selectedModel.sizeLabel}",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+
     if (
         showPickerBusyBanner(
             downloadingId = state.downloading,
@@ -137,9 +144,9 @@ fun LocalModelPicker(
         ModelBusyBanner(state = state, onCancelDownload = onCancelDownload)
     }
 
-    if (selectedModel != null &&
+    val oversizedWarning = selectedModel != null &&
         LocalModelCatalog.needsHeavierWarning(selectedModel, profile)
-    ) {
+    if (oversizedWarning) {
         OversizedModelNotice(
             recommended = recommended,
             installed = recommended.id in state.downloaded,
@@ -150,17 +157,19 @@ fun LocalModelPicker(
     }
 
     sections.recommended?.let { model ->
-        RecommendedModelCard(
-            model = model,
-            profile = profile,
-            state = state,
-            selected = selectedModelId == model.id,
-            busy = busy,
-            compact = compact,
-            onSelect = onSelect,
-            onDownloadAndUse = onDownloadAndUse,
-            onCancelDownload = onCancelDownload,
-        )
+        if (compact || model.id != selectedModelId) {
+            RecommendedModelCard(
+                model = model,
+                state = state,
+                selected = selectedModelId == model.id,
+                busy = busy,
+                compact = compact,
+                showActions = !oversizedWarning,
+                onSelect = onSelect,
+                onDownloadAndUse = onDownloadAndUse,
+                onCancelDownload = onCancelDownload,
+            )
+        }
     }
 
     if (compact) {
@@ -313,11 +322,11 @@ private fun ModelBusyBanner(state: LocalModelState, onCancelDownload: () -> Unit
 @Composable
 private fun RecommendedModelCard(
     model: LocalModelDescriptor,
-    profile: DeviceProfile,
     state: LocalModelState,
     selected: Boolean,
     busy: Boolean,
     compact: Boolean,
+    showActions: Boolean = true,
     onSelect: (LocalModelDescriptor) -> Unit,
     onDownloadAndUse: (LocalModelDescriptor) -> Unit,
     onCancelDownload: () -> Unit,
@@ -330,25 +339,20 @@ private fun RecommendedModelCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (!compact) {
-            Text(
-                profile.summary(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        if (showActions) {
+            ModelActions(
+                model = model,
+                state = state,
+                selected = selected,
+                busy = busy,
+                useLabel = "Use recommended",
+                downloadLabel = "Download and use",
+                onSelect = onSelect,
+                onDownload = onDownloadAndUse,
+                onCancelDownload = onCancelDownload,
+                onDelete = null,
             )
         }
-        ModelActions(
-            model = model,
-            state = state,
-            selected = selected,
-            busy = busy,
-            useLabel = "Use recommended",
-            downloadLabel = "Download and use",
-            onSelect = onSelect,
-            onDownload = onDownloadAndUse,
-            onCancelDownload = onCancelDownload,
-            onDelete = null,
-        )
     }
 }
 
@@ -371,14 +375,11 @@ private fun ModelCatalogSearch(
         label = { Text("Find a model") },
         placeholder = { Text("Name, language, or engine") },
     )
-    // Three chips do not fit one line at a large display scale, and a Row has
-    // nowhere to put the third: it squeezes the chip past its own label, which
-    // then sets one character per line and grows the row to the height of the
-    // page. FlowRow moves it to a second line instead.
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FilterChipMenu(
             unselectedLabel = ModelEngineFilter.ALL.displayName,
@@ -446,7 +447,7 @@ private fun OversizedModelNotice(
     onSelect: (LocalModelDescriptor) -> Unit,
     onDownloadAndUse: (LocalModelDescriptor) -> Unit,
 ) {
-    Notice(tone = NoticeTone.Attention) {
+    Notice(tone = NoticeTone.Warning) {
         Text(
             "This Whisper model can be slow on this phone. " +
                 "${recommended.displayName} is the faster match we would start with.",
@@ -472,7 +473,6 @@ private fun ModelSectionHeading(title: String) {
     Text(
         title,
         style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 4.dp),
     )
 }
