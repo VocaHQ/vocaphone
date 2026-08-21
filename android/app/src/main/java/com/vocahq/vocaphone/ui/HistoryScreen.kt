@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,7 +29,6 @@ fun HistoryScreen(
     records: List<DictationRecordEntity>,
     onRetry: (String) -> Unit,
     onDelete: (String) -> Unit,
-    onDeleteAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -54,13 +52,6 @@ fun HistoryScreen(
                 onRetry = { onRetry(record.sessionId) },
                 onDelete = { onDelete(record.sessionId) },
                 onCopy = { context.copyToClipboard(it) },
-            )
-        }
-        item {
-            DestructiveTextButton(
-                text = "Delete all history",
-                onClick = onDeleteAll,
-                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

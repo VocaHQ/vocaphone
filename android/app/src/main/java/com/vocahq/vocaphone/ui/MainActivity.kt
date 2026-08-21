@@ -13,13 +13,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -141,6 +144,7 @@ fun VocaPhoneApp(
     var settingsPage by remember { mutableStateOf(SettingsPage.HOME) }
     var showingGateway by remember { mutableStateOf(false) }
     var openLanguagePicker by remember { mutableStateOf(false) }
+    var confirmDeleteAllHistory by remember { mutableStateOf(false) }
 
     LaunchedEffect(launchIntent) {
         val incoming = launchIntent ?: return@LaunchedEffect
@@ -163,6 +167,7 @@ fun VocaPhoneApp(
                     val titleText = when {
                         showingGateway -> "Gateway"
                         showSetup -> "Setup"
+                        destination == Destination.DICTATE -> "VocaPhone"
                         destination == Destination.SETTINGS -> settingsPage.title
                         else -> destination.label
                     }
@@ -198,6 +203,22 @@ fun VocaPhoneApp(
                         }
                     }
                 },
+                actions = {
+                    if (
+                        !showSetup &&
+                        !showingGateway &&
+                        destination == Destination.HISTORY &&
+                        history.isNotEmpty()
+                    ) {
+                        IconButton(onClick = { confirmDeleteAllHistory = true }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_delete),
+                                contentDescription = "Delete all history",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                },
             )
         },
         bottomBar = {
@@ -210,6 +231,7 @@ fun VocaPhoneApp(
                                 if (destination == Destination.SETTINGS && entry == Destination.SETTINGS) {
                                     settingsPage = SettingsPage.HOME
                                 }
+                                if (entry != Destination.HISTORY) confirmDeleteAllHistory = false
                                 destination = entry
                             },
                             icon = { Icon(painterResource(entry.icon), contentDescription = entry.label) },
@@ -303,7 +325,6 @@ fun VocaPhoneApp(
                 records = history,
                 onRetry = viewModel::retry,
                 onDelete = { viewModel.deleteRecord(it) },
-                onDeleteAll = viewModel::deleteAllHistory,
                 modifier = content,
             )
 
@@ -358,6 +379,28 @@ fun VocaPhoneApp(
                 modifier = content,
             )
         }
+    }
+
+    if (confirmDeleteAllHistory) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteAllHistory = false },
+            title = { Text("Delete all history?") },
+            text = { Text("This removes every dictation on this phone.") },
+            confirmButton = {
+                DestructiveTextButton(
+                    text = "Delete all",
+                    onClick = {
+                        viewModel.deleteAllHistory()
+                        confirmDeleteAllHistory = false
+                    },
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteAllHistory = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     // Returning from the gateway screen after setup is complete drops back into

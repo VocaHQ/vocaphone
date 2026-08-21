@@ -51,6 +51,7 @@ internal object DictateCopy {
     const val MODEL = "Model"
     const val GATEWAY = "Gateway"
     const val NO_MODEL = "No model"
+    const val HINT = "Inserted at the cursor. Nothing here is uploaded."
 }
 
 /**
@@ -210,9 +211,15 @@ fun DictateScreen(
                 value = scratchpad,
                 onValueChange = { scratchpad = it },
                 modifier = Modifier.fillMaxSize(),
-                label = { Text("Scratchpad") },
-                supportingText = {
-                    Text("Inserted at the cursor. Nothing here is uploaded.")
+                placeholder = if (showScratchpadHint(scratchpad.text, state.phase)) {
+                    {
+                        Text(
+                            DictateCopy.HINT,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                } else {
+                    null
                 },
                 shape = MaterialTheme.shapes.large,
                 colors = fieldColors,
@@ -222,7 +229,7 @@ fun DictateScreen(
                     onClick = { scratchpad = TextFieldValue() },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 36.dp),
+                        .padding(bottom = 12.dp),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_delete),
@@ -332,3 +339,7 @@ internal fun showDictateStatus(phase: DictationPhase): Boolean =
     phase != DictationPhase.IDLE &&
         phase != DictationPhase.FAILED &&
         phase != DictationPhase.PERMISSION_REPAIR
+
+/** Hint lives in the pad and leaves as soon as there is text or a recording. */
+internal fun showScratchpadHint(text: String, phase: DictationPhase): Boolean =
+    text.isEmpty() && !phase.isBusy
