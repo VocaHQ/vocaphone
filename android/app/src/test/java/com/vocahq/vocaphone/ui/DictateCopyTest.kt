@@ -36,6 +36,8 @@ class DictateCopyTest {
                 ),
             ),
         )
+        assertEquals("Moonshine Tiny", compactModelChipLabel("Moonshine Tiny English"))
+        assertEquals("Parakeet TDT 0.6B", compactModelChipLabel("Parakeet TDT 0.6B"))
     }
 
     @Test

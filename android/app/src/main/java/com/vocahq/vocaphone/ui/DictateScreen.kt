@@ -1,41 +1,36 @@
 package com.vocahq.vocaphone.ui
 
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.BuildConfig
 import com.vocahq.vocaphone.R
@@ -119,15 +114,35 @@ fun DictateScreen(
             )
         }
 
-        DictateShortcutBar(
-            language = settings.effectiveLanguage.displayName,
-            style = settings.style.displayName,
-            model = dictateModelChipLabel(settings),
-            modelOnDevice = settings.localTranscriptionEnabled,
-            onOpenLanguage = onOpenLanguage,
-            onOpenStyle = onOpenStyle,
-            onOpenModel = onOpenModel,
-        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            DictateAssistChip(
+                icon = R.drawable.ic_language,
+                label = settings.effectiveLanguage.displayName,
+                contentDescription = "${DictateCopy.LANGUAGE}, ${settings.effectiveLanguage.displayName}",
+                onClick = onOpenLanguage,
+            )
+            DictateAssistChip(
+                icon = R.drawable.ic_style,
+                label = settings.style.displayName,
+                contentDescription = "${DictateCopy.STYLE}, ${settings.style.displayName}",
+                onClick = onOpenStyle,
+            )
+            val modelLabel = dictateModelChipLabel(settings)
+            DictateAssistChip(
+                icon = if (settings.localTranscriptionEnabled) {
+                    R.drawable.ic_models
+                } else {
+                    R.drawable.ic_connection
+                },
+                label = compactModelChipLabel(modelLabel),
+                contentDescription = "${DictateCopy.MODEL}, $modelLabel",
+                onClick = onOpenModel,
+            )
+        }
 
         if (showDictateStatus(state.phase) || state.isRecording || state.phase == DictationPhase.FAILED) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -176,31 +191,46 @@ fun DictateScreen(
             onOpenGateway = onOpenGateway,
         )
 
-        Text("Scratchpad", style = MaterialTheme.typography.titleSmall)
-        Text(
-            "Transcripts are inserted at the cursor. Nothing here is uploaded.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        val fieldColors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
         )
-        OutlinedTextField(
+        TextField(
             value = scratchpad,
             onValueChange = { scratchpad = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            label = { Text("Your text") },
+            label = { Text("Scratchpad") },
+            supportingText = {
+                Text("Inserted at the cursor. Nothing here is uploaded.")
+            },
+            trailingIcon = {
+                if (scratchpad.text.isNotEmpty()) {
+                    IconButton(onClick = { scratchpad = TextFieldValue() }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_cancel),
+                            contentDescription = DictateCopy.CLEAR,
+                        )
+                    }
+                }
+            },
+            shape = MaterialTheme.shapes.large,
+            colors = fieldColors,
         )
 
         DictateActionRow(
             state = state,
             setup = setup,
-            scratchpadEmpty = scratchpad.text.isEmpty(),
             onStart = onStart,
             onFinish = onFinish,
             onCancel = onCancel,
             onRetry = onRetry,
             onDismiss = onDismiss,
-            onClear = { scratchpad = TextFieldValue() },
         )
     }
 }
@@ -209,135 +239,74 @@ fun DictateScreen(
 private fun DictateActionRow(
     state: DictationState,
     setup: SetupStatus,
-    scratchpadEmpty: Boolean,
     onStart: () -> Unit,
     onFinish: () -> Unit,
     onCancel: () -> Unit,
     onRetry: (String) -> Unit,
     onDismiss: () -> Unit,
-    onClear: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        when {
-            state.isRecording -> {
-                SecondaryButton("Cancel", onClick = onCancel, modifier = Modifier.weight(1f))
-                PrimaryButton("Finish", onClick = onFinish, modifier = Modifier.weight(2f))
-            }
-            state.phase.isBusy -> SecondaryButton(
-                "Cancel",
-                onClick = onCancel,
-                modifier = Modifier.weight(1f),
-            )
-            state.canRetry -> {
-                SecondaryButton("Dismiss", onClick = onDismiss, modifier = Modifier.weight(1f))
-                PrimaryButton(
-                    text = "Retry",
-                    onClick = { state.sessionId?.let { onRetry(it.toString()) } },
-                    modifier = Modifier.weight(2f),
-                )
-            }
-            else -> {
-                DestructiveButton(
-                    text = DictateCopy.CLEAR,
-                    onClick = onClear,
-                    enabled = !scratchpadEmpty,
-                    modifier = Modifier.weight(1f),
-                )
-                PrimaryButton(
-                    text = DictateCopy.DICTATE,
-                    onClick = onStart,
-                    enabled = setup.isReadyToDictate,
-                    modifier = Modifier.weight(2f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DictateShortcutBar(
-    language: String,
-    style: String,
-    model: String,
-    modelOnDevice: Boolean,
-    onOpenLanguage: () -> Unit,
-    onOpenStyle: () -> Unit,
-    onOpenModel: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min),
+    when {
+        state.isRecording -> Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            DictateShortcutCell(
-                icon = R.drawable.ic_language,
-                label = language,
-                contentDescription = "${DictateCopy.LANGUAGE}, $language",
-                onClick = onOpenLanguage,
-            )
-            VerticalDivider(
-                modifier = Modifier.fillMaxHeight(),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            DictateShortcutCell(
-                icon = R.drawable.ic_style,
-                label = style,
-                contentDescription = "${DictateCopy.STYLE}, $style",
-                onClick = onOpenStyle,
-            )
-            VerticalDivider(
-                modifier = Modifier.fillMaxHeight(),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            DictateShortcutCell(
-                icon = if (modelOnDevice) R.drawable.ic_models else R.drawable.ic_connection,
-                label = model,
-                contentDescription = "${DictateCopy.MODEL}, $model",
-                onClick = onOpenModel,
+            SecondaryButton("Cancel", onClick = onCancel, modifier = Modifier.weight(1f))
+            PrimaryButton("Finish", onClick = onFinish, modifier = Modifier.weight(2f))
+        }
+        state.phase.isBusy -> SecondaryButton(
+            "Cancel",
+            onClick = onCancel,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        state.canRetry -> Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SecondaryButton("Dismiss", onClick = onDismiss, modifier = Modifier.weight(1f))
+            PrimaryButton(
+                text = "Retry",
+                onClick = { state.sessionId?.let { onRetry(it.toString()) } },
+                modifier = Modifier.weight(2f),
             )
         }
+        else -> PrimaryButton(
+            text = DictateCopy.DICTATE,
+            onClick = onStart,
+            enabled = setup.isReadyToDictate,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
 @Composable
-private fun RowScope.DictateShortcutCell(
+private fun DictateAssistChip(
     @DrawableRes icon: Int,
     label: String,
     contentDescription: String,
     onClick: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { this.contentDescription = contentDescription }
-            .padding(horizontal = 8.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
-    ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
-    }
+    AssistChip(
+        onClick = onClick,
+        modifier = Modifier.semantics { this.contentDescription = contentDescription },
+        label = { Text(label, maxLines = 1) },
+        leadingIcon = {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+        },
+        border = AssistChipDefaults.assistChipBorder(
+            enabled = true,
+            borderColor = Color.Transparent,
+            disabledBorderColor = Color.Transparent,
+        ),
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            labelColor = MaterialTheme.colorScheme.onSurface,
+            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+    )
 }
 
 internal fun dictateModelChipLabel(settings: VocaPhoneSettings): String =
@@ -346,6 +315,9 @@ internal fun dictateModelChipLabel(settings: VocaPhoneSettings): String =
     } else {
         DictateCopy.GATEWAY
     }
+
+/** Language already has its own chip, so drop a trailing English from the model. */
+internal fun compactModelChipLabel(label: String): String = label.removeSuffix(" English")
 
 internal fun showDictateStatus(phase: DictationPhase): Boolean =
     phase != DictationPhase.IDLE &&
