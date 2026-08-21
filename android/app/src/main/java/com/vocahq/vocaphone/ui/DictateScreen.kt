@@ -1,24 +1,26 @@
 package com.vocahq.vocaphone.ui
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,9 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.BuildConfig
@@ -99,61 +103,37 @@ fun DictateScreen(
             .fillMaxSize()
             .imePadding()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(SectionSpacing),
-        ) {
-            // Guided setup asks once, at its end -- but only people who go through
-            // setup ever reach that screen. Everyone upgrading from an earlier beta
-            // already has onboardingComplete set, so SetupScreen never renders for
-            // them and they would never be asked at all. Asking here covers them,
-            // and disappears for good either way once answered.
-            if (BuildConfig.TELEMETRY && settings.onboardingComplete && !settings.telemetryAsked) {
-                UsageReportingSetupCard(
-                    onDecision = onTelemetryDecision,
-                    inspect = telemetryInspect,
-                    pendingCount = telemetryPendingCount,
-                    deliveryStatus = telemetryDeliveryStatus,
-                )
-            }
+        // Guided setup asks once, at its end -- but only people who go through
+        // setup ever reach that screen. Everyone upgrading from an earlier beta
+        // already has onboardingComplete set, so SetupScreen never renders for
+        // them and they would never be asked at all. Asking here covers them,
+        // and disappears for good either way once answered.
+        if (BuildConfig.TELEMETRY && settings.onboardingComplete && !settings.telemetryAsked) {
+            UsageReportingSetupCard(
+                onDecision = onTelemetryDecision,
+                inspect = telemetryInspect,
+                pendingCount = telemetryPendingCount,
+                deliveryStatus = telemetryDeliveryStatus,
+            )
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DictateSettingChip(
-                    icon = R.drawable.ic_language,
-                    label = settings.effectiveLanguage.displayName,
-                    contentDescription = "${DictateCopy.LANGUAGE}, ${settings.effectiveLanguage.displayName}",
-                    onClick = onOpenLanguage,
-                )
-                DictateSettingChip(
-                    icon = R.drawable.ic_style,
-                    label = settings.style.displayName,
-                    contentDescription = "${DictateCopy.STYLE}, ${settings.style.displayName}",
-                    onClick = onOpenStyle,
-                )
-                DictateSettingChip(
-                    icon = if (settings.localTranscriptionEnabled) {
-                        R.drawable.ic_models
-                    } else {
-                        R.drawable.ic_connection
-                    },
-                    label = dictateModelChipLabel(settings),
-                    contentDescription = "${DictateCopy.MODEL}, ${dictateModelChipLabel(settings)}",
-                    onClick = onOpenModel,
-                )
-            }
+        DictateShortcutBar(
+            language = settings.effectiveLanguage.displayName,
+            style = settings.style.displayName,
+            model = dictateModelChipLabel(settings),
+            modelOnDevice = settings.localTranscriptionEnabled,
+            onOpenLanguage = onOpenLanguage,
+            onOpenStyle = onOpenStyle,
+            onOpenModel = onOpenModel,
+        )
 
+        if (showDictateStatus(state.phase) || state.isRecording || state.phase == DictationPhase.FAILED) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (showDictateStatus(state.phase)) {
                     Text(state.statusText, style = MaterialTheme.typography.bodyLarge)
                 }
-
                 if (state.isRecording) {
                     LinearProgressIndicator(
                         progress = { state.level.coerceIn(0f, 1f) },
@@ -181,7 +161,6 @@ fun DictateScreen(
                         )
                     }
                 }
-
                 if (state.phase == DictationPhase.FAILED) {
                     Text(
                         state.failure?.message.orEmpty(),
@@ -190,24 +169,27 @@ fun DictateScreen(
                     )
                 }
             }
-
-            SetupRepair(
-                status = setup,
-                onOpenGateway = onOpenGateway,
-            )
-
-            Section(
-                title = "Scratchpad",
-                supporting = "Transcripts are inserted at the cursor. Nothing here is uploaded.",
-            ) {
-                OutlinedTextField(
-                    value = scratchpad,
-                    onValueChange = { scratchpad = it },
-                    modifier = Modifier.fillMaxWidth().height(160.dp),
-                    label = { Text("Your text") },
-                )
-            }
         }
+
+        SetupRepair(
+            status = setup,
+            onOpenGateway = onOpenGateway,
+        )
+
+        Text("Scratchpad", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Transcripts are inserted at the cursor. Nothing here is uploaded.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = scratchpad,
+            onValueChange = { scratchpad = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            label = { Text("Your text") },
+        )
 
         DictateActionRow(
             state = state,
@@ -276,41 +258,85 @@ private fun DictateActionRow(
 }
 
 @Composable
-private fun RowScope.DictateSettingChip(
+private fun DictateShortcutBar(
+    language: String,
+    style: String,
+    model: String,
+    modelOnDevice: Boolean,
+    onOpenLanguage: () -> Unit,
+    onOpenStyle: () -> Unit,
+    onOpenModel: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+        ) {
+            DictateShortcutCell(
+                icon = R.drawable.ic_language,
+                label = language,
+                contentDescription = "${DictateCopy.LANGUAGE}, $language",
+                onClick = onOpenLanguage,
+            )
+            VerticalDivider(
+                modifier = Modifier.fillMaxHeight(),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            DictateShortcutCell(
+                icon = R.drawable.ic_style,
+                label = style,
+                contentDescription = "${DictateCopy.STYLE}, $style",
+                onClick = onOpenStyle,
+            )
+            VerticalDivider(
+                modifier = Modifier.fillMaxHeight(),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            DictateShortcutCell(
+                icon = if (modelOnDevice) R.drawable.ic_models else R.drawable.ic_connection,
+                label = model,
+                contentDescription = "${DictateCopy.MODEL}, $model",
+                onClick = onOpenModel,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowScope.DictateShortcutCell(
     @DrawableRes icon: Int,
     label: String,
     contentDescription: String,
     onClick: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
+    Column(
         modifier = Modifier
             .weight(1f)
-            .height(48.dp)
-            .semantics { this.contentDescription = contentDescription },
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            .fillMaxHeight()
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription }
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
