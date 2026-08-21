@@ -6,31 +6,27 @@ import android.content.Context
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.WritingStyle
@@ -61,11 +57,7 @@ fun HistoryScreen(
         return
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 12.dp),
-    ) {
+    LazyColumn(modifier = modifier.fillMaxSize()) {
         items(records, key = { it.sessionId }) { record ->
             HistoryRow(
                 record = record,
@@ -73,7 +65,7 @@ fun HistoryScreen(
                 selecting = selecting,
                 onRetry = { onRetry(record.sessionId) },
                 onCopy = { text ->
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                     context.copyToClipboard(text)
                 },
                 onToggleSelect = { onToggleSelect(record.sessionId) },
@@ -103,12 +95,36 @@ private fun HistoryRow(
         .format(Date(record.createdAt))
     val transcript = record.transcript?.takeIf { it.isNotEmpty() }
     val canRetry = !selecting && failed && record.recoverable && record.audioPath != null
+    val meta = buildString {
+        append(timestamp)
+        append(" · ")
+        append(TranscriptionLanguage.fromWire(record.language).displayName)
+        append(" · ")
+        append(WritingStyle.fromWire(record.style).displayName)
+        if (record.insertedIntoField) append(" · inserted")
+        if (record.audioPath != null) append(" · audio kept for retry")
+    }
 
-    Surface(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                onLongClick(label = "Select") { onEnterSelect(); true }
+                this.selected = selected
+                if (selecting) {
+                    onClick(label = if (selected) "Deselect" else "Select") {
+                        onToggleSelect()
+                        true
+                    }
+                } else if (transcript != null) {
+                    onClick(label = "Copy") {
+                        onCopy(transcript)
+                        true
+                    }
+                }
+                onLongClick(label = "Select") {
+                    if (selecting) onToggleSelect() else onEnterSelect()
+                    true
+                }
             }
             .combinedClickable(
                 onClick = {
@@ -122,72 +138,47 @@ private fun HistoryRow(
                     if (selecting) onToggleSelect() else onEnterSelect()
                 },
             ),
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
-        shape = MaterialTheme.shapes.large,
-    ) {
-        Row(
-            modifier = Modifier.padding(
-                start = if (selecting) 8.dp else 16.dp,
-                top = 12.dp,
-                end = if (canRetry) 4.dp else 16.dp,
-                bottom = 12.dp,
-            ),
-            verticalAlignment = Alignment.Top,
-        ) {
-            if (selecting) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelect() },
-                    modifier = Modifier.padding(top = 2.dp, end = 4.dp),
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(top = if (canRetry) 8.dp else 0.dp, end = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (failed) {
-                    Text(
-                        record.errorMessage ?: "This dictation failed.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else if (transcript != null) {
-                    Text(transcript, style = MaterialTheme.typography.bodyMedium)
-                }
+        headlineContent = {
+            if (failed) {
                 Text(
-                    buildString {
-                        append(timestamp)
-                        append(" · ")
-                        append(TranscriptionLanguage.fromWire(record.language).displayName)
-                        append(" · ")
-                        append(WritingStyle.fromWire(record.style).displayName)
-                        if (record.insertedIntoField) append(" · inserted")
-                        if (record.audioPath != null) append(" · audio kept for retry")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    record.errorMessage ?: "This dictation failed.",
+                    color = MaterialTheme.colorScheme.error,
                 )
+            } else if (transcript != null) {
+                Text(transcript)
             }
-            if (canRetry) {
-                FilledTonalIconButton(
-                    onClick = onRetry,
-                    modifier = Modifier.size(40.dp),
-                ) {
+        },
+        supportingContent = {
+            Text(meta)
+        },
+        leadingContent = if (selecting) {
+            {
+                // The row owns the click so the box cannot toggle twice.
+                Checkbox(checked = selected, onCheckedChange = null)
+            }
+        } else {
+            null
+        },
+        trailingContent = if (canRetry) {
+            {
+                FilledTonalIconButton(onClick = onRetry) {
                     Icon(
                         painter = painterResource(R.drawable.ic_retry),
                         contentDescription = "Retry",
-                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
-        }
-    }
+        } else {
+            null
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                Color.Transparent
+            },
+        ),
+    )
 }
 
 private fun Context.copyToClipboard(text: String) {
