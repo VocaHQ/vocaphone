@@ -120,27 +120,21 @@ iPhone; the unsigned archive plus export path does not need one.
 
 ## 4. GitHub tag uploads
 
-The Android tag workflow already builds APKs and, when configured, uploads
-the AAB to Play Internal testing. `.github/workflows/ios-release.yml` does
-the iOS half of the same tag: archive and upload to App Store Connect /
-TestFlight. It never submits for App Review and never promotes past
-TestFlight.
-
-Same tag shapes as Android: `v0.1.0-beta.21` or `v0.1.0`. Do **not** mint a
-`v1.0.0` tag for an iOS marketing version of 1.0 — `android-release.yml`
-requires the tag to match Android `versionName`, which is `0.1.0` today.
+iOS tags are prefixed: `ios/v1.0.21` means TestFlight **1.0 (21)**. Pushing
+one runs `.github/workflows/ios-release.yml` only. Android is a different
+prefix (`android/v0.1.1`). A joint drop is two tags on the same commit. See
+[releasing.md](releasing.md).
 
 Before tagging:
 
 1. Bump `CURRENT_PROJECT_VERSION` in `ios/project.yml` (App Store Connect
    rejects a reused build number) and run `just ios gen`.
 2. Leave `MARKETING_VERSION` at `1.0` until the App Store listing itself
-   needs a new user-visible version. That number is independent of the git
-   tag and of Android `versionName`.
+   needs a new user-visible version.
 3. Commit the regenerated `project.pbxproj`.
+4. Tag `ios/v{MARKETING_VERSION}.{CURRENT_PROJECT_VERSION}` and push it.
 
-Repository secrets (all three, or the job skips the way Play skips without
-`PLAY_SERVICE_ACCOUNT_JSON`):
+Repository secrets (all three, or the macOS job never starts):
 
 | Secret | What |
 | --- | --- |
@@ -150,8 +144,7 @@ Repository secrets (all three, or the job skips the way Play skips without
 
 Create the key with the **App Manager** role so Xcode can mint a
 cloud-managed Apple Distribution certificate and App Store profiles. An
-iOS-only drop without a new Android GitHub Release is Actions → iOS
-TestFlight → Run workflow.
+iOS-only drop without a tag is Actions → iOS TestFlight → Run workflow.
 
 ## 5. TestFlight distribution
 

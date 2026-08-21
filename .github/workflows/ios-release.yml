@@ -1,27 +1,27 @@
 name: iOS TestFlight
 
-# Pushing a version tag (the same tags that publish Android) archives the
-# iOS app and uploads it to App Store Connect / TestFlight. Semver still
-# belongs to the git tag and to Android's versionName; iOS keeps its own
-# MARKETING_VERSION / CURRENT_PROJECT_VERSION pair, because App Store Connect
-# rejects a reused build number for com.vocahq.vocaphone.
+# iOS-only tags: ios/v{MARKETING_VERSION}.{CURRENT_PROJECT_VERSION}
+# e.g. ios/v1.0.20 is TestFlight 1.0 (20). See docs/releasing.md.
+#
+# Android uses android/v* tags and is a separate workflow. A joint product
+# drop is two tags on the same commit, not one tag that builds both.
 #
 # The upload is skipped when the App Store Connect API key secrets are empty,
 # matching how android-release.yml skips Play when PLAY_SERVICE_ACCOUNT_JSON
-# is unset. This job never submits for App Store review and never promotes
-# past TestFlight — that stays a Console decision.
+# is unset. This job never submits for App Review and never promotes past
+# TestFlight — that stays a Console decision.
 #
-# workflow_dispatch covers an iOS-only drop that should not mint a new
-# Android GitHub Release.
+# workflow_dispatch covers an iOS-only drop without minting a tag (no GitHub
+# Release in that case).
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+      - 'ios/v[0-9]+.[0-9]+.[0-9]+'
+      - 'ios/v[0-9]+.[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ios-release-${{ github.ref }}
@@ -55,17 +55,26 @@ jobs:
           echo "TestFlight upload. Create an App Store Connect API key with the"
           echo "App Manager role (Users and Access → Integrations) and store"
           echo "the .p8 body, Key ID, and Issuer ID as those three secrets."
-          echo "See docs/testflight.md."
+          echo "See docs/releasing.md."
+          if [[ "$GITHUB_REF" == refs/tags/ios/* ]]; then
+            echo "Refusing to no-op an ios/v* tag without API key secrets." >&2
+            exit 1
+          fi
 
   testflight:
     needs: gate
     if: needs.gate.outputs.upload == 'true'
     runs-on: macos-15
     timeout-minutes: 60
+    outputs:
+      version: ${{ steps.upload.outputs.version }}
+      build: ${{ steps.upload.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
+          # git describe walks tags for the GitHub Release notes range.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install xcodegen
@@ -107,6 +116,7 @@ jobs:
           xcodebuild -downloadPlatform iOS
 
       - name: Archive (unsigned) then export to App Store Connect
+        id: upload
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -118,8 +128,7 @@ jobs:
 
           # Automatic *development* signing demands a registered device.
           # Archive unsigned, then let export create the cloud-managed
-          # Apple Distribution certificate and App Store profiles. Same
-          # split as a local TestFlight upload on a Mac with no iPhone.
+          # Apple Distribution certificate and App Store profiles.
           xcodebuild \
             -project VocaPhone.xcodeproj \
             -scheme VocaPhone \
@@ -136,6 +145,17 @@ jobs:
           version="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$ARCHIVE_PATH/Info.plist")"
           build="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$ARCHIVE_PATH/Info.plist")"
           echo "Archived ${version} (${build})"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "build=${build}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$GITHUB_REF" == refs/tags/ios/v* ]]; then
+            expected="ios/v${version}.${build}"
+            if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+              echo "Tag $GITHUB_REF_NAME does not match archived ${version} (${build})." >&2
+              echo "iOS tags are ios/v\$MARKETING_VERSION.\$CURRENT_PROJECT_VERSION, e.g. ${expected}." >&2
+              exit 1
+            fi
+          fi
 
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -169,3 +189,28 @@ jobs:
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
 
           echo "Uploaded ${version} (${build}) to App Store Connect. TestFlight processing usually takes a few minutes."
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/ios/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.upload.outputs.version }}
+          BUILD: ${{ steps.upload.outputs.build }}
+        run: |
+          set -euo pipefail
+
+          previous_tag="$(git describe --tags --abbrev=0 --match 'ios/v*' "$GITHUB_REF_NAME^" 2>/dev/null || true)"
+          notes_range=()
+          if [ -n "$previous_tag" ]; then
+            notes_range=(--notes-start-tag "$previous_tag")
+          fi
+
+          # Never --latest: GitHub has one Latest per repo, and that slot is
+          # the Android APK people download from /releases/latest.
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "vocaphone iOS ${VERSION} (${BUILD})" \
+            --latest=false \
+            --generate-notes \
+            "${notes_range[@]}" \
+            --notes "TestFlight build **${VERSION} (${BUILD})**. iOS is not distributed as a GitHub IPA — install from [TestFlight](https://testflight.apple.com/join/wd85wQ3W) once App Store Connect finishes processing (usually a few minutes). This release is notes only; the Android APK lives on \`android/v*\` tags."
