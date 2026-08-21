@@ -79,6 +79,23 @@ private enum class Destination(val label: String, @param:DrawableRes val icon: I
     SETTINGS("Settings", R.drawable.ic_settings),
 }
 
+/** Main destinations share the mark. Nested pages keep a plain title. */
+@Composable
+private fun BrandedAppBarTitle(text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            painter = painterResource(SetupCopy.LOGO),
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = Color.Unspecified,
+        )
+        Text(text)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VocaPhoneApp(
@@ -142,27 +159,22 @@ fun VocaPhoneApp(
         topBar = {
             TopAppBar(
                 title = {
-                    if (showSetup) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                painter = painterResource(SetupCopy.LOGO),
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                tint = Color.Unspecified,
-                            )
-                            Text("Setup")
-                        }
+                    val titleText = when {
+                        showingGateway -> "Gateway"
+                        showSetup -> "Setup"
+                        destination == Destination.SETTINGS -> settingsPage.title
+                        else -> destination.label
+                    }
+                    val branded = when {
+                        showingGateway -> false
+                        showSetup -> true
+                        destination != Destination.SETTINGS -> true
+                        else -> settingsPage == SettingsPage.HOME
+                    }
+                    if (branded) {
+                        BrandedAppBarTitle(titleText)
                     } else {
-                        Text(
-                            when {
-                                showingGateway -> "Gateway"
-                                destination == Destination.SETTINGS -> settingsPage.title
-                                else -> destination.label
-                            }
-                        )
+                        Text(titleText)
                     }
                 },
                 navigationIcon = {
