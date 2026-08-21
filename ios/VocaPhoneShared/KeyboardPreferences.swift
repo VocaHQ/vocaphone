@@ -42,8 +42,8 @@ enum WritingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 
     /// Unstyled model output the picker examples are produced from.
-    /// Clean and Formal only diverge when capitals are still lowercase.
-    static let exampleSource = "i don't think it's ready. it cost $1,200"
+    /// Clean and Formal only diverge when sentence starts are still lowercase.
+    static let exampleSource = "this is VocaPhone. it is a keyboard you talk to"
 
     /// A short worked example, so the choice is obvious before dictating.
     var example: String {

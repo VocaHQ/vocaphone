@@ -43,9 +43,9 @@ enum class WritingStyle(val wireValue: String) {
 
         /**
          * Unstyled model output the picker examples are produced from.
-         * Clean and Formal only diverge when capitals are still lowercase.
+         * Clean and Formal only diverge when sentence starts are still lowercase.
          */
-        internal const val EXAMPLE_SOURCE = "i don't think it's ready. it cost $1,200"
+        internal const val EXAMPLE_SOURCE = "this is VocaPhone. it is a keyboard you talk to"
 
         fun fromWire(value: String?): WritingStyle =
             entries.firstOrNull { it.wireValue == value } ?: DEFAULT

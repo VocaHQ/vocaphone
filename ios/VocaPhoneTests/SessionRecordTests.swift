@@ -431,8 +431,8 @@ struct SessionRecordTests {
             #expect(!style.example.isEmpty)
             #expect(!style.symbolName.isEmpty)
         }
-        #expect(WritingStyle.clean.example == "i don't think it's ready. it cost $1,200.")
-        #expect(WritingStyle.formal.example == "I don't think it's ready. It cost $1,200.")
+        #expect(WritingStyle.clean.example == "this is VocaPhone. it is a keyboard you talk to.")
+        #expect(WritingStyle.formal.example == "This is VocaPhone. It is a keyboard you talk to.")
         #expect(WritingStyle.clean.example != WritingStyle.formal.example)
     }
 

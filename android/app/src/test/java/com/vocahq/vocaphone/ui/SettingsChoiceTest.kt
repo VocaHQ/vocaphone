@@ -53,19 +53,19 @@ class SettingsChoiceTest {
     @Test
     fun `writing style examples come from the same raw line and clean differs from formal`() {
         assertEquals(
-            "i don't think it's ready. it cost $1,200",
+            "this is VocaPhone. it is a keyboard you talk to",
             WritingStyle.RAW.example,
         )
         assertEquals(
-            "i don't think it's ready. it cost $1,200.",
+            "this is VocaPhone. it is a keyboard you talk to.",
             WritingStyle.CLEAN.example,
         )
         assertEquals(
-            "I don't think it's ready. It cost $1,200.",
+            "This is VocaPhone. It is a keyboard you talk to.",
             WritingStyle.FORMAL.example,
         )
         assertEquals(
-            "I don't think it's ready. It cost $1,200",
+            "This is VocaPhone. It is a keyboard you talk to",
             WritingStyle.CASUAL.example,
         )
         WritingStyle.entries.forEach { style ->
