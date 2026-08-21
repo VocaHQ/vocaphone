@@ -2,6 +2,7 @@ package com.vocahq.vocaphone.ui
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -12,8 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -199,29 +201,36 @@ fun DictateScreen(
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
         )
-        TextField(
-            value = scratchpad,
-            onValueChange = { scratchpad = it },
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            label = { Text("Scratchpad") },
-            supportingText = {
-                Text("Inserted at the cursor. Nothing here is uploaded.")
-            },
-            trailingIcon = {
-                if (scratchpad.text.isNotEmpty()) {
-                    IconButton(onClick = { scratchpad = TextFieldValue() }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_cancel),
-                            contentDescription = DictateCopy.CLEAR,
-                        )
-                    }
+        ) {
+            TextField(
+                value = scratchpad,
+                onValueChange = { scratchpad = it },
+                modifier = Modifier.fillMaxSize(),
+                label = { Text("Scratchpad") },
+                supportingText = {
+                    Text("Inserted at the cursor. Nothing here is uploaded.")
+                },
+                shape = MaterialTheme.shapes.large,
+                colors = fieldColors,
+            )
+            if (scratchpad.text.isNotEmpty()) {
+                FilledTonalIconButton(
+                    onClick = { scratchpad = TextFieldValue() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 36.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_delete),
+                        contentDescription = DictateCopy.CLEAR,
+                    )
                 }
-            },
-            shape = MaterialTheme.shapes.large,
-            colors = fieldColors,
-        )
+            }
+        }
 
         DictateActionRow(
             state = state,
