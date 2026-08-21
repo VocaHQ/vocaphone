@@ -144,7 +144,9 @@ fun VocaPhoneApp(
     var settingsPage by remember { mutableStateOf(SettingsPage.HOME) }
     var showingGateway by remember { mutableStateOf(false) }
     var openLanguagePicker by remember { mutableStateOf(false) }
-    var confirmDeleteAllHistory by remember { mutableStateOf(false) }
+    var historySelection by remember { mutableStateOf(emptySet<String>()) }
+    var confirmDeleteHistory by remember { mutableStateOf(false) }
+    val selectingHistory = destination == Destination.HISTORY && historySelection.isNotEmpty()
 
     LaunchedEffect(launchIntent) {
         val incoming = launchIntent ?: return@LaunchedEffect
@@ -164,27 +166,40 @@ fun VocaPhoneApp(
         topBar = {
             TopAppBar(
                 title = {
-                    val titleText = when {
-                        showingGateway -> "Gateway"
-                        showSetup -> "Setup"
-                        destination == Destination.DICTATE -> "VocaPhone"
-                        destination == Destination.SETTINGS -> settingsPage.title
-                        else -> destination.label
-                    }
-                    val branded = when {
-                        showingGateway -> false
-                        showSetup -> true
-                        destination != Destination.SETTINGS -> true
-                        else -> settingsPage == SettingsPage.HOME
-                    }
-                    if (branded) {
-                        BrandedAppBarTitle(titleText)
+                    if (selectingHistory) {
+                        val n = historySelection.size
+                        Text(if (n == 1) "1 selected" else "$n selected")
                     } else {
-                        Text(titleText)
+                        val titleText = when {
+                            showingGateway -> "Gateway"
+                            showSetup -> "Setup"
+                            destination == Destination.DICTATE -> "VocaPhone"
+                            destination == Destination.SETTINGS -> settingsPage.title
+                            else -> destination.label
+                        }
+                        val branded = when {
+                            showingGateway -> false
+                            showSetup -> true
+                            destination != Destination.SETTINGS -> true
+                            else -> settingsPage == SettingsPage.HOME
+                        }
+                        if (branded) {
+                            BrandedAppBarTitle(titleText)
+                        } else {
+                            Text(titleText)
+                        }
                     }
                 },
                 navigationIcon = {
                     when {
+                        selectingHistory -> {
+                            IconButton(onClick = { historySelection = emptySet() }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_cancel),
+                                    contentDescription = "Cancel",
+                                )
+                            }
+                        }
                         showingGateway -> {
                             IconButton(onClick = { showingGateway = false }) {
                                 Icon(
@@ -204,16 +219,23 @@ fun VocaPhoneApp(
                     }
                 },
                 actions = {
-                    if (
-                        !showSetup &&
-                        !showingGateway &&
-                        destination == Destination.HISTORY &&
-                        history.isNotEmpty()
-                    ) {
-                        IconButton(onClick = { confirmDeleteAllHistory = true }) {
+                    if (selectingHistory) {
+                        val allSelected = historySelection.size == history.size
+                        TextButton(
+                            onClick = {
+                                historySelection = if (allSelected) {
+                                    emptySet()
+                                } else {
+                                    history.map { it.sessionId }.toSet()
+                                }
+                            },
+                        ) {
+                            Text(if (allSelected) "Clear" else "Select all")
+                        }
+                        IconButton(onClick = { confirmDeleteHistory = true }) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_delete),
-                                contentDescription = "Delete all history",
+                                contentDescription = "Delete",
                                 tint = MaterialTheme.colorScheme.error,
                             )
                         }
@@ -231,7 +253,10 @@ fun VocaPhoneApp(
                                 if (destination == Destination.SETTINGS && entry == Destination.SETTINGS) {
                                     settingsPage = SettingsPage.HOME
                                 }
-                                if (entry != Destination.HISTORY) confirmDeleteAllHistory = false
+                                if (entry != Destination.HISTORY) {
+                                    historySelection = emptySet()
+                                    confirmDeleteHistory = false
+                                }
                                 destination = entry
                             },
                             icon = { Icon(painterResource(entry.icon), contentDescription = entry.label) },
@@ -323,8 +348,12 @@ fun VocaPhoneApp(
 
             destination == Destination.HISTORY -> HistoryScreen(
                 records = history,
+                selectedIds = historySelection,
                 onRetry = viewModel::retry,
-                onDelete = { viewModel.deleteRecord(it) },
+                onToggleSelect = { id ->
+                    historySelection = toggleHistorySelection(historySelection, id)
+                },
+                onEnterSelect = { id -> historySelection = setOf(id) },
                 modifier = content,
             )
 
@@ -381,27 +410,41 @@ fun VocaPhoneApp(
         }
     }
 
-    if (confirmDeleteAllHistory) {
+    if (confirmDeleteHistory && historySelection.isNotEmpty()) {
+        val count = historySelection.size
+        val deletingAll = count == history.size
         AlertDialog(
-            onDismissRequest = { confirmDeleteAllHistory = false },
-            title = { Text("Delete all history?") },
-            text = { Text("This removes every dictation on this phone.") },
+            onDismissRequest = { confirmDeleteHistory = false },
+            title = {
+                Text(
+                    when {
+                        deletingAll -> "Delete all history?"
+                        count == 1 -> "Delete this dictation?"
+                        else -> "Delete $count dictations?"
+                    },
+                )
+            },
+            text = { Text("This removes them from this phone.") },
             confirmButton = {
                 DestructiveTextButton(
-                    text = "Delete all",
+                    text = if (deletingAll) "Delete all" else "Delete",
                     onClick = {
-                        viewModel.deleteAllHistory()
-                        confirmDeleteAllHistory = false
+                        if (deletingAll) viewModel.deleteAllHistory()
+                        else viewModel.deleteRecords(historySelection)
+                        historySelection = emptySet()
+                        confirmDeleteHistory = false
                     },
                 )
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteAllHistory = false }) {
+                TextButton(onClick = { confirmDeleteHistory = false }) {
                     Text("Cancel")
                 }
             },
         )
     }
+
+    BackHandler(enabled = selectingHistory) { historySelection = emptySet() }
 
     // Returning from the gateway screen after setup is complete drops back into
     // the app rather than the checklist.
