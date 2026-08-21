@@ -147,8 +147,14 @@ fun VocaPhoneApp(
     var showingGateway by remember { mutableStateOf(false) }
     var openLanguagePicker by remember { mutableStateOf(false) }
     var historySelection by remember { mutableStateOf(emptySet<String>()) }
+    var historySelecting by remember { mutableStateOf(false) }
     var confirmDeleteHistory by remember { mutableStateOf(false) }
-    val selectingHistory = destination == Destination.HISTORY && historySelection.isNotEmpty()
+    val selectingHistory = destination == Destination.HISTORY && historySelecting
+    fun exitHistorySelection() {
+        historySelecting = false
+        historySelection = emptySet()
+        confirmDeleteHistory = false
+    }
 
     LaunchedEffect(launchIntent) {
         val incoming = launchIntent ?: return@LaunchedEffect
@@ -179,8 +185,7 @@ fun VocaPhoneApp(
                 },
                 title = {
                     if (selectingHistory) {
-                        val n = historySelection.size
-                        Text(if (n == 1) "1 selected" else "$n selected")
+                        Text(historySelectionTitle(historySelection.size))
                     } else {
                         val titleText = when {
                             showingGateway -> "Gateway"
@@ -205,7 +210,7 @@ fun VocaPhoneApp(
                 navigationIcon = {
                     when {
                         selectingHistory -> {
-                            IconButton(onClick = { historySelection = emptySet() }) {
+                            IconButton(onClick = { exitHistorySelection() }) {
                                 Icon(
                                     painterResource(R.drawable.ic_cancel),
                                     contentDescription = "Close",
@@ -232,7 +237,8 @@ fun VocaPhoneApp(
                 },
                 actions = {
                     if (selectingHistory) {
-                        val allSelected = historySelection.size == history.size
+                        val allSelected = history.isNotEmpty() &&
+                            historySelection.size == history.size
                         TextButton(
                             onClick = {
                                 historySelection = if (allSelected) {
@@ -247,12 +253,23 @@ fun VocaPhoneApp(
                         ) {
                             Text(if (allSelected) "Clear" else "Select all")
                         }
-                        IconButton(onClick = { confirmDeleteHistory = true }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_delete),
-                                contentDescription = "Delete",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
+                        if (historySelection.isNotEmpty()) {
+                            IconButton(onClick = { confirmDeleteHistory = true }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_delete),
+                                    contentDescription = "Delete",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    } else if (
+                        !showSetup &&
+                        !showingGateway &&
+                        destination == Destination.HISTORY &&
+                        history.isNotEmpty()
+                    ) {
+                        TextButton(onClick = { historySelecting = true }) {
+                            Text("Select")
                         }
                     }
                 },
@@ -268,10 +285,7 @@ fun VocaPhoneApp(
                                 if (destination == Destination.SETTINGS && entry == Destination.SETTINGS) {
                                     settingsPage = SettingsPage.HOME
                                 }
-                                if (entry != Destination.HISTORY) {
-                                    historySelection = emptySet()
-                                    confirmDeleteHistory = false
-                                }
+                                if (entry != Destination.HISTORY) exitHistorySelection()
                                 destination = entry
                             },
                             icon = { Icon(painterResource(entry.icon), contentDescription = entry.label) },
@@ -364,11 +378,15 @@ fun VocaPhoneApp(
             destination == Destination.HISTORY -> HistoryScreen(
                 records = history,
                 selectedIds = historySelection,
+                selecting = historySelecting,
                 onRetry = viewModel::retry,
                 onToggleSelect = { id ->
                     historySelection = toggleHistorySelection(historySelection, id)
                 },
-                onEnterSelect = { id -> historySelection = setOf(id) },
+                onEnterSelect = { id ->
+                    historySelecting = true
+                    historySelection = setOf(id)
+                },
                 modifier = content,
             )
 
@@ -446,8 +464,7 @@ fun VocaPhoneApp(
                     onClick = {
                         if (deletingAll) viewModel.deleteAllHistory()
                         else viewModel.deleteRecords(historySelection)
-                        historySelection = emptySet()
-                        confirmDeleteHistory = false
+                        exitHistorySelection()
                     },
                 )
             },
@@ -459,7 +476,7 @@ fun VocaPhoneApp(
         )
     }
 
-    BackHandler(enabled = selectingHistory) { historySelection = emptySet() }
+    BackHandler(enabled = selectingHistory) { exitHistorySelection() }
 
     // Returning from the gateway screen after setup is complete drops back into
     // the app rather than the checklist.

@@ -39,6 +39,7 @@ import java.util.Date
 fun HistoryScreen(
     records: List<DictationRecordEntity>,
     selectedIds: Set<String>,
+    selecting: Boolean,
     onRetry: (String) -> Unit,
     onToggleSelect: (String) -> Unit,
     onEnterSelect: (String) -> Unit,
@@ -46,7 +47,6 @@ fun HistoryScreen(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val selecting = selectedIds.isNotEmpty()
 
     if (records.isEmpty()) {
         EmptyState(
@@ -75,9 +75,15 @@ fun HistoryScreen(
     }
 }
 
-/** Tap copies. Long-press starts a selection. Tapping a selected item drops it. */
+/** Tap copies. Long-press or the app-bar Select action starts a selection. */
 internal fun toggleHistorySelection(selected: Set<String>, id: String): Set<String> =
     if (id in selected) selected - id else selected + id
+
+internal fun historySelectionTitle(count: Int): String = when (count) {
+    0 -> "Select items"
+    1 -> "1 selected"
+    else -> "$count selected"
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
