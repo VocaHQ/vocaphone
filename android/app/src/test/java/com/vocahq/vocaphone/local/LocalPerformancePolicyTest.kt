@@ -64,12 +64,14 @@ class LocalPerformancePolicyTest {
     }
 
     @Test
-    fun `large whisper models are marked slow on phones`() {
+    fun `medium and large whisper models are marked slow on phones`() {
         assertTrue(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("large-v3")!!))
         assertTrue(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("large-v3-turbo")!!))
         assertTrue(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("large-v3-turbo-q5_0")!!))
         assertTrue(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("medium")!!))
-        assertFalse(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("medium-q5_0")!!))
+        assertTrue(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("medium-q5_0")!!))
+        assertTrue(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("medium-q8_0")!!))
+        assertFalse(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("small-q5_1")!!))
         assertFalse(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("tiny-q5_1")!!))
         assertFalse(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("moonshine-tiny-en")!!))
         assertFalse(LocalModelCatalog.isSlowOnMobile(LocalModelCatalog.find("parakeet-tdt-0.6b-v3")!!))

@@ -255,14 +255,14 @@ object LocalModelCatalog {
             ?: whisper.first()
 
     /**
-     * Whisper large / turbo, and full-precision medium, are too heavy for
-     * phone CPUs. The catalog still offers them; the tile is marked so the
+     * Whisper medium and larger are too heavy for live dictation on a phone.
+     * Medium is a full decoder; it is often slower than large-v3-turbo at the
+     * same quant. The catalog still offers them; the tile is marked so the
      * download is an informed choice.
      */
     fun isSlowOnMobile(model: LocalModelDescriptor): Boolean {
         if (model.engine != LocalModelEngine.WHISPER) return false
-        return "large" in model.id ||
-            (whisperClass(model.id) >= 4 && "q5" !in model.id && "q8" !in model.id)
+        return whisperClass(model.id) >= 4
     }
 
     /**
