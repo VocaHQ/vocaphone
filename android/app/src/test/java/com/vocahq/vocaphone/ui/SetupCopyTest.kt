@@ -32,6 +32,8 @@ class SetupCopyTest {
             SetupCopy.BROWSE_MODELS_DETAIL,
             SetupCopy.BROWSE_SHEET_TITLE,
             SetupCopy.BROWSE_SHEET_SUPPORTING,
+            SetupCopy.WELCOME_SAMPLE,
+            SetupCopy.WELCOME_A11Y,
             MORE_MODELS_LABEL,
         )
         copy.forEach { line ->
