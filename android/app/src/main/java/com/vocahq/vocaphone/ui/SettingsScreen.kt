@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -108,6 +109,8 @@ fun SettingsScreen(
     telemetryDeliveryStatus: () -> String,
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
+    openLanguagePicker: Boolean = false,
+    onLanguagePickerOpened: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -115,6 +118,13 @@ fun SettingsScreen(
     val onDevice = context.readOnDeviceDiagnostics(localModels.downloaded)
     var pickingLanguage by remember { mutableStateOf(false) }
     val localModel = LocalModelCatalog.find(settings.localModelId)
+
+    LaunchedEffect(openLanguagePicker) {
+        if (openLanguagePicker) {
+            pickingLanguage = true
+            onLanguagePickerOpened()
+        }
+    }
 
     BackHandler(enabled = page != SettingsPage.HOME) { onPageChange(SettingsPage.HOME) }
 

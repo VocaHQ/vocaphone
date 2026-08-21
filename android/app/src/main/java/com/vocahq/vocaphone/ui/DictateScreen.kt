@@ -1,18 +1,23 @@
 package com.vocahq.vocaphone.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,16 +25,32 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.BuildConfig
+import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.DictationPhase
 import com.vocahq.vocaphone.core.DictationState
 import com.vocahq.vocaphone.core.TextInsertion
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.telemetry.TelemetryInspectPayload
+
+internal object DictateCopy {
+    const val DICTATE = "Dictate"
+    const val CLEAR = "Clear"
+    const val LANGUAGE = "Language"
+    const val STYLE = "Writing style"
+    const val MODEL = "Model"
+    const val GATEWAY = "Gateway"
+    const val NO_MODEL = "No model"
+}
 
 /**
  * In-app dictation. The transcript lands in a scratchpad the user can edit.
@@ -45,6 +66,9 @@ fun DictateScreen(
     onRetry: (String) -> Unit,
     onDismiss: () -> Unit,
     onOpenGateway: () -> Unit,
+    onOpenLanguage: () -> Unit,
+    onOpenStyle: () -> Unit,
+    onOpenModel: () -> Unit,
     onTelemetryDecision: (Boolean) -> Unit,
     telemetryInspect: () -> TelemetryInspectPayload,
     telemetryPendingCount: () -> Int,
@@ -74,135 +98,230 @@ fun DictateScreen(
         modifier = modifier
             .fillMaxSize()
             .imePadding()
-            .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Guided setup asks once, at its end -- but only people who go through
-        // setup ever reach that screen. Everyone upgrading from an earlier beta
-        // already has onboardingComplete set, so SetupScreen never renders for
-        // them and they would never be asked at all. Asking here covers them,
-        // and disappears for good either way once answered.
-        if (BuildConfig.TELEMETRY && settings.onboardingComplete && !settings.telemetryAsked) {
-            UsageReportingSetupCard(
-                onDecision = onTelemetryDecision,
-                inspect = telemetryInspect,
-                pendingCount = telemetryPendingCount,
-                deliveryStatus = telemetryDeliveryStatus,
-            )
-        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+        ) {
+            // Guided setup asks once, at its end -- but only people who go through
+            // setup ever reach that screen. Everyone upgrading from an earlier beta
+            // already has onboardingComplete set, so SetupScreen never renders for
+            // them and they would never be asked at all. Asking here covers them,
+            // and disappears for good either way once answered.
+            if (BuildConfig.TELEMETRY && settings.onboardingComplete && !settings.telemetryAsked) {
+                UsageReportingSetupCard(
+                    onDecision = onTelemetryDecision,
+                    inspect = telemetryInspect,
+                    pendingCount = telemetryPendingCount,
+                    deliveryStatus = telemetryDeliveryStatus,
+                )
+            }
 
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                listOf(
-                    settings.language.displayName,
-                    settings.style.displayName,
-                    if (settings.localTranscriptionEnabled) {
-                        LocalModelCatalog.find(settings.localModelId)?.displayName ?: "On this phone"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DictateSettingChip(
+                    icon = R.drawable.ic_language,
+                    label = settings.effectiveLanguage.displayName,
+                    contentDescription = "${DictateCopy.LANGUAGE}, ${settings.effectiveLanguage.displayName}",
+                    onClick = onOpenLanguage,
+                )
+                DictateSettingChip(
+                    icon = R.drawable.ic_style,
+                    label = settings.style.displayName,
+                    contentDescription = "${DictateCopy.STYLE}, ${settings.style.displayName}",
+                    onClick = onOpenStyle,
+                )
+                DictateSettingChip(
+                    icon = if (settings.localTranscriptionEnabled) {
+                        R.drawable.ic_models
                     } else {
-                        settings.gatewayUrl.ifEmpty { "No gateway" }
+                        R.drawable.ic_connection
                     },
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(state.statusText, style = MaterialTheme.typography.bodyLarge)
+                    label = dictateModelChipLabel(settings),
+                    contentDescription = "${DictateCopy.MODEL}, ${dictateModelChipLabel(settings)}",
+                    onClick = onOpenModel,
+                )
+            }
 
-            if (state.isRecording) {
-                LinearProgressIndicator(
-                    progress = { state.level.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    "${state.recordedMillis / 1000}s" +
-                        (state.inputRouteLabel?.let { " · $it" } ?: "") +
-                        (if (state.streaming) " · streaming" else " · batch upload"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (state.approachingLimit) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (showDictateStatus(state.phase)) {
+                    Text(state.statusText, style = MaterialTheme.typography.bodyLarge)
+                }
+
+                if (state.isRecording) {
+                    LinearProgressIndicator(
+                        progress = { state.level.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Text(
-                        "One minute left before the five-minute limit stops this recording.",
+                        "${state.recordedMillis / 1000}s" +
+                            (state.inputRouteLabel?.let { " · $it" } ?: "") +
+                            (if (state.streaming) " · streaming" else " · batch upload"),
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.approachingLimit) {
+                        Text(
+                            "One minute left before the five-minute limit stops this recording.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (state.partialTranscript.isNotEmpty()) {
+                        Text(
+                            state.partialTranscript,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                if (state.phase == DictationPhase.FAILED) {
+                    Text(
+                        state.failure?.message.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-                if (state.partialTranscript.isNotEmpty()) {
-                    Text(
-                        state.partialTranscript,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
 
-            if (state.phase == DictationPhase.FAILED) {
-                Text(
-                    state.failure?.message.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+            SetupRepair(
+                status = setup,
+                onOpenGateway = onOpenGateway,
+            )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                when {
-                    state.isRecording -> {
-                        PrimaryButton("Finish", onClick = onFinish, modifier = Modifier.weight(1f))
-                        SecondaryButton("Cancel", onClick = onCancel, modifier = Modifier.weight(1f))
-                    }
-
-                    state.phase.isBusy ->
-                        SecondaryButton("Cancel", onClick = onCancel, modifier = Modifier.weight(1f))
-
-                    state.canRetry -> {
-                        PrimaryButton(
-                            text = "Retry",
-                            onClick = { state.sessionId?.let { onRetry(it.toString()) } },
-                            modifier = Modifier.weight(1f),
-                        )
-                        SecondaryButton("Dismiss", onClick = onDismiss, modifier = Modifier.weight(1f))
-                    }
-
-                    else -> PrimaryButton(
-                        text = "Start dictation",
-                        onClick = onStart,
-                        enabled = setup.isReadyToDictate,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-
-            if (!setup.isReadyToDictate) {
-                Text(
-                    "Dictation is paused. See below.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+            Section(
+                title = "Scratchpad",
+                supporting = "Transcripts are inserted at the cursor. Nothing here is uploaded.",
+            ) {
+                OutlinedTextField(
+                    value = scratchpad,
+                    onValueChange = { scratchpad = it },
+                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    label = { Text("Your text") },
                 )
             }
         }
 
-        // Directly under the disabled button rather than at the foot of the
-        // screen: this is the answer to why the button will not press.
-        SetupRepair(
-            status = setup,
-            onOpenGateway = onOpenGateway,
+        DictateActionRow(
+            state = state,
+            setup = setup,
+            scratchpadEmpty = scratchpad.text.isEmpty(),
+            onStart = onStart,
+            onFinish = onFinish,
+            onCancel = onCancel,
+            onRetry = onRetry,
+            onDismiss = onDismiss,
+            onClear = { scratchpad = TextFieldValue() },
         )
+    }
+}
 
-        Section(
-            title = "Scratchpad",
-            supporting = "Transcripts are inserted at the cursor. Nothing here is uploaded.",
-        ) {
-            OutlinedTextField(
-                value = scratchpad,
-                onValueChange = { scratchpad = it },
-                modifier = Modifier.fillMaxWidth().height(160.dp),
-                label = { Text("Your text") },
+@Composable
+private fun DictateActionRow(
+    state: DictationState,
+    setup: SetupStatus,
+    scratchpadEmpty: Boolean,
+    onStart: () -> Unit,
+    onFinish: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when {
+            state.isRecording -> {
+                SecondaryButton("Cancel", onClick = onCancel, modifier = Modifier.weight(1f))
+                PrimaryButton("Finish", onClick = onFinish, modifier = Modifier.weight(2f))
+            }
+            state.phase.isBusy -> SecondaryButton(
+                "Cancel",
+                onClick = onCancel,
+                modifier = Modifier.weight(1f),
             )
-            DestructiveButton(
-                text = "Clear",
-                onClick = { scratchpad = TextFieldValue() },
-                enabled = scratchpad.text.isNotEmpty(),
+            state.canRetry -> {
+                SecondaryButton("Dismiss", onClick = onDismiss, modifier = Modifier.weight(1f))
+                PrimaryButton(
+                    text = "Retry",
+                    onClick = { state.sessionId?.let { onRetry(it.toString()) } },
+                    modifier = Modifier.weight(2f),
+                )
+            }
+            else -> {
+                DestructiveButton(
+                    text = DictateCopy.CLEAR,
+                    onClick = onClear,
+                    enabled = !scratchpadEmpty,
+                    modifier = Modifier.weight(1f),
+                )
+                PrimaryButton(
+                    text = DictateCopy.DICTATE,
+                    onClick = onStart,
+                    enabled = setup.isReadyToDictate,
+                    modifier = Modifier.weight(2f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.DictateSettingChip(
+    @DrawableRes icon: Int,
+    label: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .weight(1f)
+            .height(48.dp)
+            .semantics { this.contentDescription = contentDescription },
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
+
+internal fun dictateModelChipLabel(settings: VocaPhoneSettings): String =
+    if (settings.localTranscriptionEnabled) {
+        LocalModelCatalog.find(settings.localModelId)?.displayName ?: DictateCopy.NO_MODEL
+    } else {
+        DictateCopy.GATEWAY
+    }
+
+internal fun showDictateStatus(phase: DictationPhase): Boolean =
+    phase != DictationPhase.IDLE &&
+        phase != DictationPhase.FAILED &&
+        phase != DictationPhase.PERMISSION_REPAIR

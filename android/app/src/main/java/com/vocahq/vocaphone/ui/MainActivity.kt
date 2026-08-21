@@ -140,6 +140,7 @@ fun VocaPhoneApp(
     var destination by remember { mutableStateOf(Destination.DICTATE) }
     var settingsPage by remember { mutableStateOf(SettingsPage.HOME) }
     var showingGateway by remember { mutableStateOf(false) }
+    var openLanguagePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(launchIntent) {
         val incoming = launchIntent ?: return@LaunchedEffect
@@ -271,6 +272,23 @@ fun VocaPhoneApp(
                 onRetry = viewModel::retry,
                 onDismiss = viewModel::dismissDictation,
                 onOpenGateway = { showingGateway = true },
+                onOpenLanguage = {
+                    destination = Destination.SETTINGS
+                    settingsPage = SettingsPage.HOME
+                    openLanguagePicker = true
+                },
+                onOpenStyle = {
+                    destination = Destination.SETTINGS
+                    settingsPage = SettingsPage.DICTATION
+                },
+                onOpenModel = {
+                    if (settings.localTranscriptionEnabled) {
+                        destination = Destination.SETTINGS
+                        settingsPage = SettingsPage.MODELS
+                    } else {
+                        showingGateway = true
+                    }
+                },
                 onTelemetryDecision = { enabled ->
                     viewModel.setTelemetryEnabled(enabled)
                     viewModel.setTelemetryAsked()
@@ -335,6 +353,8 @@ fun VocaPhoneApp(
                 telemetryDeliveryStatus = viewModel::telemetryDeliveryStatus,
                 page = settingsPage,
                 onPageChange = { settingsPage = it },
+                openLanguagePicker = openLanguagePicker,
+                onLanguagePickerOpened = { openLanguagePicker = false },
                 modifier = content,
             )
         }
