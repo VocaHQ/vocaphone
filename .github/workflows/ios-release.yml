@@ -1,7 +1,7 @@
 name: iOS TestFlight
 
 # iOS-only tags: ios/v{MARKETING_VERSION}.{CURRENT_PROJECT_VERSION}
-# e.g. ios/v1.0.20 is TestFlight 1.0 (20). See docs/releasing.md.
+# e.g. ios/v1.0.21 is TestFlight 1.0 (21). See docs/releasing.md.
 #
 # Android uses android/v* tags and is a separate workflow. A joint product
 # drop is two tags on the same commit, not one tag that builds both.

@@ -146,6 +146,10 @@ Create the key with the **App Manager** role so Xcode can mint a
 cloud-managed Apple Distribution certificate and App Store profiles. An
 iOS-only drop without a tag is Actions → iOS TestFlight → Run workflow.
 
+The workflow only uploads. It does not add the build to Internal or External
+testing groups. A build can sit at Ready to Submit while testers stay on an
+older Testing build.
+
 ## 5. TestFlight distribution
 
 **Internal testing** (up to 100 App Store Connect users on the team) is the
@@ -175,8 +179,11 @@ confirm that's still true before writing it.
 
 - Add testers under **TestFlight → Internal Testing** (App Store Connect
   Users and Access role, not a separate tester list, for internal groups).
-- A build expires from TestFlight after 90 days; internal tracks otherwise
-  auto-notify testers of new builds.
+- After processing finishes, add the new build to the Internal group (and
+  External if the public link should follow). Ready to Submit means Apple
+  accepted the binary, not that testers were moved.
+- A build expires from TestFlight after 90 days. Groups only auto-notify
+  testers of a new build once that build is in the group.
 - Bump `CURRENT_PROJECT_VERSION` in `ios/project.yml` before every subsequent
   upload — App Store Connect rejects a re-upload of a build number it has
   already seen for this bundle ID, and `just gen` won't do this for you.

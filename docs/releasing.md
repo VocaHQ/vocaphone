@@ -14,7 +14,7 @@ one of them.
 | --- | --- | --- | --- |
 | `android/v0.1.1` | Android only | APK, AAB, fdroid APK, checksums. Marked **Latest**. | Play Internal testing |
 | `android/v0.1.1-beta.1` | Android only | Same files. Marked **Pre-release**. | Play Internal testing |
-| `ios/v1.0.20` | iOS only | Notes only (no IPA). Not Latest. | TestFlight |
+| `ios/v1.0.21` | iOS only | Notes only (no IPA). Not Latest. | TestFlight |
 | *two tags on the same commit* | Both | Two Releases, two changelogs | Both of the above |
 
 Historical tags through `v0.1.0` / `v0.1.0-beta.20` are unprefixed Android
@@ -36,13 +36,13 @@ disagree.
 
 ```
 ios/v{MARKETING_VERSION}.{CURRENT_PROJECT_VERSION}
-ios/v1.0.20   →   TestFlight 1.0 (20)
+ios/v1.0.21   →   TestFlight 1.0 (21)
 ```
 
 `CURRENT_PROJECT_VERSION` must be unique for `com.vocahq.vocaphone`. Reusing
-20 is rejected even if the marketing version changed. Leave
-`MARKETING_VERSION` at `1.0` until the App Store listing itself needs a new
-user-visible version.
+a build number App Store Connect has already seen is rejected even if the
+marketing version changed. Leave `MARKETING_VERSION` at `1.0` until the App
+Store listing itself needs a new user-visible version.
 
 ## Android only
 
@@ -69,7 +69,9 @@ git push origin ios/v1.0.21
 
 `.github/workflows/ios-release.yml` archives on `macos-15` and uploads to
 App Store Connect / TestFlight when the three API key secrets are set. It
-never submits for App Review.
+never submits for App Review and never assigns the build to a TestFlight
+group. Check TestFlight first: if this `CURRENT_PROJECT_VERSION` is already
+on App Store Connect, bump it before tagging or the upload is rejected.
 
 Without a tag, **Actions → iOS TestFlight → Run workflow** uploads the
 current ref the same way and does not create a GitHub Release.
@@ -146,6 +148,8 @@ device UDID using a different set of secrets, and never talks to TestFlight.
 - [ ] `just ios gen` is committed (CI fails if `project.pbxproj` is stale)
 - [ ] App Privacy nutrition label still matches [privacy.md](privacy.md)
       (Product Interaction if usage reporting is in the binary)
+- [ ] After the upload, add the build to Internal (and External if the
+      public link should follow). The workflow does not.
 
 **Either**
 
