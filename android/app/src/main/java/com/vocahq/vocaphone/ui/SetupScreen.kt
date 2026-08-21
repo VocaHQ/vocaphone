@@ -1,48 +1,22 @@
 package com.vocahq.vocaphone.ui
 
 import android.Manifest
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlin.math.abs
-import kotlin.math.sin
-import kotlinx.coroutines.delay
 import com.vocahq.vocaphone.BuildConfig
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.local.LocalModelDescriptor
@@ -56,14 +30,14 @@ internal object SetupCopy {
     const val TITLE = "Set up VocaPhone"
     const val INTRO = "Turn on the keyboard, allow the microphone, then download a model."
     const val START = "Start dictating"
-    const val BROWSE_MODELS = "Browse other models"
-    const val BROWSE_MODELS_DETAIL =
-        "English-only, smaller, or Whisper models also fit this phone."
+    const val DOWNLOAD = "Download"
+    const val BROWSE_MODELS = "Browse"
     const val BROWSE_SHEET_TITLE = "Other models"
     const val BROWSE_SHEET_SUPPORTING =
         "These also run on this phone. The recommendation is still the default."
-    const val WELCOME_SAMPLE = "Meet me by the station at six."
-    const val WELCOME_A11Y = "A short waveform becomes text at the cursor."
+    const val SLOW_ON_PHONES = "Slow on phones"
+    const val SLOW_ON_PHONES_DETAIL =
+        "This may not perform well on a phone."
 
     fun keyboardStatus(status: ImeSetupStatus): String = when {
         status.selected -> "VocaPhone is the selected keyboard."
@@ -113,7 +87,6 @@ fun SetupScreen(
             verticalArrangement = Arrangement.spacedBy(SectionSpacing),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SetupWelcomeVisual()
                 Text(
                     SetupCopy.INTRO,
                     style = MaterialTheme.typography.bodyLarge,
@@ -228,105 +201,6 @@ internal fun ImeSetupCard(status: ImeSetupStatus, modifier: Modifier = Modifier)
             },
             modifier = Modifier.fillMaxWidth(),
         )
-    }
-}
-
-/**
- * The same first-run moment as iOS: speech as bars, then a sentence at a
- * cursor. Animations off skips the listen beat and shows the typed state.
- */
-@Composable
-private fun SetupWelcomeVisual(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val reduceMotion = remember {
-        Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        ) == 0f
-    }
-    var typed by remember { mutableStateOf(reduceMotion) }
-
-    LaunchedEffect(reduceMotion) {
-        if (reduceMotion) {
-            typed = true
-            return@LaunchedEffect
-        }
-        delay(1_050)
-        typed = true
-    }
-
-    val wave by rememberInfiniteTransition(label = "setup-welcome").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "setup-welcome-phase",
-    )
-    val cursor by rememberInfiniteTransition(label = "setup-cursor").animateFloat(
-        initialValue = 1f,
-        targetValue = 0.12f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(530, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "setup-cursor-blink",
-    )
-    val barColor = MaterialTheme.colorScheme.primary
-    val listen by animateFloatAsState(
-        targetValue = if (typed) 0f else 1f,
-        animationSpec = tween(280),
-        label = "setup-welcome-settle",
-    )
-
-    FeaturedCard(
-        modifier = modifier.semantics { contentDescription = SetupCopy.WELCOME_A11Y },
-    ) {
-        Row(
-            modifier = Modifier.height(28.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            repeat(12) { index ->
-                val rest = 8f + (index % 5) * 5f
-                val listening = 8f + 16f * abs(
-                    sin((wave + index / 12f) * 2f * Math.PI.toFloat()),
-                )
-                Box(
-                    Modifier
-                        .width(4.dp)
-                        .height((rest + (listening - rest) * listen).dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(barColor.copy(alpha = 0.35f + 0.5f * listen)),
-                )
-            }
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            if (typed) {
-                Text(SetupCopy.WELCOME_SAMPLE, style = MaterialTheme.typography.bodyMedium)
-            }
-            Box(
-                Modifier
-                    .width(2.dp)
-                    .height(18.dp)
-                    .background(
-                        barColor.copy(
-                            alpha = if (!typed) {
-                                0f
-                            } else if (reduceMotion) {
-                                1f
-                            } else {
-                                cursor
-                            },
-                        ),
-                    ),
-            )
-        }
     }
 }
 

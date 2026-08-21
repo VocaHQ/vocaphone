@@ -48,16 +48,16 @@ fun LocalModelDescriptor.recommendationWhy(): String = when (sherpaFamily) {
     SherpaFamily.NEMO_TRANSDUCER ->
         "The fastest multilingual model that fits this phone."
     SherpaFamily.MOONSHINE ->
-        "A lighter model, so this phone keeps RAM for the keyboard."
-    SherpaFamily.SENSE_VOICE, SherpaFamily.CANARY ->
-        "A multilingual model that fits this phone."
-    SherpaFamily.DOLPHIN_CTC, SherpaFamily.NEMO_CTC, SherpaFamily.PARAFORMER ->
-        "A compact model that fits this phone."
+        "A small English model, so the first download stays light."
+    SherpaFamily.SENSE_VOICE, SherpaFamily.CANARY, SherpaFamily.PARAFORMER ->
+        "Matches this phone's language without a large download."
+    SherpaFamily.DOLPHIN_CTC, SherpaFamily.NEMO_CTC ->
+        "A compact model for this phone's language."
     null -> if (engine == LocalModelEngine.WHISPER) {
         if (englishOnly) {
             "A small English Whisper model that fits this phone."
         } else {
-            "A Whisper model sized for this phone."
+            "A small Whisper model that covers this phone's language."
         }
     } else {
         "The best fit for this phone."

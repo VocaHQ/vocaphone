@@ -71,7 +71,7 @@ fun LocalModelPicker(
     val profile = remember(state.totalRamGB) {
         DeviceProfile.current(state.totalRamGB)
     }
-    val recommended = remember(profile) {
+    val recommended = remember(profile, profile.language) {
         LocalModelCatalog.recommended(profile)
     }
     val selectedModel = usable.firstOrNull { it.id == selectedModelId }
@@ -168,6 +168,11 @@ fun LocalModelPicker(
                 onSelect = onSelect,
                 onDownloadAndUse = onDownloadAndUse,
                 onCancelDownload = onCancelDownload,
+                onBrowse = if (compact) {
+                    { catalogOpen = true }
+                } else {
+                    null
+                },
             )
         }
     }
@@ -182,16 +187,11 @@ fun LocalModelPicker(
                 onInspect = { inspecting = it },
             )
         }
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (sections.recommended == null) {
             SecondaryButton(
                 text = SetupCopy.BROWSE_MODELS,
                 onClick = { catalogOpen = true },
                 modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                SetupCopy.BROWSE_MODELS_DETAIL,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     } else {
@@ -342,6 +342,7 @@ private fun RecommendedModelCard(
     onSelect: (LocalModelDescriptor) -> Unit,
     onDownloadAndUse: (LocalModelDescriptor) -> Unit,
     onCancelDownload: () -> Unit,
+    onBrowse: (() -> Unit)? = null,
 ) {
     FeaturedCard {
         Text("Recommended for this phone", style = MaterialTheme.typography.titleSmall)
@@ -357,19 +358,91 @@ private fun RecommendedModelCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (showActions) {
-            ModelActions(
-                model = model,
-                state = state,
-                selected = selected,
-                busy = busy,
-                useLabel = "Use recommended",
-                downloadLabel = "Download and use",
-                onSelect = onSelect,
-                onDownload = onDownloadAndUse,
-                onCancelDownload = onCancelDownload,
-                onDelete = null,
+            val browse = onBrowse
+            if (
+                browse != null &&
+                state.downloading != model.id &&
+                state.preparing != model.displayName
+            ) {
+                CompactRecommendedActions(
+                    model = model,
+                    downloaded = model.id in state.downloaded,
+                    selected = selected,
+                    busy = busy,
+                    onSelect = onSelect,
+                    onDownloadAndUse = onDownloadAndUse,
+                    onBrowse = browse,
+                )
+            } else {
+                ModelActions(
+                    model = model,
+                    state = state,
+                    selected = selected,
+                    busy = busy,
+                    useLabel = "Use recommended",
+                    downloadLabel = "Download and use",
+                    onSelect = onSelect,
+                    onDownload = onDownloadAndUse,
+                    onCancelDownload = onCancelDownload,
+                    onDelete = null,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactRecommendedActions(
+    model: LocalModelDescriptor,
+    downloaded: Boolean,
+    selected: Boolean,
+    busy: Boolean,
+    onSelect: (LocalModelDescriptor) -> Unit,
+    onDownloadAndUse: (LocalModelDescriptor) -> Unit,
+    onBrowse: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!downloaded) {
+            PrimaryButton(
+                text = SetupCopy.DOWNLOAD,
+                onClick = { onDownloadAndUse(model) },
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
+            )
+        } else if (selected) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_step_done),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    "In use",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        } else {
+            SecondaryButton(
+                text = "Use",
+                onClick = { onSelect(model) },
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
             )
         }
+        SecondaryButton(
+            text = SetupCopy.BROWSE_MODELS,
+            onClick = onBrowse,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -542,15 +615,15 @@ private fun ModelTile(
     elevated: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
+    val slow = LocalModelCatalog.isSlowOnMobile(model)
     Surface(
         modifier = modifier.fillMaxHeight(),
         onClick = onClick,
-        color = if (selected) {
-            colors.primaryContainer
-        } else if (elevated) {
-            colors.surfaceContainerHigh
-        } else {
-            colors.surfaceContainerLow
+        color = when {
+            selected -> colors.primaryContainer
+            slow -> colors.tertiaryContainer
+            elevated -> colors.surfaceContainerHigh
+            else -> colors.surfaceContainerLow
         },
         shape = MaterialTheme.shapes.large,
         border = if (selected) BorderStroke(1.dp, colors.primary) else null,
@@ -570,7 +643,7 @@ private fun ModelTile(
             Text(
                 "${model.sizeLabel} · ${model.engineLabel()}",
                 style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
+                color = if (slow && !selected) colors.onTertiaryContainer else colors.onSurfaceVariant,
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -578,10 +651,15 @@ private fun ModelTile(
                     downloading -> "Downloading $progress%"
                     selected -> "In use"
                     installed -> "Installed"
+                    slow -> SetupCopy.SLOW_ON_PHONES
                     else -> model.languages
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = if (selected || downloading) colors.primary else colors.onSurfaceVariant,
+                color = when {
+                    selected || downloading -> colors.primary
+                    slow -> colors.tertiary
+                    else -> colors.onSurfaceVariant
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -630,6 +708,14 @@ private fun ModelDetailSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (LocalModelCatalog.isSlowOnMobile(model)) {
+                Notice(tone = NoticeTone.Warning) {
+                    Text(
+                        SetupCopy.SLOW_ON_PHONES_DETAIL,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
             ModelActions(
                 model = model,
                 state = state,

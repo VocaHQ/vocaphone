@@ -63,14 +63,15 @@ class ModelCatalogQueryTest {
 
     @Test
     fun recommendationWhyNamesTheFitWithoutHardware() {
-        val parakeet = LocalModelCatalog.find("parakeet-tdt-0.6b-v3")!!
-        val why = parakeet.recommendationWhy()
-        assertTrue(why.contains("fastest multilingual"))
-        assertTrue(why.contains("this phone"))
+        val moonshine = LocalModelCatalog.find("moonshine-tiny-en")!!
+        val why = moonshine.recommendationWhy()
+        assertTrue(why.contains("small English"))
         assertTrue(!why.contains("RAM"))
         assertTrue(!why.contains("GHz"))
         assertTrue(!why.contains("cores"))
         assertTrue(!why.contains("—"))
+        val canary = LocalModelCatalog.find("canary-180m-flash")!!
+        assertTrue(canary.recommendationWhy().contains("language"))
         val whisper = LocalModelCatalog.find("tiny-q5_1")!!
         assertTrue(whisper.recommendationWhy().contains("Whisper"))
         assertTrue(!whisper.recommendationWhy().contains("SHA-256"))
