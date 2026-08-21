@@ -2,6 +2,7 @@ package com.vocahq.vocaphone.ui
 
 import com.vocahq.vocaphone.core.DictationTone
 import com.vocahq.vocaphone.core.MicrophonePreference
+import com.vocahq.vocaphone.core.TranscriptStyler
 import com.vocahq.vocaphone.core.WritingStyle
 import com.vocahq.vocaphone.settings.AudioRetention
 import org.junit.Assert.assertEquals
@@ -47,5 +48,31 @@ class SettingsChoiceTest {
         MicrophonePreference.entries.forEach { assertTrue(it.detail.isNotBlank()) }
         AudioRetention.entries.forEach { assertTrue(it.detail.isNotBlank()) }
         WritingStyle.entries.forEach { assertTrue(it.detail.isNotBlank()) }
+    }
+
+    @Test
+    fun `writing style examples come from the same raw line and clean differs from formal`() {
+        assertEquals(
+            "i don't think it's ready. it cost $1,200",
+            WritingStyle.RAW.example,
+        )
+        assertEquals(
+            "i don't think it's ready. it cost $1,200.",
+            WritingStyle.CLEAN.example,
+        )
+        assertEquals(
+            "I don't think it's ready. It cost $1,200.",
+            WritingStyle.FORMAL.example,
+        )
+        assertEquals(
+            "I don't think it's ready. It cost $1,200",
+            WritingStyle.CASUAL.example,
+        )
+        WritingStyle.entries.forEach { style ->
+            assertEquals(
+                TranscriptStyler.apply(WritingStyle.EXAMPLE_SOURCE, style),
+                style.example,
+            )
+        }
     }
 }
