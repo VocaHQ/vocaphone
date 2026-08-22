@@ -23,12 +23,43 @@ import java.io.File
  */
 internal class SherpaRecognizer private constructor(
     private val recognizer: OfflineRecognizer,
+    /**
+     * Whether this recognizer was built to translate, which changes how a
+     * recording too long for one decode may be cut up. See [transcribe].
+     */
+    private val translating: Boolean = false,
 ) {
+    /**
+     * Decodes the whole recording, in windows if it is longer than one decode
+     * should be.
+     *
+     * Those windows are where translation and transcription part company. A
+     * transcriber returns the same words for the same audio, so a window can
+     * retain a little of the one before it and the merger can match and remove
+     * the repeat. A translator does not: the retained audio is translated again
+     * inside a different sentence, comes back in different words, and nothing
+     * can pair the two. Worse, a merger still looking for a repeat can only
+     * match a phrase the speaker genuinely said twice, and delete it.
+     *
+     * So a translating recognizer cuts clean at the boundaries the silence
+     * search actually found — the middle of a measured quiet run, where nothing
+     * is straddling the cut — and never merges by matching words. A boundary
+     * the search had to guess at keeps its overlap, because there a word really
+     * can be split and losing it outright is worse than the one word it may now
+     * repeat.
+     */
     fun transcribe(samples: FloatArray): SherpaTranscript {
         var transcript = SherpaTranscript.EMPTY
-        SherpaLongAudio.chunks(samples).forEach { chunk ->
+        val chunks = SherpaLongAudio.chunks(
+            samples,
+            overlapAtFoundBoundaries = !translating,
+        )
+        chunks.forEach { chunk ->
             val chunkResult = transcribeChunk(samples.copyOfRange(chunk.start, chunk.endExclusive))
-            transcript = transcript.append(chunkResult, deduplicateOverlap = chunk.overlapsPrevious)
+            transcript = transcript.append(
+                chunkResult,
+                deduplicateOverlap = chunk.overlapsPrevious && !translating,
+            )
         }
         return transcript.copy(text = transcript.text.trim())
     }
@@ -37,6 +68,7 @@ internal class SherpaRecognizer private constructor(
     fun transcribeChunk(samples: FloatArray): SherpaTranscript = SherpaEmptyChunkRecovery.decode(
         samples = samples,
         decodeOnce = ::decode,
+        deduplicateOverlap = !translating,
     )
 
     private fun decode(samples: FloatArray): SherpaTranscript {
@@ -161,6 +193,9 @@ internal class SherpaRecognizer private constructor(
                         maxActivePaths = quality.sherpaMaxActivePaths,
                     ),
                 ),
+                // Only the families that can honour a target are translating,
+                // whatever the caller asked for.
+                translating = family.acceptsLanguage && translateTo.isNotEmpty(),
             )
         }
     }
@@ -210,9 +245,16 @@ internal data class SherpaTranscript(val text: String, val language: String = ""
  */
 internal object SherpaEmptyChunkRecovery {
 
+    /**
+     * @param deduplicateOverlap false when the caller is translating. The two
+     *   halves overlap so the word crossing the centre survives, and matching
+     *   the repeat back out only works when the same audio returns the same
+     *   words — which is exactly what a translator does not promise.
+     */
     fun decode(
         samples: FloatArray,
         decodeOnce: (FloatArray) -> SherpaTranscript,
+        deduplicateOverlap: Boolean = true,
     ): SherpaTranscript {
         val firstAttempt = decodeOnce(samples)
         // Length is what this recovers from, so a window that is not long
@@ -241,7 +283,7 @@ internal object SherpaEmptyChunkRecovery {
         return decodeOnce(samples.copyOfRange(0, leftEnd))
             .append(
                 decodeOnce(samples.copyOfRange(rightStart, samples.size)),
-                deduplicateOverlap = true,
+                deduplicateOverlap = deduplicateOverlap,
             )
     }
 }

@@ -5,9 +5,13 @@ import Foundation
 /// VocaPhone needs.
 final class SherpaRecognizer: @unchecked Sendable {
     private let native: UnsafeMutableRawPointer
+    /// Whether this recognizer was built to translate, which changes how a
+    /// recording too long for one decode is put back together. See `transcribe`.
+    private let translating: Bool
 
-    private init(native: UnsafeMutableRawPointer) {
+    private init(native: UnsafeMutableRawPointer, translating: Bool = false) {
         self.native = native
+        self.translating = translating
     }
 
     deinit {
@@ -100,16 +104,35 @@ final class SherpaRecognizer: @unchecked Sendable {
         guard let native else {
             throw LocalModelManagerError.engineLoadFailed(model.id)
         }
-        return SherpaRecognizer(native: native)
+        // Only the families that can honour a target are translating, whatever
+        // the caller asked for.
+        return SherpaRecognizer(
+            native: native,
+            translating: family.acceptsLanguage && !translateTo.isEmpty
+        )
     }
 
+    /// Decodes the whole recording, in windows if it is longer than one decode
+    /// should be.
+    ///
+    /// Those windows are where translation and transcription part company. A
+    /// transcriber returns the same words for the same audio, so a window that
+    /// retains a little of the one before it can have the repeat matched and
+    /// removed. A translator does not: the retained audio is translated again
+    /// inside a different sentence, comes back in different words, and nothing
+    /// can pair the two. Worse, a merger still looking for a repeat can only
+    /// match a phrase the speaker genuinely said twice — and delete it.
+    ///
+    /// A boundary the silence search found is already cut clean here, so only
+    /// a guessed one carries audio across, and while translating that seam is
+    /// left as it decoded rather than merged by matching words.
     func transcribe(_ samples: [Float]) -> SherpaTranscript {
         let transcript = SherpaLongAudio.chunks(samples)
             .reduce(into: SherpaTranscript.empty) { transcript, chunk in
                 let bounded = Array(samples[chunk.start..<chunk.endExclusive])
                 let decoded = SherpaEmptyChunkRecovery.decode(samples: bounded, decodeOnce: decode)
                 transcript = transcript.appending(
-                    decoded, deduplicateOverlap: chunk.overlapsPrevious
+                    decoded, deduplicateOverlap: chunk.overlapsPrevious && !translating
                 )
             }
         return SherpaTranscript(
