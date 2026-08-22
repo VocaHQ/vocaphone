@@ -2479,6 +2479,7 @@ private fun Modifier.accentGesture(
     swipeConsumed: MutableState<Boolean>? = null,
 ) = pointerInput(pointerKey, variantCount) {
     val step = 28.dp.toPx()
+    val slopSquared = viewConfiguration.touchSlop.let { it * it }
     coroutineScope {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -2487,11 +2488,21 @@ private fun Modifier.accentGesture(
             var showing = false
             var index = 0
             var hold: Job? = null
+            var leftKey = false
+            fun abortHold() {
+                leftKey = true
+                hold?.cancel()
+                if (showing) {
+                    showing = false
+                    onAccentIndex(-1)
+                }
+            }
             try {
                 onPressedChange(true)
                 onTap()
                 hold = launch {
                     delay(380L)
+                    if (leftKey || swipeConsumed?.value == true) return@launch
                     showing = true
                     onAccentIndex(0)
                     onHaptic()
@@ -2503,23 +2514,34 @@ private fun Modifier.accentGesture(
                         change.consume()
                         break
                     }
+                    if (swipeConsumed?.value == true) {
+                        abortHold()
+                        change.consume()
+                        break
+                    }
+                    val dx = change.position.x - down.position.x
+                    val dy = change.position.y - down.position.y
+                    if (!showing && !leftKey && dx * dx + dy * dy > slopSquared) {
+                        // Swipe or a flick off the key: do not let the 380 ms
+                        // hold pop the accent row over the trail.
+                        abortHold()
+                    }
                     if (showing) {
-                        val delta = change.position.x - down.position.x
-                        val next = (delta / step).toInt().coerceIn(0, variantCount - 1)
+                        val next = (dx / step).toInt().coerceIn(0, variantCount - 1)
                         if (next != index) {
                             index = next
                             onAccentIndex(index)
                             onHaptic()
                         }
+                        change.consume()
                     }
-                    change.consume()
                 }
             } finally {
                 hold?.cancel()
                 onPressedChange(false)
                 onAccentIndex(-1)
             }
-            if (swipeConsumed?.value != true && showing) {
+            if (swipeConsumed?.value != true && showing && !leftKey) {
                 onUndo()
                 onVariant(index)
             }
