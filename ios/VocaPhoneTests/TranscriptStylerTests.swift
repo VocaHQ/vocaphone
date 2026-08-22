@@ -65,6 +65,12 @@ struct TranscriptStylerTests {
                 style: .veryCasual
             ) == "email John@Example.com at 3:30"
         )
+        #expect(
+            TranscriptStyler.apply(
+                "Email John@Example.com at 3:30.",
+                style: .formal
+            ) == "Email John@Example.com at 3:30."
+        )
     }
 
     @Test func localStylingUsesLanguagePunctuation() {

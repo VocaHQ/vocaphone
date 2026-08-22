@@ -171,6 +171,29 @@ enum TranscriptStyler {
         return Masked(text: String(result), tokens: tokens)
     }
 
+    /// Index of the last character of `__VOCA_TOKEN_<n>__` starting at `index`.
+    private static func endOfPlaceholder(in characters: [Character], from index: Int) -> Int? {
+        let prefix: [Character] = Array("__VOCA_TOKEN_")
+        guard index + prefix.count + 3 <= characters.count else { return nil }
+        for offset in prefix.indices where characters[index + offset] != prefix[offset] {
+            return nil
+        }
+        var cursor = index + prefix.count
+        var sawDigit = false
+        while cursor < characters.count {
+            let character = characters[cursor]
+            guard character >= "0", character <= "9" else { break }
+            sawDigit = true
+            cursor += 1
+        }
+        guard sawDigit,
+              cursor + 1 < characters.count,
+              characters[cursor] == "_",
+              characters[cursor + 1] == "_"
+        else { return nil }
+        return cursor + 1
+    }
+
     private static func restore(_ text: String, tokens: [String]) -> String {
         let regex = try! NSRegularExpression(pattern: placeholderPattern)
         let original = text as NSString
@@ -235,6 +258,13 @@ enum TranscriptStyler {
         let characters = Array(text)
         var index = 0
         while index < characters.count {
+            // `__VOCA_TOKEN_N__` contains the letters TOKEN. Copy the marker
+            // whole; flatten would lowercase it and restore could not match.
+            if let end = endOfPlaceholder(in: characters, from: index) {
+                result.append(contentsOf: characters[index...end])
+                index = end + 1
+                continue
+            }
             let character = characters[index]
             if character.isLetter {
                 let start = index
