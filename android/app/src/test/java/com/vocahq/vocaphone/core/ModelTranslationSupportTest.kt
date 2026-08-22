@@ -84,6 +84,15 @@ class ModelTranslationSupportTest {
         assertEquals("German", ModelTranslationSupport.summary(TranscriptionLanguage.GERMAN, canary))
         // Stored but unhonourable reads as Off, because Off is what happens.
         assertEquals("Off", ModelTranslationSupport.summary(TranscriptionLanguage.HINDI, canary))
+        // A gateway has no local model to blame, and the fix is another screen.
+        assertEquals(
+            "Needs an on-device model",
+            ModelTranslationSupport.summary(
+                TranscriptionLanguage.GERMAN,
+                emptySet(),
+                onDevice = false,
+            ),
+        )
     }
 
     @Test

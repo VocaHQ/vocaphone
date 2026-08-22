@@ -79,9 +79,19 @@ object ModelTranslationSupport {
      * "Off" rather than "Automatic": the shared enum's own label describes
      * language detection, which is the opposite of what this row's default
      * means.
+     *
+     * [onDevice] separates the two ways this can be unavailable. Blaming the
+     * model is only right when there is one: a gateway has no local model at
+     * all, and the fix is a different screen.
      */
-    fun summary(selected: TranscriptionLanguage, targets: Set<String>): String {
-        if (!isSupported(targets)) return "Not supported by this model"
+    fun summary(
+        selected: TranscriptionLanguage,
+        targets: Set<String>,
+        onDevice: Boolean = true,
+    ): String {
+        if (!isSupported(targets)) {
+            return if (onDevice) "Not supported by this model" else "Needs an on-device model"
+        }
         val resolved = resolve(selected, targets)
         return if (resolved == OFF) "Off" else resolved.displayName
     }

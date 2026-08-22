@@ -455,7 +455,8 @@ struct DictationSettingsView: View {
                     "Translate to",
                     value: ModelTranslationSupport.summary(
                         storedTranslateTo,
-                        targets: KeyboardPreferences.activeModelTranslationTargets
+                        targets: KeyboardPreferences.activeModelTranslationTargets,
+                        onDevice: LocalTranscriptionPreferences.enabled
                     )
                 )
             }

@@ -171,6 +171,7 @@ fun SettingsScreen(
                         supporting = ModelTranslationSupport.summary(
                             settings.translateTo,
                             settings.activeModelTranslationTargets,
+                            onDevice = settings.localTranscriptionEnabled,
                         ),
                         icon = R.drawable.ic_language,
                         onClick = { pickingTranslation = true },

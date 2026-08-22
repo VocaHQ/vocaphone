@@ -73,25 +73,7 @@ internal object SherpaLongAudio {
     private const val SILENCE_RMS_RATIO = 0.18
     private const val SILENT_CHUNK_RMS = 0.006
 
-    /**
-     * @param overlapAtFoundBoundaries false to cut clean at a boundary a quiet
-     *   run was actually found at, retaining nothing across it.
-     *
-     *   Retaining audio there is a caution that only pays off if the same words
-     *   come back twice and can be matched and removed. That holds for
-     *   transcription and not for translation: the retained audio is translated
-     *   again as part of the next window, comes back in different words, and
-     *   nothing can pair the two — so the caution turns into the duplicate it
-     *   was supposed to prevent. A found boundary is the middle of a measured
-     *   quiet run with 150 ms of silence on each side, so nothing is straddling
-     *   it and there is nothing to protect. A boundary the search had to guess
-     *   at still retains its overlap whatever this says, because there a word
-     *   really can be split and losing it is worse than saying it twice.
-     */
-    fun chunks(
-        samples: FloatArray,
-        overlapAtFoundBoundaries: Boolean = true,
-    ): List<SherpaAudioChunk> {
+    fun chunks(samples: FloatArray): List<SherpaAudioChunk> {
         if (samples.size <= LONG_AUDIO_THRESHOLD_SECONDS * SAMPLE_RATE) {
             return listOf(SherpaAudioChunk(0, samples.size, overlapsPrevious = false))
         }
@@ -125,20 +107,18 @@ internal object SherpaLongAudio {
             // Boundary classification is deliberately not trusted with audio
             // ownership: a quiet consonant can satisfy an RMS threshold, and
             // dropping the overlap on that guess loses the word. It is trusted
-            // with how much to retain, which is only a question of cost — and,
-            // for a caller that cannot merge repeated words, with whether to
-            // retain anything at all.
-            val retainedSamples = when {
-                silence == null -> guessedOverlapSamples
-                overlapAtFoundBoundaries -> foundOverlapSamples
-                else -> 0
-            }
+            // with how much to retain, which is only a question of cost.
+            //
+            // This holds while translating too, and it is worth saying why,
+            // because the retained audio is what a translator cannot merge back
+            // out. Almost all of it is the measured quiet run itself, which
+            // translates to nothing and duplicates nothing. What is left is the
+            // case the classification got wrong — and there the choice is
+            // between a word said twice and a word not said at all.
+            val retainedSamples =
+                if (silence != null) foundOverlapSamples else guessedOverlapSamples
             start = (end - retainedSamples).coerceAtLeast(start + 1)
-            // Says what was actually done rather than that a boundary exists:
-            // with nothing retained there is no repeated audio, and a merger
-            // told to look for one can only find a real repetition and delete
-            // words the speaker said.
-            overlapsPrevious = retainedSamples > 0
+            overlapsPrevious = true
         }
         return chunks
     }

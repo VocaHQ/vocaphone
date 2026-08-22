@@ -26,46 +26,6 @@ class SherpaLongAudioTest {
         assertEquals(samples.size, chunks.last().endExclusive)
     }
 
-    /**
-     * A translator cannot be merged by matching repeated words: it renders the
-     * retained audio differently the second time, so the repeat is invisible to
-     * the merger and survives as a duplicate. A found boundary is the middle of
-     * a measured quiet run, so there is nothing to protect and the cut is
-     * clean.
-     */
-    @Test
-    fun `a quiet boundary is cut clean when the caller cannot merge repeats`() {
-        val samples = FloatArray(52 * SherpaLongAudio.SAMPLE_RATE) { 0.2f }
-        val silenceStart = 9 * SherpaLongAudio.SAMPLE_RATE
-        java.util.Arrays.fill(samples, silenceStart, silenceStart + SherpaLongAudio.SAMPLE_RATE, 0f)
-
-        val chunks = SherpaLongAudio.chunks(samples, overlapAtFoundBoundaries = false)
-        val first = chunks.first()
-        val second = chunks[1]
-
-        assertFalse(second.overlapsPrevious)
-        // Contiguous: every sample is decoded exactly once.
-        assertEquals(first.endExclusive, second.start)
-        assertEquals(samples.size, chunks.last().endExclusive)
-    }
-
-    /**
-     * The other half of the same decision. Nothing was found to cut at here, so
-     * a word can be straddling the boundary, and losing it outright is worse
-     * than the one word it may repeat.
-     */
-    @Test
-    fun `a guessed boundary keeps its overlap even then`() {
-        val samples = FloatArray(52 * SherpaLongAudio.SAMPLE_RATE) { 0.2f }
-
-        val chunks = SherpaLongAudio.chunks(samples, overlapAtFoundBoundaries = false)
-
-        assertTrue(chunks.size >= 3)
-        assertTrue(chunks.drop(1).all { it.overlapsPrevious })
-        assertTrue(chunks.zipWithNext().all { (left, right) -> right.start < left.endExclusive })
-        assertEquals(samples.size, chunks.last().endExclusive)
-    }
-
     @Test
     fun `streaming split releases a bounded prefix with overlap`() {
         val split = SherpaLongAudio.nextStreamingSplit(

@@ -58,6 +58,11 @@ struct ModelTranslationSupportTests {
         #expect(ModelTranslationSupport.summary(.german, targets: canary) == "German")
         // Stored but unhonourable reads as Off, because Off is what happens.
         #expect(ModelTranslationSupport.summary(.hindi, targets: canary) == "Off")
+        // A gateway has no local model to blame, and the fix is another screen.
+        #expect(
+            ModelTranslationSupport.summary(.german, targets: [], onDevice: false)
+                == "Needs an on-device model"
+        )
     }
 
     @Test func anUnsupportedModelExplainsThatTheLanguageRowNeverTranslated() {

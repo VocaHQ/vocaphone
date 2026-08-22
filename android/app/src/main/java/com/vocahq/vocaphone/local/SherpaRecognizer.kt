@@ -33,28 +33,25 @@ internal class SherpaRecognizer private constructor(
      * Decodes the whole recording, in windows if it is longer than one decode
      * should be.
      *
-     * Those windows are where translation and transcription part company. A
-     * transcriber returns the same words for the same audio, so a window can
-     * retain a little of the one before it and the merger can match and remove
-     * the repeat. A translator does not: the retained audio is translated again
-     * inside a different sentence, comes back in different words, and nothing
-     * can pair the two. Worse, a merger still looking for a repeat can only
-     * match a phrase the speaker genuinely said twice, and delete it.
+     * Those windows are where translation and transcription part company. Each
+     * window retains a little of the one before it so that a word on the
+     * boundary survives, and the merger matches the repeated words and removes
+     * them. That second half only works if the same audio returns the same
+     * words, which a transcriber promises and a translator does not: the
+     * retained audio is translated again inside a different sentence and comes
+     * back worded differently, so there is nothing to pair.
      *
-     * So a translating recognizer cuts clean at the boundaries the silence
-     * search actually found — the middle of a measured quiet run, where nothing
-     * is straddling the cut — and never merges by matching words. A boundary
-     * the search had to guess at keeps its overlap, because there a word really
-     * can be split and losing it outright is worse than the one word it may now
-     * repeat.
+     * Left on, the merger would then be matching text it was never able to
+     * align, and the only thing it can still find is a phrase the speaker
+     * genuinely said twice — which it would delete. A translated seam is
+     * therefore left exactly as it decoded. The audio overlap stays: almost all
+     * of it is the measured quiet run the boundary was found in, which
+     * duplicates nothing, and where the boundary was misjudged a word repeated
+     * beats a word lost.
      */
     fun transcribe(samples: FloatArray): SherpaTranscript {
         var transcript = SherpaTranscript.EMPTY
-        val chunks = SherpaLongAudio.chunks(
-            samples,
-            overlapAtFoundBoundaries = !translating,
-        )
-        chunks.forEach { chunk ->
+        SherpaLongAudio.chunks(samples).forEach { chunk ->
             val chunkResult = transcribeChunk(samples.copyOfRange(chunk.start, chunk.endExclusive))
             transcript = transcript.append(
                 chunkResult,

@@ -75,8 +75,18 @@ enum ModelTranslationSupport {
     /// "Off" rather than "Automatic": the shared enum's own label describes
     /// language detection, which is the opposite of what this row's default
     /// means.
-    static func summary(_ selected: TranscriptionLanguage, targets: Set<String>) -> String {
-        guard isSupported(targets) else { return "Not supported by this model" }
+    ///
+    /// `onDevice` separates the two ways this can be unavailable. Blaming the
+    /// model is only right when there is one: a gateway has no local model at
+    /// all, and the fix is a different screen.
+    static func summary(
+        _ selected: TranscriptionLanguage,
+        targets: Set<String>,
+        onDevice: Bool = true
+    ) -> String {
+        guard isSupported(targets) else {
+            return onDevice ? "Not supported by this model" : "Needs an on-device model"
+        }
         let resolved = resolve(selected, targets: targets)
         return resolved == off ? "Off" : resolved.displayName
     }
