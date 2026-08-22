@@ -10,15 +10,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -519,7 +522,11 @@ private fun PersonalDictionarySection(
     onSave: (String) -> Unit,
 ) {
     var draft by remember(words) { mutableStateOf(words) }
+    var lastCleared by remember { mutableStateOf<String?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
     val terms = remember(draft) { PersonalDictionary.terms(draft) }
+    val canUndo = lastCleared != null && words.isBlank()
+    val canClear = words.isNotBlank()
     Section(
         title = "Personal dictionary",
         supporting = "Words the suggestion strip should know: names, project " +
@@ -531,7 +538,7 @@ private fun PersonalDictionarySection(
             onValueChange = { draft = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Words") },
-            placeholder = { Text("Kanishk\nVocaPhone\nvocahq") },
+            placeholder = { Text("One per line") },
             minLines = 3,
             maxLines = 8,
         )
@@ -544,20 +551,71 @@ private fun PersonalDictionarySection(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        SecondaryButton(
-            text = "Save words",
-            onClick = { onSave(draft) },
-            enabled = PersonalDictionary.normalize(draft) != PersonalDictionary.normalize(words),
-        )
-        if (words.isNotBlank()) {
-            DestructiveButton(
-                "Clear personal dictionary",
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            val shareRow = canClear || canUndo
+            SecondaryButton(
+                text = "Save words",
                 onClick = {
-                    draft = ""
-                    onSave("")
+                    lastCleared = null
+                    onSave(draft)
                 },
+                enabled = PersonalDictionary.normalize(draft) != PersonalDictionary.normalize(words),
+                modifier = if (shareRow) Modifier.weight(1f) else Modifier.fillMaxWidth(),
             )
+            if (canUndo) {
+                SecondaryButton(
+                    text = "Undo",
+                    onClick = {
+                        val restored = lastCleared ?: return@SecondaryButton
+                        lastCleared = null
+                        draft = restored
+                        onSave(restored)
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            } else if (canClear) {
+                DestructiveButton(
+                    text = "Clear",
+                    onClick = { confirmClear = true },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
+    }
+    if (confirmClear) {
+        val count = PersonalDictionary.terms(words).size
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear personal dictionary?") },
+            text = {
+                Text(
+                    if (count == 1) {
+                        "This removes 1 word from this phone. You can undo from this screen."
+                    } else {
+                        "This removes $count words from this phone. You can undo from this screen."
+                    },
+                )
+            },
+            confirmButton = {
+                DestructiveTextButton(
+                    text = "Clear",
+                    onClick = {
+                        lastCleared = words
+                        confirmClear = false
+                        draft = ""
+                        onSave("")
+                    },
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
