@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.CustomVocabulary
+import com.vocahq.vocaphone.ime.PersonalDictionary
 import com.vocahq.vocaphone.core.DictationTone
 import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.TranscriptionLanguage
@@ -88,6 +89,8 @@ fun SettingsScreen(
     onSuggestions: (Boolean) -> Unit,
     onCorrections: (Boolean) -> Unit,
     onNumberKeyHints: (Boolean) -> Unit,
+    onLongPressSymbols: (Boolean) -> Unit,
+    onPersonalDictionary: (String) -> Unit,
     onAsciiEmoji: (Boolean) -> Unit,
     onSwipeTyping: (Boolean) -> Unit,
     onClipboardChip: (Boolean) -> Unit,
@@ -277,6 +280,14 @@ fun SettingsScreen(
                         onCheckedChange = onNumberKeyHints,
                     )
                     SettingToggle(
+                        title = "Long-press for symbols",
+                        detail = "Show a punctuation or digit on each letter key. " +
+                            "Hold the key to type it; slide for accents. Off by default " +
+                            "so a hold on E still types è.",
+                        checked = settings.longPressSymbolsEnabled,
+                        onCheckedChange = onLongPressSymbols,
+                    )
+                    SettingToggle(
                         title = "Text emoticons",
                         detail = "Add an ASCII category to the emoji panel, like :) and ¯\\_(ツ)_/¯.",
                         checked = settings.asciiEmojiEnabled,
@@ -290,6 +301,10 @@ fun SettingsScreen(
                         onCheckedChange = onSwipeTyping,
                     )
                 }
+                PersonalDictionarySection(
+                    words = settings.personalDictionary,
+                    onSave = onPersonalDictionary,
+                )
                 Section("Clipboard") {
                     SettingToggle(
                         title = "Clipboard chip",
@@ -495,6 +510,54 @@ private fun MicrophoneSection(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun PersonalDictionarySection(
+    words: String,
+    onSave: (String) -> Unit,
+) {
+    var draft by remember(words) { mutableStateOf(words) }
+    val terms = remember(draft) { PersonalDictionary.terms(draft) }
+    Section(
+        title = "Personal dictionary",
+        supporting = "Words the suggestion strip should know: names, project " +
+            "names, anything the English list misses. One per line, or separated " +
+            "by commas. Off in passwords.",
+    ) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Words") },
+            placeholder = { Text("Kanishk\nVocaPhone\nvocahq") },
+            minLines = 3,
+            maxLines = 8,
+        )
+        Text(
+            if (terms.isEmpty()) {
+                "No personal words. Completions come from the shipped English list."
+            } else {
+                "${terms.size} word${if (terms.size == 1) "" else "s"} will complete on the strip."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SecondaryButton(
+            text = "Save words",
+            onClick = { onSave(draft) },
+            enabled = PersonalDictionary.normalize(draft) != PersonalDictionary.normalize(words),
+        )
+        if (words.isNotBlank()) {
+            DestructiveButton(
+                "Clear personal dictionary",
+                onClick = {
+                    draft = ""
+                    onSave("")
+                },
+            )
+        }
     }
 }
 

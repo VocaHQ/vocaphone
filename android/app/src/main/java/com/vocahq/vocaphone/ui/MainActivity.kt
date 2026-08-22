@@ -412,6 +412,8 @@ fun VocaPhoneApp(
                 onSuggestions = { viewModel.setSuggestionsEnabled(it) },
                 onCorrections = { viewModel.setCorrectionsEnabled(it) },
                 onNumberKeyHints = { viewModel.setNumberKeyHintsEnabled(it) },
+                onLongPressSymbols = { viewModel.setLongPressSymbolsEnabled(it) },
+                onPersonalDictionary = { viewModel.setPersonalDictionary(it) },
                 onAsciiEmoji = { viewModel.setAsciiEmojiEnabled(it) },
                 onSwipeTyping = { viewModel.setSwipeTypingEnabled(it) },
                 onClipboardChip = { viewModel.setClipboardChipEnabled(it) },
