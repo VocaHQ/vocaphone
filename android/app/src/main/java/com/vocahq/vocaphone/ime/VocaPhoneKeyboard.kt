@@ -117,6 +117,7 @@ import com.vocahq.vocaphone.ui.theme.VocaPhoneTheme
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -2332,11 +2333,13 @@ private fun RowScope.KeyButton(
             onVariant = { index -> currentOnCommitText.value(accents[index]) },
             onPressedChange = { isPressed ->
                 pressed = isPressed
-                if (!isPressed) currentOnPreview.value(null)
+                publishPreview(isPressed, if (isPressed) accentIndex else -1)
             },
             onAccentIndex = { index ->
                 accentIndex = index
-                publishPreview(true, index)
+                // Reset to -1 after lift used to call publishPreview(true, -1),
+                // which put the balloon back after the finger had already gone.
+                if (index >= 0) publishPreview(true, index)
             },
             onHaptic = haptic,
         )
@@ -2400,25 +2403,27 @@ private fun Modifier.keyGesture(
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             down.consume()
-            onPressedChange(true)
             onHaptic()
             val downAt = SystemClock.uptimeMillis()
-            onPress()
-            val repeatJob = if (repeat) {
-                launch {
-                    delay(DeleteHold.REPEAT_DELAY_MS)
-                    while (isActive) {
-                        val heldMs = SystemClock.uptimeMillis() - downAt
-                        onHold(heldMs)
-                        delay(DeleteHold.interval(heldMs))
+            var repeatJob: Job? = null
+            try {
+                onPressedChange(true)
+                onPress()
+                if (repeat) {
+                    repeatJob = launch {
+                        delay(DeleteHold.REPEAT_DELAY_MS)
+                        while (isActive) {
+                            val heldMs = SystemClock.uptimeMillis() - downAt
+                            onHold(heldMs)
+                            delay(DeleteHold.interval(heldMs))
+                        }
                     }
                 }
-            } else {
-                null
+                waitForUpOrCancellation()
+            } finally {
+                repeatJob?.cancel()
+                onPressedChange(false)
             }
-            waitForUpOrCancellation()
-            repeatJob?.cancel()
-            onPressedChange(false)
         }
     }
 }
@@ -2478,42 +2483,46 @@ private fun Modifier.accentGesture(
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             down.consume()
-            onPressedChange(true)
             onHaptic()
-            onTap()
             var showing = false
             var index = 0
-            val hold = launch {
-                delay(380L)
-                showing = true
-                onAccentIndex(0)
-                onHaptic()
-            }
-            while (true) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) {
-                    change.consume()
-                    break
+            var hold: Job? = null
+            try {
+                onPressedChange(true)
+                onTap()
+                hold = launch {
+                    delay(380L)
+                    showing = true
+                    onAccentIndex(0)
+                    onHaptic()
                 }
-                if (showing) {
-                    val delta = change.position.x - down.position.x
-                    val next = (delta / step).toInt().coerceIn(0, variantCount - 1)
-                    if (next != index) {
-                        index = next
-                        onAccentIndex(index)
-                        onHaptic()
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) {
+                        change.consume()
+                        break
                     }
+                    if (showing) {
+                        val delta = change.position.x - down.position.x
+                        val next = (delta / step).toInt().coerceIn(0, variantCount - 1)
+                        if (next != index) {
+                            index = next
+                            onAccentIndex(index)
+                            onHaptic()
+                        }
+                    }
+                    change.consume()
                 }
-                change.consume()
+            } finally {
+                hold?.cancel()
+                onPressedChange(false)
+                onAccentIndex(-1)
             }
-            hold.cancel()
-            onPressedChange(false)
             if (swipeConsumed?.value != true && showing) {
                 onUndo()
                 onVariant(index)
             }
-            onAccentIndex(-1)
         }
     }
 }
