@@ -25,11 +25,20 @@ class PersonalDictionaryTest {
     @Test
     fun addPutsTheNewWordFirstAndDropsDuplicates() {
         val added = PersonalDictionary.add("vocahq\nKanishk", "VocaPhone")
-        assertEquals("VocaPhone\nvocahq\nKanishk", added)
+        assertEquals("VocaPhone, vocahq, Kanishk", added)
         assertEquals(
-            "kanishk\nvocahq",
+            "kanishk, vocahq",
             PersonalDictionary.add("vocahq\nKanishk", "kanishk"),
         )
+    }
+
+    @Test
+    fun normalizeWritesACommaSeparatedList() {
+        assertEquals(
+            "Kanishk, vocahq, VocaPhone",
+            PersonalDictionary.normalize("Kanishk, vocahq\nVocaPhone"),
+        )
+        assertEquals("", PersonalDictionary.normalize("  \n , "))
     }
 
     @Test
