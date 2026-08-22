@@ -470,9 +470,10 @@ internal object KeyboardReducer {
      * Reverses the character committed on pointer down when the gesture turns
      * into a swipe, or when a long-press replaces it with an accent.
      *
-     * FlorisBoard and AOSP send the letter on down, then `sendCancel` if the
-     * pointer becomes a glide. Doing the same here means a swipe that started
-     * on "l" after "he" must drop only that "l", not the whole composing word.
+     * Letters go out on down so the glyph is on screen inside the 8.3 ms
+     * 120 Hz budget (keyboard hot-path benchmark on a 120 Hz phone). A swipe
+     * that started on "l" after "he" must then drop only that "l", not the
+     * whole composing word, or the user loses "he" as well.
      */
     fun undoLastCharacter(
         state: KeyboardState,
