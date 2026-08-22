@@ -1117,9 +1117,11 @@ struct TranscriptionLanguageList: View {
         KeyboardPreferences.activeModelTranslationTargets
     }
 
+    // Searched against the label actually on the row: "Don't translate" is not
+    // findable by typing "automatic", and should not be.
     private func matches(_ language: TranscriptionLanguage) -> Bool {
         query.isEmpty
-            || language.displayName.localizedCaseInsensitiveContains(query)
+            || label(language).localizedCaseInsensitiveContains(query)
             || language.rawValue.localizedCaseInsensitiveContains(query)
     }
 
@@ -1134,7 +1136,7 @@ struct TranscriptionLanguageList: View {
     /// no translation at all.
     private func label(_ language: TranscriptionLanguage) -> String {
         translating && language == ModelTranslationSupport.off
-            ? "Don't translate"
+            ? ModelTranslationSupport.offLabel
             : language.displayName
     }
 
@@ -1142,7 +1144,9 @@ struct TranscriptionLanguageList: View {
         translating
             ? ModelTranslationSupport.restriction(
                 translationTargets,
-                onDevice: LocalTranscriptionPreferences.enabled
+                onDevice: LocalTranscriptionPreferences.enabled,
+                needsExplicitSource: KeyboardPreferences.activeModelTranslationNeedsSource,
+                sourceIsAutomatic: KeyboardPreferences.effectiveTranscriptionLanguage == .automatic
             )
             : ModelLanguageSupport.restriction(
                 modelLanguages: modelLanguages,

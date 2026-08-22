@@ -74,6 +74,48 @@ struct ModelTranslationSupportTests {
         #expect(gateway?.contains("runs on this phone only") == true)
     }
 
+    /// The one way this setting can be wrong without looking wrong. Canary is
+    /// told what it is translating from, so Automatic resolves to English and a
+    /// German speaker is translated out of a language they never spoke.
+    @Test func aModelThatCannotDetectTheSourceSaysSoWhileTheSourceIsAutomatic() {
+        let warned = ModelTranslationSupport.restriction(
+            canary,
+            onDevice: true,
+            needsExplicitSource: true,
+            sourceIsAutomatic: true
+        )
+        #expect(warned?.contains("cannot work out what you are speaking") == true)
+        #expect(warned?.contains("as though you had spoken English") == true)
+
+        // An explicit spoken language is the fix, so there is nothing to warn about.
+        let named = ModelTranslationSupport.restriction(
+            canary,
+            onDevice: true,
+            needsExplicitSource: true,
+            sourceIsAutomatic: false
+        )
+        #expect(named?.contains("cannot work out") == false)
+
+        // Whisper detects the language and then translates, so Automatic is fine.
+        let detecting = ModelTranslationSupport.restriction(
+            whisper,
+            onDevice: true,
+            needsExplicitSource: false,
+            sourceIsAutomatic: true
+        )
+        #expect(detecting?.contains("cannot work out") == false)
+    }
+
+    /// Only Canary is told its source language; nothing else needs one.
+    @Test func onlyCanaryNeedsTheSpokenLanguageNamed() throws {
+        func needsSource(_ id: String) throws -> Bool {
+            try #require(LocalModelCatalog.descriptor(for: id)).translationNeedsExplicitSource
+        }
+        #expect(try needsSource("canary-180m-flash"))
+        #expect(try !needsSource("openai_whisper-small"))
+        #expect(try !needsSource("parakeet-tdt-0.6b-v3"))
+    }
+
     /// Both clients must reach the same verdict, or the keyboard and the app
     /// disagree about what the user may pick.
     @Test func theRulesMatchTheAndroidImplementation() {

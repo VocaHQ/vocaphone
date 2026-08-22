@@ -67,6 +67,8 @@ fun LanguagePickerSheet(
     onDevice: Boolean = false,
     mode: LanguagePickerMode = LanguagePickerMode.SPOKEN,
     translationTargets: Set<String> = emptySet(),
+    translationNeedsSource: Boolean = false,
+    sourceIsAutomatic: Boolean = false,
     onSelect: (TranscriptionLanguage) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -74,9 +76,18 @@ fun LanguagePickerSheet(
     var query by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    fun label(language: TranscriptionLanguage) =
+        if (translating && language == ModelTranslationSupport.OFF) {
+            ModelTranslationSupport.OFF_LABEL
+        } else {
+            language.displayName
+        }
+
+    // Searched against the label actually on the row: "Don't translate" is not
+    // findable by typing "automatic", and should not be.
     fun matches(language: TranscriptionLanguage) =
         query.isBlank() ||
-            language.displayName.contains(query, ignoreCase = true) ||
+            label(language).contains(query, ignoreCase = true) ||
             language.wireValue.contains(query, ignoreCase = true)
 
     fun selectable(language: TranscriptionLanguage) = if (translating) {
@@ -88,7 +99,12 @@ fun LanguagePickerSheet(
     val available = TranscriptionLanguage.entries.filter { matches(it) && selectable(it) }
     val unavailable = TranscriptionLanguage.entries.filter { matches(it) && !selectable(it) }
     val restriction = if (translating) {
-        ModelTranslationSupport.restriction(translationTargets, onDevice = onDevice)
+        ModelTranslationSupport.restriction(
+            translationTargets,
+            onDevice = onDevice,
+            needsExplicitSource = translationNeedsSource,
+            sourceIsAutomatic = sourceIsAutomatic,
+        )
     } else {
         ModelLanguageSupport.restriction(
             modelLanguages,
@@ -126,7 +142,7 @@ fun LanguagePickerSheet(
             modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).padding(top = 8.dp),
         ) {
             items(available, key = { it.wireValue }) { language ->
-                LanguageRow(language, selected == language, enabled = true, translating) {
+                LanguageRow(label(language), selected == language, enabled = true) {
                     onSelect(language)
                     onDismiss()
                 }
@@ -141,7 +157,7 @@ fun LanguagePickerSheet(
                     )
                 }
                 items(unavailable, key = { it.wireValue }) { language ->
-                    LanguageRow(language, selected == language, enabled = false, translating) {}
+                    LanguageRow(label(language), selected == language, enabled = false) {}
                 }
             }
             if (available.isEmpty() && unavailable.isEmpty()) {
@@ -161,10 +177,9 @@ fun LanguagePickerSheet(
 
 @Composable
 private fun LanguageRow(
-    language: TranscriptionLanguage,
+    label: String,
     isSelected: Boolean,
     enabled: Boolean,
-    translating: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colour = if (enabled) {
@@ -181,14 +196,7 @@ private fun LanguageRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            // Automatic is the shared enum's way of storing "no choice", and
-            // in the translation sheet the absence of a choice is not language
-            // detection but no translation at all.
-            if (translating && language == ModelTranslationSupport.OFF) {
-                "Don't translate"
-            } else {
-                language.displayName
-            },
+            label,
             style = MaterialTheme.typography.bodyLarge,
             color = colour,
             modifier = Modifier.weight(1f),

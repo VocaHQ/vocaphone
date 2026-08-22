@@ -541,6 +541,11 @@ enum KeyboardPreferences {
         activeLocalModel?.translationTargets ?? []
     }
 
+    /// Whether translating needs the spoken language set to something real.
+    static var activeModelTranslationNeedsSource: Bool {
+        activeLocalModel?.translationNeedsExplicitSource ?? false
+    }
+
     /// The picker's own selection, corrected for a model that cannot honour it.
     static var effectiveTranslateTo: TranscriptionLanguage {
         ModelTranslationSupport.resolve(translateTo, targets: activeModelTranslationTargets)

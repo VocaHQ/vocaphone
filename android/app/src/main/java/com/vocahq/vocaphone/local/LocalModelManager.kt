@@ -206,9 +206,9 @@ class LocalModelManager(
         translateTo: String = "",
     ): SherpaIncrementalSession? {
         val model = LocalModelCatalog.find(modelID) ?: return null
-        if (model.engine != LocalModelEngine.SHERPA_ONNX) return null
         val resolved = if (model.englishOnly) "en" else language
         val target = model.resolveTranslationTarget(translateTo)
+        if (!canStreamIncrementally(model.engine, target)) return null
         return SherpaIncrementalSession(
             scope = scope,
             prepare = { prepareEngine(model, resolved, quality, target) },
@@ -486,7 +486,7 @@ class LocalModelManager(
         model: LocalModelDescriptor,
         resolvedLanguage: String,
         quality: TranscriptionQuality,
-        resolvedTranslateTo: String = "",
+        resolvedTranslateTo: String,
     ) {
         val directory = directoryFor(model)
         // Stat-only: cheap enough to run per dictation, unlike a digest pass.
@@ -691,3 +691,19 @@ internal fun shouldReloadLocalEngine(
  */
 internal fun LocalModelDescriptor.resolveTranslationTarget(requested: String): String =
     requested.takeIf { it.isNotEmpty() && it in translationTargets }.orEmpty()
+
+/**
+ * Whether a dictation may be decoded in windows while it is still being spoken.
+ *
+ * Whisper never streams here; only the sherpa families do. Translation rules
+ * the rest out. Streaming decodes ten-second windows and stitches them by
+ * matching repeated words across a half-second overlap, and both halves of that
+ * assume the model returns the same words for the same audio. A translator does
+ * not: the overlap comes back reworded, so nothing is deduplicated and the seam
+ * is duplicated instead — and a sentence split across two windows is translated
+ * twice, as two fragments that were never sentences. A translated dictation
+ * gives up the latency and takes the whole-file path, where anything under
+ * twelve seconds is a single decode of the whole thing.
+ */
+internal fun canStreamIncrementally(engine: LocalModelEngine, translateTo: String): Boolean =
+    engine == LocalModelEngine.SHERPA_ONNX && translateTo.isEmpty()

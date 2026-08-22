@@ -38,6 +38,16 @@ object ModelTranslationSupport {
      */
     val OFF: TranscriptionLanguage = TranscriptionLanguage.AUTOMATIC
 
+    /**
+     * What the [OFF] row is called in the picker.
+     *
+     * Not "Automatic", which is the shared enum's own label and describes
+     * language detection — the opposite of what choosing it here means. The
+     * settings row says "Off" instead, because a row reading "Don't translate"
+     * next to the word "Translate to" reads as a double negative.
+     */
+    const val OFF_LABEL = "Don't translate"
+
     /** Whether this model can translate at all, and so whether to offer the row. */
     fun isSupported(targets: Set<String>): Boolean = targets.isNotEmpty()
 
@@ -83,7 +93,12 @@ object ModelTranslationSupport {
      * can explain that the language row above never translated anything, which
      * is the belief people arrive with after Whisper appeared to do it.
      */
-    fun restriction(targets: Set<String>, onDevice: Boolean): String? {
+    fun restriction(
+        targets: Set<String>,
+        onDevice: Boolean,
+        needsExplicitSource: Boolean = false,
+        sourceIsAutomatic: Boolean = false,
+    ): String? {
         if (!onDevice) {
             return "Translation runs on this phone only. Your gateway transcribes " +
                 "speech in the language it was spoken."
@@ -105,8 +120,16 @@ object ModelTranslationSupport {
             0, 1 -> names.joinToString()
             else -> names.dropLast(1).joinToString(", ") + " and " + names.last()
         }
-        return "This model translates into $list. Speech in any other language " +
-            "it covers is translated into your pick; the language above stays " +
-            "what you are speaking."
+        val coverage = "This model translates into $list. Speech in any other " +
+            "language it covers is translated into your pick; the language above " +
+            "stays what you are speaking."
+        // The one way this setting can be wrong without looking wrong. Canary
+        // is told what it is translating from, so Automatic resolves to English
+        // and anyone speaking something else is translated out of a language
+        // they never spoke.
+        if (!needsExplicitSource || !sourceIsAutomatic) return coverage
+        return coverage + " This model cannot work out what you are speaking, " +
+            "so set Language to your own language first: on Automatic it " +
+            "translates as though you had spoken English."
     }
 }

@@ -120,6 +120,21 @@ data class LocalModelDescriptor(
             else -> emptySet()
         }
 
+    /**
+     * Whether translating needs the spoken language named explicitly.
+     *
+     * Canary has no detection mode: its config carries a source language and
+     * takes whatever it is given, so "auto" has to be resolved to a real code
+     * before the recognizer is built and English is the only defensible guess.
+     * That is harmless while source and target match — the model was going to
+     * assume something either way — but once the two differ it decides what the
+     * audio is being translated *from*, and a German speaker left on Automatic
+     * gets German translated as though it were English. Whisper is the opposite:
+     * it detects the language and then translates, so it needs nothing here.
+     */
+    val translationNeedsExplicitSource: Boolean
+        get() = sherpaFamily == SherpaFamily.CANARY
+
     val sizeLabel: String
         get() = if (sizeBytes >= 1_000_000_000) {
             "%.1f GB".format(sizeBytes / 1_000_000_000.0)

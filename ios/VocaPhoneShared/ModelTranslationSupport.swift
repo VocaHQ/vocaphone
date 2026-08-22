@@ -36,6 +36,14 @@ enum ModelTranslationSupport {
     /// one wire vocabulary instead of two.
     static let off: TranscriptionLanguage = .automatic
 
+    /// What the `off` row is called in the picker.
+    ///
+    /// Not "Automatic", which is the shared enum's own label and describes
+    /// language detection — the opposite of what choosing it here means. The
+    /// settings row says "Off" instead, because a row reading "Don't translate"
+    /// next to the words "Translate to" reads as a double negative.
+    static let offLabel = "Don't translate"
+
     /// Whether this model can translate at all, and so whether to offer the row.
     static func isSupported(_ targets: Set<String>) -> Bool { !targets.isEmpty }
 
@@ -78,7 +86,12 @@ enum ModelTranslationSupport {
     /// The unsupported case is the important one. It is the only place the app
     /// can explain that the language row above never translated anything, which
     /// is the belief people arrive with after Whisper appeared to do it.
-    static func restriction(_ targets: Set<String>, onDevice: Bool) -> String? {
+    static func restriction(
+        _ targets: Set<String>,
+        onDevice: Bool,
+        needsExplicitSource: Bool = false,
+        sourceIsAutomatic: Bool = false
+    ) -> String? {
         guard onDevice else {
             return """
             Translation runs on this phone only. Your gateway transcribes speech \
@@ -105,10 +118,20 @@ enum ModelTranslationSupport {
         } else {
             list = names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
         }
-        return """
+        let coverage = """
         This model translates into \(list). Speech in any other language it \
         covers is translated into your pick; the language above stays what you \
         are speaking.
+        """
+        // The one way this setting can be wrong without looking wrong. Canary
+        // is told what it is translating from, so Automatic resolves to English
+        // and anyone speaking something else is translated out of a language
+        // they never spoke.
+        guard needsExplicitSource, sourceIsAutomatic else { return coverage }
+        return coverage + """
+         This model cannot work out what you are speaking, so set Language to \
+        your own language first: on Automatic it translates as though you had \
+        spoken English.
         """
     }
 }

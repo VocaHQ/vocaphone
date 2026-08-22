@@ -692,7 +692,6 @@ final class LocalModelManager {
         }
     }
 
-
     /// Rebuilds the engine after an accuracy change — and only when there is
     /// already one loaded to rebuild.
     ///
@@ -728,6 +727,16 @@ final class LocalModelManager {
               let descriptor = LocalModelCatalog.descriptor(for: id),
               descriptor.engine == .sherpaOnnx
         else { return nil }
+        // Streaming decodes ten-second windows and stitches them by matching
+        // repeated words across a half-second overlap. Both halves of that
+        // assume the model returns the same words for the same audio, which a
+        // translator does not: the overlap comes back reworded, so nothing is
+        // deduplicated and the seam is duplicated instead — and a sentence
+        // split across two windows is translated twice, as two fragments that
+        // were never sentences. A translated dictation gives up the latency and
+        // takes the whole-file path, where anything under twelve seconds is a
+        // single decode of the whole thing.
+        guard descriptor.resolvedTranslationTarget.isEmpty else { return nil }
         guard let folder = modelDirectory(for: id), isDownloaded(id) else {
             throw LocalModelManagerError.modelNotDownloaded(id)
         }

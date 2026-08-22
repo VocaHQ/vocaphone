@@ -267,6 +267,10 @@ data class VocaPhoneSettings(
     val activeModelTranslationTargets: Set<String>
         get() = localModel?.translationTargets.orEmpty()
 
+    /** Whether translating needs [language] set to something other than Automatic. */
+    val activeModelTranslationNeedsSource: Boolean
+        get() = localModel?.translationNeedsExplicitSource ?: false
+
     /** The picker's own selection, corrected for a model that cannot honour it. */
     val effectiveTranslateTo: TranscriptionLanguage
         get() = ModelTranslationSupport.resolve(translateTo, activeModelTranslationTargets)

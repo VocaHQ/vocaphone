@@ -517,6 +517,8 @@ fun SettingsScreen(
             onDevice = settings.localTranscriptionEnabled,
             mode = LanguagePickerMode.TRANSLATION,
             translationTargets = settings.activeModelTranslationTargets,
+            translationNeedsSource = settings.activeModelTranslationNeedsSource,
+            sourceIsAutomatic = settings.effectiveLanguage == TranscriptionLanguage.AUTOMATIC,
             onSelect = onTranslateTo,
             onDismiss = { pickingTranslation = false },
         )

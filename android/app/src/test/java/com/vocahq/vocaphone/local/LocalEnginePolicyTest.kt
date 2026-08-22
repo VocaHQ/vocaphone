@@ -122,6 +122,21 @@ class LocalEnginePolicyTest {
         )
     }
 
+    /**
+     * Streaming stitches overlapping windows by matching the words that come
+     * back twice. A translator rewords the overlap, so there is nothing to
+     * match — and a sentence spanning two windows is translated as two
+     * fragments. Translation takes the whole-file path instead.
+     */
+    @Test
+    fun `streaming is off while translating and on otherwise`() {
+        assertTrue(canStreamIncrementally(LocalModelEngine.SHERPA_ONNX, ""))
+        assertFalse(canStreamIncrementally(LocalModelEngine.SHERPA_ONNX, "de"))
+        // Whisper has never streamed here whatever the target.
+        assertFalse(canStreamIncrementally(LocalModelEngine.WHISPER, ""))
+        assertFalse(canStreamIncrementally(LocalModelEngine.WHISPER, "en"))
+    }
+
     /** The catalog decides; a stale request can never reach the recognizer. */
     @Test
     fun `a target the model cannot honour resolves away`() {

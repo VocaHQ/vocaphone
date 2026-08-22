@@ -104,6 +104,52 @@ class ModelTranslationSupportTest {
     }
 
     /**
+     * The one way this setting can be wrong without looking wrong. Canary is
+     * told what it is translating from, so Automatic resolves to English and a
+     * German speaker is translated out of a language they never spoke.
+     */
+    @Test
+    fun `a model that cannot detect the source says so while the source is automatic`() {
+        val warned = ModelTranslationSupport.restriction(
+            canary,
+            onDevice = true,
+            needsExplicitSource = true,
+            sourceIsAutomatic = true,
+        )!!
+        assertTrue(warned.contains("cannot work out what you are speaking"))
+        assertTrue(warned.contains("as though you had spoken English"))
+
+        // An explicit spoken language is the fix, so there is nothing to warn about.
+        assertFalse(
+            ModelTranslationSupport.restriction(
+                canary,
+                onDevice = true,
+                needsExplicitSource = true,
+                sourceIsAutomatic = false,
+            )!!.contains("cannot work out"),
+        )
+        // Whisper detects the language and then translates, so Automatic is fine.
+        assertFalse(
+            ModelTranslationSupport.restriction(
+                whisper,
+                onDevice = true,
+                needsExplicitSource = false,
+                sourceIsAutomatic = true,
+            )!!.contains("cannot work out"),
+        )
+    }
+
+    /** Only Canary is told its source language; nothing else needs one. */
+    @Test
+    fun `only canary needs the spoken language named`() {
+        fun needsSource(id: String) =
+            requireNotNull(LocalModelCatalog.find(id)).translationNeedsExplicitSource
+        assertTrue(needsSource("canary-180m-flash"))
+        assertFalse(needsSource("small-q5_1"))
+        assertFalse(needsSource("parakeet-tdt-0.6b-v3"))
+    }
+
+    /**
      * Settings is where the two halves meet: a target is only real while the
      * selected model is local and can honour it.
      */
