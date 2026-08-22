@@ -341,6 +341,18 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
     fun setCustomVocabulary(vocabulary: String) =
         viewModelScope.launch { container.settings.setCustomVocabulary(vocabulary) }
 
+    fun setSyncWhisperDictionary(enabled: Boolean) {
+        viewModelScope.launch {
+            if (!enabled) {
+                val current = container.settings.current()
+                if (current.customVocabulary.isBlank() && current.personalDictionary.isNotBlank()) {
+                    container.settings.setCustomVocabulary(current.personalDictionary)
+                }
+            }
+            container.settings.setSyncWhisperDictionary(enabled)
+        }
+    }
+
     fun setMicrophone(preference: MicrophonePreference) {
         // Applied when the recorder is built, so a live dictation would keep the
         // old input while the screen claimed otherwise.

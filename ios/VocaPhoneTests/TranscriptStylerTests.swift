@@ -29,6 +29,20 @@ struct TranscriptStylerTests {
         )
     }
 
+    @Test func cleanAndFormalFlattenMidSentenceTitleCase() {
+        let titled = "Hello There. The Keyboard Is Ready"
+        #expect(TranscriptStyler.apply(titled, style: .clean) == "hello there. the keyboard is ready.")
+        #expect(TranscriptStyler.apply(titled, style: .formal) == "Hello there. The keyboard is ready.")
+        #expect(TranscriptStyler.apply(titled, style: .casual) == "Hello there. The keyboard is ready")
+    }
+
+    @Test func flatteningKeepsMixedCaseNamesAcronymsAndPronounI() {
+        let source = "I use VocaPhone and GraphQL at NASA today"
+        #expect(TranscriptStyler.apply(source, style: .clean) == "I use VocaPhone and GraphQL at NASA today.")
+        #expect(TranscriptStyler.apply(source, style: .formal) == "I use VocaPhone and GraphQL at NASA today.")
+        #expect(TranscriptStyler.apply("i went home", style: .clean) == "I went home.")
+    }
+
     @Test func localStylingKeepsProtectedSpansIntact() {
         #expect(
             TranscriptStyler.apply(

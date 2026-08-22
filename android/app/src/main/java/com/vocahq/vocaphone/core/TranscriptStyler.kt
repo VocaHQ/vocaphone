@@ -43,19 +43,26 @@ object TranscriptStyler {
         val punctuation = punctuation(language, source)
         val masked = mask(source)
         val normalized = normalizeSentenceTerminators(normalizeSpacing(masked.text), punctuation)
+        // Whisper and Parakeet Title-Case content words ("the Keyboard Is Ready").
+        // Flatten those before Clean/Formal/Casual so mid-sentence capitals are
+        // not left as-is. Mixed-case names and ALL-CAPS acronyms stay.
+        val flattened = when (style) {
+            WritingStyle.RAW, WritingStyle.VERY_CASUAL -> normalized
+            else -> flattenModelCaps(normalized)
+        }
         val result = when (style) {
-            WritingStyle.CLEAN -> ensureTerminator(normalized, punctuation)
+            WritingStyle.CLEAN -> ensureTerminator(flattened, punctuation)
             WritingStyle.FORMAL -> ensureTerminator(
-                capitalizeSentenceStarts(normalized, punctuation),
+                capitalizeSentenceStarts(flattened, punctuation),
                 punctuation,
             )
-            WritingStyle.CASUAL -> casual(normalized, punctuation)
+            WritingStyle.CASUAL -> casual(flattened, punctuation)
             WritingStyle.VERY_CASUAL -> veryCasual(
                 segments(normalized, punctuation),
                 punctuation,
             )
             WritingStyle.EXCITED -> excited(
-                segments(normalized, punctuation),
+                segments(flattened, punctuation),
                 punctuation,
             )
             WritingStyle.RAW -> normalized
@@ -148,6 +155,67 @@ object TranscriptStyler {
         if (text.isEmpty() || punctuation.terminator.isEmpty()) return text
         return if (text.last() in punctuation.terminators) text
         else text + punctuation.terminator
+    }
+
+    /**
+     * Drop Title Case the model invented, keep tokens that look like names.
+     *
+     * "Keyboard" in the middle of a sentence becomes "keyboard". "VocaPhone",
+     * "GraphQL", "iPhone", "NASA", and the pronoun "I" are left alone.
+     */
+    private fun flattenModelCaps(text: String): String {
+        val result = StringBuilder(text.length)
+        var index = 0
+        while (index < text.length) {
+            if (text[index] == '\uE000') {
+                val end = text.indexOf('\uE001', index)
+                if (end >= 0) {
+                    result.append(text, index, end + 1)
+                    index = end + 1
+                    continue
+                }
+            }
+            if (text[index].isLetter()) {
+                val start = index
+                index++
+                while (index < text.length && (text[index].isLetter() || text[index] == '\'' || text[index] == '’')) {
+                    index++
+                }
+                result.append(softenToken(text.substring(start, index)))
+            } else {
+                result.append(text[index])
+                index++
+            }
+        }
+        return result.toString()
+    }
+
+    private fun softenToken(token: String): String {
+        if (isPronounI(token)) {
+            val body = token.dropWhile { !it.isLetter() }
+            return token.take(token.length - body.length) + "I" + body.drop(1)
+        }
+        val letters = token.filter { it.isLetter() }
+        if (letters.isEmpty()) return token
+        val hasLower = letters.any { it.isLowerCase() }
+        val hasUpper = letters.any { it.isUpperCase() }
+        if (!hasLower && letters.length >= 2) return token
+        if (hasLower && hasUpper) {
+            val body = token.dropWhile { !it.isLetter() }
+            val titleCase = body.first().isUpperCase() && body.drop(1).none { it.isUpperCase() }
+            if (!titleCase) return token
+        }
+        return token.lowercase()
+    }
+
+    /** "I", "I'm", "I’ve", "I'd", "I'll". Not "is" or "it". */
+    private fun isPronounI(token: String): Boolean {
+        val letters = token.filter { it.isLetter() }
+        if (letters.isEmpty() || letters.first().lowercaseChar() != 'i') return false
+        val rest = letters.drop(1).lowercase()
+        if (rest.isEmpty()) return true
+        val contracted = token.any { it == '\'' || it == '’' }
+        return contracted && rest in setOf("m", "ll", "d", "ve", "re", "s")
     }
 
     private fun capitalizeSentenceStarts(text: String, punctuation: Punctuation): String {

@@ -164,6 +164,11 @@ data class VocaPhoneSettings(
      * than stored pre-split, so the text they see back is the text they wrote.
      */
     val customVocabulary: String = "",
+    /**
+     * When true (the default), Whisper is biased with [personalDictionary]
+     * instead of [customVocabulary]. Turn it off to keep a separate list.
+     */
+    val syncWhisperDictionary: Boolean = true,
     val numberRowEnabled: Boolean = true,
     val keyboardHeight: KeyboardHeight = KeyboardHeight.COMPACT,
     val splitKeyboard: SplitKeyboard = SplitKeyboard.DEFAULT,
@@ -223,6 +228,13 @@ data class VocaPhoneSettings(
         get() = localModel?.detectsLanguage ?: modelDetectsLanguage
     val isConfigured: Boolean get() = gatewayUrl.isNotEmpty() && hasToken
     val hasLocalModelSelection: Boolean get() = localModelId.isNotEmpty()
+
+    /**
+     * Words actually handed to Whisper. The personal dictionary is the default
+     * source so names taught on the strip also bias dictation.
+     */
+    val whisperVocabulary: String
+        get() = if (syncWhisperDictionary) personalDictionary else customVocabulary
 }
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vocaphone")
@@ -301,6 +313,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setCustomVocabulary(vocabulary: String) =
         put(Keys.CUSTOM_VOCABULARY, vocabulary)
+
+    suspend fun setSyncWhisperDictionary(enabled: Boolean) =
+        put(Keys.SYNC_WHISPER_DICTIONARY, enabled)
 
     suspend fun setNumberRowEnabled(enabled: Boolean) = put(Keys.NUMBER_ROW, enabled)
 
@@ -467,6 +482,7 @@ class SettingsRepository(private val context: Context) {
         localModelId = this[Keys.LOCAL_MODEL_ID].orEmpty(),
         transcriptionQuality = TranscriptionQuality.fromStored(this[Keys.TRANSCRIPTION_QUALITY]),
         customVocabulary = this[Keys.CUSTOM_VOCABULARY].orEmpty(),
+        syncWhisperDictionary = this[Keys.SYNC_WHISPER_DICTIONARY] ?: true,
         numberRowEnabled = this[Keys.NUMBER_ROW] ?: true,
         keyboardHeight = KeyboardHeight.fromStored(this[Keys.KEYBOARD_HEIGHT]),
         splitKeyboard = SplitKeyboard.fromStored(this[Keys.SPLIT_KEYBOARD]),
@@ -507,6 +523,7 @@ class SettingsRepository(private val context: Context) {
         val LOCAL_MODEL_ID = stringPreferencesKey("local_model_id")
         val TRANSCRIPTION_QUALITY = stringPreferencesKey("transcription_quality")
         val CUSTOM_VOCABULARY = stringPreferencesKey("custom_vocabulary")
+        val SYNC_WHISPER_DICTIONARY = booleanPreferencesKey("sync_whisper_dictionary")
         val NUMBER_ROW = booleanPreferencesKey("keyboard_number_row")
         val KEYBOARD_HEIGHT = stringPreferencesKey("keyboard_height")
         val SPLIT_KEYBOARD = stringPreferencesKey("keyboard_split")
