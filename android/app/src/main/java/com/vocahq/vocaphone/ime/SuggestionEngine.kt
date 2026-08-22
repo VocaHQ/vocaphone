@@ -471,11 +471,6 @@ internal object SuggestionEngine {
     }
 
     /**
-     * FlorisBoard / AnySoftKeyboard compare a swipe to the ideal line through
-     * the word's key centers, then rank by shape and path length. We do the
-     * same on the QWERTY grid instead of taking the first dictionary hit.
-     */
-    /**
      * One gesture's key path, with everything that depends only on the gesture
      * worked out once.
      *
