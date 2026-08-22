@@ -100,6 +100,26 @@ data class LocalModelDescriptor(
     /** Whether short recordings may use a cropped whisper encoder window. */
     val cropsAudioContext: Boolean = false,
 ) {
+    /**
+     * Which languages this model can translate speech *into*.
+     *
+     * Derived rather than declared, because only two things in the catalog can
+     * translate at all and both derive it from something already written down.
+     * Canary is a speech-translation model across exactly the languages it
+     * lists; a multilingual whisper build has the `<|translate|>` task, whose
+     * only trained target is English. Everything else transcribes the language
+     * it heard, so an empty set here is the ordinary answer and the one the
+     * translate row reports as unsupported. See
+     * [com.vocahq.vocaphone.core.ModelTranslationSupport].
+     */
+    val translationTargets: Set<String>
+        get() = when {
+            sherpaFamily == SherpaFamily.CANARY -> languageCodes
+            englishOnly -> emptySet()
+            engine == LocalModelEngine.WHISPER -> setOf("en")
+            else -> emptySet()
+        }
+
     val sizeLabel: String
         get() = if (sizeBytes >= 1_000_000_000) {
             "%.1f GB".format(sizeBytes / 1_000_000_000.0)

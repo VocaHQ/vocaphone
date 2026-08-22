@@ -29,7 +29,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.ModelLanguageSupport
+import com.vocahq.vocaphone.core.ModelTranslationSupport
 import com.vocahq.vocaphone.core.TranscriptionLanguage
+
+/**
+ * Which of the two language questions this sheet is asking.
+ *
+ * The rows, the search and the greying are identical; what differs is the
+ * title, what the first row means, which languages are selectable and what the
+ * explanation underneath says. Keeping them one composable is what stops the
+ * two questions drifting apart in the ways that made them look like one
+ * setting in the first place.
+ */
+enum class LanguagePickerMode {
+    /** The language being spoken, which is what a decoder is told. */
+    SPOKEN,
+
+    /** The language the transcript should come back in. */
+    TRANSLATION,
+}
 
 /**
  * The full language list, opened from one row in Settings.
@@ -47,9 +65,12 @@ fun LanguagePickerSheet(
     modelLanguages: Set<String>,
     detectsLanguageAutomatically: Boolean,
     onDevice: Boolean = false,
+    mode: LanguagePickerMode = LanguagePickerMode.SPOKEN,
+    translationTargets: Set<String> = emptySet(),
     onSelect: (TranscriptionLanguage) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val translating = mode == LanguagePickerMode.TRANSLATION
     var query by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -58,24 +79,34 @@ fun LanguagePickerSheet(
             language.displayName.contains(query, ignoreCase = true) ||
             language.wireValue.contains(query, ignoreCase = true)
 
-    fun selectable(language: TranscriptionLanguage) =
+    fun selectable(language: TranscriptionLanguage) = if (translating) {
+        ModelTranslationSupport.isSelectable(language, translationTargets)
+    } else {
         ModelLanguageSupport.isSelectable(language, modelLanguages)
+    }
 
     val available = TranscriptionLanguage.entries.filter { matches(it) && selectable(it) }
     val unavailable = TranscriptionLanguage.entries.filter { matches(it) && !selectable(it) }
-    val restriction =
+    val restriction = if (translating) {
+        ModelTranslationSupport.restriction(translationTargets, onDevice = onDevice)
+    } else {
         ModelLanguageSupport.restriction(
             modelLanguages,
             detectsLanguageAutomatically,
             onDevice = onDevice,
+            canTranslate = ModelTranslationSupport.isSupported(translationTargets),
         )
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Transcription language", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (translating) "Translate to" else "Transcription language",
+                style = MaterialTheme.typography.titleMedium,
+            )
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -95,7 +126,7 @@ fun LanguagePickerSheet(
             modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).padding(top = 8.dp),
         ) {
             items(available, key = { it.wireValue }) { language ->
-                LanguageRow(language, selected == language, enabled = true) {
+                LanguageRow(language, selected == language, enabled = true, translating) {
                     onSelect(language)
                     onDismiss()
                 }
@@ -110,7 +141,7 @@ fun LanguagePickerSheet(
                     )
                 }
                 items(unavailable, key = { it.wireValue }) { language ->
-                    LanguageRow(language, selected == language, enabled = false) {}
+                    LanguageRow(language, selected == language, enabled = false, translating) {}
                 }
             }
             if (available.isEmpty() && unavailable.isEmpty()) {
@@ -133,6 +164,7 @@ private fun LanguageRow(
     language: TranscriptionLanguage,
     isSelected: Boolean,
     enabled: Boolean,
+    translating: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colour = if (enabled) {
@@ -149,7 +181,14 @@ private fun LanguageRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            language.displayName,
+            // Automatic is the shared enum's way of storing "no choice", and
+            // in the translation sheet the absence of a choice is not language
+            // detection but no translation at all.
+            if (translating && language == ModelTranslationSupport.OFF) {
+                "Don't translate"
+            } else {
+                language.displayName
+            },
             style = MaterialTheme.typography.bodyLarge,
             color = colour,
             modifier = Modifier.weight(1f),

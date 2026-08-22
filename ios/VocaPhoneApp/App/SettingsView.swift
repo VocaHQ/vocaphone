@@ -334,6 +334,10 @@ struct DictationSettingsView: View {
         store: KeyboardPreferences.defaults
     ) private var transcriptionLanguageRawValue = TranscriptionLanguage.automatic.rawValue
     @AppStorage(
+        KeyboardPreferences.translateToKey,
+        store: KeyboardPreferences.defaults
+    ) private var translateToRawValue = ModelTranslationSupport.off.rawValue
+    @AppStorage(
         KeyboardPreferences.microphonePreferenceKey,
         store: KeyboardPreferences.defaults
     ) private var microphonePreferenceRawValue = MicrophonePreference.automatic.rawValue
@@ -405,6 +409,24 @@ struct DictationSettingsView: View {
                 LabeledContent(
                     "Language",
                     value: KeyboardPreferences.effectiveTranscriptionLanguage.displayName
+                )
+            }
+            // Kept next to Language and never hidden. A row that disappears for
+            // most models would leave the question unanswered, and "Not
+            // supported by this model" is exactly the answer people arrive
+            // looking for.
+            NavigationLink {
+                TranscriptionLanguageList(
+                    selection: $translateToRawValue,
+                    mode: .translation
+                )
+            } label: {
+                LabeledContent(
+                    "Translate to",
+                    value: ModelTranslationSupport.summary(
+                        KeyboardPreferences.translateTo,
+                        targets: KeyboardPreferences.activeModelTranslationTargets
+                    )
                 )
             }
         } footer: {
@@ -1013,12 +1035,32 @@ private struct DiagnosticShareSheet: UIViewControllerRepresentable {
 /// bottom and greyed rather than hidden: a language that simply disappears reads
 /// as unsupported by the app, when the fix is to change the model.
 struct TranscriptionLanguageList: View {
+
+    /// Which of the two language questions this list is asking.
+    ///
+    /// The rows, the search and the greying are identical; what differs is the
+    /// title, what the first row means, which languages are selectable and what
+    /// the footer says. Keeping them one view is what stops the two questions
+    /// drifting apart in the ways that made them look like one setting in the
+    /// first place.
+    enum Mode {
+        /// The language being spoken, which is what a decoder is told.
+        case spoken
+        /// The language the transcript should come back in.
+        case translation
+    }
+
     @Binding var selection: String
+    var mode: Mode = .spoken
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
 
+    private var translating: Bool { mode == .translation }
     private var modelLanguages: Set<String> { KeyboardPreferences.activeModelLanguages }
     private var detectsLanguage: Bool { KeyboardPreferences.activeModelDetectsLanguage }
+    private var translationTargets: Set<String> {
+        KeyboardPreferences.activeModelTranslationTargets
+    }
 
     private func matches(_ language: TranscriptionLanguage) -> Bool {
         query.isEmpty
@@ -1027,7 +1069,39 @@ struct TranscriptionLanguageList: View {
     }
 
     private func isSelectable(_ language: TranscriptionLanguage) -> Bool {
-        ModelLanguageSupport.isSelectable(language, modelLanguages: modelLanguages)
+        translating
+            ? ModelTranslationSupport.isSelectable(language, targets: translationTargets)
+            : ModelLanguageSupport.isSelectable(language, modelLanguages: modelLanguages)
+    }
+
+    /// `.automatic` is the shared enum's way of storing "no choice", and in the
+    /// translation list the absence of a choice is not language detection but
+    /// no translation at all.
+    private func label(_ language: TranscriptionLanguage) -> String {
+        translating && language == ModelTranslationSupport.off
+            ? "Don't translate"
+            : language.displayName
+    }
+
+    private var footer: String? {
+        translating
+            ? ModelTranslationSupport.restriction(
+                translationTargets,
+                onDevice: LocalTranscriptionPreferences.enabled
+            )
+            : ModelLanguageSupport.restriction(
+                modelLanguages: modelLanguages,
+                detectsLanguageAutomatically: detectsLanguage,
+                onDevice: LocalTranscriptionPreferences.enabled,
+                canTranslate: ModelTranslationSupport.isSupported(translationTargets)
+            )
+    }
+
+    private var checked: TranscriptionLanguage {
+        let stored = TranscriptionLanguage(rawValue: selection) ?? .automatic
+        return translating
+            ? ModelTranslationSupport.resolve(stored, targets: translationTargets)
+            : ModelLanguageSupport.resolve(stored, modelLanguages: modelLanguages)
     }
 
     private var available: [TranscriptionLanguage] {
@@ -1046,12 +1120,8 @@ struct TranscriptionLanguageList: View {
                         row(language, selectable: true)
                     }
                 } footer: {
-                    if let restriction = ModelLanguageSupport.restriction(
-                        modelLanguages: modelLanguages,
-                        detectsLanguageAutomatically: detectsLanguage,
-                        onDevice: LocalTranscriptionPreferences.enabled
-                    ) {
-                        Text(restriction)
+                    if let footer {
+                        Text(footer)
                     }
                 }
             }
@@ -1067,7 +1137,7 @@ struct TranscriptionLanguageList: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Language")
+        .navigationTitle(translating ? "Translate to" : "Language")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Search languages")
     }
@@ -1075,19 +1145,20 @@ struct TranscriptionLanguageList: View {
     private func row(_ language: TranscriptionLanguage, selectable: Bool) -> some View {
         Button {
             selection = language.rawValue
-            KeyboardPreferences.noteTranscriptionLanguageUse(language)
+            // Recents feed the keyboard's short spoken-language menu, which a
+            // translation target has no place in.
+            if !translating {
+                KeyboardPreferences.noteTranscriptionLanguageUse(language)
+            }
             dismiss()
         } label: {
             HStack {
-                Text(language.displayName)
+                Text(label(language))
                     .foregroundStyle(selectable ? .primary : .secondary)
                 Spacer()
                 // Ticks what is in force, so the mark never sits on a row the
                 // loaded model cannot honour.
-                if language == ModelLanguageSupport.resolve(
-                    TranscriptionLanguage(rawValue: selection) ?? .automatic,
-                    modelLanguages: modelLanguages
-                ) {
+                if language == checked {
                     Image(systemName: "checkmark")
                         .foregroundStyle(.tint)
                         .accessibilityLabel("Selected")

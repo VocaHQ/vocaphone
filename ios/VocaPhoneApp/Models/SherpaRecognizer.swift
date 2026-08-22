@@ -19,7 +19,8 @@ final class SherpaRecognizer: @unchecked Sendable {
         directory: URL,
         language: String,
         threads: Int,
-        quality: TranscriptionQuality
+        quality: TranscriptionQuality,
+        translateTo: String = ""
     ) throws -> SherpaRecognizer {
         guard let family = model.sherpaFamily else {
             throw LocalModelManagerError.unsupportedModel(model.id)
@@ -57,12 +58,18 @@ final class SherpaRecognizer: @unchecked Sendable {
         let languageHint: String
         switch family {
         case .canary:
+            // Canary's config has no detection mode, so "auto" has to become a
+            // real code — English is the safest guess and the one upstream's
+            // own examples use.
             languageHint = language == "auto" ? "en" : language
         case .senseVoice:
             languageHint = language == "auto" ? "" : language
         default:
             languageHint = ""
         }
+        // Only Canary has a target at all; the bridge falls back to the source
+        // when this is empty, which is what transcription is.
+        let targetHint = family == .canary ? translateTo : ""
 
         // Never `quality.sherpaDecodingMethod` on its own: a family that does
         // not support beam search answers it by killing the process.
@@ -73,12 +80,16 @@ final class SherpaRecognizer: @unchecked Sendable {
                     models[3].withCString { model4 in
                         tokens.withCString { tokensPointer in
                             languageHint.withCString { languagePointer in
-                                decodingMethod.withCString { decodingMethodPointer in
-                                    VocaPhoneSherpaCreate(
-                                        Int32(family.bridgeValue), model1, model2, model3, model4,
-                                        tokensPointer, languagePointer, Int32(threads),
-                                        decodingMethodPointer, quality.sherpaMaxActivePaths
-                                    )
+                                targetHint.withCString { targetPointer in
+                                    decodingMethod.withCString { decodingMethodPointer in
+                                        VocaPhoneSherpaCreate(
+                                            Int32(family.bridgeValue),
+                                            model1, model2, model3, model4,
+                                            tokensPointer, languagePointer, targetPointer,
+                                            Int32(threads), decodingMethodPointer,
+                                            quality.sherpaMaxActivePaths
+                                        )
+                                    }
                                 }
                             }
                         }

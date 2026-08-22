@@ -60,6 +60,9 @@ internal class SherpaRecognizer private constructor(
         /**
          * @param language a two-letter code, or "auto" to let the model decide.
          *   Only the families that accept a language hint use it.
+         * @param translateTo the language to translate into, or empty to
+         *   transcribe. Canary is the only family that can honour it; see
+         *   [com.vocahq.vocaphone.core.ModelTranslationSupport].
          */
         fun create(
             model: LocalModelDescriptor,
@@ -67,6 +70,7 @@ internal class SherpaRecognizer private constructor(
             language: String,
             threads: Int,
             quality: TranscriptionQuality,
+            translateTo: String = "",
         ): SherpaRecognizer {
             val family = requireNotNull(model.sherpaFamily) {
                 "${model.displayName} has no sherpa-onnx family"
@@ -108,15 +112,23 @@ internal class SherpaRecognizer private constructor(
                     dolphin = OfflineDolphinModelConfig(model = path("model.int8.onnx")),
                 )
 
-                SherpaFamily.CANARY -> OfflineModelConfig(
-                    canary = OfflineCanaryModelConfig(
-                        encoder = path("encoder.int8.onnx"),
-                        decoder = path("decoder.int8.onnx"),
-                        srcLang = if (language == "auto") "en" else language,
-                        tgtLang = if (language == "auto") "en" else language,
-                        usePnc = true,
-                    ),
-                )
+                // The one family that can translate. Equal source and target is
+                // transcription; differing them is what Canary was trained for,
+                // and "auto" has to become a real code because the config has no
+                // detection mode — English is the safest guess and the one
+                // upstream's own examples use.
+                SherpaFamily.CANARY -> {
+                    val source = if (language == "auto") "en" else language
+                    OfflineModelConfig(
+                        canary = OfflineCanaryModelConfig(
+                            encoder = path("encoder.int8.onnx"),
+                            decoder = path("decoder.int8.onnx"),
+                            srcLang = source,
+                            tgtLang = translateTo.ifEmpty { source },
+                            usePnc = true,
+                        ),
+                    )
+                }
 
                 // Upstream is inconsistent about whether the single CTC graph is
                 // quantized, so whichever one the catalog pinned is the one here.
