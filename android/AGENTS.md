@@ -16,7 +16,8 @@ A press must dirty **one key** and send **one write** to the editor.
 - If the gesture becomes a swipe, undo **only the seed letter**
   (`KeyboardReducer.undoLastCharacter`). Do not clear the whole composing word.
 - Accents: commit the letter on down; on long-press up, undo then commit the
-  variant. Same pattern FlorisBoard uses (`sendDown`, then cancel + replacement).
+  variant. That keeps the first glyph inside the 8.3 ms budget and still
+  lets a hold replace it.
 - Preview is one in-tree overlay (`KeyPreviewLayer`) above the key grid. Do
   **not** open a Compose `Popup` per tap. That is `WindowManager.addView` /
   `removeView` on the down frame (often 5–20 ms) before the letter is sent.
@@ -33,16 +34,12 @@ A press must dirty **one key** and send **one write** to the editor.
 - Do not read `swipeConsumed.value` (or other shared gesture flags) during
   `KeyButton` composition. Gestures may read the `MutableState` on up.
 
-FlorisBoard (the Compose peer) uses one `pointerInteropFilter`, clones the
-`MotionEvent` into a `Channel(64)`, commits on down via `InputEventDispatcher`,
-and sets `key.isPressed` as `mutableStateOf` on the key object.
-AOSP / OpenBoard / HeliBoard / Simple Keyboard / AnySoftKeyboard use a View
-`KeyboardView`, an offscreen buffer, and `invalidateKey` dirty rects.
-Do not rewrite this IME in Views unless Compose pointer + skip still miss the
-frame after measurement.
+Do not rewrite the IME in Views unless traces still show Compose pointer
+and skip missing the frame after measurement.
 
-Known leftover: each special key still has its own `pointerInput`. Do not add
-more. A parent MotionEvent stream (Floris) is the next pointer cut.
+Known leftover: each special key still has its own `pointerInput`. Do not
+add more. A single parent pointer stream is the next cut if Choreographer
+p95 climbs again.
 
 ## InputConnection
 
@@ -60,14 +57,10 @@ other app’s main thread.
 - Batch multi-call edits (`finishComposing` + `commitText`, double-space
   period) with `beginBatchEdit` / `endBatchEdit`.
 - Keep `setComposingText` for letters so a suggestion can replace `hel` with
-  `hello `. FUTO maps composing to `commitText` internally because many apps
-  implement the composing API wrong, and they disabled it on Android 11- after
-  measuring lag in long documents. Do not drop composing here without measuring
-  Messages and Chrome on a phone.
-- FUTO’s `RichInputConnection` caches text-before-cursor and expected
-  selection, and backs off for ten minutes after a slow read (200 ms partial /
-  1000 ms full). That cache is the next IPC cut; the 50 ms coalesced read is
-  the reconcile, not the source of truth.
+  `hello `. Do not switch letters to `commitText` without measuring Messages
+  and Chrome on a phone: composing is what makes the replacement cheap.
+- Caching text-before-cursor and expected selection locally is the next IPC
+  cut; the 50 ms coalesced read is the reconcile, not the source of truth.
 
 ## Suggestions and swipe
 
@@ -100,12 +93,8 @@ IME root recomposes the whole keyboard, including keys. Isolate it in
 
 ## Measuring
 
-FlorisBoard’s `benchmark` Gradle module is Macrobenchmark **app startup** plus
-baseline profiles. `FrameTimingMetric` on an Activity does **not** see IME
-frames (different window). Do not add that module to “prove” keystroke
-smoothness.
-
-This repo times the work a press actually does:
+Activity-level frame metrics never see IME presses (different window). Time
+the work a press actually does, on a 120 Hz phone:
 
 ```sh
 # Host JVM

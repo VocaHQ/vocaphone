@@ -18,13 +18,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * On-device timing for the keyboard hot path.
+ * On-device timing for the keyboard hot path, after the 120 Hz pass.
  *
- * FlorisBoard's `benchmark` module measures companion-app *startup* with
- * Macrobenchmark, not keystroke frames. An IME draws in its own window, so
- * `FrameTimingMetric` on an Activity never sees a press. This harness times
- * the work a press actually does on the phone, plus Choreographer frame gaps
- * while Compose taps letter keys. Same opt-in shape as the Whisper bench:
+ * An IME draws in its own window, so Activity-level frame metrics never see
+ * a key press. This times the work a press actually does on the phone, plus
+ * Choreographer gaps while Compose taps letter keys. Opt in:
  *
  *     ./gradlew :app:connectedFullDebugAndroidTest \
  *       -Pandroid.testInstrumentationRunnerArguments.keyboardBenchmark=true
