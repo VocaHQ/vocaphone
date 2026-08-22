@@ -524,9 +524,8 @@ private fun PersonalDictionarySection(
     val canClear = words.isNotBlank()
     Section(
         title = "Personal dictionary",
-        supporting = "Words the suggestion strip should know: names, project " +
-            "names, anything the English list misses. Comma-separated, or one " +
-            "per line. Off in passwords.",
+        supporting = "Names and jargon the English list misses. " +
+            "Separate with commas. Off in passwords.",
     ) {
         OutlinedTextField(
             value = draft,
@@ -538,10 +537,10 @@ private fun PersonalDictionarySection(
             maxLines = 8,
         )
         Text(
-            if (terms.isEmpty()) {
-                "No personal words. Completions come from the shipped English list."
-            } else {
-                "${terms.size} word${if (terms.size == 1) "" else "s"} will complete on the strip."
+            when (terms.size) {
+                0 -> "None saved."
+                1 -> "1 word."
+                else -> "${terms.size} words."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -587,9 +586,9 @@ private fun PersonalDictionarySection(
             text = {
                 Text(
                     if (count == 1) {
-                        "This removes 1 word from this phone. You can undo from this screen."
+                        "This removes 1 word from this phone."
                     } else {
-                        "This removes $count words from this phone. You can undo from this screen."
+                        "This removes $count words from this phone."
                     },
                 )
             },
