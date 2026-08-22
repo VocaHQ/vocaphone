@@ -466,6 +466,43 @@ internal object KeyboardReducer {
         }
     }
 
+    /**
+     * Reverses the character committed on pointer down when the gesture turns
+     * into a swipe, or when a long-press replaces it with an accent.
+     *
+     * FlorisBoard and AOSP send the letter on down, then `sendCancel` if the
+     * pointer becomes a glide. Doing the same here means a swipe that started
+     * on "l" after "he" must drop only that "l", not the whole composing word.
+     */
+    fun undoLastCharacter(
+        state: KeyboardState,
+        composeWords: Boolean,
+        restoreShift: ShiftState? = null,
+    ): KeyboardReduction {
+        if (composeWords) {
+            if (state.composing.isEmpty()) return KeyboardReduction(state)
+            val next = state.composing.dropLast(1)
+            return KeyboardReduction(
+                state = state.copy(
+                    composing = next,
+                    shift = if (next.isEmpty()) restoreShift ?: state.shift else state.shift,
+                    lastWasSpace = false,
+                    capitalizeAfterSpace = false,
+                ),
+                command = KeyboardCommand.SetComposingText(next),
+            )
+        }
+        return KeyboardReduction(
+            state = state.copy(
+                composing = "",
+                shift = restoreShift ?: state.shift,
+                lastWasSpace = false,
+                capitalizeAfterSpace = false,
+            ),
+            command = KeyboardCommand.DeleteBackward,
+        )
+    }
+
     private fun spacePress(state: KeyboardState): KeyboardReduction {
         if (state.lastWasSpace) {
             val nextShift = if (state.shift == ShiftState.LOCKED) ShiftState.LOCKED else ShiftState.ONCE
