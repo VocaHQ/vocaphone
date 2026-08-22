@@ -10,20 +10,36 @@ import UIKit
 /// owns the switch.
 struct SettingsView: View {
     @Environment(RecordingCoordinator.self) private var coordinator
+    // The hub's rows carry the values their destinations set, so they have to
+    // be read through storage SwiftUI can see. Reading them from
+    // `KeyboardPreferences` instead left every row showing the previous value
+    // until the coordinator happened to publish something unrelated — which is
+    // why the language row appeared to update "eventually" rather than never.
+    @AppStorage(
+        KeyboardPreferences.keyboardHeightKey,
+        store: KeyboardPreferences.defaults
+    ) private var keyboardHeightRawValue = KeyboardHeightPreference.standard.rawValue
+    @AppStorage(
+        KeyboardPreferences.transcriptionLanguageKey,
+        store: KeyboardPreferences.defaults
+    ) private var transcriptionLanguageRawValue = TranscriptionLanguage.automatic.rawValue
+    @AppStorage(
+        KeyboardPreferences.writingStyleKey,
+        store: KeyboardPreferences.defaults
+    ) private var writingStyleRawValue = WritingStyle.casual.rawValue
 
     var body: some View {
         List {
             Section {
                 destination(
                     "Keyboard",
-                    detail: KeyboardPreferences.keyboardHeight.displayName,
+                    detail: keyboardHeight.displayName,
                     symbol: "keyboard"
                 ) { KeyboardSettingsView() }
 
                 destination(
                     "Dictation",
-                    detail: KeyboardPreferences.effectiveTranscriptionLanguage.displayName
-                        + " · " + KeyboardPreferences.writingStyle.displayName,
+                    detail: language.displayName + " · " + writingStyle.displayName,
                     symbol: "mic"
                 ) { DictationSettingsView() }
 
@@ -61,6 +77,23 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var keyboardHeight: KeyboardHeightPreference {
+        KeyboardHeightPreference(rawValue: keyboardHeightRawValue) ?? .standard
+    }
+
+    /// Resolved the same way the Dictation screen resolves it, so the hub never
+    /// advertises a language the loaded model has already ruled out.
+    private var language: TranscriptionLanguage {
+        ModelLanguageSupport.resolve(
+            TranscriptionLanguage(rawValue: transcriptionLanguageRawValue) ?? .automatic,
+            modelLanguages: KeyboardPreferences.activeModelLanguages
+        )
+    }
+
+    private var writingStyle: WritingStyle {
+        WritingStyle(rawValue: writingStyleRawValue) ?? .casual
     }
 
     /// A row that carries its current value, so the hub answers most questions
@@ -406,10 +439,7 @@ struct DictationSettingsView: View {
             NavigationLink {
                 TranscriptionLanguageList(selection: $transcriptionLanguageRawValue)
             } label: {
-                LabeledContent(
-                    "Language",
-                    value: KeyboardPreferences.effectiveTranscriptionLanguage.displayName
-                )
+                LabeledContent("Language", value: selectedLanguage.displayName)
             }
             // Kept next to Language and never hidden. A row that disappears for
             // most models would leave the question unanswered, and "Not
@@ -424,13 +454,13 @@ struct DictationSettingsView: View {
                 LabeledContent(
                     "Translate to",
                     value: ModelTranslationSupport.summary(
-                        KeyboardPreferences.translateTo,
+                        storedTranslateTo,
                         targets: KeyboardPreferences.activeModelTranslationTargets
                     )
                 )
             }
         } footer: {
-            Text(KeyboardPreferences.effectiveTranscriptionLanguage.detail)
+            Text(selectedLanguage.detail)
         }
     }
 
@@ -578,6 +608,31 @@ struct DictationSettingsView: View {
 
     private var selectedWritingStyle: WritingStyle {
         WritingStyle(rawValue: writingStyleRawValue) ?? .casual
+    }
+
+    /// Read back out of the `@AppStorage` value rather than through
+    /// `KeyboardPreferences`, exactly as `selectedWritingStyle` is.
+    ///
+    /// This is not a style preference. SwiftUI invalidates a view from the
+    /// dynamic properties its body *reads*, and a static accessor is not one:
+    /// `KeyboardPreferences.effectiveTranscriptionLanguage` reaches the same
+    /// `UserDefaults` by a route SwiftUI cannot see, so a row that read it kept
+    /// showing the previous language until something unrelated redrew the
+    /// screen. Passing `$transcriptionLanguageRawValue` to the picker is not a
+    /// read — it hands over the projected binding — so the property was written
+    /// on every pick and never once observed here.
+    private var selectedLanguage: TranscriptionLanguage {
+        ModelLanguageSupport.resolve(
+            TranscriptionLanguage(rawValue: transcriptionLanguageRawValue) ?? .automatic,
+            modelLanguages: KeyboardPreferences.activeModelLanguages
+        )
+    }
+
+    /// The stored target, before resolving: `ModelTranslationSupport.summary`
+    /// does its own resolving, and needs to tell "Off" from a pick the current
+    /// model cannot honour.
+    private var storedTranslateTo: TranscriptionLanguage {
+        TranscriptionLanguage(rawValue: translateToRawValue) ?? ModelTranslationSupport.off
     }
 
     private var selectedMicrophonePreference: MicrophonePreference {
@@ -1173,9 +1228,11 @@ struct TranscriptionLanguageList: View {
 
 // MARK: - Previews
 
-// All five destinations, plus the hub. The hub's own finding — three rows that
-// read their value as a plain static property and never invalidate — shows up
-// here as a value that does not follow the store the preview supplies.
+// All five destinations, plus the hub. The hub's rows used to read their value
+// as a plain static property, which showed up here as a value that did not
+// follow the store the preview supplies — and on device as a row that changed
+// only when something unrelated redrew the screen. They read `@AppStorage` now,
+// so the preview store is what they show.
 
 #Preview("Settings — hub") {
     PreviewHost(coordinator: .previewIdle()) {
