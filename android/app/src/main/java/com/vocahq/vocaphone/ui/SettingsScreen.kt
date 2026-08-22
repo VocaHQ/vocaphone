@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
@@ -98,7 +99,6 @@ fun SettingsScreen(
     onSwipeTyping: (Boolean) -> Unit,
     onClipboardChip: (Boolean) -> Unit,
     onClipboardHistory: (Boolean) -> Unit,
-    onClearClipboardHistory: () -> Unit,
     localModels: LocalModelState,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
@@ -319,16 +319,11 @@ fun SettingsScreen(
                     SettingToggle(
                         title = "Clipboard history",
                         detail = "Save recent text and images on this phone. Open them " +
-                            "from the keyboard menu. Off in passwords.",
+                            "from the keyboard menu, where you can paste or delete them. " +
+                            "Off in passwords.",
                         checked = settings.clipboardHistoryEnabled,
                         onCheckedChange = onClipboardHistory,
                     )
-                    if (settings.clipboardHistory.isNotEmpty()) {
-                        DestructiveButton(
-                            "Clear clipboard history (${settings.clipboardHistory.size})",
-                            onClick = onClearClipboardHistory,
-                        )
-                    }
                 }
             }
 
@@ -530,15 +525,15 @@ private fun PersonalDictionarySection(
     Section(
         title = "Personal dictionary",
         supporting = "Words the suggestion strip should know: names, project " +
-            "names, anything the English list misses. One per line, or separated " +
-            "by commas. Off in passwords.",
+            "names, anything the English list misses. Comma-separated, or one " +
+            "per line. Off in passwords.",
     ) {
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Words") },
-            placeholder = { Text("One per line") },
+            placeholder = { Text("Grafana, GraphQL, Kubernetes, Docker") },
             minLines = 3,
             maxLines = 8,
         )
@@ -554,8 +549,8 @@ private fun PersonalDictionarySection(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            val shareRow = canClear || canUndo
             SecondaryButton(
                 text = "Save words",
                 onClick = {
@@ -563,7 +558,7 @@ private fun PersonalDictionarySection(
                     onSave(draft)
                 },
                 enabled = PersonalDictionary.normalize(draft) != PersonalDictionary.normalize(words),
-                modifier = if (shareRow) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
             )
             if (canUndo) {
                 SecondaryButton(
@@ -577,10 +572,9 @@ private fun PersonalDictionarySection(
                     modifier = Modifier.weight(1f),
                 )
             } else if (canClear) {
-                DestructiveButton(
+                DestructiveTextButton(
                     text = "Clear",
                     onClick = { confirmClear = true },
-                    modifier = Modifier.weight(1f),
                 )
             }
         }
