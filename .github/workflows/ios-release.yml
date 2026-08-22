@@ -82,7 +82,7 @@ jobs:
           set -euo pipefail
           # macos-15 still defaults to Xcode 16.4 / iOS 18.5. App Store
           # Connect rejects that SDK on export.
-          app="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          app="$(printf '%s\n' /Applications/Xcode_26*.app | sort -V | tail -1)"
           sudo xcode-select -s "$app"
           xcodebuild -version
 
