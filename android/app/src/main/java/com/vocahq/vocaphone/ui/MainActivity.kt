@@ -418,7 +418,6 @@ fun VocaPhoneApp(
                 onSwipeTyping = { viewModel.setSwipeTypingEnabled(it) },
                 onClipboardChip = { viewModel.setClipboardChipEnabled(it) },
                 onClipboardHistory = { viewModel.setClipboardHistoryEnabled(it) },
-                onClearClipboardHistory = { viewModel.clearClipboardHistory() },
                 localModels = localModels,
                 onLocalTranscriptionEnabled = viewModel::setLocalTranscriptionEnabled,
                 onLocalModel = viewModel::setLocalModel,
