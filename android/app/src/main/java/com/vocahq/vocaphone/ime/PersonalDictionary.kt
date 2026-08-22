@@ -9,13 +9,14 @@ import java.util.Locale
  * Separate from [com.vocahq.vocaphone.core.CustomVocabulary], which only biases
  * Whisper. These words complete on the strip. Nothing here is logged or sent.
  *
- * The stored text is what the settings field shows. Parsing matches that
- * field's contract: split on newlines and commas, keep the first spelling of
- * a duplicate, cap the list so a pasted dump cannot grow without bound.
+ * The stored text is what the settings field shows. Parsing accepts commas
+ * or new lines; saving always writes a comma-separated list, which is how
+ * the field is meant to be edited.
  */
 internal object PersonalDictionary {
     const val CAPACITY = 2_000
     const val MIN_LENGTH = 3
+    private const val SEPARATOR = ", "
 
     fun terms(raw: String?): List<String> {
         if (raw.isNullOrBlank()) return emptyList()
@@ -26,7 +27,7 @@ internal object PersonalDictionary {
             .take(CAPACITY)
     }
 
-    fun normalize(raw: String?): String = terms(raw).joinToString("\n")
+    fun normalize(raw: String?): String = terms(raw).joinToString(SEPARATOR)
 
     fun contains(raw: String?, word: String): Boolean {
         val key = word.lowercase(Locale.ROOT)
@@ -47,7 +48,7 @@ internal object PersonalDictionary {
         val cleaned = word.trim()
         if (!isSavable(cleaned)) return normalize(raw)
         val existing = terms(raw).filter { !it.equals(cleaned, ignoreCase = true) }
-        return (listOf(cleaned) + existing).take(CAPACITY).joinToString("\n")
+        return (listOf(cleaned) + existing).take(CAPACITY).joinToString(SEPARATOR)
     }
 
     fun isSavable(word: String): Boolean {

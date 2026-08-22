@@ -516,7 +516,7 @@ private fun PersonalDictionarySection(
     words: String,
     onSave: (String) -> Unit,
 ) {
-    var draft by remember(words) { mutableStateOf(words) }
+    var draft by remember(words) { mutableStateOf(PersonalDictionary.normalize(words)) }
     var lastCleared by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     val terms = remember(draft) { PersonalDictionary.terms(draft) }
@@ -531,7 +531,6 @@ private fun PersonalDictionarySection(
             value = draft,
             onValueChange = { draft = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Words") },
             placeholder = { Text("Grafana, GraphQL, Kubernetes, Docker") },
             minLines = 3,
             maxLines = 8,

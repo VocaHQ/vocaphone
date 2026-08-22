@@ -336,7 +336,7 @@ class SettingsRepository(private val context: Context) {
                 .map { it.trim() }
                 .filter { it.isNotEmpty() && !it.equals(cleaned, ignoreCase = true) }
             preferences[Keys.PERSONAL_DICTIONARY] =
-                (listOf(cleaned) + existing).take(2_000).joinToString("\n")
+                (listOf(cleaned) + existing).take(2_000).joinToString(", ")
         }
     }
 
