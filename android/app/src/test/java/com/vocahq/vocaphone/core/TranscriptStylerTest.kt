@@ -33,6 +33,30 @@ class TranscriptStylerTest {
     }
 
     @Test
+    fun `parakeet title case and chunk joins flatten under formal`() {
+        // Parakeet TDT emits native capitalization, and sherpa joins windows
+        // with a space, so the next window often starts with a capital mid-sentence.
+        assertEquals(
+            "I think we should go to the store.",
+            TranscriptStyler.apply(
+                "I Think We Should Go To The Store",
+                WritingStyle.FORMAL,
+            ),
+        )
+        assertEquals(
+            "Hello there how are you today.",
+            TranscriptStyler.apply(
+                "Hello there How are you today",
+                WritingStyle.FORMAL,
+            ),
+        )
+        assertEquals(
+            "Yes, it's ready now.",
+            TranscriptStyler.apply("Yes, It's Ready Now", WritingStyle.FORMAL),
+        )
+    }
+
+    @Test
     fun `flattening keeps mixed-case names, acronyms, and the pronoun I`() {
         val source = "I use VocaPhone and GraphQL at NASA today"
         assertEquals(

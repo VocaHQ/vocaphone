@@ -46,6 +46,7 @@ import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.AudioRetention
 import com.vocahq.vocaphone.settings.KeyboardHeight
+import com.vocahq.vocaphone.settings.ModelIdleTimeout
 import com.vocahq.vocaphone.settings.SplitKeyboard
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.telemetry.TelemetryInspectPayload
@@ -85,6 +86,7 @@ fun SettingsScreen(
     tonePreviewListening: Boolean,
     onMicrophone: (MicrophonePreference) -> Unit,
     onAudioRetention: (AudioRetention) -> Unit,
+    onModelIdleTimeout: (ModelIdleTimeout) -> Unit,
     onTranscriptionQuality: (TranscriptionQuality) -> Unit,
     onCustomVocabulary: (String) -> Unit,
     onSyncWhisperDictionary: (Boolean) -> Unit,
@@ -372,6 +374,25 @@ fun SettingsScreen(
                     status = microphone,
                     onSelect = onMicrophone,
                 )
+                Section(
+                    title = "Keep model loaded",
+                    supporting = "After you stop dictating, how long the on-device model " +
+                        "stays in RAM. Unloading saves battery; keeping it makes the next " +
+                        "dictation start faster.",
+                ) {
+                    SettingDropdown(
+                        options = ModelIdleTimeout.entries,
+                        selected = settings.modelIdleTimeout,
+                        label = { it.displayName },
+                        detail = { it.detail },
+                        onSelect = onModelIdleTimeout,
+                    )
+                    Text(
+                        settings.modelIdleTimeout.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Section(
                     title = "Audio and transcript retention",
                     supporting = "Successful dictations delete their audio immediately. A " +

@@ -134,6 +134,45 @@ enum class AudioRetention(val hours: Int) {
     }
 }
 
+/**
+ * How long an on-device model stays in RAM after the last dictation.
+ *
+ * Unloading frees battery and memory. Keeping it skips the multi-second load
+ * on the next tap. [WHILE_OPEN] only unloads if Android trims the process.
+ */
+enum class ModelIdleTimeout(val storedValue: String, val delayMs: Long) {
+    IMMEDIATELY("immediately", 0L),
+    THIRTY_SECONDS("30s", 30_000L),
+    TWO_MINUTES("2m", 2 * 60 * 1000L),
+    TEN_MINUTES("10m", 10 * 60 * 1000L),
+    WHILE_OPEN("while_open", -1L),
+    ;
+
+    val displayName: String
+        get() = when (this) {
+            IMMEDIATELY -> "Immediately"
+            THIRTY_SECONDS -> "30 seconds"
+            TWO_MINUTES -> "2 minutes"
+            TEN_MINUTES -> "10 minutes"
+            WHILE_OPEN -> "Until the app closes"
+        }
+
+    val detail: String
+        get() = when (this) {
+            IMMEDIATELY -> "Unload as soon as you stop dictating."
+            THIRTY_SECONDS -> "Keep the model ready for a quick follow-up."
+            TWO_MINUTES -> "A short pause between dictations will not reload."
+            TEN_MINUTES -> "Stay warm through a longer break."
+            WHILE_OPEN -> "Stay loaded until VocaPhone is killed or Android needs the RAM."
+        }
+
+    companion object {
+        val DEFAULT = TWO_MINUTES
+        fun fromStored(value: String?): ModelIdleTimeout =
+            entries.firstOrNull { it.storedValue == value } ?: DEFAULT
+    }
+}
+
 data class VocaPhoneSettings(
     val gatewayUrl: String = "",
     val hasToken: Boolean = false,
@@ -142,6 +181,7 @@ data class VocaPhoneSettings(
     val dictationTone: DictationTone = DictationTone.DEFAULT,
     val microphone: MicrophonePreference = MicrophonePreference.DEFAULT,
     val audioRetention: AudioRetention = AudioRetention.DEFAULT,
+    val modelIdleTimeout: ModelIdleTimeout = ModelIdleTimeout.DEFAULT,
     val onboardingComplete: Boolean = false,
     val lastEngine: String = "",
     val lastEngineReady: Boolean = false,
@@ -300,6 +340,9 @@ class SettingsRepository(private val context: Context) {
         put(Keys.MICROPHONE, preference.storedValue)
 
     suspend fun setAudioRetention(retention: AudioRetention) = put(Keys.RETENTION_HOURS, retention.hours)
+
+    suspend fun setModelIdleTimeout(timeout: ModelIdleTimeout) =
+        put(Keys.MODEL_IDLE_TIMEOUT, timeout.storedValue)
 
     suspend fun setOnboardingComplete(complete: Boolean) = put(Keys.ONBOARDING_COMPLETE, complete)
 
@@ -471,6 +514,7 @@ class SettingsRepository(private val context: Context) {
         dictationTone = DictationTone.fromStored(this[Keys.DICTATION_TONE]),
         microphone = MicrophonePreference.fromStored(this[Keys.MICROPHONE]),
         audioRetention = AudioRetention.fromHours(this[Keys.RETENTION_HOURS]),
+        modelIdleTimeout = ModelIdleTimeout.fromStored(this[Keys.MODEL_IDLE_TIMEOUT]),
         onboardingComplete = this[Keys.ONBOARDING_COMPLETE] ?: false,
         lastEngine = this[Keys.LAST_ENGINE].orEmpty(),
         lastEngineReady = this[Keys.LAST_ENGINE_READY] ?: false,
@@ -512,6 +556,7 @@ class SettingsRepository(private val context: Context) {
         val DICTATION_TONE = stringPreferencesKey("dictation_tone")
         val MICROPHONE = stringPreferencesKey("microphone_preference")
         val RETENTION_HOURS = intPreferencesKey("audio_retention_hours")
+        val MODEL_IDLE_TIMEOUT = stringPreferencesKey("model_idle_timeout")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
         val LAST_ENGINE = stringPreferencesKey("last_engine")
         val LAST_ENGINE_READY = booleanPreferencesKey("last_engine_ready")

@@ -36,6 +36,21 @@ struct TranscriptStylerTests {
         #expect(TranscriptStyler.apply(titled, style: .casual) == "Hello there. The keyboard is ready")
     }
 
+    @Test func parakeetTitleCaseAndChunkJoinsFlattenUnderFormal() {
+        #expect(
+            TranscriptStyler.apply("I Think We Should Go To The Store", style: .formal)
+                == "I think we should go to the store."
+        )
+        #expect(
+            TranscriptStyler.apply("Hello there How are you today", style: .formal)
+                == "Hello there how are you today."
+        )
+        #expect(
+            TranscriptStyler.apply("Yes, It's Ready Now", style: .formal)
+                == "Yes, it's ready now."
+        )
+    }
+
     @Test func flatteningKeepsMixedCaseNamesAcronymsAndPronounI() {
         let source = "I use VocaPhone and GraphQL at NASA today"
         #expect(TranscriptStyler.apply(source, style: .clean) == "I use VocaPhone and GraphQL at NASA today.")

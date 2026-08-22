@@ -375,10 +375,10 @@ class LocalModelManager(
         engineUsers.incrementAndGet()
     }
 
-    fun endUse() {
+    fun endUse(idleMs: Long = LOCAL_ENGINE_IDLE_UNLOAD_MS) {
         if (engineUsers.decrementAndGet() <= 0) {
             engineUsers.set(0)
-            scheduleIdleUnload()
+            scheduleIdleUnload(idleMs)
         }
     }
 
@@ -402,10 +402,11 @@ class LocalModelManager(
         }
     }
 
-    private fun scheduleIdleUnload() {
-        idleUnloadJob?.cancel()
+    private fun scheduleIdleUnload(idleMs: Long) {
+        cancelIdleUnload()
+        if (idleMs < 0L) return
         idleUnloadJob = engineScope.launch {
-            delay(LOCAL_ENGINE_IDLE_UNLOAD_MS)
+            if (idleMs > 0L) delay(idleMs)
             if (engineUsers.get() > 0) return@launch
             engineMutex.withLock { releaseEngines() }
         }

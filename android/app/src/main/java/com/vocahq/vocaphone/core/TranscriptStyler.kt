@@ -31,7 +31,7 @@ object TranscriptStyler {
     private val protectedSpans = Regex(
         """(?i)(https?://[^\s]+[^\s.,;:!?\"“”'\)\]]|[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}|"""
             + """(?:[\w-]+\.)+[A-Za-z]{2,}(?:/[^\s.,;:!?\"“”'\)\]]*)?|\d+(?:[.,:/]\d+)+|"""
-            + """\d+(?:st|nd|rd|th)\b|(?:[A-Za-z]\.){2,}|\w+['’]\w+)""",
+            + """\d+(?:st|nd|rd|th)\b|(?:[A-Za-z]\.){2,})""",
     )
     private val placeholder = Regex("\\uE000(\\d+)\\uE001")
 
@@ -199,7 +199,10 @@ object TranscriptStyler {
         if (letters.isEmpty()) return token
         val hasLower = letters.any { it.isLowerCase() }
         val hasUpper = letters.any { it.isUpperCase() }
-        if (!hasLower && letters.length >= 2) return token
+        // Short ALL-CAPS is an acronym (NASA, CPU). Longer shouts are the
+        // model yelling a content word; flatten those.
+        if (!hasLower && letters.length in 2..4) return token
+        if (!hasLower && letters.length > 4) return token.lowercase()
         if (hasLower && hasUpper) {
             val body = token.dropWhile { !it.isLetter() }
             val titleCase = body.first().isUpperCase() && body.drop(1).none { it.isUpperCase() }

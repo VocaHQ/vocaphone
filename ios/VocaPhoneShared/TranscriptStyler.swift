@@ -60,7 +60,7 @@ enum TranscriptStyler {
         terminators: "།.!?", join: " "
     )
 
-    private static let protectedPattern = "(?i)(https?://[^\\s]+[^\\s.,;:!?\\\"“”'\\)\\]]|[\\w.+-]+@(?:[\\w-]+\\.)+[A-Za-z]{2,}|(?:[\\w-]+\\.)+[A-Za-z]{2,}(?:/[^\\s.,;:!?\\\"“”'\\)\\]]*)?|\\d+(?:[.,:/]\\d+)+|\\d+(?:st|nd|rd|th)\\b|(?:[A-Za-z]\\.){2,}|\\w+['’]\\w+)"
+    private static let protectedPattern = "(?i)(https?://[^\\s]+[^\\s.,;:!?\\\"“”'\\)\\]]|[\\w.+-]+@(?:[\\w-]+\\.)+[A-Za-z]{2,}|(?:[\\w-]+\\.)+[A-Za-z]{2,}(?:/[^\\s.,;:!?\\\"“”'\\)\\]]*)?|\\d+(?:[.,:/]\\d+)+|\\d+(?:st|nd|rd|th)\\b|(?:[A-Za-z]\\.){2,})"
     private static let placeholderPattern = "__VOCA_TOKEN_(\\d+)__"
 
     static func apply(
@@ -265,7 +265,8 @@ enum TranscriptStyler {
         if letters.isEmpty { return token }
         let hasLower = letters.contains { $0.isLowercase }
         let hasUpper = letters.contains { $0.isUppercase }
-        if !hasLower && letters.count >= 2 { return token }
+        if !hasLower && (2...4).contains(letters.count) { return token }
+        if !hasLower && letters.count > 4 { return token.lowercased() }
         if hasLower && hasUpper {
             let body = token.drop { !$0.isLetter }
             guard let first = body.first else { return token }

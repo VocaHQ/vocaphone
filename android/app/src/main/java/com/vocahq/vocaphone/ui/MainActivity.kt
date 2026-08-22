@@ -404,6 +404,7 @@ fun VocaPhoneApp(
                 tonePreviewListening = tonePreviewListening,
                 onMicrophone = { viewModel.setMicrophone(it) },
                 onAudioRetention = { viewModel.setAudioRetention(it) },
+                onModelIdleTimeout = { viewModel.setModelIdleTimeout(it) },
                 onTranscriptionQuality = { viewModel.setTranscriptionQuality(it) },
                 onCustomVocabulary = { viewModel.setCustomVocabulary(it) },
                 onSyncWhisperDictionary = { viewModel.setSyncWhisperDictionary(it) },

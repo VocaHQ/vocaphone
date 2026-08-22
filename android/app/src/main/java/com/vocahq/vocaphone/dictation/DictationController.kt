@@ -251,7 +251,9 @@ class DictationController(
                         generation = generation,
                     )
                 } finally {
-                    if (modelID != null) localModels.endUse()
+                    if (modelID != null) {
+                        localModels.endUse(configuration.modelIdleTimeout.delayMs)
+                    }
                 }
             } else {
                 val token = settings.token() ?: return@launch
@@ -717,7 +719,7 @@ class DictationController(
         )
         } finally {
             if (configuration.localTranscriptionEnabled && selectedLocalModelID != null) {
-                localModels.endUse()
+                localModels.endUse(settings.current().modelIdleTimeout.delayMs)
             }
         }
     }
