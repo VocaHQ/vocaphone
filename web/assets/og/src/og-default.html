@@ -193,7 +193,7 @@ h1 em { display: block; font-style: italic; font-weight: 600; }
   background: #f7f7f4;
 }
 .iphone .screen { border-radius: 36px; }
-.android .screen { border-radius: 22px; background: #f4f5f2; }
+.android .screen { border-radius: 22px; background: #ece5dd; }
 
 .status {
   display: flex;
@@ -258,9 +258,48 @@ h1 em { display: block; font-style: italic; font-weight: 600; }
   border-bottom: 1px solid #e4e2dc;
 }
 
-.android .chat-head {
+.android .status {
+  padding-bottom: 4px;
+  color: #fff;
+  background: #075e54;
+}
+
+.android .sig i,
+.android .battery,
+.android .battery b {
   background: #fff;
-  border-bottom: 1px solid #e6e8e3;
+  border-color: #fff;
+}
+
+.android .chat-head {
+  gap: 6px;
+  padding: 6px 8px 8px;
+  color: #fff;
+  background: #008069;
+  border-bottom: 0;
+}
+
+.android .back {
+  border-color: #fff;
+}
+
+.android .chat-head small { color: #cfe8e0; }
+
+.wa-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.wa-actions i {
+  width: 12px;
+  height: 12px;
+  border: 1.4px solid #fff;
+  border-radius: 3px;
+}
+
+.wa-actions i:last-child {
+  border-radius: 50%;
 }
 
 .back {
@@ -280,6 +319,8 @@ h1 em { display: block; font-style: italic; font-weight: 600; }
   font-size: 10px;
   font-weight: 700;
 }
+
+.android .avatar { background: #3d6b8a; }
 
 .chat-head strong, .chat-head small { display: block; }
 .chat-head strong { font-size: 10px; }
@@ -306,19 +347,23 @@ h1 em { display: block; font-style: italic; font-weight: 600; }
   border-radius: 14px 14px 14px 4px;
 }
 
-.android .msg.in {
-  background: #e3e6e1;
-  border-radius: 16px 16px 16px 4px;
-}
-
 .msg.out {
   align-self: end;
-  background: var(--brand);
+  background: #0a84ff;
   color: #fff;
   border-radius: 14px 14px 4px 14px;
 }
 
-.android .msg.out { border-radius: 16px 16px 4px 16px; }
+.android .msg.in {
+  background: #fff;
+  border-radius: 8px 8px 8px 2px;
+}
+
+.android .msg.out {
+  background: #dcf8c6;
+  color: #111;
+  border-radius: 8px 8px 2px 8px;
+}
 
 .composer {
   display: flex;
@@ -333,7 +378,15 @@ h1 em { display: block; font-style: italic; font-weight: 600; }
 }
 
 .iphone .composer { border-radius: 16px; }
-.android .composer { border-radius: 20px; border-color: #cfd4cd; }
+.iphone .send { background: #0a84ff; }
+
+.android .composer {
+  border: 0;
+  border-radius: 22px;
+  background: #fff;
+}
+
+.android .send { background: #25d366; }
 
 .caret {
   display: inline-block;
@@ -419,10 +472,10 @@ h1 em { display: block; font-style: italic; font-weight: 600; }
               <div><strong>Maya</strong><small>iMessage</small></div>
             </div>
             <div class="thread">
-              <span class="msg in">See you at the studio?</span>
-              <span class="msg out">yes, around six</span>
+              <span class="msg in">running five late</span>
+              <span class="msg out">studio still work?</span>
             </div>
-            <div class="composer">on my way<span class="caret"></span><span class="send">↑</span></div>
+            <div class="composer">I'll grab a table<span class="caret"></span><span class="send">↑</span></div>
             <div class="kb"><svg class="kb-ios" viewBox="0 0 204 138" width="100%" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 <rect width="204" height="138" fill="#d5d9d5"/>
 <g font-family="ui-sans-serif, system-ui, sans-serif">
@@ -511,14 +564,15 @@ h1 em { display: block; font-style: italic; font-weight: 600; }
             </div>
             <div class="chat-head">
               <span class="back"></span>
-              <span class="avatar">m</span>
-              <div><strong>Maya</strong><small>Messages</small></div>
+              <span class="avatar">a</span>
+              <div><strong>Alex</strong><small>WhatsApp</small></div>
+              <span class="wa-actions" aria-hidden="true"><i></i><i></i></span>
             </div>
             <div class="thread">
-              <span class="msg in">See you at the studio?</span>
-              <span class="msg out">yes, around six</span>
+              <span class="msg out">running five late</span>
+              <span class="msg in">studio still work?</span>
             </div>
-            <div class="composer">on my way<span class="caret"></span><span class="send">↑</span></div>
+            <div class="composer">perfect, see you there<span class="caret"></span><span class="send">↑</span></div>
             <div class="kb"><svg class="kb-android" viewBox="0 0 214 176" width="100%" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 <rect width="214" height="176" fill="#eceee9"/>
 <g font-family="ui-sans-serif, system-ui, sans-serif">

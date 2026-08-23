@@ -155,8 +155,11 @@ test("Open Graph card follows the Voca paper language", () => {
   assert.match(ogSource, /class="device android"/);
   assert.match(ogSource, /class="island"/);
   assert.match(ogSource, /iMessage/);
+  assert.match(ogSource, /WhatsApp/);
   assert.match(ogSource, /class="hole"/);
   assert.match(ogSource, /class="thread"/);
+  assert.match(ogSource, /running five late/);
+  assert.match(ogSource, /studio still work\?/);
   assert.match(ogSource, /class="kb-ios"/);
   assert.match(ogSource, /class="kb-android"/);
   assert.match(ogSource, /class="plat"/);
