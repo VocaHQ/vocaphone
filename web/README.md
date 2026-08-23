@@ -51,3 +51,9 @@ routes.
 The Android product images are the original 576×1280 screenshots from
 [VocaPhone PR #70](https://github.com/VocaHQ/vocaphone/pull/70). The website
 frames them with CSS and does not load media from GitHub at runtime.
+
+The Open Graph card is `assets/og-image.png` (1200×630), drawn from
+`assets/og/src/og-default.html` in the same paper language as VocaMac and
+VocaHQ: warm paper, one green accent, editorial type, and a real Android
+keyboard screenshot. Serve the site and open `/assets/og/src/og-default.html`
+to proof the source at native size before re-rasterizing the PNG.
