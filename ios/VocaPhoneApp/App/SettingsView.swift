@@ -1153,8 +1153,8 @@ struct TranscriptionLanguageList: View {
             : ModelLanguageSupport.restriction(
                 modelLanguages: modelLanguages,
                 detectsLanguageAutomatically: detectsLanguage,
-                onDevice: LocalTranscriptionPreferences.enabled,
-                canTranslate: ModelTranslationSupport.isSupported(translationTargets)
+                canTranslate: ModelTranslationSupport.isSupported(translationTargets),
+                onDevice: LocalTranscriptionPreferences.enabled
             )
     }
 
