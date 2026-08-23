@@ -365,6 +365,8 @@ internal fun VocaPhoneKeyboard(
         onCommand(command)
     }
 
+    val currentEditorText = rememberUpdatedState(editorText)
+
     fun handleKey(key: KeyboardKey) {
         if (key.type == KeyboardKeyType.DELETE) {
             handleDelete(0L)
@@ -380,12 +382,13 @@ internal fun VocaPhoneKeyboard(
         if (key.type == KeyboardKeyType.CHARACTER) {
             swipeSeedShift = keyboardState.shift
         }
+        val text = currentEditorText.value
         val reduction = KeyboardReducer.press(
             state = keyboardState,
             key = key,
             nowMillis = SystemClock.uptimeMillis(),
             composeWords = composeWords,
-            hasSelection = editorText.hasSelection || editorText.selected.any { it.isLetter() },
+            hasSelection = text.hasSelection || text.selected.any { it.isLetter() },
         )
         keyboardState = reduction.state
         reduction.command?.let(onCommand)

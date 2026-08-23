@@ -386,6 +386,15 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 composingRegionActive = false
             }
             KeyboardCommand.CycleSelectionCase -> cycleSelectionCase()
+            KeyboardCommand.ShiftTap -> {
+                if (cycleSelectionCase()) {
+                    // Compose already armed a capital from a stale snapshot.
+                    editorConfig = editorConfig.copy(
+                        initialShift = ShiftState.OFF,
+                        shiftSync = editorConfig.shiftSync + 1,
+                    )
+                }
+            }
         }
         // Composing lives in keyboard state; the strip does not need a
         // round-trip into the editor until a word is committed or the cursor
@@ -508,10 +517,10 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         }
     }
 
-    private fun cycleSelectionCase() {
-        val connection = currentInputConnection ?: return
+    private fun cycleSelectionCase(): Boolean {
+        val connection = currentInputConnection ?: return false
         val selected = selectedText(connection)
-        val start = selectionStart(connection) ?: return
+        val start = selectionStart(connection) ?: return false
         if (selected != caseCycleEmitted) {
             caseCycleOriginal = selected
         }
@@ -520,7 +529,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             original = caseCycleOriginal,
             start = start,
             composingActive = composingRegionActive,
-        ) ?: return
+        ) ?: return false
         connection.beginBatchEdit()
         if (plan.restoreSelectionAfterFinish) {
             connection.finishComposingText()
@@ -537,9 +546,19 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             selected = plan.next,
             hasSelection = true,
         )
+        return true
     }
 
     private fun selectedText(connection: InputConnection): String {
+        val surrounding = runCatching {
+            connection.getSurroundingText(1024, 1024, 0)
+        }.getOrNull()
+        if (surrounding != null) {
+            val text = surrounding.text.toString()
+            val start = minOf(surrounding.selectionStart, surrounding.selectionEnd).coerceAtLeast(0)
+            val end = maxOf(surrounding.selectionStart, surrounding.selectionEnd).coerceAtMost(text.length)
+            if (start < end) return text.substring(start, end)
+        }
         val live = runCatching {
             connection.getSelectedText(0)?.toString()
         }.getOrNull()
@@ -555,6 +574,13 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     private fun selectionStart(connection: InputConnection): Int? {
+        val surrounding = runCatching {
+            connection.getSurroundingText(1024, 1024, 0)
+        }.getOrNull()
+        if (surrounding != null) {
+            val start = minOf(surrounding.selectionStart, surrounding.selectionEnd)
+            if (start >= 0) return start
+        }
         val extracted = runCatching {
             connection.getExtractedText(ExtractedTextRequest(), 0)
         }.getOrNull()

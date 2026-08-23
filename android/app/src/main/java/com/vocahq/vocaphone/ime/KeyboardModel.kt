@@ -58,6 +58,12 @@ internal sealed interface KeyboardCommand {
     data object DoubleSpacePeriod : KeyboardCommand
     data object FinishComposing : KeyboardCommand
     data object CycleSelectionCase : KeyboardCommand
+    /**
+     * Shift was pressed while Compose did not think there was a selection.
+     * The service still checks the live editor range: a stale `editorText`
+     * snapshot used to arm caps instead of cycling case.
+     */
+    data object ShiftTap : KeyboardCommand
 }
 
 /** Hold-delete starts on characters, then words, then the rest of the line. */
@@ -456,6 +462,7 @@ internal object KeyboardReducer {
                         shift = nextShift,
                         lastShiftTapMillis = if (nextShift == ShiftState.ONCE) nowMillis else null,
                     ),
+                    command = KeyboardCommand.ShiftTap,
                 )
             }
         }
