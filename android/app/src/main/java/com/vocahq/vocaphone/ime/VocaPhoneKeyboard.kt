@@ -108,6 +108,7 @@ import androidx.compose.ui.layout.positionInWindow
 import com.vocahq.vocaphone.core.DictationPhase
 import com.vocahq.vocaphone.core.DictationState
 import com.vocahq.vocaphone.core.ModelLanguageSupport
+import com.vocahq.vocaphone.core.ModelTranslationSupport
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.WritingStyle
 import com.vocahq.vocaphone.settings.ClipboardHistory
@@ -1330,6 +1331,7 @@ private fun LanguagePreferencePanel(
     val restriction = ModelLanguageSupport.restriction(
         settings.activeModelLanguages,
         settings.activeModelDetectsLanguage,
+        canTranslate = ModelTranslationSupport.isSupported(settings.activeModelTranslationTargets),
         onDevice = settings.localTranscriptionEnabled,
     )
 

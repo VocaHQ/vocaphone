@@ -510,23 +510,31 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     private fun cycleSelectionCase() {
         val connection = currentInputConnection ?: return
-        connection.finishComposingText()
         val selected = selectedText(connection)
-        if (selected.none { it.isLetter() }) return
         val start = selectionStart(connection) ?: return
         if (selected != caseCycleEmitted) {
             caseCycleOriginal = selected
         }
-        val next = CaseCycle.next(selected, caseCycleOriginal ?: selected)
+        val plan = planCaseCycle(
+            selected = selected,
+            original = caseCycleOriginal,
+            start = start,
+            composingActive = composingRegionActive,
+        ) ?: return
         connection.beginBatchEdit()
-        connection.commitText(next, 1)
-        connection.setSelection(start, start + next.length)
+        if (plan.restoreSelectionAfterFinish) {
+            connection.finishComposingText()
+            connection.setSelection(start, start + selected.length)
+        }
+        connection.commitText(plan.next, 1)
+        connection.setSelection(plan.start, plan.end)
         connection.endBatchEdit()
-        lastSelStart = start
-        lastSelEnd = start + next.length
-        caseCycleEmitted = next
+        composingRegionActive = false
+        lastSelStart = plan.start
+        lastSelEnd = plan.end
+        caseCycleEmitted = plan.next
         visibleEditorText.value = visibleEditorText.value.copy(
-            selected = next,
+            selected = plan.next,
             hasSelection = true,
         )
     }

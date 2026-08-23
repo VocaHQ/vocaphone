@@ -456,7 +456,10 @@ struct DictationSettingsView: View {
                     value: ModelTranslationSupport.summary(
                         storedTranslateTo,
                         targets: KeyboardPreferences.activeModelTranslationTargets,
-                        onDevice: LocalTranscriptionPreferences.enabled
+                        onDevice: LocalTranscriptionPreferences.enabled,
+                        needsExplicitSource: KeyboardPreferences.activeModelTranslationNeedsSource,
+                        sourceIsAutomatic: KeyboardPreferences.effectiveTranscriptionLanguage
+                            == .automatic
                     )
                 )
             }
@@ -1121,9 +1124,7 @@ struct TranscriptionLanguageList: View {
     // Searched against the label actually on the row: "Don't translate" is not
     // findable by typing "automatic", and should not be.
     private func matches(_ language: TranscriptionLanguage) -> Bool {
-        query.isEmpty
-            || label(language).localizedCaseInsensitiveContains(query)
-            || language.rawValue.localizedCaseInsensitiveContains(query)
+        ModelTranslationSupport.matchesQuery(query, language: language, translating: translating)
     }
 
     private func isSelectable(_ language: TranscriptionLanguage) -> Bool {
