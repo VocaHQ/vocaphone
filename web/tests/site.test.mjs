@@ -151,11 +151,15 @@ test("Open Graph card follows the Voca paper language", () => {
   assert.match(ogSource, /--paper:\s*#f4f1e8/);
   assert.match(ogSource, /--ink:\s*#14231c/);
   assert.match(ogSource, /--brand:\s*#0f6b57/);
-  assert.match(ogSource, /android-keyboard\.jpg/);
   assert.match(ogSource, /class="device iphone"/);
   assert.match(ogSource, /class="device android"/);
+  assert.match(ogSource, /class="island"/);
+  assert.match(ogSource, /iMessage/);
+  assert.match(ogSource, /class="m3-nav"/);
+  assert.match(ogSource, /class="hole"/);
   assert.match(ogSource, /class="plat"/);
   assert.match(ogSource, /gateway optional/);
+  assert.doesNotMatch(ogSource, /android-keyboard\.jpg/);
   assert.doesNotMatch(ogSource, /iPhone source/i);
   const bannedFunction = ["linear-" + "gradient", "radial-" + "gradient", "conic-" + "gradient"];
   for (const token of bannedFunction) {

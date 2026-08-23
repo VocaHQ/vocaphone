@@ -140,7 +140,8 @@ h1 em {
   font-weight: 700;
 }
 
-.plat svg {
+.plat svg,
+.badge svg {
   display: block;
   width: 15px;
   height: 15px;
@@ -177,118 +178,374 @@ h1 em {
 
 .iphone {
   top: 36px;
-  left: 18px;
+  left: 14px;
   z-index: 1;
-  width: 214px;
-  height: 444px;
+  width: 220px;
+  height: 448px;
   padding: 8px;
-  border-radius: 42px;
+  border-radius: 44px;
   transform: rotate(-7deg);
 }
 
 .android {
   top: 16px;
-  left: 246px;
+  left: 248px;
   z-index: 2;
-  width: 232px;
+  width: 228px;
   height: 484px;
-  padding: 8px;
-  border-radius: 32px;
+  padding: 7px;
+  border-radius: 28px;
   transform: rotate(5deg);
 }
 
-.android img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center top;
-  border-radius: 24px;
-  background: #f7f7f4;
-}
-
-.island {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  z-index: 2;
-  width: 72px;
-  height: 20px;
-  background: #080a09;
-  border-radius: 99px;
-  transform: translateX(-50%);
-}
-
-.iphone-screen {
+.screen {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
   background: #f7f7f4;
-  border-radius: 34px;
 }
 
-.app-title {
+.iphone .screen { border-radius: 36px; }
+.android .screen { border-radius: 22px; }
+
+/* Shared status */
+.status {
   display: flex;
-  gap: 7px;
   align-items: center;
-  padding: 38px 14px 12px;
-  font-size: 12px;
+  justify-content: space-between;
+  padding: 8px 14px 0;
+  font-family: var(--display);
+  font-size: 9px;
   font-weight: 700;
 }
 
-.app-title img {
+.status-icons {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.sig {
+  display: flex;
+  gap: 1px;
+  align-items: flex-end;
+  height: 8px;
+}
+
+.sig i {
+  width: 2px;
+  background: var(--ink);
+  border-radius: 1px;
+}
+
+.sig i:nth-child(1) { height: 3px; }
+.sig i:nth-child(2) { height: 5px; }
+.sig i:nth-child(3) { height: 7px; }
+.sig i:nth-child(4) { height: 8px; opacity: 0.28; }
+
+.wifi {
+  width: 9px;
+  height: 7px;
+  border: 1.4px solid var(--ink);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+}
+
+.battery {
+  width: 14px;
+  height: 8px;
+  border: 1.2px solid var(--ink);
+  border-radius: 2px;
+}
+
+.battery::after {
+  display: block;
+  width: 8px;
+  height: 100%;
+  background: var(--ink);
+  content: "";
+}
+
+.battery-fill {
+  display: block;
+  width: 9px;
+  height: 100%;
+  background: var(--ink);
+}
+
+/* iPhone: Dynamic Island, iMessage, iOS keyboard */
+.island {
+  width: 68px;
+  height: 18px;
+  margin: 4px auto 0;
+  background: #080a09;
+  border-radius: 99px;
+}
+
+.imessage-head {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid #e4e2dc;
+}
+
+.avatar {
+  display: grid;
   width: 22px;
   height: 22px;
-}
-
-.ready {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  margin: 0 12px;
-  padding: 9px 10px;
-  border: 1px solid #91baa8;
-  border-radius: 10px;
-  background: var(--mint);
-  color: var(--brand-dark);
+  place-items: center;
+  border-radius: 50%;
+  background: #96655d;
+  color: #fff;
   font-size: 10px;
   font-weight: 700;
 }
 
-.ready i {
-  width: 7px;
-  height: 7px;
+.imessage-head strong,
+.imessage-head small {
+  display: block;
+}
+
+.imessage-head strong { font-size: 10px; }
+.imessage-head small {
+  color: #858b87;
+  font-size: 8px;
+}
+
+.bubble-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 12px 6px;
+}
+
+.bubble {
+  max-width: 70%;
+  padding: 7px 10px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid #d0d2ce;
+  border-radius: 16px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.send {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  place-items: center;
   border-radius: 50%;
-  background: #31966a;
+  background: var(--brand);
+  color: #fff;
+  font-size: 10px;
 }
 
-.iphone-copy {
-  padding: 18px 16px 12px;
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 650;
-  line-height: 1.12;
-  letter-spacing: -0.04em;
+.ios-kb {
+  margin-top: auto;
+  padding: 6px 5px 8px;
+  background: #d8dcd8;
+  border-top: 1px solid #c3c7c3;
 }
 
-.iphone-button {
-  margin: 8px 14px 0;
-  padding: 10px 8px;
-  border-radius: 11px;
+.ios-dict {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 22px;
+  margin: 0 6px 6px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.wave {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 12px;
+}
+
+.wave i {
+  width: 2px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--brand);
+}
+
+.wave i:nth-child(2) { height: 11px; }
+.wave i:nth-child(3) { height: 7px; }
+.wave i:nth-child(4) { height: 12px; }
+.wave i:nth-child(5) { height: 5px; }
+.wave i:nth-child(6) { height: 9px; }
+
+.keys {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  margin-top: 3px;
+}
+
+.keys span {
+  display: grid;
+  width: 16px;
+  height: 18px;
+  place-items: center;
+  border-radius: 4px;
+  background: #f4f5f2;
+  box-shadow: 0 1px 0 #8f958f;
+  font-size: 7px;
+  font-weight: 600;
+  color: #2c322e;
+}
+
+.keys.wide span:first-child,
+.keys.wide span:last-child {
+  width: 26px;
+}
+
+.keys .space {
+  width: 72px;
+  color: var(--muted);
+  font-size: 6px;
+}
+
+.home-bar {
+  width: 68px;
+  height: 4px;
+  margin: 6px auto 4px;
+  border-radius: 99px;
+  background: #2a2e2b;
+}
+
+/* Android: punch-hole, Material 3 app, navigation bar */
+.hole {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 2;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #303934;
+  border-radius: 50%;
+  background: #080a09;
+  transform: translateX(-50%);
+}
+
+.m3-appbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 12px 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.m3-appbar img {
+  width: 20px;
+  height: 20px;
+}
+
+.m3-chips {
+  display: flex;
+  gap: 5px;
+  padding: 0 10px 8px;
+}
+
+.m3-chips span {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--mint-soft);
+  color: var(--brand-dark);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.m3-field {
+  flex: 1;
+  margin: 0 10px;
+  padding: 10px 10px 28px;
+  border-radius: 16px;
+  background: #eceee9;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.m3-field small {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.m3-btn {
+  margin: 8px 10px 0;
+  padding: 9px 8px;
+  border-radius: 20px;
   background: var(--brand);
   color: #fffdf7;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-align: center;
 }
 
-.iphone-home {
+.m3-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  margin-top: 8px;
+  padding: 6px 8px 4px;
+  background: #e8ebe6;
+}
+
+.m3-nav span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #5b635e;
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.m3-nav .on {
+  color: var(--brand-dark);
+}
+
+.m3-nav .on b {
+  background: var(--mint);
+}
+
+.m3-nav b {
+  display: grid;
+  width: 42px;
+  height: 18px;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.android-home {
   width: 72px;
-  height: 4px;
-  margin: auto 0 10px;
+  height: 3px;
+  margin: 4px auto 5px;
   border-radius: 99px;
-  background: #c5c8c4;
+  background: #2a2e2b;
 }
 
 .badge {
@@ -309,10 +566,8 @@ h1 em {
 }
 
 .badge svg {
-  display: block;
   width: 12px;
   height: 12px;
-  fill: currentColor;
 }
 
 .badge-ios {
@@ -322,8 +577,8 @@ h1 em {
 }
 
 .badge-android {
-  right: 48px;
-  bottom: 28px;
+  right: 42px;
+  bottom: 26px;
   transform: rotate(6deg);
 }
 </style>
@@ -351,28 +606,69 @@ h1 em {
         </div>
       </section>
 
-      <section class="stage" aria-label="VocaPhone on Android and iPhone">
+      <section class="stage" aria-label="VocaPhone on iPhone and Android">
         <div class="device iphone">
-          <span class="island"></span>
-          <div class="iphone-screen">
-            <div class="app-title">
-              <img src="../../vocaphone-logo.svg" width="22" height="22" alt="">
-              <span>VocaPhone</span>
+          <div class="screen">
+            <div class="status">
+              <span>9:41</span>
+              <span class="status-icons">
+                <span class="sig"><i></i><i></i><i></i><i></i></span>
+                <span class="wifi"></span>
+                <span class="battery"></span>
+              </span>
             </div>
-            <div class="ready"><i></i> On-device model ready</div>
-            <p class="iphone-copy">Dictate without sending your voice anywhere.</p>
-            <div class="iphone-button">Start dictating</div>
-            <span class="iphone-home"></span>
+            <span class="island"></span>
+            <div class="imessage-head">
+              <span class="avatar">m</span>
+              <div>
+                <strong>Maya</strong>
+                <small>iMessage</small>
+              </div>
+            </div>
+            <div class="bubble-row"><span class="bubble">See you at the studio?</span></div>
+            <div class="composer">yes, around six<span class="send">↑</span></div>
+            <div class="ios-kb">
+              <div class="ios-dict">
+                <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                Listening
+              </div>
+              <div class="keys"><span>Q</span><span>W</span><span>E</span><span>R</span><span>T</span><span>Y</span><span>U</span><span>I</span><span>O</span><span>P</span></div>
+              <div class="keys"><span>A</span><span>S</span><span>D</span><span>F</span><span>G</span><span>H</span><span>J</span><span>K</span><span>L</span></div>
+              <div class="keys wide"><span>123</span><span class="space">space</span><span>return</span></div>
+            </div>
+            <span class="home-bar"></span>
           </div>
         </div>
+
         <div class="device android">
-          <img
-            src="../../screenshots/android-keyboard.jpg"
-            width="576"
-            height="1280"
-            alt=""
-          >
+          <span class="hole"></span>
+          <div class="screen">
+            <div class="status">
+              <span>9:41</span>
+              <span class="status-icons">
+                <span class="sig"><i></i><i></i><i></i><i></i></span>
+                <span class="battery"><span class="battery-fill"></span></span>
+              </span>
+            </div>
+            <div class="m3-appbar">
+              <img src="../../vocaphone-logo.svg" width="20" height="20" alt="">
+              VocaPhone
+            </div>
+            <div class="m3-chips"><span>Automatic</span><span>Formal</span><span>On-device</span></div>
+            <div class="m3-field">
+              <small>Scratchpad</small>
+              the words land at the cursor.
+            </div>
+            <div class="m3-btn">Dictate</div>
+            <nav class="m3-nav">
+              <span class="on"><b>⌁</b>Dictate</span>
+              <span><b>↻</b>History</span>
+              <span><b>⚙</b>Settings</span>
+            </nav>
+            <span class="android-home"></span>
+          </div>
         </div>
+
         <span class="badge badge-ios">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
           iPhone
