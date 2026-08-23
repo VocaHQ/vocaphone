@@ -6,11 +6,7 @@
 <title>VocaPhone social card</title>
 <style>
 /* Rasterize at 1200x630. From web/, serve this file and screenshot the
- * viewport with Playwright (Chromium --screenshot clips the proof line):
- *
- *   python3 -m http.server 4173 --bind 127.0.0.1
- *   then capture 1200x630 to assets/og-image.png and copy to social-card.png
- *
+ * viewport with Playwright (Chromium --screenshot clips the proof line).
  * Keep this file gradient-free.
  */
 :root {
@@ -19,18 +15,14 @@
   --paper-bright: #fffdf7;
   --ink: #14231c;
   --muted: #58625c;
-  --faint: #5f6861;
   --line: #c9c8bd;
-  --line-dark: #9ea59f;
   --brand: #0f6b57;
   --brand-dark: #0b493d;
   --mint: #cfe9dc;
   --mint-soft: #e5f2eb;
-  --sun: #e9b949;
-  --red: #de6a57;
   --display: "Avenir Next", "SF Pro Display", "Helvetica Neue", "Nimbus Sans", Helvetica, Arial, sans-serif;
   --body: Inter, "Nimbus Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, "Ubuntu Mono", Consolas, monospace;
+  --mono: ui-monospace, "SF Mono", "Ubuntu Mono", Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -54,7 +46,7 @@ body {
   position: relative;
   width: 100%;
   height: 100%;
-  padding: 62px 64px 56px 72px;
+  padding: 58px 48px 52px 68px;
 }
 
 .copy {
@@ -62,13 +54,13 @@ body {
   flex-direction: column;
   justify-content: center;
   height: 100%;
-  padding-bottom: 48px;
+  padding-bottom: 44px;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 520px;
-  gap: 28px;
+  grid-template-columns: 1fr 580px;
+  gap: 12px;
   align-items: stretch;
   height: 100%;
 }
@@ -92,7 +84,7 @@ body {
   display: inline-flex;
   align-items: center;
   align-self: start;
-  margin: 28px 0 0;
+  margin: 24px 0 0;
   padding: 9px 16px;
   border: 1.5px solid var(--mint);
   border-radius: 18px;
@@ -106,9 +98,9 @@ body {
 }
 
 h1 {
-  margin: 26px 0 0;
+  margin: 22px 0 0;
   font-family: var(--display);
-  font-size: 62px;
+  font-size: 58px;
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.08;
@@ -121,17 +113,44 @@ h1 em {
 }
 
 .lede {
-  max-width: 34ch;
-  margin: 24px 0 0;
+  max-width: 32ch;
+  margin: 20px 0 0;
   color: var(--muted);
-  font-size: 20px;
+  font-size: 19px;
   line-height: 1.4;
+}
+
+.platforms {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.plat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 8px 12px;
+  border: 1.5px solid var(--mint);
+  border-radius: 999px;
+  background: var(--mint-soft);
+  color: var(--brand-dark);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.plat svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
 }
 
 .proof {
   position: absolute;
-  left: 72px;
-  bottom: 56px;
+  left: 68px;
+  bottom: 48px;
   z-index: 4;
   width: 464px;
   margin: 0;
@@ -145,79 +164,167 @@ h1 em {
 
 .stage {
   position: relative;
-  height: 512px;
+  height: 520px;
 }
 
-.phone {
+.device {
   position: absolute;
-  top: 8px;
-  left: 96px;
-  width: 236px;
-  height: 508px;
-  padding: 8px;
   overflow: hidden;
-  border-radius: 34px;
   background: #171b19;
   border: 1.5px solid #111;
   box-shadow: 0 22px 55px rgb(21 37 29 / 16%);
-  transform: rotate(-2.5deg);
 }
 
-.phone img {
+.iphone {
+  top: 36px;
+  left: 18px;
+  z-index: 1;
+  width: 214px;
+  height: 444px;
+  padding: 8px;
+  border-radius: 42px;
+  transform: rotate(-7deg);
+}
+
+.android {
+  top: 16px;
+  left: 246px;
+  z-index: 2;
+  width: 232px;
+  height: 484px;
+  padding: 8px;
+  border-radius: 32px;
+  transform: rotate(5deg);
+}
+
+.android img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center top;
-  border-radius: 26px;
-  background: var(--paper-bright);
+  border-radius: 24px;
+  background: #f7f7f4;
 }
 
-.sticker {
+.island {
   position: absolute;
-  top: 18px;
-  right: 4px;
-  z-index: 3;
-  width: 168px;
-  padding: 16px 14px 14px;
-  border: 1px solid #829a65;
-  background: #dfecc6;
-  box-shadow: 0 8px 18px rgb(26 44 34 / 15%);
-  color: #2b3a32;
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1.35;
-  text-transform: uppercase;
-  text-align: center;
-  transform: rotate(7deg);
+  top: 16px;
+  left: 50%;
+  z-index: 2;
+  width: 72px;
+  height: 20px;
+  background: #080a09;
+  border-radius: 99px;
+  transform: translateX(-50%);
 }
 
-.chip {
-  position: absolute;
-  right: 10px;
-  bottom: 42px;
-  z-index: 3;
+.iphone-screen {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1.5px solid var(--mint);
-  border-radius: 7px;
-  background: var(--mint-soft);
-  color: var(--brand-dark);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  transform: rotate(5deg);
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #f7f7f4;
+  border-radius: 34px;
 }
 
-.chip i {
+.app-title {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 38px 14px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-title img {
+  width: 22px;
+  height: 22px;
+}
+
+.ready {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin: 0 12px;
+  padding: 9px 10px;
+  border: 1px solid #91baa8;
+  border-radius: 10px;
+  background: var(--mint);
+  color: var(--brand-dark);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ready i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  background: #31966a;
+}
+
+.iphone-copy {
+  padding: 18px 16px 12px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+}
+
+.iphone-button {
+  margin: 8px 14px 0;
+  padding: 10px 8px;
+  border-radius: 11px;
   background: var(--brand);
+  color: #fffdf7;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.iphone-home {
+  width: 72px;
+  height: 4px;
+  margin: auto 0 10px;
+  border-radius: 99px;
+  background: #c5c8c4;
+}
+
+.badge {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--mint);
+  border-radius: 999px;
+  background: var(--paper-bright);
+  color: var(--brand-dark);
+  box-shadow: 0 8px 18px rgb(26 44 34 / 14%);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.badge svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.badge-ios {
+  top: 14px;
+  left: 0;
+  transform: rotate(-8deg);
+}
+
+.badge-android {
+  right: 48px;
+  bottom: 28px;
+  transform: rotate(6deg);
 }
 </style>
 </head>
@@ -232,10 +339,33 @@ h1 em {
         <p class="tag">Private voice keyboard</p>
         <h1>voice typing<br><em>that stays yours.</em></h1>
         <p class="lede">Run speech-to-text on your phone, or use your optional private gateway.</p>
+        <div class="platforms">
+          <span class="plat">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4483.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg>
+            Android
+          </span>
+          <span class="plat">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+            iPhone
+          </span>
+        </div>
       </section>
 
-      <section class="stage" aria-label="VocaPhone keyboard on Android">
-        <div class="phone">
+      <section class="stage" aria-label="VocaPhone on Android and iPhone">
+        <div class="device iphone">
+          <span class="island"></span>
+          <div class="iphone-screen">
+            <div class="app-title">
+              <img src="../../vocaphone-logo.svg" width="22" height="22" alt="">
+              <span>VocaPhone</span>
+            </div>
+            <div class="ready"><i></i> On-device model ready</div>
+            <p class="iphone-copy">Dictate without sending your voice anywhere.</p>
+            <div class="iphone-button">Start dictating</div>
+            <span class="iphone-home"></span>
+          </div>
+        </div>
+        <div class="device android">
           <img
             src="../../screenshots/android-keyboard.jpg"
             width="576"
@@ -243,8 +373,14 @@ h1 em {
             alt=""
           >
         </div>
-        <div class="sticker">Real Android app<br>gateway optional</div>
-        <div class="chip"><i></i>on-device first</div>
+        <span class="badge badge-ios">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+          iPhone
+        </span>
+        <span class="badge badge-android">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4483.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg>
+          Android
+        </span>
       </section>
     </div>
     <p class="proof">Android 13+ · iOS 17+ · gateway optional · AGPL-3.0</p>
