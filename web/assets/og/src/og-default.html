@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=1200, initial-scale=1">
 <title>VocaPhone social card</title>
 <style>
+
 /* Rasterize at 1200x630. From web/, serve this file and screenshot the
  * viewport with Playwright (Chromium --screenshot clips the proof line).
  * Keep this file gradient-free.
@@ -75,10 +76,7 @@ body {
   letter-spacing: -0.025em;
 }
 
-.brand img {
-  width: 38px;
-  height: 38px;
-}
+.brand img { width: 38px; height: 38px; }
 
 .tag {
   display: inline-flex;
@@ -106,11 +104,7 @@ h1 {
   line-height: 1.08;
 }
 
-h1 em {
-  display: block;
-  font-style: italic;
-  font-weight: 600;
-}
+h1 em { display: block; font-style: italic; font-weight: 600; }
 
 .lede {
   max-width: 32ch;
@@ -120,11 +114,7 @@ h1 em {
   line-height: 1.4;
 }
 
-.platforms {
-  display: flex;
-  gap: 10px;
-  margin-top: 22px;
-}
+.platforms { display: flex; gap: 10px; margin-top: 22px; }
 
 .plat {
   display: inline-flex;
@@ -163,10 +153,7 @@ h1 em {
   font-weight: 500;
 }
 
-.stage {
-  position: relative;
-  height: 520px;
-}
+.stage { position: relative; height: 520px; }
 
 .device {
   position: absolute;
@@ -177,22 +164,22 @@ h1 em {
 }
 
 .iphone {
-  top: 36px;
-  left: 14px;
+  top: 32px;
+  left: 10px;
   z-index: 1;
-  width: 220px;
-  height: 448px;
+  width: 224px;
+  height: 456px;
   padding: 8px;
   border-radius: 44px;
   transform: rotate(-7deg);
 }
 
 .android {
-  top: 16px;
-  left: 248px;
+  top: 12px;
+  left: 246px;
   z-index: 2;
-  width: 228px;
-  height: 484px;
+  width: 232px;
+  height: 492px;
   padding: 7px;
   border-radius: 28px;
   transform: rotate(5deg);
@@ -205,96 +192,87 @@ h1 em {
   overflow: hidden;
   background: #f7f7f4;
 }
-
 .iphone .screen { border-radius: 36px; }
-.android .screen { border-radius: 22px; }
+.android .screen { border-radius: 22px; background: #f4f5f2; }
 
-/* Shared status */
 .status {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px 0;
+  padding: 7px 12px 0;
   font-family: var(--display);
   font-size: 9px;
   font-weight: 700;
 }
 
-.status-icons {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
+.status-icons { display: flex; gap: 4px; align-items: center; }
 
-.sig {
-  display: flex;
-  gap: 1px;
-  align-items: flex-end;
-  height: 8px;
-}
-
-.sig i {
-  width: 2px;
-  background: var(--ink);
-  border-radius: 1px;
-}
-
+.sig { display: flex; gap: 1px; align-items: flex-end; height: 8px; }
+.sig i { width: 2px; background: var(--ink); border-radius: 1px; }
 .sig i:nth-child(1) { height: 3px; }
 .sig i:nth-child(2) { height: 5px; }
 .sig i:nth-child(3) { height: 7px; }
 .sig i:nth-child(4) { height: 8px; opacity: 0.28; }
 
 .wifi {
-  width: 9px;
-  height: 7px;
+  width: 9px; height: 7px;
   border: 1.4px solid var(--ink);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
 }
 
 .battery {
-  width: 14px;
-  height: 8px;
+  width: 14px; height: 8px;
   border: 1.2px solid var(--ink);
   border-radius: 2px;
 }
-
-.battery::after {
+.battery b {
   display: block;
-  width: 8px;
-  height: 100%;
-  background: var(--ink);
-  content: "";
-}
-
-.battery-fill {
-  display: block;
-  width: 9px;
-  height: 100%;
+  width: 8px; height: 100%;
   background: var(--ink);
 }
 
-/* iPhone: Dynamic Island, iMessage, iOS keyboard */
 .island {
-  width: 68px;
-  height: 18px;
-  margin: 4px auto 0;
+  width: 68px; height: 18px;
+  margin: 3px auto 0;
   background: #080a09;
   border-radius: 99px;
 }
 
-.imessage-head {
+.hole {
+  position: absolute;
+  top: 14px; left: 50%;
+  z-index: 2;
+  width: 10px; height: 10px;
+  border: 2px solid #303934;
+  border-radius: 50%;
+  background: #080a09;
+  transform: translateX(-50%);
+}
+
+.chat-head {
   display: flex;
   gap: 7px;
   align-items: center;
-  padding: 8px 12px 6px;
+  padding: 8px 10px 6px;
   border-bottom: 1px solid #e4e2dc;
+}
+
+.android .chat-head {
+  background: #fff;
+  border-bottom: 1px solid #e6e8e3;
+}
+
+.back {
+  width: 8px; height: 8px;
+  border-left: 1.6px solid var(--ink);
+  border-bottom: 1.6px solid var(--ink);
+  transform: rotate(45deg);
 }
 
 .avatar {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 22px; height: 22px;
   place-items: center;
   border-radius: 50%;
   background: #96655d;
@@ -303,50 +281,70 @@ h1 em {
   font-weight: 700;
 }
 
-.imessage-head strong,
-.imessage-head small {
-  display: block;
-}
+.chat-head strong, .chat-head small { display: block; }
+.chat-head strong { font-size: 10px; }
+.chat-head small { color: #858b87; font-size: 8px; }
 
-.imessage-head strong { font-size: 10px; }
-.imessage-head small {
-  color: #858b87;
-  font-size: 8px;
-}
-
-.bubble-row {
+.thread {
   display: flex;
-  justify-content: flex-end;
-  padding: 10px 12px 6px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px 6px;
 }
 
-.bubble {
-  max-width: 70%;
-  padding: 7px 10px;
-  border-radius: 14px 14px 4px 14px;
-  background: var(--brand);
-  color: #fff;
+.msg {
+  max-width: 78%;
+  padding: 6px 9px;
   font-size: 10px;
   line-height: 1.25;
 }
+
+.msg.in {
+  align-self: start;
+  background: #e8e8ea;
+  color: var(--ink);
+  border-radius: 14px 14px 14px 4px;
+}
+
+.android .msg.in {
+  background: #e3e6e1;
+  border-radius: 16px 16px 16px 4px;
+}
+
+.msg.out {
+  align-self: end;
+  background: var(--brand);
+  color: #fff;
+  border-radius: 14px 14px 4px 14px;
+}
+
+.android .msg.out { border-radius: 16px 16px 4px 16px; }
 
 .composer {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 10px 8px;
+  margin: 0 8px 6px;
   padding: 5px 6px 5px 10px;
   border: 1px solid #d0d2ce;
-  border-radius: 16px;
   background: #fff;
   color: var(--ink);
   font-size: 9px;
 }
 
+.iphone .composer { border-radius: 16px; }
+.android .composer { border-radius: 20px; border-color: #cfd4cd; }
+
+.caret {
+  display: inline-block;
+  width: 1px; height: 10px;
+  margin-left: 2px;
+  background: var(--brand);
+}
+
 .send {
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: 18px; height: 18px;
   margin-left: auto;
   place-items: center;
   border-radius: 50%;
@@ -355,195 +353,16 @@ h1 em {
   font-size: 10px;
 }
 
-.ios-kb {
+.kb {
   margin-top: auto;
-  padding: 6px 5px 8px;
-  background: #d8dcd8;
-  border-top: 1px solid #c3c7c3;
+  line-height: 0;
 }
 
-.ios-dict {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 22px;
-  margin: 0 6px 6px;
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 700;
-}
-
-.wave {
-  display: flex;
-  gap: 2px;
-  align-items: center;
-  height: 12px;
-}
-
-.wave i {
-  width: 2px;
-  height: 6px;
-  border-radius: 99px;
-  background: var(--brand);
-}
-
-.wave i:nth-child(2) { height: 11px; }
-.wave i:nth-child(3) { height: 7px; }
-.wave i:nth-child(4) { height: 12px; }
-.wave i:nth-child(5) { height: 5px; }
-.wave i:nth-child(6) { height: 9px; }
-
-.keys {
-  display: flex;
-  gap: 3px;
-  justify-content: center;
-  margin-top: 3px;
-}
-
-.keys span {
-  display: grid;
-  width: 16px;
-  height: 18px;
-  place-items: center;
-  border-radius: 4px;
-  background: #f4f5f2;
-  box-shadow: 0 1px 0 #8f958f;
-  font-size: 7px;
-  font-weight: 600;
-  color: #2c322e;
-}
-
-.keys.wide span:first-child,
-.keys.wide span:last-child {
-  width: 26px;
-}
-
-.keys .space {
-  width: 72px;
-  color: var(--muted);
-  font-size: 6px;
-}
+.kb svg { display: block; width: 100%; height: auto; }
 
 .home-bar {
-  width: 68px;
-  height: 4px;
-  margin: 6px auto 4px;
-  border-radius: 99px;
-  background: #2a2e2b;
-}
-
-/* Android: punch-hole, Material 3 app, navigation bar */
-.hole {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  z-index: 2;
-  width: 10px;
-  height: 10px;
-  border: 2px solid #303934;
-  border-radius: 50%;
-  background: #080a09;
-  transform: translateX(-50%);
-}
-
-.m3-appbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 22px 12px 8px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.m3-appbar img {
-  width: 20px;
-  height: 20px;
-}
-
-.m3-chips {
-  display: flex;
-  gap: 5px;
-  padding: 0 10px 8px;
-}
-
-.m3-chips span {
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: var(--mint-soft);
-  color: var(--brand-dark);
-  font-size: 8px;
-  font-weight: 700;
-}
-
-.m3-field {
-  flex: 1;
-  margin: 0 10px;
-  padding: 10px 10px 28px;
-  border-radius: 16px;
-  background: #eceee9;
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.m3-field small {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--muted);
-  font-size: 8px;
-}
-
-.m3-btn {
-  margin: 8px 10px 0;
-  padding: 9px 8px;
-  border-radius: 20px;
-  background: var(--brand);
-  color: #fffdf7;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.m3-nav {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  margin-top: 8px;
-  padding: 6px 8px 4px;
-  background: #e8ebe6;
-}
-
-.m3-nav span {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  color: #5b635e;
-  font-size: 7px;
-  font-weight: 700;
-}
-
-.m3-nav .on {
-  color: var(--brand-dark);
-}
-
-.m3-nav .on b {
-  background: var(--mint);
-}
-
-.m3-nav b {
-  display: grid;
-  width: 42px;
-  height: 18px;
-  place-items: center;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.android-home {
-  width: 72px;
-  height: 3px;
-  margin: 4px auto 5px;
+  width: 68px; height: 4px;
+  margin: 5px auto 4px;
   border-radius: 99px;
   background: #2a2e2b;
 }
@@ -564,23 +383,10 @@ h1 em {
   font-size: 11px;
   font-weight: 700;
 }
+.badge svg { width: 12px; height: 12px; }
+.badge-ios { top: 12px; left: 0; transform: rotate(-8deg); }
+.badge-android { right: 36px; bottom: 22px; transform: rotate(6deg); }
 
-.badge svg {
-  width: 12px;
-  height: 12px;
-}
-
-.badge-ios {
-  top: 14px;
-  left: 0;
-  transform: rotate(-8deg);
-}
-
-.badge-android {
-  right: 42px;
-  bottom: 26px;
-  transform: rotate(6deg);
-}
 </style>
 </head>
 <body>
@@ -595,14 +401,8 @@ h1 em {
         <h1>voice typing<br><em>that stays yours.</em></h1>
         <p class="lede">Run speech-to-text on your phone, or use your optional private gateway.</p>
         <div class="platforms">
-          <span class="plat">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4483.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg>
-            Android
-          </span>
-          <span class="plat">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
-            iPhone
-          </span>
+          <span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4483.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg> Android</span>
+          <span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg> iPhone</span>
         </div>
       </section>
 
@@ -611,31 +411,93 @@ h1 em {
           <div class="screen">
             <div class="status">
               <span>9:41</span>
-              <span class="status-icons">
-                <span class="sig"><i></i><i></i><i></i><i></i></span>
-                <span class="wifi"></span>
-                <span class="battery"></span>
-              </span>
+              <span class="status-icons"><span class="sig"><i></i><i></i><i></i><i></i></span><span class="wifi"></span><span class="battery"><b></b></span></span>
             </div>
             <span class="island"></span>
-            <div class="imessage-head">
+            <div class="chat-head">
               <span class="avatar">m</span>
-              <div>
-                <strong>Maya</strong>
-                <small>iMessage</small>
-              </div>
+              <div><strong>Maya</strong><small>iMessage</small></div>
             </div>
-            <div class="bubble-row"><span class="bubble">See you at the studio?</span></div>
-            <div class="composer">yes, around six<span class="send">↑</span></div>
-            <div class="ios-kb">
-              <div class="ios-dict">
-                <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></span>
-                Listening
-              </div>
-              <div class="keys"><span>Q</span><span>W</span><span>E</span><span>R</span><span>T</span><span>Y</span><span>U</span><span>I</span><span>O</span><span>P</span></div>
-              <div class="keys"><span>A</span><span>S</span><span>D</span><span>F</span><span>G</span><span>H</span><span>J</span><span>K</span><span>L</span></div>
-              <div class="keys wide"><span>123</span><span class="space">space</span><span>return</span></div>
+            <div class="thread">
+              <span class="msg in">See you at the studio?</span>
+              <span class="msg out">yes, around six</span>
             </div>
+            <div class="composer">on my way<span class="caret"></span><span class="send">↑</span></div>
+            <div class="kb"><svg class="kb-ios" viewBox="0 0 204 138" width="100%" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect width="204" height="138" fill="#d5d9d5"/>
+<g font-family="ui-sans-serif, system-ui, sans-serif">
+<rect x="58.0" y="9.5" width="1.8" height="5" rx="0.9" fill="#0f6b57"/>
+<rect x="61.2" y="6.5" width="1.8" height="11" rx="0.9" fill="#0f6b57"/>
+<rect x="64.4" y="8.5" width="1.8" height="7" rx="0.9" fill="#0f6b57"/>
+<rect x="67.6" y="6.0" width="1.8" height="12" rx="0.9" fill="#0f6b57"/>
+<rect x="70.8" y="10.0" width="1.8" height="4" rx="0.9" fill="#0f6b57"/>
+<rect x="74.0" y="7.5" width="1.8" height="9" rx="0.9" fill="#0f6b57"/>
+<rect x="77.2" y="9.0" width="1.8" height="6" rx="0.9" fill="#0f6b57"/>
+<rect x="80.4" y="7.0" width="1.8" height="10" rx="0.9" fill="#0f6b57"/>
+<text x="108" y="15.5" font-size="7.4" font-weight="700" fill="#58625c">Listening</text>
+<rect x="4.0" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="4.0" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="12.8" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">Q</text>
+<rect x="23.8" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="23.8" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="32.6" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">W</text>
+<rect x="43.6" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="43.6" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="52.4" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">E</text>
+<rect x="63.5" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="63.5" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="72.3" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">R</text>
+<rect x="83.3" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="83.3" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="92.1" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">T</text>
+<rect x="103.1" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="103.1" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="111.9" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">Y</text>
+<rect x="122.9" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="122.9" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="131.7" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">U</text>
+<rect x="142.7" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="142.7" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="151.5" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">I</text>
+<rect x="162.6" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="162.6" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="171.4" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">O</text>
+<rect x="182.4" y="24" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="182.4" y="24" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="191.2" y="36.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">P</text>
+<rect x="13.9" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="13.9" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="22.7" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">A</text>
+<rect x="33.7" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="33.7" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="42.5" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">S</text>
+<rect x="53.5" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="53.5" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="62.4" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">D</text>
+<rect x="73.4" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="73.4" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="82.2" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">F</text>
+<rect x="93.2" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="93.2" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="102.0" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">G</text>
+<rect x="113.0" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="113.0" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="121.8" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">H</text>
+<rect x="132.8" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="132.8" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="141.6" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">J</text>
+<rect x="152.6" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="152.6" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="161.5" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">K</text>
+<rect x="172.5" y="48" width="17.6" height="21" rx="4.2" fill="#8f958f"/><rect x="172.5" y="48" width="17.6" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="181.3" y="60.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">L</text>
+<rect x="4.0" y="72" width="26.0" height="21" rx="4.2" fill="#8f958f"/><rect x="4.0" y="72" width="26.0" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<path d="M17.0 77.5 L22.0 83.5 L19.0 83.5 L19.0 87.5 L15.0 87.5 L15.0 83.5 L12.0 83.5 Z" fill="#2c322e"/>
+<rect x="32.2" y="72" width="18.1" height="21" rx="4.2" fill="#8f958f"/><rect x="32.2" y="72" width="18.1" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="41.2" y="84.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">Z</text>
+<rect x="52.5" y="72" width="18.1" height="21" rx="4.2" fill="#8f958f"/><rect x="52.5" y="72" width="18.1" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="61.5" y="84.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">X</text>
+<rect x="72.7" y="72" width="18.1" height="21" rx="4.2" fill="#8f958f"/><rect x="72.7" y="72" width="18.1" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="81.7" y="84.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">C</text>
+<rect x="93.0" y="72" width="18.1" height="21" rx="4.2" fill="#8f958f"/><rect x="93.0" y="72" width="18.1" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="102.0" y="84.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">V</text>
+<rect x="113.2" y="72" width="18.1" height="21" rx="4.2" fill="#8f958f"/><rect x="113.2" y="72" width="18.1" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="122.3" y="84.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">B</text>
+<rect x="133.5" y="72" width="18.1" height="21" rx="4.2" fill="#8f958f"/><rect x="133.5" y="72" width="18.1" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="142.5" y="84.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">N</text>
+<rect x="153.7" y="72" width="18.1" height="21" rx="4.2" fill="#8f958f"/><rect x="153.7" y="72" width="18.1" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<text x="162.8" y="84.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">M</text>
+<rect x="174.0" y="72" width="26.0" height="21" rx="4.2" fill="#8f958f"/><rect x="174.0" y="72" width="26.0" height="19.8" rx="4.2" fill="#f4f5f2"/>
+<path d="M181.0 82.5 L185.0 77.5 L193.0 77.5 L193.0 87.5 L185.0 87.5 Z" fill="none" stroke="#2c322e" stroke-width="1.2" stroke-linejoin="round"/><path d="M186.5 80.3 L190.5 84.7 M190.5 80.3 L186.5 84.7" stroke="#2c322e" stroke-width="1.2" stroke-linecap="round"/>
+<rect x="4.0" y="96" width="34.0" height="21" rx="5.2" fill="#8f958f"/><rect x="4.0" y="96" width="34.0" height="19.8" rx="5.2" fill="#f4f5f2"/>
+<text x="21.0" y="108.8" text-anchor="middle" font-size="6.4" font-weight="600" fill="#2c322e">123</text>
+<rect x="40.2" y="96" width="92.0" height="21" rx="5.2" fill="#8f958f"/><rect x="40.2" y="96" width="92.0" height="19.8" rx="5.2" fill="#f4f5f2"/>
+<text x="86.2" y="108.8" text-anchor="middle" font-size="6.4" font-weight="600" fill="#2c322e">space</text>
+<rect x="134.4" y="96" width="42.0" height="21" rx="5.2" fill="#8f958f"/><rect x="134.4" y="96" width="42.0" height="19.8" rx="5.2" fill="#f4f5f2"/>
+<text x="155.4" y="108.8" text-anchor="middle" font-size="6.4" font-weight="600" fill="#2c322e">return</text>
+</g></svg></div>
             <span class="home-bar"></span>
           </div>
         </div>
@@ -645,38 +507,134 @@ h1 em {
           <div class="screen">
             <div class="status">
               <span>9:41</span>
-              <span class="status-icons">
-                <span class="sig"><i></i><i></i><i></i><i></i></span>
-                <span class="battery"><span class="battery-fill"></span></span>
-              </span>
+              <span class="status-icons"><span class="sig"><i></i><i></i><i></i><i></i></span><span class="battery"><b></b></span></span>
             </div>
-            <div class="m3-appbar">
-              <img src="../../vocaphone-logo.svg" width="20" height="20" alt="">
-              VocaPhone
+            <div class="chat-head">
+              <span class="back"></span>
+              <span class="avatar">m</span>
+              <div><strong>Maya</strong><small>Messages</small></div>
             </div>
-            <div class="m3-chips"><span>Automatic</span><span>Formal</span><span>On-device</span></div>
-            <div class="m3-field">
-              <small>Scratchpad</small>
-              the words land at the cursor.
+            <div class="thread">
+              <span class="msg in">See you at the studio?</span>
+              <span class="msg out">yes, around six</span>
             </div>
-            <div class="m3-btn">Dictate</div>
-            <nav class="m3-nav">
-              <span class="on"><b>⌁</b>Dictate</span>
-              <span><b>↻</b>History</span>
-              <span><b>⚙</b>Settings</span>
-            </nav>
-            <span class="android-home"></span>
+            <div class="composer">on my way<span class="caret"></span><span class="send">↑</span></div>
+            <div class="kb"><svg class="kb-android" viewBox="0 0 214 176" width="100%" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect width="214" height="176" fill="#eceee9"/>
+<g font-family="ui-sans-serif, system-ui, sans-serif">
+<rect x="4" y="4" width="20" height="20" rx="10" fill="#dde3dc"/>
+<rect x="9" y="9" width="3" height="3" rx="0.6" fill="#3d453f"/>
+<rect x="15" y="9" width="3" height="3" rx="0.6" fill="#3d453f"/>
+<rect x="9" y="15" width="3" height="3" rx="0.6" fill="#3d453f"/>
+<rect x="15" y="15" width="3" height="3" rx="0.6" fill="#3d453f"/>
+<rect x="32.0" y="11.0" width="2" height="6" rx="1" fill="#0f6b57"/>
+<rect x="35.3" y="8.0" width="2" height="12" rx="1" fill="#0f6b57"/>
+<rect x="38.6" y="11.5" width="2" height="5" rx="1" fill="#0f6b57"/>
+<rect x="41.9" y="7.0" width="2" height="14" rx="1" fill="#0f6b57"/>
+<rect x="45.2" y="10.0" width="2" height="8" rx="1" fill="#0f6b57"/>
+<rect x="48.5" y="8.5" width="2" height="11" rx="1" fill="#0f6b57"/>
+<rect x="51.8" y="12.0" width="2" height="4" rx="1" fill="#0f6b57"/>
+<rect x="55.099999999999994" y="7.5" width="2" height="13" rx="1" fill="#0f6b57"/>
+<rect x="58.4" y="10.5" width="2" height="7" rx="1" fill="#0f6b57"/>
+<rect x="61.7" y="9.0" width="2" height="10" rx="1" fill="#0f6b57"/>
+<text x="100" y="13.4" text-anchor="middle" font-size="7" font-weight="700" fill="#14231c">Listening  0:03</text>
+<circle cx="176" cy="14" r="10" fill="#f3d6d2"/>
+<path d="M172 10 L180 18 M180 10 L172 18" stroke="#7a3a34" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="200" cy="14" r="10" fill="#c4453a"/>
+<rect x="196.2" y="10.2" width="7.6" height="7.6" rx="1.4" fill="#fff"/>
+<rect x="4.0" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="4.0" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="13.2" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">1</text>
+<rect x="24.8" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="24.8" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="34.1" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">2</text>
+<rect x="45.7" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="45.7" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="54.9" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">3</text>
+<rect x="66.5" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="66.5" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="75.7" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">4</text>
+<rect x="87.4" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="87.4" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="96.6" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">5</text>
+<rect x="108.2" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="108.2" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="117.4" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">6</text>
+<rect x="129.0" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="129.0" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="138.3" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">7</text>
+<rect x="149.9" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="149.9" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="159.1" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">8</text>
+<rect x="170.7" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="170.7" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="179.9" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">9</text>
+<rect x="191.6" y="30" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="191.6" y="30" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="200.8" y="42.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">0</text>
+<rect x="4.0" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="4.0" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="13.2" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">Q</text>
+<rect x="24.8" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="24.8" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="34.1" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">W</text>
+<rect x="45.7" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="45.7" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="54.9" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">E</text>
+<rect x="66.5" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="66.5" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="75.7" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">R</text>
+<rect x="87.4" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="87.4" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="96.6" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">T</text>
+<rect x="108.2" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="108.2" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="117.4" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">Y</text>
+<rect x="129.0" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="129.0" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="138.3" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">U</text>
+<rect x="149.9" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="149.9" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="159.1" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">I</text>
+<rect x="170.7" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="170.7" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="179.9" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">O</text>
+<rect x="191.6" y="54" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="191.6" y="54" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="200.8" y="66.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">P</text>
+<rect x="14.4" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="14.4" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="23.6" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">A</text>
+<rect x="35.3" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="35.3" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="44.5" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">S</text>
+<rect x="56.1" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="56.1" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="65.3" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">D</text>
+<rect x="76.9" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="76.9" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="86.2" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">F</text>
+<rect x="97.8" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="97.8" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="107.0" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">G</text>
+<rect x="118.6" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="118.6" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="127.8" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">H</text>
+<rect x="139.5" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="139.5" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="148.7" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">J</text>
+<rect x="160.3" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="160.3" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="169.5" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">K</text>
+<rect x="181.1" y="78" width="18.4" height="21" rx="5.2" fill="#c5c9c3"/><rect x="181.1" y="78" width="18.4" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="190.4" y="90.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">L</text>
+<rect x="4.0" y="102" width="28.0" height="21" rx="5.2" fill="#c5c9c3"/><rect x="4.0" y="102" width="28.0" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<path d="M18.0 107.5 L23.0 113.5 L20.0 113.5 L20.0 117.5 L16.0 117.5 L16.0 113.5 L13.0 113.5 Z" fill="#2c322e"/>
+<rect x="34.4" y="102" width="18.7" height="21" rx="5.2" fill="#c5c9c3"/><rect x="34.4" y="102" width="18.7" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="43.7" y="114.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">Z</text>
+<rect x="55.5" y="102" width="18.7" height="21" rx="5.2" fill="#c5c9c3"/><rect x="55.5" y="102" width="18.7" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="64.8" y="114.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">X</text>
+<rect x="76.6" y="102" width="18.7" height="21" rx="5.2" fill="#c5c9c3"/><rect x="76.6" y="102" width="18.7" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="85.9" y="114.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">C</text>
+<rect x="97.7" y="102" width="18.7" height="21" rx="5.2" fill="#c5c9c3"/><rect x="97.7" y="102" width="18.7" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="107.0" y="114.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">V</text>
+<rect x="118.7" y="102" width="18.7" height="21" rx="5.2" fill="#c5c9c3"/><rect x="118.7" y="102" width="18.7" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="128.1" y="114.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">B</text>
+<rect x="139.8" y="102" width="18.7" height="21" rx="5.2" fill="#c5c9c3"/><rect x="139.8" y="102" width="18.7" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="149.2" y="114.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">N</text>
+<rect x="160.9" y="102" width="18.7" height="21" rx="5.2" fill="#c5c9c3"/><rect x="160.9" y="102" width="18.7" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="170.3" y="114.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">M</text>
+<rect x="182.0" y="102" width="28.0" height="21" rx="5.2" fill="#c5c9c3"/><rect x="182.0" y="102" width="28.0" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<path d="M190.0 112.5 L194.0 107.5 L202.0 107.5 L202.0 117.5 L194.0 117.5 Z" fill="none" stroke="#2c322e" stroke-width="1.2" stroke-linejoin="round"/><path d="M195.5 110.3 L199.5 114.7 M199.5 110.3 L195.5 114.7" stroke="#2c322e" stroke-width="1.2" stroke-linecap="round"/>
+<rect x="4.0" y="126" width="32.0" height="21" rx="5.2" fill="#c5c9c3"/><rect x="4.0" y="126" width="32.0" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="20.0" y="138.8" text-anchor="middle" font-size="6.4" font-weight="600" fill="#2c322e">123</text>
+<rect x="38.4" y="126" width="22.0" height="21" rx="5.2" fill="#c5c9c3"/><rect x="38.4" y="126" width="22.0" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="49.4" y="138.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">,</text>
+<rect x="62.8" y="126" width="84.0" height="21" rx="5.2" fill="#c5c9c3"/><rect x="62.8" y="126" width="84.0" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="104.8" y="138.8" text-anchor="middle" font-size="6.4" font-weight="600" fill="#2c322e">space</text>
+<rect x="149.2" y="126" width="22.0" height="21" rx="5.2" fill="#c5c9c3"/><rect x="149.2" y="126" width="22.0" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<text x="160.2" y="138.8" text-anchor="middle" font-size="7.3" font-weight="600" fill="#2c322e">.</text>
+<rect x="173.6" y="126" width="32.0" height="21" rx="5.2" fill="#c5c9c3"/><rect x="173.6" y="126" width="32.0" height="19.8" rx="5.2" fill="#f6f7f4"/>
+<path d="M194.6 132.5 L194.6 138.5 L185.6 138.5" fill="none" stroke="#2c322e" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M188.6 135.0 L184.6 138.5 L188.6 142.0" fill="none" stroke="#2c322e" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</g></svg></div>
+            <span class="home-bar"></span>
           </div>
         </div>
 
-        <span class="badge badge-ios">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
-          iPhone
-        </span>
-        <span class="badge badge-android">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4483.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg>
-          Android
-        </span>
+        <span class="badge badge-ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg> iPhone</span>
+        <span class="badge badge-android"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4483.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg> Android</span>
       </section>
     </div>
     <p class="proof">Android 13+ · iOS 17+ · gateway optional · AGPL-3.0</p>
