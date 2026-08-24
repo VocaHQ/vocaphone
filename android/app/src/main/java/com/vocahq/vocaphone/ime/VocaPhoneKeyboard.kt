@@ -452,10 +452,11 @@ internal fun VocaPhoneKeyboard(
     // A channel with one consumer keeps that work off this thread while still
     // applying results in the order the gestures were made, so swiping two
     // words in quick succession still writes them down in that order.
-    val swipePaths = remember { Channel<String>(Channel.UNLIMITED) }
+    val swipePaths = remember { Channel<SwipeInput>(Channel.UNLIMITED) }
 
-    fun handleSwipe(path: String) {
-        swipePaths.trySend(path)
+    fun handleSwipe(input: SwipeInput) {
+        val previous = SuggestionEngine.lastWord(currentEditorText.value.before).orEmpty()
+        swipePaths.trySend(input.copy(previousWord = previous))
     }
 
     // The consumer below outlives the composition that started it, so it has to
@@ -465,10 +466,15 @@ internal fun VocaPhoneKeyboard(
 
     LaunchedEffect(suggestions) {
         val dictionary = suggestions ?: return@LaunchedEffect
-        for (path in swipePaths) {
+        for (trace in swipePaths) {
             val resolved = withContext(Dispatchers.Default) {
                 val abort = { !isActive }
-                val matches = dictionary.swipe(path, shouldAbort = abort)
+                val matches = dictionary.swipe(
+                    path = trace.keys,
+                    shouldAbort = abort,
+                    points = trace.points,
+                    previousWord = trace.previousWord,
+                )
                 matches to if (matches.isEmpty()) {
                     emptyList()
                 } else {
@@ -489,7 +495,7 @@ internal fun VocaPhoneKeyboard(
     // identity; `rememberUpdatedState` keeps the body current.
     val latestKey by rememberUpdatedState<(KeyboardKey) -> Unit>(::handleKey)
     val latestDelete by rememberUpdatedState<(Long) -> Unit>(::handleDelete)
-    val latestSwipe by rememberUpdatedState<(String) -> Unit>(::handleSwipe)
+    val latestSwipe by rememberUpdatedState<(SwipeInput) -> Unit>(::handleSwipe)
     val latestUndoSwipe by rememberUpdatedState(::undoSwipeSeed)
     val latestLongPressVariant by rememberUpdatedState(::commitLongPressVariant)
     val latestCursorMove by rememberUpdatedState<(Int) -> Unit> { positions ->
@@ -499,7 +505,7 @@ internal fun VocaPhoneKeyboard(
     }
     val latestEmojiUsed by rememberUpdatedState(onEmojiUsed)
     val onKeyStable = remember { { key: KeyboardKey -> latestKey(key) } }
-    val onSwipeStable = remember { { path: String -> latestSwipe(path) } }
+    val onSwipeStable = remember { { input: SwipeInput -> latestSwipe(input) } }
     val onUndoSwipeStable = remember { { latestUndoSwipe() } }
     val onLongPressVariantStable = remember { { text: String -> latestLongPressVariant(text) } }
     val onCursorMoveStable = remember { { positions: Int -> latestCursorMove(positions) } }
@@ -2057,7 +2063,7 @@ private fun KeyboardRows(
     split: Boolean = false,
     spacerFraction: Float = SplitKeyboardLayout.MIN_SPACER_FRACTION,
     swipeEnabled: Boolean = false,
-    onSwipe: (String) -> Unit = {},
+    onSwipe: (SwipeInput) -> Unit = {},
     onSwipeSeedUndo: () -> Unit = {},
     onLongPressVariant: (String) -> Unit = {},
     onPreview: (KeyPreview?) -> Unit = {},
@@ -2201,59 +2207,124 @@ private fun Modifier.swipeTypingGesture(
     trail: SnapshotStateList<Offset>,
     onSwipeSeedUndo: () -> Unit,
     onPreview: (KeyPreview?) -> Unit,
-    onSwipe: (String) -> Unit,
+    onSwipe: (SwipeInput) -> Unit,
 ) = pointerInput(Unit) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         swipeConsumed.value = false
         trail.clear()
         val downAt = SystemClock.uptimeMillis()
-        val start = hitLetter(keyBounds, parentCoords()?.localToRoot(down.position))
-        if (start == null) return@awaitEachGesture
-        val path = StringBuilder(start.output.lowercase())
-        var lastId = start.id
+        val downRoot = parentCoords()?.localToRoot(down.position) ?: return@awaitEachGesture
+        val start = nearestLetter(keyBounds, downRoot) ?: return@awaitEachGesture
+        if (!closeToKey(start.second, downRoot)) return@awaitEachGesture
+        val startGrid = gridPoint(start, downRoot) ?: return@awaitEachGesture
+        val path = StringBuilder(start.first.output.lowercase())
+        var lastId = start.first.id
+        val samples = ArrayList<Float>(64)
+        addSample(samples, startGrid)
         trail.add(down.position)
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
-            val hit = hitLetter(keyBounds, parentCoords()?.localToRoot(change.position))
-            if (hit != null && hit.id != lastId) {
-                if (SystemClock.uptimeMillis() - downAt >= AccentPicker.HOLD_MS) {
-                    // Finger stayed long enough for the accent row. Sliding
-                    // now picks a variant; it is not a swipe.
-                    if (!change.pressed) break
-                    continue
-                }
-                if (!swipeConsumed.value) {
-                    // The letter already went out on down. Drop only that seed
-                    // so a swipe after "he" does not wipe the whole word.
-                    onSwipeSeedUndo()
-                    onPreview(null)
-                    swipeConsumed.value = true
-                }
-                path.append(hit.output.lowercase())
-                lastId = hit.id
+            val root = parentCoords()?.localToRoot(change.position)
+            val grid = if (root != null) {
+                nearestLetter(keyBounds, root)?.let { gridPoint(it, root) }
+            } else {
+                null
+            }
+            if (grid != null) addSample(samples, grid)
+            if (!swipeConsumed.value &&
+                SystemClock.uptimeMillis() - downAt >= AccentPicker.HOLD_MS
+            ) {
+                // Finger stayed long enough for the accent row. Sliding
+                // now picks a variant; it is not a swipe. A swipe that
+                // already started must keep recording past this mark —
+                // most words take longer than a hold.
+                if (!change.pressed) break
+                continue
+            }
+            val travelled = if (grid == null) {
+                0f
+            } else {
+                startGrid.distanceTo(grid)
+            }
+            val hit = if (root != null) nearestLetter(keyBounds, root)?.first else null
+            val leftStartKey = hit != null && hit.id != lastId
+            if (!swipeConsumed.value && (travelled >= SwipeLayout.ACTIVATION_DISTANCE || leftStartKey)) {
+                // The letter already went out on down. Drop only that seed
+                // so a swipe after "he" does not wipe the whole word.
+                onSwipeSeedUndo()
+                onPreview(null)
+                swipeConsumed.value = true
             }
             if (swipeConsumed.value) {
+                if (hit != null && hit.id != lastId && isLetterKey(hit)) {
+                    path.append(hit.output.lowercase())
+                    lastId = hit.id
+                }
                 if (trail.size < 80) trail.add(change.position)
                 change.consume()
             }
             if (!change.pressed) break
         }
         trail.clear()
-        if (swipeConsumed.value) onSwipe(path.toString())
+        if (swipeConsumed.value) {
+            onSwipe(SwipeInput(keys = path.toString(), points = samples.toFloatArray()))
+        }
     }
 }
 
-private fun hitLetter(
+private fun isLetterKey(key: KeyboardKey): Boolean =
+    key.type == KeyboardKeyType.CHARACTER && key.output.length == 1 && key.output[0].isLetter()
+
+/**
+ * Nearest letter key, not `Rect.contains`. FlorisBoard, AnySoftKeyboard and
+ * OpenSwipe all score against key centres; a finger in the 4 dp gap between
+ * keys used to record nothing and the matcher never saw that part of the word.
+ */
+private fun nearestLetter(
     keyBounds: Map<String, Pair<KeyboardKey, Rect>>,
-    root: Offset?,
-): KeyboardKey? {
-    if (root == null) return null
-    val hit = keyBounds.values.firstOrNull { (_, rect) -> rect.contains(root) }?.first ?: return null
-    return hit.takeIf {
-        it.type == KeyboardKeyType.CHARACTER && it.output.length == 1 && it.output[0].isLetter()
+    root: Offset,
+): Pair<KeyboardKey, Rect>? {
+    var best: Pair<KeyboardKey, Rect>? = null
+    var bestDistance = Float.MAX_VALUE
+    for ((key, rect) in keyBounds.values) {
+        if (!isLetterKey(key)) continue
+        val dx = root.x - rect.center.x
+        val dy = root.y - rect.center.y
+        val distance = dx * dx + dy * dy
+        if (distance < bestDistance) {
+            bestDistance = distance
+            best = key to rect
+        }
     }
+    return best
+}
+
+private fun closeToKey(rect: Rect, root: Offset): Boolean {
+    val reach = maxOf(rect.width, rect.height) * 0.7f
+    val dx = root.x - rect.center.x
+    val dy = root.y - rect.center.y
+    return dx * dx + dy * dy <= reach * reach
+}
+
+private fun gridPoint(hit: Pair<KeyboardKey, Rect>, root: Offset): SwipeLayout.XY? {
+    val (key, rect) = hit
+    val letter = key.output.lowercase()[0]
+    val nx = if (rect.width == 0f) 0f else (root.x - rect.center.x) / rect.width
+    val ny = if (rect.height == 0f) 0f else (root.y - rect.center.y) / rect.height
+    return SwipeLayout.gridPoint(letter, nx, ny)
+}
+
+private fun addSample(samples: ArrayList<Float>, point: SwipeLayout.XY) {
+    if (samples.size >= SwipeLayout.MAX_TRACE_POINTS * 2) return
+    if (samples.size >= 2) {
+        val dx = point.x - samples[samples.size - 2]
+        val dy = point.y - samples[samples.size - 1]
+        if (dx * dx + dy * dy < 0.0144f) return
+    }
+    samples.add(point.x)
+    samples.add(point.y)
 }
 
 @Composable

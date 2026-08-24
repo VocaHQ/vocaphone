@@ -343,6 +343,108 @@ class SuggestionEngineTest {
     }
 
     @Test
+    fun `a geometric path through the same keys agrees with the letter-string matcher`() {
+        fun through(keys: String) = dictionary.swipe(keys, points = SwipeLayout.interpolate(keys))
+        assertEquals("the", through("the").first())
+        assertEquals("the", through("tghe").first())
+        assertEquals("hello", through("hjkello").first())
+        assertEquals("hello", through("helo").first())
+        assertEquals("book", through("bok").first())
+        assertTrue(dictionary.swipe("qz", points = SwipeLayout.interpolate("qz")).isEmpty())
+    }
+
+    @Test
+    fun `geometric scoring still prefers the word the finger actually spelled`() {
+        val words = SuggestionDictionary(
+            words = listOf("joel", "hello"),
+            bigrams = emptyMap(),
+        )
+        assertEquals(
+            "hello",
+            words.swipe("hjkello", points = SwipeLayout.interpolate("hjkello")).first(),
+        )
+    }
+
+    @Test
+    fun `geometric scoring still finds a word when the start landed on a neighbour`() {
+        val words = SuggestionDictionary(
+            words = listOf("hello", "help", "held", "book"),
+            bigrams = emptyMap(),
+        )
+        assertEquals(
+            "hello",
+            words.swipe("uytrertyuiklo", points = SwipeLayout.interpolate("uytrertyuiklo")).first(),
+        )
+    }
+
+    @Test
+    fun `geometric scoring prefers some over see on an s-o-m-e shape`() {
+        val words = SuggestionDictionary(
+            words = listOf("see", "she", "same", "some", "store", "case"),
+            bigrams = emptyMap(),
+        )
+        assertEquals(
+            "some",
+            words.swipe("sdfghjklomnhytre", points = SwipeLayout.interpolate("sdfghjklomnhytre")).first(),
+        )
+        assertEquals(
+            "some",
+            words.swipe("sertoiuytrewmne", points = SwipeLayout.interpolate("sertoiuytrewmne")).first(),
+        )
+    }
+
+    @Test
+    fun `collinear extra keys prefer the longer word`() {
+        val words = SuggestionDictionary(
+            words = listOf("or", "our", "out"),
+            bigrams = emptyMap(),
+        )
+        assertEquals("our", words.swipe("our", points = SwipeLayout.interpolate("our")).first())
+        assertEquals("or", words.swipe("or", points = SwipeLayout.interpolate("or")).first())
+    }
+
+    @Test
+    fun `a loop on a key ranks the doubled letter ahead of the short spelling`() {
+        val words = SuggestionDictionary(
+            words = listOf("god", "good", "goad"),
+            bigrams = emptyMap(),
+        )
+        assertEquals("god", words.swipe("god", points = SwipeLayout.interpolate("god")).first())
+        // A finger that circled O has extra path length the short spelling cannot explain.
+        assertEquals(
+            "good",
+            words.swipe("good", points = SwipeLayout.sampleWordWithLoops("good")).first(),
+        )
+    }
+
+    @Test
+    fun `english list still picks the intended word from a geometric path`() {
+        val file = generateSequence(java.io.File("").absoluteFile) { it.parentFile }
+            .map { java.io.File(it, "assets/keyboard/en.txt") }
+            .firstOrNull(java.io.File::isFile)
+        org.junit.Assume.assumeTrue(
+            "assets/keyboard is only present in the repository",
+            file != null,
+        )
+        requireNotNull(file)
+        val dict = SuggestionDictionary(
+            words = file.readLines().map { it.trim() }.filter { it.isNotEmpty() },
+            bigrams = emptyMap(),
+        )
+        assertEquals(
+            "some",
+            dict.swipe("sdfghjklomnhytre", points = SwipeLayout.interpolate("sdfghjklomnhytre")).first(),
+        )
+        assertEquals("hello", dict.swipe("hjkello", points = SwipeLayout.interpolate("hjkello")).first())
+        assertEquals("the", dict.swipe("tghe", points = SwipeLayout.interpolate("tghe")).first())
+        val common = file.readLines().map { it.trim() }.filter { it.length >= 3 }.take(60)
+        val missed = common.filter { word ->
+            dict.swipe(word, points = SwipeLayout.interpolate(word)).firstOrNull() != word
+        }
+        assertTrue("ideal path missed: $missed", missed.isEmpty())
+    }
+
+    @Test
     fun `replaceable word includes a trailing space after a swipe`() {
         val span = SuggestionEngine.replaceableWord("hello ", "")
         assertEquals("hello", span?.word)
