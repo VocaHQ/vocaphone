@@ -269,21 +269,21 @@ internal class SuggestionDictionary(
                 val last = collapsedLength[rank] - 1
                 if (last < 1) continue
                 if (!gesture.endsAreReachable(compact[0], compact[last])) continue
+                // FlorisBoard / OpenSwipe do not require the word to be a
+                // subsequence of the keys the finger crossed. "with" is W-I-T-H
+                // on the keyboard but a real swipe is W→I→H: T is a fly-over
+                // on the way to I, so requiring T after I threw the word out.
                 val exact = SuggestionEngine.isSubsequence(compact, keys)
-                if (
-                    !exact &&
-                    !SuggestionEngine.isReachableSubsequence(compact, keys) &&
-                    !gesture.lettersOnPath(compact)
-                ) {
-                    continue
-                }
+                val onPath = gesture.lettersOnPath(compact)
                 scored.add(
                     words[rank] to gesture.score(
                         compactWord = compact,
                         originalWord = words[rank],
                         frequencyRank = rank,
+                        wordCount = words.size,
                         approximate = !exact,
                         predictedWord = words[rank] in predicted,
+                        onPath = onPath,
                         ideal = swipeIdeal[rank],
                         idealLength = swipeIdealLength[rank],
                     ),
