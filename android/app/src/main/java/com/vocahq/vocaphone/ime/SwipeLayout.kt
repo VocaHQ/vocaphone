@@ -60,14 +60,16 @@ internal object SwipeLayout {
     /** Neighbour radius used for tap corrections and swipe end-key slack. */
     const val NEIGHBOUR_RADIUS = 1.55f
 
-    /**
-     * Grid travel from the press that turns a tap into a swipe. Half a key
-     * is still a targeting correction; past this it is a gesture. FlorisBoard
-     * uses a quarter-key as the *sample* step, not the activation.
-     */
-    const val ACTIVATION_DISTANCE = 0.6f
-
     const val MAX_TRACE_POINTS = 96
+
+    /**
+     * A swipe starts only when the finger enters a *different letter key's
+     * rectangle*. Nearest-key must not decide this: a tap near an edge flips
+     * nearest within a few pixels, undoes the seed letter that went out on
+     * pointer down, and one-shot shift (sentence capitals) dies with it.
+     */
+    fun enteredAnotherLetter(startId: String, hitId: String?): Boolean =
+        hitId != null && hitId != startId
 
     val QWERTY: Map<Char, XY> = buildMap {
         fun row(y: Float, startX: Float, letters: String) {

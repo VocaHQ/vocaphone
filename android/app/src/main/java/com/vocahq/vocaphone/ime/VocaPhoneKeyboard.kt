@@ -2215,11 +2215,14 @@ private fun Modifier.swipeTypingGesture(
         trail.clear()
         val downAt = SystemClock.uptimeMillis()
         val downRoot = parentCoords()?.localToRoot(down.position) ?: return@awaitEachGesture
-        val start = nearestLetter(keyBounds, downRoot) ?: return@awaitEachGesture
-        if (!closeToKey(start.second, downRoot)) return@awaitEachGesture
-        val startGrid = gridPoint(start, downRoot) ?: return@awaitEachGesture
-        val path = StringBuilder(start.first.output.lowercase())
-        var lastId = start.first.id
+        // Start only on a letter's rectangle. Nearest-key here stole taps on
+        // period / space / the edge of a letter: the seed went out on down
+        // with one-shot shift, then the gesture undid it and shift died.
+        val start = hitLetter(keyBounds, downRoot) ?: return@awaitEachGesture
+        val startHit = keyBounds[start.id] ?: return@awaitEachGesture
+        val startGrid = gridPoint(startHit, downRoot) ?: return@awaitEachGesture
+        val path = StringBuilder(start.output.lowercase())
+        var lastId = start.id
         val samples = ArrayList<Float>(64)
         addSample(samples, startGrid)
         trail.add(down.position)
@@ -2227,40 +2230,29 @@ private fun Modifier.swipeTypingGesture(
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
             val root = parentCoords()?.localToRoot(change.position)
-            val grid = if (root != null) {
-                nearestLetter(keyBounds, root)?.let { gridPoint(it, root) }
-            } else {
-                null
-            }
-            if (grid != null) addSample(samples, grid)
-            if (!swipeConsumed.value &&
-                SystemClock.uptimeMillis() - downAt >= AccentPicker.HOLD_MS
-            ) {
-                // Finger stayed long enough for the accent row. Sliding
-                // now picks a variant; it is not a swipe. A swipe that
-                // already started must keep recording past this mark —
-                // most words take longer than a hold.
-                if (!change.pressed) break
-                continue
-            }
-            val travelled = if (grid == null) {
-                0f
-            } else {
-                startGrid.distanceTo(grid)
-            }
-            val hit = if (root != null) nearestLetter(keyBounds, root)?.first else null
-            val leftStartKey = hit != null && hit.id != lastId
-            if (!swipeConsumed.value && (travelled >= SwipeLayout.ACTIVATION_DISTANCE || leftStartKey)) {
-                // The letter already went out on down. Drop only that seed
-                // so a swipe after "he" does not wipe the whole word.
-                onSwipeSeedUndo()
-                onPreview(null)
-                swipeConsumed.value = true
+            val contained = if (root != null) hitLetter(keyBounds, root) else null
+            if (contained != null && SwipeLayout.enteredAnotherLetter(lastId, contained.id)) {
+                if (SystemClock.uptimeMillis() - downAt >= AccentPicker.HOLD_MS) {
+                    // Finger stayed long enough for the accent row. Sliding
+                    // now picks a variant; it is not a swipe.
+                    if (!change.pressed) break
+                    continue
+                }
+                if (!swipeConsumed.value) {
+                    // The letter already went out on down. Drop only that seed
+                    // so a swipe after "he" does not wipe the whole word.
+                    onSwipeSeedUndo()
+                    onPreview(null)
+                    swipeConsumed.value = true
+                }
+                path.append(contained.output.lowercase())
+                lastId = contained.id
             }
             if (swipeConsumed.value) {
-                if (hit != null && hit.id != lastId && isLetterKey(hit)) {
-                    path.append(hit.output.lowercase())
-                    lastId = hit.id
+                if (root != null) {
+                    nearestLetter(keyBounds, root)?.let { hit ->
+                        gridPoint(hit, root)?.let { addSample(samples, it) }
+                    }
                 }
                 if (trail.size < 80) trail.add(change.position)
                 change.consume()
@@ -2278,9 +2270,22 @@ private fun isLetterKey(key: KeyboardKey): Boolean =
     key.type == KeyboardKeyType.CHARACTER && key.output.length == 1 && key.output[0].isLetter()
 
 /**
- * Nearest letter key, not `Rect.contains`. FlorisBoard, AnySoftKeyboard and
- * OpenSwipe all score against key centres; a finger in the 4 dp gap between
- * keys used to record nothing and the matcher never saw that part of the word.
+ * Letter under the finger by hit rectangle. Activation uses this, not
+ * nearest-key: a tap near an edge must stay a tap or one-shot shift
+ * (sentence capitals) is undone with the seed letter.
+ */
+private fun hitLetter(
+    keyBounds: Map<String, Pair<KeyboardKey, Rect>>,
+    root: Offset?,
+): KeyboardKey? {
+    if (root == null) return null
+    val hit = keyBounds.values.firstOrNull { (_, rect) -> rect.contains(root) }?.first ?: return null
+    return hit.takeIf(::isLetterKey)
+}
+
+/**
+ * Nearest letter key, used only *after* a swipe has started so a finger in
+ * the 4 dp gap between keys still contributes to the path.
  */
 private fun nearestLetter(
     keyBounds: Map<String, Pair<KeyboardKey, Rect>>,
@@ -2299,13 +2304,6 @@ private fun nearestLetter(
         }
     }
     return best
-}
-
-private fun closeToKey(rect: Rect, root: Offset): Boolean {
-    val reach = maxOf(rect.width, rect.height) * 0.7f
-    val dx = root.x - rect.center.x
-    val dy = root.y - rect.center.y
-    return dx * dx + dy * dy <= reach * reach
 }
 
 private fun gridPoint(hit: Pair<KeyboardKey, Rect>, root: Offset): SwipeLayout.XY? {

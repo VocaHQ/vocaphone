@@ -45,4 +45,15 @@ class SwipeLayoutTest {
         val samples = SwipeLayout.sampleWord("hello")
         assertEquals(SwipeLayout.SAMPLE_POINTS * 2, samples.size)
     }
+
+    @Test
+    fun `a tap that stays on one key is not a swipe`() {
+        assertFalse(SwipeLayout.enteredAnotherLetter("character-h", "character-h"))
+        assertFalse(SwipeLayout.enteredAnotherLetter("character-h", null))
+    }
+
+    @Test
+    fun `entering a different letter key starts a swipe`() {
+        assertTrue(SwipeLayout.enteredAnotherLetter("character-h", "character-j"))
+    }
 }
