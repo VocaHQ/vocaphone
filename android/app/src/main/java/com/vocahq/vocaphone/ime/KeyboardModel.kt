@@ -53,6 +53,12 @@ internal sealed interface KeyboardCommand {
     data class SetComposingText(val text: String) : KeyboardCommand
     data object DeleteBackward : KeyboardCommand
     data class DeleteSurrounding(val before: Int, val after: Int) : KeyboardCommand
+    /**
+     * Drop the character that went out on pointer down and insert [text]
+     * in the same batch. [DeleteBackward] is a key event, so a following
+     * [CommitText] can land first and leave `2@` from a hold on `2`.
+     */
+    data class ReplaceLastCommitted(val text: String) : KeyboardCommand
     data object PerformEditorAction : KeyboardCommand
     data class MoveCursor(val positions: Int) : KeyboardCommand
     data object DoubleSpacePeriod : KeyboardCommand
@@ -530,6 +536,11 @@ internal object KeyboardReducer {
      * Digits and punctuation skip composing ([characterPress] uses
      * [KeyboardCommand.CommitText]), so a hold on `2` for `@` has to delete
      * that committed `2` instead of no-op'ing on empty composing.
+     *
+     * The delete is [KeyboardCommand.DeleteSurrounding], not
+     * [KeyboardCommand.DeleteBackward]. Backward-delete is a `KEYCODE_DEL`
+     * key event in the IME; the editor can apply it after the following
+     * commit, so a hold on `2` typed `2@`.
      */
     fun undoLastCharacter(
         state: KeyboardState,
@@ -555,8 +566,44 @@ internal object KeyboardReducer {
                 lastWasSpace = false,
                 capitalizeAfterSpace = false,
             ),
-            command = KeyboardCommand.DeleteBackward,
+            command = KeyboardCommand.DeleteSurrounding(1, 0),
         )
+    }
+
+    /**
+     * Long-press replacement after the seed character has already gone out
+     * on pointer down.
+     *
+     * A composing letter is rewritten in place (`hel` + hold `l` for `ł`
+     * becomes `heł`). A committed digit or symbol is deleted and replaced
+     * in one batch so the editor cannot keep both.
+     */
+    fun replaceLastCharacter(
+        state: KeyboardState,
+        replacement: String,
+        composeWords: Boolean,
+        restoreShift: ShiftState? = null,
+    ): KeyboardReduction {
+        val undone = undoLastCharacter(state, composeWords, restoreShift)
+        val typed = characterPress(
+            undone.state,
+            KeyboardKey(
+                id = "variant-$replacement",
+                label = replacement,
+                output = replacement,
+            ),
+            composeWords,
+        )
+        val command = when (undone.command) {
+            is KeyboardCommand.SetComposingText -> typed.command
+            is KeyboardCommand.DeleteSurrounding,
+            KeyboardCommand.DeleteBackward,
+            -> KeyboardCommand.ReplaceLastCommitted(
+                (typed.command as? KeyboardCommand.CommitText)?.text ?: replacement,
+            )
+            else -> typed.command
+        }
+        return KeyboardReduction(state = typed.state, command = command)
     }
 
     private fun spacePress(state: KeyboardState): KeyboardReduction {

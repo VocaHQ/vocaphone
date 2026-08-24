@@ -407,6 +407,19 @@ internal fun VocaPhoneKeyboard(
         onKeyPreview(null)
     }
 
+    fun commitLongPressVariant(text: String) {
+        val reduction = KeyboardReducer.replaceLastCharacter(
+            state = keyboardState,
+            replacement = text,
+            composeWords = composeWords,
+            restoreShift = swipeSeedShift,
+        )
+        swipeSeedShift = null
+        keyboardState = reduction.state
+        reduction.command?.let(onCommand)
+        onKeyPreview(null)
+    }
+
     fun applySwipe(matches: List<String>, similar: List<String>) {
         if (matches.isEmpty()) return
         KeyboardChrome.swipePrefixCommand(keyboardState.composing)?.let(onCommand)
@@ -478,6 +491,7 @@ internal fun VocaPhoneKeyboard(
     val latestDelete by rememberUpdatedState<(Long) -> Unit>(::handleDelete)
     val latestSwipe by rememberUpdatedState<(String) -> Unit>(::handleSwipe)
     val latestUndoSwipe by rememberUpdatedState(::undoSwipeSeed)
+    val latestLongPressVariant by rememberUpdatedState(::commitLongPressVariant)
     val latestCursorMove by rememberUpdatedState<(Int) -> Unit> { positions ->
         clearSwipe()
         keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
@@ -487,6 +501,7 @@ internal fun VocaPhoneKeyboard(
     val onKeyStable = remember { { key: KeyboardKey -> latestKey(key) } }
     val onSwipeStable = remember { { path: String -> latestSwipe(path) } }
     val onUndoSwipeStable = remember { { latestUndoSwipe() } }
+    val onLongPressVariantStable = remember { { text: String -> latestLongPressVariant(text) } }
     val onCursorMoveStable = remember { { positions: Int -> latestCursorMove(positions) } }
     val onKeyHoldStable = remember {
         { key: KeyboardKey, heldMs: Long ->
@@ -667,6 +682,7 @@ internal fun VocaPhoneKeyboard(
                             onKeyHold = onKeyHoldStable,
                             onCursorMove = onCursorMoveStable,
                             onPreview = onKeyPreview,
+                            onLongPressVariant = onLongPressVariantStable,
                         )
                     } else {
                         val rows = remember(
@@ -702,6 +718,7 @@ internal fun VocaPhoneKeyboard(
                                 keyboardState.layer == KeyboardLayer.LETTERS,
                             onSwipe = onSwipeStable,
                             onSwipeSeedUndo = onUndoSwipeStable,
+                            onLongPressVariant = onLongPressVariantStable,
                             onPreview = onKeyPreview,
                             onKey = onKeyStable,
                             onKeyHold = onKeyHoldStable,
@@ -1917,6 +1934,7 @@ private fun EmojiLayer(
     onKeyHold: (KeyboardKey, Long) -> Unit = { _, _ -> },
     onCursorMove: (Int) -> Unit,
     onPreview: (KeyPreview?) -> Unit = {},
+    onLongPressVariant: (String) -> Unit = {},
 ) {
     val bottomRow = KeyboardLayouts.rows(KeyboardLayer.EMOJI, editor)
     val glyphs = when (category) {
@@ -1944,6 +1962,7 @@ private fun EmojiLayer(
             onKey = onKey,
             onKeyHold = onKeyHold,
             onCursorMove = onCursorMove,
+            onLongPressVariant = onLongPressVariant,
         )
     }
 }
@@ -2033,6 +2052,7 @@ private fun KeyboardRows(
     swipeEnabled: Boolean = false,
     onSwipe: (String) -> Unit = {},
     onSwipeSeedUndo: () -> Unit = {},
+    onLongPressVariant: (String) -> Unit = {},
     onPreview: (KeyPreview?) -> Unit = {},
     onKey: (KeyboardKey) -> Unit,
     onKeyHold: (KeyboardKey, Long) -> Unit = { _, _ -> },
@@ -2045,13 +2065,13 @@ private fun KeyboardRows(
     val trailColor = MaterialTheme.colorScheme.primary
     val currentOnSwipe = rememberUpdatedState(onSwipe)
     val currentOnUndo = rememberUpdatedState(onSwipeSeedUndo)
+    val currentOnLongPressVariant = rememberUpdatedState(onLongPressVariant)
     val currentOnPreview = rememberUpdatedState(onPreview)
     val currentOnKey = rememberUpdatedState(onKey)
     val currentOnKeyHold = rememberUpdatedState(onKeyHold)
     val onPreviewStable = remember {
         { preview: KeyPreview? -> currentOnPreview.value(preview) }
     }
-    val onUndoStable = remember { { currentOnUndo.value() } }
 
     // Only the swipe gesture clears this, and it is only installed on the
     // letter layer, so a swipe that was still consuming when the layer changed
@@ -2112,15 +2132,7 @@ private fun KeyboardRows(
                                     { heldMs: Long -> currentOnKeyHold.value(key, heldMs) }
                                 }
                                 val onCommitText = remember(key.id) {
-                                    { text: String ->
-                                        currentOnKey.value(
-                                            KeyboardKey(
-                                                id = "variant-$text",
-                                                label = text,
-                                                output = text,
-                                            ),
-                                        )
-                                    }
+                                    { text: String -> currentOnLongPressVariant.value(text) }
                                 }
                                 KeyButton(
                                     key = key,
@@ -2144,7 +2156,6 @@ private fun KeyboardRows(
                                     },
                                     onPress = onPress,
                                     onHold = onHold,
-                                    onUndo = onUndoStable,
                                     onCommitText = onCommitText,
                                     onPreview = onPreviewStable,
                                     onCursorMove = onCursorMove,
@@ -2244,7 +2255,6 @@ private fun RowScope.KeyButton(
     swipeConsumed: MutableState<Boolean>? = null,
     onPress: () -> Unit,
     onHold: (Long) -> Unit = {},
-    onUndo: () -> Unit = {},
     onCommitText: (String) -> Unit,
     onPreview: (KeyPreview?) -> Unit,
     onCursorMove: (Int) -> Unit,
@@ -2253,7 +2263,6 @@ private fun RowScope.KeyButton(
     val view = LocalView.current
     val currentOnPress = rememberUpdatedState(onPress)
     val currentOnHold = rememberUpdatedState(onHold)
-    val currentOnUndo = rememberUpdatedState(onUndo)
     val currentOnCommitText = rememberUpdatedState(onCommitText)
     val currentOnCursorMove = rememberUpdatedState(onCursorMove)
     val currentOnPreview = rememberUpdatedState(onPreview)
@@ -2328,7 +2337,6 @@ private fun RowScope.KeyButton(
             variantCount = accents.size,
             swipeConsumed = swipeConsumed,
             onTap = { currentOnPress.value() },
-            onUndo = { currentOnUndo.value() },
             onVariant = { index -> currentOnCommitText.value(accents[index]) },
             onPressedChange = { isPressed ->
                 pressed = isPressed
@@ -2470,7 +2478,6 @@ private fun Modifier.accentGesture(
     pointerKey: String,
     variantCount: Int,
     onTap: () -> Unit,
-    onUndo: () -> Unit,
     onVariant: (Int) -> Unit,
     onPressedChange: (Boolean) -> Unit,
     onAccentIndex: (Int) -> Unit,
@@ -2541,7 +2548,6 @@ private fun Modifier.accentGesture(
                 onAccentIndex(-1)
             }
             if (swipeConsumed?.value != true && showing && !leftKey) {
-                onUndo()
                 onVariant(index)
             }
         }
