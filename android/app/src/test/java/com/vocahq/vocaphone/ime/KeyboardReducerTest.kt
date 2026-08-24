@@ -232,6 +232,25 @@ class KeyboardReducerTest {
     }
 
     @Test
+    fun `long-press on a composing letter for a symbol replaces in one batch`() {
+        val typed = KeyboardReducer.press(
+            KeyboardState(KeyboardLayer.LETTERS, ShiftState.OFF),
+            character("a"),
+            nowMillis = 1_000,
+            composeWords = true,
+        )
+        assertEquals(KeyboardCommand.SetComposingText("a"), typed.command)
+
+        val replaced = KeyboardReducer.replaceLastCharacter(
+            typed.state,
+            replacement = "@",
+            composeWords = true,
+        )
+        assertEquals(KeyboardCommand.ReplaceLastCommitted("@"), replaced.command)
+        assertEquals("", replaced.state.composing)
+    }
+
+    @Test
     fun `delete while composing shortens the composing word`() {
         val typed = KeyboardReducer.press(
             KeyboardState(KeyboardLayer.LETTERS, ShiftState.OFF, composing = "hi"),

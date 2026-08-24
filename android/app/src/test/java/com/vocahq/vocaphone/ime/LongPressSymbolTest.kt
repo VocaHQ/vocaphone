@@ -42,6 +42,31 @@ class LongPressSymbolTest {
     }
 
     @Test
+    fun `holding a for at-sign leaves only the at-sign`() {
+        val editor = FakeEditor()
+        var state = KeyboardState(KeyboardLayer.LETTERS, ShiftState.OFF)
+
+        state = editor.type(state, "a")
+        assertEquals("a", editor.text)
+
+        editor.replace(state, "@")
+        assertEquals("@", editor.text)
+    }
+
+    @Test
+    fun `holding a for at-sign after a letter keeps that letter`() {
+        val editor = FakeEditor()
+        var state = KeyboardState(KeyboardLayer.LETTERS, ShiftState.OFF)
+
+        state = editor.type(state, "h")
+        state = editor.type(state, "a")
+        assertEquals("ha", editor.text)
+
+        editor.replace(state, "@")
+        assertEquals("h@", editor.text)
+    }
+
+    @Test
     fun `holding e for an accent rewrites the composing letter`() {
         val editor = FakeEditor()
         var state = KeyboardState(KeyboardLayer.LETTERS, ShiftState.OFF)

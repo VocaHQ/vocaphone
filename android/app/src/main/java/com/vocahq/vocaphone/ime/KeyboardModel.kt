@@ -1,6 +1,7 @@
 package com.vocahq.vocaphone.ime
 
 import java.util.Locale
+import kotlin.math.floor
 
 internal enum class KeyboardLayer {
     LETTERS,
@@ -70,6 +71,31 @@ internal sealed interface KeyboardCommand {
      * snapshot used to arm caps instead of cycling case.
      */
     data object ShiftTap : KeyboardCommand
+}
+
+/**
+ * Long-press accent row: hold still this long, then slide to pick a variant.
+ *
+ * The row grows to the right of the key and is shifted so every cell stays
+ * on the keyboard. Swipe typing uses the same hold time so a slide after
+ * the popup is up does not become a swipe.
+ */
+internal object AccentPicker {
+    const val HOLD_MS = 380L
+    const val CELL_DP = 36
+
+    fun rowLeft(centerX: Float, count: Int, cellPx: Float, parentWidth: Float): Float {
+        val width = count * cellPx
+        if (count <= 0 || cellPx <= 0f) return 0f
+        if (width >= parentWidth) return 0f
+        val preferred = centerX - cellPx / 2f
+        return preferred.coerceIn(0f, parentWidth - width)
+    }
+
+    fun indexAt(x: Float, rowLeft: Float, cellPx: Float, count: Int): Int {
+        if (count <= 0 || cellPx <= 0f) return 0
+        return floor((x - rowLeft) / cellPx).toInt().coerceIn(0, count - 1)
+    }
 }
 
 /** Hold-delete starts on characters, then words, then the rest of the line. */
@@ -575,8 +601,8 @@ internal object KeyboardReducer {
      * on pointer down.
      *
      * A composing letter is rewritten in place (`hel` + hold `l` for `ł`
-     * becomes `heł`). A committed digit or symbol is deleted and replaced
-     * in one batch so the editor cannot keep both.
+     * becomes `heł`). A digit or a letter-key symbol (`a` for `@`) is
+     * deleted and replaced in one batch so the editor cannot keep both.
      */
     fun replaceLastCharacter(
         state: KeyboardState,
@@ -594,14 +620,14 @@ internal object KeyboardReducer {
             ),
             composeWords,
         )
-        val command = when (undone.command) {
-            is KeyboardCommand.SetComposingText -> typed.command
-            is KeyboardCommand.DeleteSurrounding,
-            KeyboardCommand.DeleteBackward,
-            -> KeyboardCommand.ReplaceLastCommitted(
-                (typed.command as? KeyboardCommand.CommitText)?.text ?: replacement,
-            )
-            else -> typed.command
+        // Accents stay in the composing region (`e` → `é`). A symbol is
+        // CommitText, and finishing composing first would keep the letter
+        // (`a` then `@`). Batch-delete the seed and insert the symbol.
+        val command = when (val typedCommand = typed.command) {
+            is KeyboardCommand.SetComposingText -> typedCommand
+            is KeyboardCommand.CommitText ->
+                KeyboardCommand.ReplaceLastCommitted(typedCommand.text)
+            else -> typedCommand
         }
         return KeyboardReduction(state = typed.state, command = command)
     }

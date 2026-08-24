@@ -757,16 +757,22 @@ private fun KeyPreviewLayer(
     val local = host.windowToLocal(Offset(current.windowX, current.windowY))
     val balloonHeightPx = with(density) { 52.dp.roundToPx() }
     val simpleWidthPx = with(density) { 42.dp.roundToPx() }
+    val cellPx = with(density) { AccentPicker.CELL_DP.dp.toPx() }
     val accent = current.accentIndex >= 0 && current.accents.isNotEmpty()
-    val widthPx = if (accent) {
-        with(density) { (current.accents.size * 36).dp.roundToPx() }
+    val leftPx = if (accent) {
+        AccentPicker.rowLeft(
+            centerX = local.x,
+            count = current.accents.size,
+            cellPx = cellPx,
+            parentWidth = host.size.width.toFloat(),
+        )
     } else {
-        simpleWidthPx
+        local.x - simpleWidthPx / 2f
     }
     Box(
         modifier = Modifier.absoluteOffset {
             IntOffset(
-                x = (local.x - widthPx / 2f).roundToInt(),
+                x = leftPx.roundToInt(),
                 y = (local.y - balloonHeightPx - with(density) { 8.dp.roundToPx() }).roundToInt(),
             )
         },
@@ -776,12 +782,12 @@ private fun KeyPreviewLayer(
                 modifier = Modifier
                     .clip(PreviewCorner)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                    .padding(vertical = 4.dp),
             ) {
                 current.accents.forEachIndexed { index, glyph ->
                     Box(
                         modifier = Modifier
-                            .padding(2.dp)
+                            .width(AccentPicker.CELL_DP.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .background(
                                 if (index == current.accentIndex) {
@@ -790,7 +796,8 @@ private fun KeyPreviewLayer(
                                     Color.Transparent
                                 },
                             )
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                            .padding(vertical = 6.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             glyph,
@@ -2200,6 +2207,7 @@ private fun Modifier.swipeTypingGesture(
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         swipeConsumed.value = false
         trail.clear()
+        val downAt = SystemClock.uptimeMillis()
         val start = hitLetter(keyBounds, parentCoords()?.localToRoot(down.position))
         if (start == null) return@awaitEachGesture
         val path = StringBuilder(start.output.lowercase())
@@ -2208,9 +2216,14 @@ private fun Modifier.swipeTypingGesture(
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
-            if (trail.size < 80) trail.add(change.position)
             val hit = hitLetter(keyBounds, parentCoords()?.localToRoot(change.position))
             if (hit != null && hit.id != lastId) {
+                if (SystemClock.uptimeMillis() - downAt >= AccentPicker.HOLD_MS) {
+                    // Finger stayed long enough for the accent row. Sliding
+                    // now picks a variant; it is not a swipe.
+                    if (!change.pressed) break
+                    continue
+                }
                 if (!swipeConsumed.value) {
                     // The letter already went out on down. Drop only that seed
                     // so a swipe after "he" does not wipe the whole word.
@@ -2222,6 +2235,7 @@ private fun Modifier.swipeTypingGesture(
                 lastId = hit.id
             }
             if (swipeConsumed.value) {
+                if (trail.size < 80) trail.add(change.position)
                 change.consume()
             }
             if (!change.pressed) break
@@ -2336,6 +2350,13 @@ private fun RowScope.KeyButton(
             pointerKey = key.id,
             variantCount = accents.size,
             swipeConsumed = swipeConsumed,
+            keyLayout = layout,
+            parentWidthPx = { view.width.toFloat() },
+            windowOriginX = {
+                val loc = IntArray(2)
+                view.getLocationInWindow(loc)
+                loc[0].toFloat()
+            },
             onTap = { currentOnPress.value() },
             onVariant = { index -> currentOnCommitText.value(accents[index]) },
             onPressedChange = { isPressed ->
@@ -2483,8 +2504,11 @@ private fun Modifier.accentGesture(
     onAccentIndex: (Int) -> Unit,
     onHaptic: () -> Unit,
     swipeConsumed: MutableState<Boolean>? = null,
+    keyLayout: Array<LayoutCoordinates?>,
+    parentWidthPx: () -> Float,
+    windowOriginX: () -> Float,
 ) = pointerInput(pointerKey, variantCount) {
-    val step = 28.dp.toPx()
+    val cellPx = AccentPicker.CELL_DP.dp.toPx()
     val slopSquared = viewConfiguration.touchSlop.let { it * it }
     coroutineScope {
         awaitEachGesture {
@@ -2503,11 +2527,31 @@ private fun Modifier.accentGesture(
                     onAccentIndex(-1)
                 }
             }
+            fun indexFor(position: Offset): Int {
+                val coords = keyLayout[0] ?: return AccentPicker.indexAt(
+                    x = position.x,
+                    rowLeft = 0f,
+                    cellPx = cellPx,
+                    count = variantCount,
+                )
+                val origin = windowOriginX()
+                val fingerX = coords.localToWindow(position).x - origin
+                val centerX = coords.localToWindow(
+                    Offset(coords.size.width / 2f, 0f),
+                ).x - origin
+                val left = AccentPicker.rowLeft(
+                    centerX = centerX,
+                    count = variantCount,
+                    cellPx = cellPx,
+                    parentWidth = parentWidthPx(),
+                )
+                return AccentPicker.indexAt(fingerX, left, cellPx, variantCount)
+            }
             try {
                 onPressedChange(true)
                 onTap()
                 hold = launch {
-                    delay(380L)
+                    delay(AccentPicker.HOLD_MS)
                     if (leftKey || swipeConsumed?.value == true) return@launch
                     showing = true
                     onAccentIndex(0)
@@ -2528,12 +2572,12 @@ private fun Modifier.accentGesture(
                     val dx = change.position.x - down.position.x
                     val dy = change.position.y - down.position.y
                     if (!showing && !leftKey && dx * dx + dy * dy > slopSquared) {
-                        // Swipe or a flick off the key: do not let the 380 ms
-                        // hold pop the accent row over the trail.
+                        // Swipe or a flick off the key: do not let the hold
+                        // pop the accent row over the trail.
                         abortHold()
                     }
                     if (showing) {
-                        val next = (dx / step).toInt().coerceIn(0, variantCount - 1)
+                        val next = indexFor(change.position)
                         if (next != index) {
                             index = next
                             onAccentIndex(index)
