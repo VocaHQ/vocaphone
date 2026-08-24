@@ -39,6 +39,7 @@ class SwipeCommonWordsTest {
         "they", "just", "like", "some", "would", "there", "good", "go",
         "top", "hello", "when", "your", "all", "more", "if", "out", "see",
         "how", "been", "make", "should", "into", "over", "time", "get",
+        "quick", "brown", "fox", "lazy", "frog",
     )
 
     @Test
@@ -128,5 +129,27 @@ class SwipeCommonWordsTest {
         val keys = SwipeLayout.nearestKeyString(points)
         val top = dict.swipe(keys, points = points)
         assertEquals("which keys=$keys → $top", "which", top.first())
+    }
+
+    @Test
+    fun `a four-key what swipe ranks what first and keeps same-path alternatives`() {
+        val dict = dictionary()
+        val points = SwipeLayout.interpolate("what")
+        val keys = SwipeLayout.nearestKeyString(points)
+        val top = dict.swipe(keys, points = points)
+        assertEquals("what keys=$keys → $top", "what", top.first())
+        assertTrue("long end-sharing words in strip: $top", "wednesday" !in top && "without" !in top)
+    }
+
+    @Test
+    fun `pangram words rank first on their own traces`() {
+        // "jumps" is not in the shipped list; the rest of the sentence is.
+        val dict = dictionary()
+        val misses = ArrayList<String>()
+        for (word in listOf("the", "quick", "brown", "fox", "over", "lazy", "frog")) {
+            val top = dict.swipe(word, points = SwipeLayout.interpolate(word))
+            if (top.firstOrNull() != word) misses.add("$word → $top")
+        }
+        assertTrue("pangram misses:\n${misses.joinToString("\n")}", misses.isEmpty())
     }
 }

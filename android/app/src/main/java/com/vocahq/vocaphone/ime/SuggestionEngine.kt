@@ -200,7 +200,7 @@ internal class SuggestionDictionary(
 
     fun swipe(
         path: String,
-        limit: Int = 4,
+        limit: Int = 6,
         shouldAbort: () -> Boolean = { false },
         points: FloatArray = FloatArray(0),
         previousWord: String = "",
@@ -243,10 +243,9 @@ internal class SuggestionDictionary(
     }
 
     /**
-     * Real (x, y) traces from the keyboard. Start-letter buckets skip most
-     * of the list; start/end neighbours prune the rest. There is no
-     * subsequence filter: a letter the finger flew over is scored as
-     * distance to the stroke, not as a missing key.
+     * Real (x, y) traces. Start-letter buckets are the first level of the
+     * candidate tree; when the finger turned, a word also has to cover
+     * every apex (the keys around each direction change) in order.
      */
     private fun swipeGeometric(
         keys: String,
@@ -262,30 +261,40 @@ internal class SuggestionDictionary(
             bigrams[previousWord.lowercase()].orEmpty().toHashSet()
         }
         val scored = ArrayList<Pair<String, Float>>()
-        var seen = 0
-        val startLetters = SwipeLayout.nearby(keys.first()) + keys.first()
-        for (letter in startLetters) {
-            if (letter !in 'a'..'z') continue
-            val bucket = swipeByFirst[letter - 'a']
-            for (rank in bucket) {
-                if ((seen and 127) == 0 && shouldAbort()) return emptyList()
-                seen++
-                val compact = collapsed[rank]
-                val last = collapsedLength[rank] - 1
-                if (last < 1) continue
-                if (!gesture.endsAreReachable(compact[0], compact[last])) continue
-                scored.add(
-                    words[rank] to gesture.score(
-                        compactWord = compact,
-                        originalWord = words[rank],
-                        frequencyRank = rank,
-                        wordCount = words.size,
-                        predictedWord = words[rank] in predicted,
-                        full = swipeIdeal[rank],
-                        shortcut = swipeShortcut[rank],
-                    ),
-                )
+        fun consider(requireTurns: Boolean): Boolean {
+            var seen = 0
+            for (letter in 'a'..'z') {
+                if (!gesture.mayBeginWith(letter)) continue
+                val bucket = swipeByFirst[letter - 'a']
+                for (rank in bucket) {
+                    if ((seen and 127) == 0 && shouldAbort()) return true
+                    seen++
+                    val compact = collapsed[rank]
+                    val last = collapsedLength[rank] - 1
+                    if (last < 1) continue
+                    if (!gesture.endsAreReachable(compact[0], compact[last])) continue
+                    if (requireTurns && !gesture.coversWord(compact)) continue
+                    scored.add(
+                        words[rank] to gesture.score(
+                            compactWord = compact,
+                            originalWord = words[rank],
+                            frequencyRank = rank,
+                            wordCount = words.size,
+                            predictedWord = words[rank] in predicted,
+                            full = swipeIdeal[rank],
+                            shortcut = swipeShortcut[rank],
+                        ),
+                    )
+                }
             }
+            return false
+        }
+        val aborted = consider(requireTurns = gesture.hasTurns)
+        if (aborted) return emptyList()
+        // A noisy trace can invent extra apexes and empty the tree. Fall
+        // back to start/end so we still commit a word the strip can fix.
+        if (scored.isEmpty() && gesture.hasTurns) {
+            if (consider(requireTurns = false)) return emptyList()
         }
         return scored
             .sortedByDescending { it.second }

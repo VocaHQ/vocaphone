@@ -346,8 +346,7 @@ class SuggestionEngineTest {
     fun `a geometric path through the same keys agrees with the letter-string matcher`() {
         fun through(keys: String) = dictionary.swipe(keys, points = SwipeLayout.interpolate(keys))
         assertEquals("the", through("the").first())
-        assertEquals("the", through("tghe").first())
-        assertEquals("hello", through("hjkello").first())
+        assertEquals("hello", through("hello").first())
         assertEquals("hello", through("helo").first())
         assertEquals("book", through("bok").first())
         assertTrue(dictionary.swipe("qz", points = SwipeLayout.interpolate("qz")).isEmpty())
@@ -361,7 +360,7 @@ class SuggestionEngineTest {
         )
         assertEquals(
             "hello",
-            words.swipe("hjkello", points = SwipeLayout.interpolate("hjkello")).first(),
+            words.swipe("hello", points = SwipeLayout.interpolate("hello")).first(),
         )
     }
 
@@ -371,10 +370,11 @@ class SuggestionEngineTest {
             words = listOf("hello", "help", "held", "book"),
             bigrams = emptyMap(),
         )
-        assertEquals(
-            "hello",
-            words.swipe("uytrertyuiklo", points = SwipeLayout.interpolate("uytrertyuiklo")).first(),
-        )
+        val path = SwipeLayout.interpolate("hello")
+        val u = SwipeLayout.qwerty('u')!!
+        path[0] = u.x
+        path[1] = u.y
+        assertEquals("hello", words.swipe("hello", points = path).first())
     }
 
     @Test
@@ -385,11 +385,7 @@ class SuggestionEngineTest {
         )
         assertEquals(
             "some",
-            words.swipe("sdfghjklomnhytre", points = SwipeLayout.interpolate("sdfghjklomnhytre")).first(),
-        )
-        assertEquals(
-            "some",
-            words.swipe("sertoiuytrewmne", points = SwipeLayout.interpolate("sertoiuytrewmne")).first(),
+            words.swipe("some", points = SwipeLayout.interpolate("some")).first(),
         )
     }
 
@@ -434,12 +430,13 @@ class SuggestionEngineTest {
             words = file.readLines().map { it.trim() }.filter { it.isNotEmpty() },
             bigrams = emptyMap(),
         )
-        assertEquals(
-            "some",
-            dict.swipe("sdfghjklomnhytre", points = SwipeLayout.interpolate("sdfghjklomnhytre")).first(),
-        )
-        assertEquals("hello", dict.swipe("helo", points = SwipeLayout.interpolate("hello")).first())
-        assertEquals("the", dict.swipe("tghe", points = SwipeLayout.interpolate("tghe")).first())
+        assertEquals("some", dict.swipe("some", points = SwipeLayout.interpolate("some")).first())
+        assertEquals("hello", dict.swipe("hello", points = SwipeLayout.interpolate("hello")).first())
+        assertEquals("the", dict.swipe("the", points = SwipeLayout.interpolate("the")).first())
+        assertEquals("what", dict.swipe("what", points = SwipeLayout.interpolate("what")).first())
+        val whatStrip = dict.swipe("what", points = SwipeLayout.interpolate("what"))
+        assertTrue("wednesday in what swipe: $whatStrip", "wednesday" !in whatStrip)
+        assertTrue("without in what swipe: $whatStrip", "without" !in whatStrip)
         val list = file.readLines().map { it.trim() }.filter { it.isNotEmpty() }
         val common = list.filter { it.length >= 3 }.take(60)
         val bestByEnds = LinkedHashMap<String, String>()

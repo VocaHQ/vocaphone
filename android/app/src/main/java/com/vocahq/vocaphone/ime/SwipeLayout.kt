@@ -3,29 +3,20 @@ package com.vocahq.vocaphone.ime
 /**
  * Geometry and scoring for swipe / glide typing.
  *
- * One model, the same shape FlorisBoard and AOSP use — not a pile of
- * per-word bonuses or boolean filters:
+ * The finger's path is a sequence of *apexes*: start, each place it
+ * changes direction, end. Around every apex we take the keys within
+ * reach and walk the dictionary as a letter tree — a word is a candidate
+ * only if its letters cover those apexes in order. That is why a four-key
+ * swipe of "what" cannot become a nine-letter word that merely shares
+ * a neighbour of W and T.
  *
- * 1. Keep the finger's (x, y) samples.
- * 2. Drop words whose first or last letter is not a neighbour of the
- *    stroke's start or end.
- * 3. Score `freqWeight * zipf(rank) + context − spatial`. Zipf is
- *    `ln((N+1)/(rank+1))` from list order.
+ * A flick with no turns is underspecified (W→H). Then start→end plus
+ * frequency decide, which is why that gesture is "with".
  *
- * Spatial is four measurements of the same idea (how well this word
- * explains the stroke), summed:
- *
- * - Pointwise distance to the best *template* of the word: the full key
- *   path, the colinear shortcut, start→end, and a loop on doubled letters.
- * - The same after bounding-box normalisation (shape, not place).
- * - How close each letter sits to the stroke, in order.
- * - Absolute distance of the first and last keys to the stroke's ends,
- *   so a neighbour-end is not averaged away across the middle.
- *
- * A letter that sits on the line between two others is not a special case
- * for any one word. It is the shortcut template, and a straight first→last
- * swipe is an underspecified path: the most common word whose letters fit
- * that segment wins, which is why W→H is "with" and T→E is "the".
+ * Survivors are ranked `zipf(frequency) − spatial` (shape, letters on
+ * the stroke, absolute start/end). The suggestion strip after a swipe
+ * is the rest of that same-path list, not edit-distance cousins of the
+ * winner.
  */
 internal data class SwipeInput(
     val keys: String,
@@ -81,6 +72,15 @@ internal object SwipeLayout {
     private const val CONTEXT_BONUS = 0.45f
 
     /**
+     * Ramer–Douglas–Peucker epsilon in key units. Below this, a bump is
+     * still the same segment; above it, the finger turned.
+     */
+    const val APEX_EPSILON = 0.8f
+
+    /** Keys around a turn. Tighter than start/end so a corner on H is not N. */
+    const val CORNER_RADIUS = 1.05f
+
+    /**
      * A swipe starts only when the finger enters a *different letter key's
      * rectangle*. Nearest-key must not decide this: a tap near an edge flips
      * nearest within a few pixels, undoes the seed letter that went out on
@@ -113,6 +113,100 @@ internal object SwipeLayout {
     fun nearby(letter: Char): Set<Char> = NEARBY[letter].orEmpty()
 
     fun qwerty(letter: Char): XY? = QWERTY[letter]
+
+    fun lettersAround(point: XY, radius: Float): Set<Char> =
+        QWERTY.filter { (_, origin) -> origin.distanceTo(point) <= radius }.keys
+
+    fun letterMaskAround(point: XY, radius: Float): Int {
+        var mask = 0
+        for ((letter, origin) in QWERTY) {
+            if (origin.distanceTo(point) <= radius) mask = mask or SuggestionEngine.letterBit(letter)
+        }
+        return mask
+    }
+
+    /**
+     * Start, direction changes, end. A straight flick stays two points;
+     * W→H→A→T keeps all four because H and A sit off the start-end line.
+     */
+    fun simplify(points: FloatArray, epsilon: Float = APEX_EPSILON): List<XY> {
+        val n = points.size / 2
+        if (n <= 0) return emptyList()
+        val pts = ArrayList<XY>(n)
+        var i = 0
+        while (i + 1 < points.size) {
+            pts.add(XY(points[i], points[i + 1]))
+            i += 2
+        }
+        if (pts.size <= 2) return pts
+        val keep = BooleanArray(pts.size)
+        keep[0] = true
+        keep[pts.lastIndex] = true
+        fun rdp(lo: Int, hi: Int) {
+            if (hi - lo < 2) return
+            val from = pts[lo]
+            val to = pts[hi]
+            var farthest = 0f
+            var farthestAt = lo
+            var index = lo + 1
+            while (index < hi) {
+                val d = distanceToSegment(pts[index], from, to)
+                if (d > farthest) {
+                    farthest = d
+                    farthestAt = index
+                }
+                index++
+            }
+            if (farthest > epsilon) {
+                keep[farthestAt] = true
+                rdp(lo, farthestAt)
+                rdp(farthestAt, hi)
+            }
+        }
+        rdp(0, pts.lastIndex)
+        val out = ArrayList<XY>(pts.size)
+        for (index in pts.indices) if (keep[index]) out.add(pts[index])
+        return out
+    }
+
+    /**
+     * Bitmask of keys around each apex. Start and end use the neighbour
+     * radius; turns use [CORNER_RADIUS] so the keys *at the turn* matter.
+     */
+    fun apexMasks(waypoints: List<XY>): IntArray {
+        if (waypoints.isEmpty()) return IntArray(0)
+        val masks = IntArray(waypoints.size)
+        masks[0] = letterMaskAround(waypoints.first(), NEIGHBOUR_RADIUS)
+        if (waypoints.size > 1) {
+            masks[waypoints.lastIndex] = letterMaskAround(waypoints.last(), NEIGHBOUR_RADIUS)
+        }
+        for (index in 1 until waypoints.lastIndex) {
+            masks[index] = letterMaskAround(waypoints[index], CORNER_RADIUS)
+        }
+        return masks
+    }
+
+    /**
+     * Whether [compact] can explain the apexes: first letter on the start
+     * set, last letter on the end set, and every apex hit in order. Extra
+     * letters in the word are allowed (fly-overs, silent interiors). One
+     * letter may cover consecutive apexes when it sits in both key sets
+     * (a start that landed on a neighbour of the first turn).
+     */
+    fun coversApexes(compact: String, masks: IntArray): Boolean {
+        if (compact.length < 2 || masks.size < 2) return false
+        if (SuggestionEngine.letterBit(compact.first()) and masks.first() == 0) return false
+        if (SuggestionEngine.letterBit(compact.last()) and masks.last() == 0) return false
+        var apex = 0
+        for (character in compact) {
+            val bit = SuggestionEngine.letterBit(character)
+            while (apex < masks.size && (bit and masks[apex]) != 0) {
+                apex++
+            }
+            if (apex == masks.size) return true
+        }
+        return apex == masks.size
+    }
 
     /**
      * Map a touch that landed [nx], [ny] key-widths from [letter]'s centre
@@ -420,8 +514,8 @@ internal object SwipeLayout {
     }
 
     /**
-     * One gesture. Templates and the resampled stroke are compared here;
-     * the dictionary only walks candidates.
+     * One gesture. Apex masks are the candidate tree; templates rank
+     * the words that cover them.
      */
     internal class Gesture(
         val keys: String,
@@ -434,7 +528,11 @@ internal object SwipeLayout {
         private val end: XY
         private val firstMask: Int
         private val lastMask: Int
+        private val waypointMasks: IntArray
         private val endpointCache = arrayOfNulls<FloatArray>(26 * 26)
+
+        /** Two points = a flick. Three or more = the finger turned. */
+        val hasTurns: Boolean
 
         init {
             raw = if (points.size >= 4) points else interpolate(keys)
@@ -446,13 +544,30 @@ internal object SwipeLayout {
             } else {
                 start
             }
-            firstMask = letterBits(nearby(keys.first()) + keys.first())
-            lastMask = letterBits(nearby(keys.last()) + keys.last())
+            val waypoints = simplify(raw)
+            waypointMasks = apexMasks(waypoints)
+            hasTurns = waypoints.size >= 3
+            firstMask = if (waypointMasks.isNotEmpty()) {
+                waypointMasks.first()
+            } else {
+                letterBits(nearby(keys.first()) + keys.first())
+            }
+            lastMask = if (waypointMasks.size > 1) {
+                waypointMasks.last()
+            } else {
+                letterBits(nearby(keys.last()) + keys.last())
+            }
         }
 
         fun endsAreReachable(first: Char, last: Char): Boolean =
             SuggestionEngine.letterBit(first) and firstMask != 0 &&
                 SuggestionEngine.letterBit(last) and lastMask != 0
+
+        fun mayBeginWith(letter: Char): Boolean =
+            SuggestionEngine.letterBit(letter) and firstMask != 0
+
+        fun coversWord(compact: String): Boolean =
+            !hasTurns || coversApexes(compact, waypointMasks)
 
         fun score(
             compactWord: String,
@@ -468,8 +583,13 @@ internal object SwipeLayout {
             if (shortcut.size == samples.size) best = minOf(best, spatialCost(shortcut))
             val first = compactWord.first()
             val last = compactWord.last()
-            val ends = endpoints(first, last)
-            if (ends.size == samples.size) best = minOf(best, spatialCost(ends))
+            // A start→end template is only a fair drawing of the word when
+            // the finger did not turn. Otherwise every W…T word looks like
+            // a four-key "what".
+            if (!hasTurns) {
+                val ends = endpoints(first, last)
+                if (ends.size == samples.size) best = minOf(best, spatialCost(ends))
+            }
             if (hasDoubleLetter(originalWord)) {
                 val looped = sampleWordWithLoops(originalWord)
                 if (looped.size == samples.size) best = minOf(best, spatialCost(looped))

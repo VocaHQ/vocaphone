@@ -56,4 +56,29 @@ class SwipeLayoutTest {
     fun `entering a different letter key starts a swipe`() {
         assertTrue(SwipeLayout.enteredAnotherLetter("character-h", "character-j"))
     }
+
+    @Test
+    fun `simplifying a what-shaped path keeps the four turns`() {
+        val waypoints = SwipeLayout.simplify(SwipeLayout.interpolate("what"))
+        assertEquals(4, waypoints.size)
+        val keys = waypoints.map { point ->
+            SwipeLayout.QWERTY.minBy { it.value.distanceTo(point) }.key
+        }
+        assertEquals(listOf('w', 'h', 'a', 't'), keys)
+    }
+
+    @Test
+    fun `a four-apex what covers what and not wednesday`() {
+        val masks = SwipeLayout.apexMasks(SwipeLayout.simplify(SwipeLayout.interpolate("what")))
+        assertTrue(SwipeLayout.coversApexes("what", masks))
+        assertFalse(SwipeLayout.coversApexes("wednesday", masks))
+        assertFalse(SwipeLayout.coversApexes("without", masks))
+        assertFalse(SwipeLayout.coversApexes("want", masks))
+    }
+
+    @Test
+    fun `a straight flick only keeps the two ends`() {
+        val waypoints = SwipeLayout.simplify(SwipeLayout.interpolate("wh"))
+        assertEquals(2, waypoints.size)
+    }
 }

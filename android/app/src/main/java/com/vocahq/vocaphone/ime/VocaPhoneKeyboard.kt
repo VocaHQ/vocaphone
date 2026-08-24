@@ -475,11 +475,10 @@ internal fun VocaPhoneKeyboard(
                     points = trace.points,
                     previousWord = trace.previousWord,
                 )
-                matches to if (matches.isEmpty()) {
-                    emptyList()
-                } else {
-                    dictionary.similar(matches.first(), shouldAbort = abort)
-                }
+                // Strip after a swipe is the other same-path words, not
+                // edit-distance cousins of the winner. Those cousins are
+                // how a four-key "what" grew a nine-letter neighbour.
+                Pair(matches, emptyList<String>())
             }
             latestApplySwipe(resolved.first, resolved.second)
         }
