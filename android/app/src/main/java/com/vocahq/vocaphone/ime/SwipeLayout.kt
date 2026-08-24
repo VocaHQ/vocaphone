@@ -3,32 +3,29 @@ package com.vocahq.vocaphone.ime
 /**
  * Geometry and scoring for swipe / glide typing.
  *
- * The previous matcher turned the finger into a string of keys it entered,
- * then compared that string's key centres to each word's key centres. That
- * throws away the curve the finger actually drew, which is the signal every
- * engine that feels good uses. This one keeps the points.
+ * One model, the same shape FlorisBoard and AOSP use — not a pile of
+ * per-word bonuses or boolean filters:
  *
- * Compared with five open-source keyboards that do this well:
+ * 1. Keep the finger's (x, y) samples.
+ * 2. Drop words whose first or last letter is not a neighbour of the
+ *    stroke's start or end.
+ * 3. Score `freqWeight * zipf(rank) + context − spatial`. Zipf is
+ *    `ln((N+1)/(rank+1))` from list order.
  *
- * - **FlorisBoard** (`StatisticalGlideTypingClassifier`): prune by the two
- *   nearest keys to the start and end, prune by path length, resample the
- *   real gesture and the ideal word path, score bounding-box-normalised
- *   *shape* plus un-normalised *location*, then multiply by frequency.
- * - **AnySoftKeyboard** (`GestureTypingDetector`): keep curvature corners
- *   rather than every sample, penalise direction mismatch, and treat the
- *   start key as a hard-ish proximity filter with a softer end.
- * - **OpenSwipe** (HeliBoard / LeanType): 16-point DTW with a Sakoe-Chiba
- *   band, LB-style early outs, and a "does this letter lie on the path"
- *   check so fly-over keys do not have to be in the word.
- * - **AOSP LatinIME / HeliBoard**: the good decoder is the closed
- *   `libjni_latinimegoogle.so`; the open idea we keep is start/end anchors
- *   plus a language-model (frequency) tie-break, not a second word list.
- * - **FUTO / Slide**: a neural spatial model. Out of scope here — we stay
- *   on-device, allocation-light, and inside the existing 10k-word scan.
+ * Spatial is four measurements of the same idea (how well this word
+ * explains the stroke), summed:
  *
- * Higher [Gesture.score] is better. The weights are tuned so the existing
- * letter-string tests still pick the same winners; real traces from the
- * keyboard supply denser [points] and get the DTW / shape terms for free.
+ * - Pointwise distance to the best *template* of the word: the full key
+ *   path, the colinear shortcut, start→end, and a loop on doubled letters.
+ * - The same after bounding-box normalisation (shape, not place).
+ * - How close each letter sits to the stroke, in order.
+ * - Absolute distance of the first and last keys to the stroke's ends,
+ *   so a neighbour-end is not averaged away across the middle.
+ *
+ * A letter that sits on the line between two others is not a special case
+ * for any one word. It is the shortcut template, and a straight first→last
+ * swipe is an underspecified path: the most common word whose letters fit
+ * that segment wins, which is why W→H is "with" and T→E is "the".
  */
 internal data class SwipeInput(
     val keys: String,
@@ -45,10 +42,7 @@ internal object SwipeLayout {
         }
     }
 
-    const val SAMPLE_POINTS = 16
-
-    /** Sakoe-Chiba band used by OpenSwipe; keeps DTW linear in the sample count. */
-    private const val DTW_BAND = 3
+    const val SAMPLE_POINTS = 24
 
     /**
      * How far a finger can sit from a key centre, in key units, and still
@@ -62,13 +56,29 @@ internal object SwipeLayout {
 
     const val MAX_TRACE_POINTS = 96
 
+    /** Mean keyboard-unit error against the best template. */
+    private const val LOCATION_WEIGHT = 2.2f
+
+    /** Mean error after bbox-normalising both paths (shape, not place). */
+    private const val SHAPE_WEIGHT = 3.4f
+
+    /** Mean distance of each letter of the word to the stroke, in order. */
+    private const val LETTER_WEIGHT = 1.6f
+
     /**
-     * How far a user path may differ in length from a word's ideal path
-     * before we skip scoring it. FlorisBoard uses ~8.4 key radii; one key
-     * here is 1 unit, so this drops words whose shape is a totally different
-     * size without walking DTW.
+     * Start and end keys vs the stroke's actual ends. These are the strongest
+     * spatial signal and must not be diluted across the resampled middle.
      */
-    const val LENGTH_PRUNE = 6.5f
+    private const val END_WEIGHT = 1.7f
+
+    /**
+     * Zipf is ~9 nats for rank 0 on a 10k list. This scale keeps one key of
+     * spatial mismatch ahead of a large frequency gap, while still letting
+     * "the" beat "te" on a straight T→E swipe.
+     */
+    private const val FREQ_WEIGHT = 0.30f
+
+    private const val CONTEXT_BONUS = 0.45f
 
     /**
      * A swipe starts only when the finger enters a *different letter key's
@@ -141,6 +151,12 @@ internal object SwipeLayout {
 
     fun sampleWordShortcut(word: String): FloatArray = samplePolyline(shortcutCentres(word))
 
+    fun sampleEndpoints(first: Char, last: Char): FloatArray {
+        val from = QWERTY[first] ?: return FloatArray(0)
+        val to = QWERTY[last] ?: return FloatArray(0)
+        return samplePolyline(listOf(from, to))
+    }
+
     fun shortcutLength(word: String): Float = polylineLength(shortcutCentres(word))
 
     fun samplePoints(points: FloatArray): FloatArray {
@@ -156,14 +172,9 @@ internal object SwipeLayout {
     }
 
     /**
-     * Evenly spaced samples along the straight lines through [letters], the
-     * way a careful finger would move. Tests and the letter-string fallback
-     * use this so a path of "hello" is a curve, not the six key centres.
-     */
-    /**
      * The letters a polyline actually crosses, collapsing consecutive
-     * repeats. This is what the finger would have spelled if every sample
-     * snapped to the nearest key — "with" becomes something like "wertyuih".
+     * repeats. Tests use this to feed the matcher the same key string a
+     * real swipe would have collected.
      */
     fun nearestKeyString(points: FloatArray): String {
         if (points.size < 2) return ""
@@ -327,10 +338,13 @@ internal object SwipeLayout {
             val letter = character.lowercaseChar()
             val centre = QWERTY[letter] ?: continue
             if (loops && letter == previous) {
-                points.add(XY(centre.x + 0.25f, centre.y + 0.25f))
-                points.add(XY(centre.x + 0.25f, centre.y - 0.25f))
-                points.add(XY(centre.x - 0.25f, centre.y - 0.25f))
-                points.add(XY(centre.x - 0.25f, centre.y + 0.25f))
+                // A real double-letter swipe is a scribble around the key, not
+                // a quarter-key wiggle that a straight path still matches.
+                points.add(XY(centre.x + 0.7f, centre.y + 0.7f))
+                points.add(XY(centre.x + 0.7f, centre.y - 0.7f))
+                points.add(XY(centre.x - 0.7f, centre.y - 0.7f))
+                points.add(XY(centre.x - 0.7f, centre.y + 0.7f))
+                points.add(centre)
             } else if (letter != previous) {
                 points.add(centre)
             }
@@ -406,26 +420,32 @@ internal object SwipeLayout {
     }
 
     /**
-     * One gesture, with the samples and length worked out once.
-     *
-     * Scoring used to resample the user's path per candidate. A ten thousand
-     * word list did that ten thousand times; the gesture does not change.
+     * One gesture. Templates and the resampled stroke are compared here;
+     * the dictionary only walks candidates.
      */
     internal class Gesture(
         val keys: String,
         points: FloatArray,
-        val previousWord: String = "",
     ) {
+        private val raw: FloatArray
         private val samples: FloatArray
-        private val length: Float
+        private val normalizedSamples: FloatArray
+        private val start: XY
+        private val end: XY
         private val firstMask: Int
         private val lastMask: Int
-        private val dtwCost = Array(SAMPLE_POINTS) { FloatArray(SAMPLE_POINTS) }
+        private val endpointCache = arrayOfNulls<FloatArray>(26 * 26)
 
         init {
-            val raw = if (points.size >= 4) points else interpolate(keys)
+            raw = if (points.size >= 4) points else interpolate(keys)
             samples = samplePoints(raw)
-            length = pathLength(raw)
+            normalizedSamples = normalize(samples)
+            start = if (raw.size >= 2) XY(raw[0], raw[1]) else XY(0f, 0f)
+            end = if (raw.size >= 2) {
+                XY(raw[raw.size - 2], raw[raw.size - 1])
+            } else {
+                start
+            }
             firstMask = letterBits(nearby(keys.first()) + keys.first())
             lastMask = letterBits(nearby(keys.last()) + keys.last())
         }
@@ -434,122 +454,93 @@ internal object SwipeLayout {
             SuggestionEngine.letterBit(first) and firstMask != 0 &&
                 SuggestionEngine.letterBit(last) and lastMask != 0
 
-        fun hasGeometry(): Boolean = samples.size == SAMPLE_POINTS * 2
-
-        fun lettersOnPath(word: String): Boolean =
-            samples.size >= 4 && lettersLieOnPath(word, samples)
-
-        fun lengthIsPlausible(idealLength: Float): Boolean =
-            kotlin.math.abs(length - idealLength) < LENGTH_PRUNE
-
         fun score(
             compactWord: String,
             originalWord: String,
             frequencyRank: Int,
             wordCount: Int,
-            approximate: Boolean,
             predictedWord: Boolean,
-            onPath: Boolean,
-            ideal: FloatArray,
-            idealLength: Float,
+            full: FloatArray,
+            shortcut: FloatArray,
         ): Float {
-            var best = scoreAgainst(
-                ideal,
-                idealLength,
-                compactWord,
-                frequencyRank,
-                wordCount,
-                approximate,
-                predictedWord,
-                onPath,
-            )
-            val shortcut = sampleWordShortcut(originalWord)
-            if (shortcut.size == samples.size) {
-                val shortcutScore = scoreAgainst(
-                    shortcut,
-                    shortcutLength(originalWord),
-                    compactWord,
-                    frequencyRank,
-                    wordCount,
-                    approximate,
-                    predictedWord,
-                    onPath,
-                )
-                if (shortcutScore > best) best = shortcutScore
-            }
-            // FlorisBoard scores both the collapsed path and a small loop on
-            // doubled letters so "good" and "god" are not the same shape.
+            if (samples.size != SAMPLE_POINTS * 2) return Float.NEGATIVE_INFINITY
+            var best = spatialCost(full)
+            if (shortcut.size == samples.size) best = minOf(best, spatialCost(shortcut))
+            val first = compactWord.first()
+            val last = compactWord.last()
+            val ends = endpoints(first, last)
+            if (ends.size == samples.size) best = minOf(best, spatialCost(ends))
             if (hasDoubleLetter(originalWord)) {
                 val looped = sampleWordWithLoops(originalWord)
-                if (looped.size == samples.size) {
-                    val withLoops = scoreAgainst(
-                        looped,
-                        pathLength(looped).coerceAtLeast(idealLength),
-                        compactWord,
-                        frequencyRank,
-                        wordCount,
-                        approximate,
-                        predictedWord,
-                        onPath,
-                    )
-                    if (withLoops > best) best = withLoops
-                }
+                if (looped.size == samples.size) best = minOf(best, spatialCost(looped))
             }
-            return best
+            val origin = QWERTY[first]
+            val finish = QWERTY[last]
+            val endCost = if (origin != null && finish != null) {
+                END_WEIGHT * (start.distanceTo(origin) + end.distanceTo(finish))
+            } else {
+                END_WEIGHT * 2f
+            }
+            val spatial = best + LETTER_WEIGHT * letterCost(compactWord) + endCost
+            val n = wordCount.coerceAtLeast(2)
+            val zipf = kotlin.math.ln((n + 1f) / (frequencyRank + 1f))
+            val context = if (predictedWord) CONTEXT_BONUS else 0f
+            return FREQ_WEIGHT * zipf + context - spatial
         }
 
-        private fun scoreAgainst(
-            ideal: FloatArray,
-            idealLength: Float,
-            compactWord: String,
-            frequencyRank: Int,
-            wordCount: Int,
-            approximate: Boolean,
-            predictedWord: Boolean,
-            onPath: Boolean,
-        ): Float {
-            if (samples.size != SAMPLE_POINTS * 2 || ideal.size != SAMPLE_POINTS * 2) {
-                return Float.NEGATIVE_INFINITY
+        private fun endpoints(first: Char, last: Char): FloatArray {
+            val i = first - 'a'
+            val j = last - 'a'
+            if (i !in 0..25 || j !in 0..25) return sampleEndpoints(first, last)
+            val key = i * 26 + j
+            endpointCache[key]?.let { return it }
+            val sampled = sampleEndpoints(first, last)
+            endpointCache[key] = sampled
+            return sampled
+        }
+
+        private fun spatialCost(template: FloatArray): Float {
+            if (template.size != samples.size) return 8f
+            return LOCATION_WEIGHT * meanDistance(samples, template) +
+                SHAPE_WEIGHT * meanDistance(normalizedSamples, normalize(template))
+        }
+
+        /**
+         * Mean distance from each unique letter of the word to the closest
+         * remaining point on the stroke. Monotonic so a word cannot claim
+         * letters out of order; unmatched tail letters sit on the end.
+         */
+        private fun letterCost(compactWord: String): Float {
+            val n = raw.size / 2
+            if (n == 0) return 4f
+            var segment = 0
+            var sum = 0f
+            var count = 0
+            var previous = 0.toChar()
+            for (character in compactWord) {
+                if (character !in 'a'..'z' || character == previous) continue
+                previous = character
+                val target = QWERTY[character] ?: continue
+                var best = Float.MAX_VALUE
+                var bestSegment = segment
+                if (n == 1) {
+                    best = target.distanceTo(XY(raw[0], raw[1]))
+                } else {
+                    var index = segment
+                    while (index < n - 1) {
+                        val d = distanceToSegment(target, raw, index)
+                        if (d < best) {
+                            best = d
+                            bestSegment = index
+                        }
+                        index++
+                    }
+                }
+                sum += best
+                count++
+                segment = bestSegment
             }
-            val location = meanDistance(samples, ideal)
-            val shape = meanDistance(normalize(samples), normalize(ideal))
-            val dtw = dtwNorm(samples, ideal)
-            val lengthGap = kotlin.math.abs(length - idealLength)
-            // Only when the finger spelled a short path. A fly-over of the
-            // home row is eight keys for a four-letter word; penalising that
-            // gap made "with" lose to whatever rare word matched the keys.
-            val letterGap = if (keys.length <= compactWord.length + 1) {
-                kotlin.math.abs(compactWord.length - keys.length)
-            } else {
-                0
-            }
-            val endPenalty =
-                (if (compactWord.first() == keys.first()) 0f else 0.7f) +
-                    (if (compactWord.last() == keys.last()) 0f else 0.7f)
-            // Zipf unigram, the way AOSP/FlorisBoard use frequency: "the" and
-            // "with" are several nats more likely than a rank-2000 look-alike,
-            // which is the bias that makes a messy swipe of a common word
-            // land on that word instead of a rare silhouette.
-            val n = wordCount.coerceAtLeast(2)
-            val frequency = kotlin.math.ln((n + 1f) / (frequencyRank + 1f))
-            val nearby = if (approximate && !onPath) NEARBY_KEY_PENALTY else 0f
-            // A word whose letters actually lie on the trace, in order, is
-            // what the finger meant. Frequency must not let "hotel" beat
-            // "hello" on an h-e-l-o path just because hotel is more common.
-            val coverage = when {
-                !approximate -> 1.8f
-                onPath -> 0.7f
-                else -> 0f
-            }
-            val context = if (predictedWord) 0.45f else 0f
-            return frequency * 0.32f + context + coverage -
-                dtw * 3.2f -
-                location * 1.8f -
-                shape * 1.2f -
-                lengthGap * 0.4f -
-                letterGap * 0.65f -
-                endPenalty -
-                nearby
+            return if (count == 0) 4f else sum / count
         }
 
         private fun meanDistance(left: FloatArray, right: FloatArray): Float {
@@ -566,6 +557,7 @@ internal object SwipeLayout {
         }
 
         private fun normalize(points: FloatArray): FloatArray {
+            if (points.isEmpty()) return points
             var minX = Float.MAX_VALUE
             var minY = Float.MAX_VALUE
             var maxX = -Float.MAX_VALUE
@@ -594,47 +586,5 @@ internal object SwipeLayout {
             }
             return out
         }
-
-        private fun dtwNorm(left: FloatArray, right: FloatArray): Float {
-            val n = SAMPLE_POINTS
-            val band = DTW_BAND
-            val cost = dtwCost
-            for (row in 0 until n) {
-                java.util.Arrays.fill(cost[row], Float.MAX_VALUE)
-            }
-            for (i in 0 until n) {
-                val jMin = (i - band).coerceAtLeast(0)
-                val jMax = (i + band).coerceAtMost(n - 1)
-                val ix = left[i * 2]
-                val iy = left[i * 2 + 1]
-                for (j in jMin..jMax) {
-                    val dx = ix - right[j * 2]
-                    val dy = iy - right[j * 2 + 1]
-                    val dist = dx * dx + dy * dy
-                    val prev = when {
-                        i == 0 && j == 0 -> 0f
-                        else -> {
-                            var best = Float.MAX_VALUE
-                            if (i > 0) best = minOf(best, cost[i - 1][j])
-                            if (j > 0) best = minOf(best, cost[i][j - 1])
-                            if (i > 0 && j > 0) best = minOf(best, cost[i - 1][j - 1])
-                            best
-                        }
-                    }
-                    if (prev < Float.MAX_VALUE / 4f) cost[i][j] = dist + prev
-                }
-            }
-            val total = cost[n - 1][n - 1]
-            if (total >= Float.MAX_VALUE / 4f) return 8f
-            val denom = (length + 0.001f)
-            return kotlin.math.sqrt(total) / denom
-        }
     }
-
-    /**
-     * How much worse a word is for having been matched through a neighbouring
-     * key rather than the one the finger crossed. Same plateau the previous
-     * matcher measured: 1–1.5; 1.5 keeps an exactly-spelled word in front.
-     */
-    private const val NEARBY_KEY_PENALTY = 1.5f
 }

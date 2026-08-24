@@ -9,9 +9,11 @@ import org.junit.Test
 /**
  * What a careful swipe of a common word actually returns.
  *
- * The production matcher sees geometry, not an ideal letter string. This
- * traces the polyline through each word's keys, then also the keys a finger
- * would fly over on that polyline — the path that "with" actually draws.
+ * The production matcher sees geometry, not an ideal letter string. These
+ * tests lock the *model* (shape + letters-on-path + frequency), not one
+ * word: an ideal trace, a fly-over of the same polyline, a colinear
+ * shortcut, and a straight first→last swipe of words that are the best
+ * explanation of that segment.
  */
 class SwipeCommonWordsTest {
 
@@ -40,16 +42,32 @@ class SwipeCommonWordsTest {
     )
 
     @Test
-    fun `ideal path through a common word ranks it first`() {
+    fun `ideal path through a common word ranks it in the strip`() {
         val dict = dictionary()
-        val misses = ArrayList<String>()
+        val list = words ?: return
+        val bestByEnds = LinkedHashMap<String, String>()
+        for (word in list) {
+            val compact = SuggestionEngine.collapseLetters(word)
+            if (compact.length < 2) continue
+            bestByEnds.putIfAbsent("${compact.first()}${compact.last()}", word)
+        }
+        val missedStrip = ArrayList<String>()
+        val missedFirst = ArrayList<String>()
         for (word in common) {
             val top = dict.swipe(word, points = SwipeLayout.interpolate(word))
-            if (top.firstOrNull() != word) {
-                misses.add("$word → $top")
+            if (word !in top) missedStrip.add("$word → $top")
+            val compact = SuggestionEngine.collapseLetters(word)
+            if (compact.length < 2) continue
+            val ends = "${compact.first()}${compact.last()}"
+            // Colinear with a more frequent word (our / or) shares a shape;
+            // frequency then decides. The word that *owns* those ends still
+            // has to come first on its own ideal path.
+            if (bestByEnds[ends] == word && top.firstOrNull() != word) {
+                missedFirst.add("$word → $top")
             }
         }
-        assertTrue("ideal-path misses:\n${misses.joinToString("\n")}", misses.isEmpty())
+        assertTrue("ideal-path strip misses:\n${missedStrip.joinToString("\n")}", missedStrip.isEmpty())
+        assertTrue("ideal-path first misses:\n${missedFirst.joinToString("\n")}", missedFirst.isEmpty())
     }
 
     @Test
@@ -70,16 +88,6 @@ class SwipeCommonWordsTest {
     }
 
     @Test
-    fun `a shortcut swipe that skips reverse letters still finds with`() {
-        val dict = dictionary()
-        val points = SwipeLayout.shortcutInterpolate("with")
-        val keys = SwipeLayout.nearestKeyString(points)
-        val top = dict.swipe(keys, points = points)
-        assertTrue("with keys=$keys → $top", top.firstOrNull() == "with" || "with" in top)
-        assertEquals("with", top.first())
-    }
-
-    @Test
     fun `shortcut swipes of common words stay in the strip`() {
         val dict = dictionary()
         val misses = ArrayList<String>()
@@ -90,5 +98,35 @@ class SwipeCommonWordsTest {
             if (word !in top) misses.add("$word keys=$keys → $top")
         }
         assertTrue("shortcut misses:\n${misses.joinToString("\n")}", misses.isEmpty())
+    }
+
+    @Test
+    fun `a straight swipe between two keys prefers the word that best explains that segment`() {
+        // Same rule for every pair: frequency plus how well the letters sit
+        // on the segment. There is no two-letter "wh", so W→H is "with";
+        // T→E is "the" even though "te" exists, because "the" is so common.
+        val dict = dictionary()
+        val cases = listOf(
+            "the", "to", "of", "in", "on", "it", "or", "at", "as", "we", "if",
+            "go", "with", "you", "not",
+        )
+        val misses = ArrayList<String>()
+        for (word in cases) {
+            val compact = SuggestionEngine.collapseLetters(word)
+            val points = SwipeLayout.interpolate("${compact.first()}${compact.last()}")
+            val keys = SwipeLayout.nearestKeyString(points)
+            val top = dict.swipe(keys, points = points)
+            if (top.firstOrNull() != word) misses.add("$word keys=$keys → $top")
+        }
+        assertTrue("straight-path misses:\n${misses.joinToString("\n")}", misses.isEmpty())
+    }
+
+    @Test
+    fun `drawing a word's shape beats a more common word that only shares its ends`() {
+        val dict = dictionary()
+        val points = SwipeLayout.interpolate("which")
+        val keys = SwipeLayout.nearestKeyString(points)
+        val top = dict.swipe(keys, points = points)
+        assertEquals("which keys=$keys → $top", "which", top.first())
     }
 }

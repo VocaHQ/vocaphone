@@ -394,13 +394,16 @@ class SuggestionEngineTest {
     }
 
     @Test
-    fun `collinear extra keys prefer the longer word`() {
+    fun `a path that leaves the start-end line prefers the word that visits that letter`() {
+        // T→O is a straight top-row swipe ("to"). T→W→O backtracks through W,
+        // which does not sit on T–O, so the longer word is a better explanation
+        // of that shape — not because it is longer, because the geometry differs.
         val words = SuggestionDictionary(
-            words = listOf("or", "our", "out"),
+            words = listOf("to", "two", "too"),
             bigrams = emptyMap(),
         )
-        assertEquals("our", words.swipe("our", points = SwipeLayout.interpolate("our")).first())
-        assertEquals("or", words.swipe("or", points = SwipeLayout.interpolate("or")).first())
+        assertEquals("to", words.swipe("to", points = SwipeLayout.interpolate("to")).first())
+        assertEquals("two", words.swipe("two", points = SwipeLayout.interpolate("two")).first())
     }
 
     @Test
@@ -435,13 +438,32 @@ class SuggestionEngineTest {
             "some",
             dict.swipe("sdfghjklomnhytre", points = SwipeLayout.interpolate("sdfghjklomnhytre")).first(),
         )
-        assertEquals("hello", dict.swipe("hjkello", points = SwipeLayout.interpolate("hjkello")).first())
+        assertEquals("hello", dict.swipe("helo", points = SwipeLayout.interpolate("hello")).first())
         assertEquals("the", dict.swipe("tghe", points = SwipeLayout.interpolate("tghe")).first())
-        val common = file.readLines().map { it.trim() }.filter { it.length >= 3 }.take(60)
-        val missed = common.filter { word ->
-            dict.swipe(word, points = SwipeLayout.interpolate(word)).firstOrNull() != word
+        val list = file.readLines().map { it.trim() }.filter { it.isNotEmpty() }
+        val common = list.filter { it.length >= 3 }.take(60)
+        val bestByEnds = LinkedHashMap<String, String>()
+        for (word in list) {
+            val compact = SuggestionEngine.collapseLetters(word)
+            if (compact.length < 2) continue
+            bestByEnds.putIfAbsent("${compact.first()}${compact.last()}", word)
         }
-        assertTrue("ideal path missed: $missed", missed.isEmpty())
+        val missedStrip = ArrayList<String>()
+        val missedFirst = ArrayList<String>()
+        for (word in common) {
+            val top = dict.swipe(word, points = SwipeLayout.interpolate(word))
+            if (word !in top) missedStrip.add("$word → $top")
+            val compact = SuggestionEngine.collapseLetters(word)
+            val ends = "${compact.first()}${compact.last()}"
+            if (bestByEnds[ends] == word && top.firstOrNull() != word) {
+                missedFirst.add("$word → $top")
+            }
+        }
+        assertTrue("ideal path not in strip:\n${missedStrip.joinToString("\n")}", missedStrip.isEmpty())
+        assertTrue(
+            "ideal path of the most frequent word for those ends was not first:\n${missedFirst.joinToString("\n")}",
+            missedFirst.isEmpty(),
+        )
     }
 
     @Test

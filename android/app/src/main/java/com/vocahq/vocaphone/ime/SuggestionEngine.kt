@@ -56,13 +56,16 @@ internal class SuggestionDictionary(
 
     /**
      * Ideal resampled paths, one per word, so a geometric swipe does not
-     * rebuild sixteen points for every candidate. Letter-string swipes do not
-     * read these: they keep the previous scorer so those tests stay a lock.
+     * rebuild twenty-four points for every candidate. Letter-string swipes
+     * do not read these: they keep the previous scorer so those tests stay
+     * a lock.
      */
     private val swipeIdeal: Array<FloatArray> =
         Array(words.size) { SwipeLayout.sampleWord(collapsed[it]) }
 
-    private val swipeIdealLength = FloatArray(words.size) { SwipeLayout.pathLength(collapsed[it]) }
+    /** Colinear shortcut of each word, same length as [swipeIdeal]. */
+    private val swipeShortcut: Array<FloatArray> =
+        Array(words.size) { SwipeLayout.sampleWordShortcut(words[it]) }
 
     /** Word indices whose collapsed form starts with each letter, still in frequency order. */
     private val swipeByFirst: Array<IntArray> = buildSwipeFirst(collapsed)
@@ -240,8 +243,10 @@ internal class SuggestionDictionary(
     }
 
     /**
-     * Real (x, y) traces from the keyboard. Start-letter buckets skip most of
-     * the list; DTW plus FlorisBoard's shape/location terms rank the rest.
+     * Real (x, y) traces from the keyboard. Start-letter buckets skip most
+     * of the list; start/end neighbours prune the rest. There is no
+     * subsequence filter: a letter the finger flew over is scored as
+     * distance to the stroke, not as a missing key.
      */
     private fun swipeGeometric(
         keys: String,
@@ -250,7 +255,7 @@ internal class SuggestionDictionary(
         limit: Int,
         shouldAbort: () -> Boolean,
     ): List<String> {
-        val gesture = SwipeLayout.Gesture(keys, points, previousWord)
+        val gesture = SwipeLayout.Gesture(keys, points)
         val predicted = if (previousWord.isEmpty()) {
             emptySet()
         } else {
@@ -269,23 +274,15 @@ internal class SuggestionDictionary(
                 val last = collapsedLength[rank] - 1
                 if (last < 1) continue
                 if (!gesture.endsAreReachable(compact[0], compact[last])) continue
-                // FlorisBoard / OpenSwipe do not require the word to be a
-                // subsequence of the keys the finger crossed. "with" is W-I-T-H
-                // on the keyboard but a real swipe is W→I→H: T is a fly-over
-                // on the way to I, so requiring T after I threw the word out.
-                val exact = SuggestionEngine.isSubsequence(compact, keys)
-                val onPath = gesture.lettersOnPath(compact)
                 scored.add(
                     words[rank] to gesture.score(
                         compactWord = compact,
                         originalWord = words[rank],
                         frequencyRank = rank,
                         wordCount = words.size,
-                        approximate = !exact,
                         predictedWord = words[rank] in predicted,
-                        onPath = onPath,
-                        ideal = swipeIdeal[rank],
-                        idealLength = swipeIdealLength[rank],
+                        full = swipeIdeal[rank],
+                        shortcut = swipeShortcut[rank],
                     ),
                 )
             }
