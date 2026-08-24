@@ -197,6 +197,11 @@ internal fun VocaPhoneKeyboard(
     // Shift before the letter that went out on pointer down, so a swipe can
     // restore one-shot caps after undoing that letter.
     var swipeSeedShift by remember { mutableStateOf<ShiftState?>(null) }
+    // Text-before-cursor for the current delete hold. Editor reads are
+    // coalesced at 50 ms and skipped while composing, so measuring the word
+    // off `editorText` on the 1 s tick often saw an empty or stale string and
+    // kept sending character deletes.
+    val deleteHoldBefore = remember { arrayOf("") }
     val keyPreview = remember { mutableStateOf<KeyPreview?>(null) }
     val onKeyPreview = remember {
         { preview: KeyPreview? -> keyPreview.value = preview }
@@ -217,6 +222,7 @@ internal fun VocaPhoneKeyboard(
         savedThisSession = emptyList()
         swipeSeedShift = null
         keyPreview.value = null
+        deleteHoldBefore[0] = ""
     }
 
     LaunchedEffect(dictationState.phase, editor.dictationAllowed) {
@@ -327,41 +333,45 @@ internal fun VocaPhoneKeyboard(
     fun handleDelete(heldMs: Long) {
         val swipeUndo = heldMs == 0L && swipeArmed
         if (heldMs == 0L) {
+            val before = editorText.before
+            deleteHoldBefore[0] = when {
+                before.isNotEmpty() -> before
+                keyboardState.composing.isNotEmpty() -> keyboardState.composing
+                else -> ""
+            }
             swipeChoices = emptyList()
             if (swipeUndo) swipeWord = null
         }
         val stage = DeleteHold.stage(heldMs)
-        if (composeWords && keyboardState.composing.isNotEmpty()) {
-            if (stage == DeleteHold.Stage.CHAR && !swipeUndo) {
-                val reduction = KeyboardReducer.press(
-                    state = keyboardState,
-                    key = KeyboardKey("delete", "Delete", type = KeyboardKeyType.DELETE),
-                    nowMillis = SystemClock.uptimeMillis(),
-                    composeWords = true,
-                )
-                keyboardState = reduction.state
-                reduction.command?.let(onCommand)
-            } else {
-                keyboardState = keyboardState.copy(
-                    composing = "",
-                    lastWasSpace = false,
-                    capitalizeAfterSpace = false,
-                )
-                onCommand(KeyboardCommand.SetComposingText(""))
-            }
+        val composing = keyboardState.composing
+        if (composeWords && composing.isNotEmpty() && stage == DeleteHold.Stage.CHAR && !swipeUndo) {
+            val reduction = KeyboardReducer.press(
+                state = keyboardState,
+                key = KeyboardKey("delete", "Delete", type = KeyboardKeyType.DELETE),
+                nowMillis = SystemClock.uptimeMillis(),
+                composeWords = true,
+            )
+            keyboardState = reduction.state
+            reduction.command?.let(onCommand)
+            deleteHoldBefore[0] = DeleteHold.remainingBefore(
+                deleteHoldBefore[0],
+                KeyboardCommand.DeleteBackward,
+            )
             return
         }
-        val command = DeleteHold.command(
-            heldMs = heldMs,
-            swipeUndo = swipeUndo,
-            before = editorText.before,
-            after = editorText.after,
-        )
         keyboardState = keyboardState.copy(
             composing = "",
             lastWasSpace = false,
             capitalizeAfterSpace = false,
         )
+        val before = deleteHoldBefore[0].ifEmpty { editorText.before }
+        val command = DeleteHold.command(
+            heldMs = heldMs,
+            swipeUndo = swipeUndo,
+            before = before,
+            after = editorText.after,
+        )
+        deleteHoldBefore[0] = DeleteHold.remainingBefore(before, command)
         onCommand(command)
     }
 

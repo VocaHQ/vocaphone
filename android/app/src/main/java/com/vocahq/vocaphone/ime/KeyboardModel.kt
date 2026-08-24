@@ -149,6 +149,13 @@ internal object DeleteHold {
             }
         }
     }
+
+    /** Apply [command] to the local before-cursor buffer used during a hold. */
+    fun remainingBefore(before: String, command: KeyboardCommand): String = when (command) {
+        KeyboardCommand.DeleteBackward -> before.dropLast(1)
+        is KeyboardCommand.DeleteSurrounding -> before.dropLast(command.before)
+        else -> before
+    }
 }
 
 internal data class KeyboardReduction(
