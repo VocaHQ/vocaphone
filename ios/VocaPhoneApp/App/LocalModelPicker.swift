@@ -27,7 +27,6 @@ struct LocalModelPicker: View {
     @State private var availableModelsExpanded = false
     @State private var pendingDeletion: LocalModelDescriptor?
     @State private var guidancePriority: ModelGuidancePriority = .balanced
-    @State private var showingGuidance = false
 
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
@@ -119,16 +118,6 @@ struct LocalModelPicker: View {
     var body: some View {
         if onboarding {
             onboardingBody
-                .sheet(isPresented: $showingGuidance) {
-                    ModelGuidanceChoiceSheet(
-                        selected: guidancePriority,
-                        onSelect: {
-                            guidancePriority = $0
-                            showingGuidance = false
-                        },
-                        onDismiss: { showingGuidance = false }
-                    )
-                }
         } else if usable.isEmpty {
             Section {
                 Text("No on-device model fits this iPhone yet.")
@@ -215,12 +204,7 @@ struct LocalModelPicker: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 row(for: model, onboarding: true)
-                Button("Help me choose") {
-                    showingGuidance = true
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
+                ModelGuidanceChoiceButton(selection: $guidancePriority)
             } header: {
                 Text("Recommended for you")
             } footer: {
@@ -445,10 +429,35 @@ struct LocalModelPicker: View {
     }
 }
 
+/// Owns the sheet from one stable view. `LocalModelPicker` emits several
+/// sibling `Section`s into its parent `List`; attaching a presentation modifier
+/// to that multi-view builder creates multiple transient sheet presenters and
+/// can pop onboarding back to its root instead of presenting the choices.
+private struct ModelGuidanceChoiceButton: View {
+    @Binding var selection: ModelGuidancePriority
+    @State private var isPresented = false
+
+    var body: some View {
+        Button("Help me choose") {
+            isPresented = true
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .frame(maxWidth: .infinity)
+        .sheet(isPresented: $isPresented) {
+            ModelGuidanceChoiceSheet(
+                selected: selection,
+                onSelect: { selection = $0 }
+            )
+        }
+    }
+}
+
 private struct ModelGuidanceChoiceSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
     let selected: ModelGuidancePriority
     let onSelect: (ModelGuidancePriority) -> Void
-    let onDismiss: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -467,6 +476,7 @@ private struct ModelGuidanceChoiceSheet: View {
                     ForEach(ModelGuidancePriority.allCases) { priority in
                         Button {
                             onSelect(priority)
+                            dismiss()
                         } label: {
                             HStack(alignment: .top, spacing: VocaMetrics.related + 2) {
                                 Image(
@@ -494,7 +504,7 @@ private struct ModelGuidanceChoiceSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done", action: onDismiss)
+                    Button("Done") { dismiss() }
                 }
             }
         }
