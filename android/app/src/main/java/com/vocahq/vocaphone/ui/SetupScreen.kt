@@ -37,6 +37,8 @@ internal object SetupCopy {
     const val INTRO = "Turn on the keyboard, allow the microphone, then download a model."
     const val START = "Start dictating"
     const val DOWNLOAD = "Download"
+    const val DOWNLOAD_AND_CONTINUE = "Download and continue"
+    const val HELP_ME_CHOOSE = "Help me choose"
     const val BROWSE_MODELS = "Browse"
     const val BROWSE_SHEET_TITLE = "Other models"
     const val BROWSE_SHEET_SUPPORTING =
@@ -143,6 +145,7 @@ fun SetupScreen(
                         onDownload = onDownloadLocalModel,
                         onDownloadAndUse = onDownloadAndUseLocalModel,
                         onCancelDownload = onCancelLocalModelDownload,
+                        guidanceLanguage = settings.language.wireValue,
                     )
                 }
             }

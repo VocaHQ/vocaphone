@@ -72,6 +72,62 @@ struct LocalModelCatalogTests {
         )
     }
 
+    @Test func guidanceReturnsOnePlainLanguageMatch() {
+        let result = LocalModelCatalog.guidance(
+            deviceMemoryGB: 4,
+            intent: ModelGuidanceIntent(language: "en")
+        )
+
+        #expect(result.confidence == .goodDefault)
+        #expect(result.intent.language == "en")
+        #expect(result.model?.id == "parakeet-tdt-0.6b-v2-en")
+        #expect(result.reason.contains("English"))
+    }
+
+    @Test func guidancePriorityChangesTheDownloadTradeoff() {
+        let balanced = LocalModelCatalog.guidance(
+            deviceMemoryGB: 8,
+            intent: ModelGuidanceIntent(language: "en", priority: .balanced)
+        )
+        let lighter = LocalModelCatalog.guidance(
+            deviceMemoryGB: 8,
+            intent: ModelGuidanceIntent(language: "en", priority: .lighter)
+        )
+        let quality = LocalModelCatalog.guidance(
+            deviceMemoryGB: 8,
+            intent: ModelGuidanceIntent(language: "en", priority: .quality)
+        )
+        let smallest = LocalModelCatalog.all
+            .filter { $0.minimumRamGB <= 8 && $0.covers("en") }
+            .min { $0.sizeBytes < $1.sizeBytes }
+
+        #expect(lighter.model?.id == smallest?.id)
+        #expect(quality.model?.id == balanced.model?.id)
+        #expect(quality.reason.contains("not available"))
+        #expect(lighter.reason.contains("smallest"))
+    }
+
+    @Test func guidanceAutomaticLanguageUsesThePhoneLanguage() {
+        let result = LocalModelCatalog.guidance(
+            deviceMemoryGB: 8,
+            intent: ModelGuidanceIntent(language: "auto", priority: .balanced)
+        )
+
+        #expect(result.intent.language == LocalModelCatalog.deviceLanguage)
+        #expect(result.model?.covers(result.intent.language) == true)
+    }
+
+    @Test func guidanceReportsNoMatchWhenNothingFits() {
+        let result = LocalModelCatalog.guidance(
+            deviceMemoryGB: 1,
+            intent: ModelGuidanceIntent(language: "en")
+        )
+
+        #expect(result.confidence == .noMatch)
+        #expect(result.model == nil)
+        #expect(result.reason.contains("English"))
+    }
+
     /// The list is what makes a 670 MB default acceptable: someone on cellular
     /// can see a small answer to the same question without going hunting through
     /// the catalog.

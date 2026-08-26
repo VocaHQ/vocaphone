@@ -1049,9 +1049,14 @@ private struct OnDeviceModelSetupView: View {
 
     var body: some View {
         List {
-            LocalModelPicker(manager: coordinator.localModels) {
-                coordinator.refreshSetupStatus()
-            }
+            LocalModelPicker(
+                manager: coordinator.localModels,
+                onChange: {
+                    coordinator.refreshSetupStatus()
+                },
+                onboarding: true,
+                guidanceLanguage: KeyboardPreferences.effectiveTranscriptionLanguage.rawValue
+            )
         }
         .navigationTitle("Speech-to-text model")
         .navigationBarTitleDisplayMode(.inline)

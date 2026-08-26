@@ -254,6 +254,7 @@ fun SettingsScreen(
                     onDownloadAndUse = onDownloadAndUseLocalModel,
                     onCancelDownload = onCancelLocalModelDownload,
                     onDelete = onDeleteLocalModel,
+                    guidanceLanguage = settings.language.wireValue,
                 )
             }
 

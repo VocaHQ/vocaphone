@@ -11,6 +11,9 @@ struct LocalModelPicker: View {
     let manager: LocalModelManager
     /// Setup needs its status line refreshed on every change; Settings does not.
     var onChange: () -> Void = {}
+    /// Onboarding presents one guided answer; Settings keeps the full catalog.
+    var onboarding = false
+    var guidanceLanguage = ""
 
 #if DEBUG
     /// Which model a `#Preview` should draw as "In use". Production leaves this
@@ -23,6 +26,8 @@ struct LocalModelPicker: View {
     @State private var modelLoadError: String?
     @State private var availableModelsExpanded = false
     @State private var pendingDeletion: LocalModelDescriptor?
+    @State private var guidancePriority: ModelGuidancePriority = .balanced
+    @State private var showingGuidance = false
 
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
@@ -30,18 +35,23 @@ struct LocalModelPicker: View {
         usable.filter { manager.isDownloaded($0.id) || state(for: $0) != .notDownloaded }
     }
 
-    /// Three or four answers rather than one: the accurate English model, the
-    /// widest multilingual one, the phone language's specialist, and the
-    /// smallest download that still covers it.
-    ///
-    /// Computed once for the process: it reads the device's memory and locale,
-    /// neither of which changes while the app is running, and `role(of:)` asks
-    /// for it once per row on every redraw.
-    private static let picks = LocalModelCatalog.recommendations(
-        deviceMemoryGB: LocalModelCatalog.deviceMemoryGB
-    )
+    private var guidance: ModelGuidanceResult {
+        let language = guidanceLanguage.isEmpty
+            ? LocalModelCatalog.deviceLanguage
+            : guidanceLanguage
+        return LocalModelCatalog.guidance(
+            deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
+            intent: ModelGuidanceIntent(language: language, priority: guidancePriority)
+        )
+    }
 
-    private var picks: [ModelPick] { Self.picks }
+    private var picks: [ModelPick] {
+        if onboarding {
+            guard let model = guidance.model else { return [] }
+            return [ModelPick(role: .guided, model: model)]
+        }
+        return LocalModelCatalog.recommendations(deviceMemoryGB: LocalModelCatalog.deviceMemoryGB)
+    }
 
     /// Picks not yet on the phone. The installed ones already have a row above
     /// with their real state; repeating them here would say nothing new.
@@ -107,7 +117,19 @@ struct LocalModelPicker: View {
 
     @ViewBuilder
     var body: some View {
-        if usable.isEmpty {
+        if onboarding {
+            onboardingBody
+                .sheet(isPresented: $showingGuidance) {
+                    ModelGuidanceChoiceSheet(
+                        selected: guidancePriority,
+                        onSelect: {
+                            guidancePriority = $0
+                            showingGuidance = false
+                        },
+                        onDismiss: { showingGuidance = false }
+                    )
+                }
+        } else if usable.isEmpty {
             Section {
                 Text("No on-device model fits this iPhone yet.")
                     .font(.footnote)
@@ -174,13 +196,89 @@ struct LocalModelPicker: View {
         }
     }
 
-    private func row(for model: LocalModelDescriptor) -> some View {
+    @ViewBuilder
+    private var onboardingBody: some View {
+        if usable.isEmpty {
+            Section {
+                Text("No on-device model fits this iPhone yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } else if let model = guidance.model {
+            Section {
+                Text("We picked one model that fits this iPhone and your language.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Works with \(guidance.languageName) · \(model.sizeLabel) download")
+                    .font(.subheadline)
+                Text(guidance.reason)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                row(for: model, onboarding: true)
+                Button("Help me choose") {
+                    showingGuidance = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+            } header: {
+                Text("Recommended for you")
+            } footer: {
+                Text("You can change the model later in Settings. The model name and engine are shown above.")
+            }
+
+            let otherInstalled = installedModels.filter { $0.id != model.id }
+            if !otherInstalled.isEmpty {
+                Section("Already on this iPhone") {
+                    ForEach(otherInstalled) { installed in
+                        row(for: installed)
+                    }
+                }
+            }
+
+            Section("More compatible models") {
+                if availableModels.isEmpty {
+                    Text("All other compatible models are already on this iPhone.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    DisclosureGroup(isExpanded: $availableModelsExpanded) {
+                        ForEach(availableModels) { available in
+                            row(for: available)
+                        }
+                    } label: {
+                        Text("Browse \(availableModels.count) compatible models")
+                    }
+                }
+            }
+        } else {
+            Section {
+                Text(guidance.reason)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Choose another language in Dictation settings, or use your self-hosted gateway.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("No guided match")
+            }
+            Section("Compatible models") {
+                ForEach(usable) { model in
+                    row(for: model)
+                }
+            }
+        }
+    }
+
+    private func row(for model: LocalModelDescriptor, onboarding: Bool = false) -> some View {
         let state = state(for: model)
         return VStack(alignment: .leading, spacing: VocaMetrics.related + 2) {
             VocaStatusLine(
                 status: state.status,
-                title: model.displayName,
-                detail: detail(for: model, state: state)
+                title: onboarding ? "Your match" : model.displayName,
+                detail: onboarding
+                    ? "\(model.displayName) · \(model.sizeLabel) · \(model.languages)"
+                    : detail(for: model, state: state)
             )
 
             switch state {
@@ -215,14 +313,23 @@ struct LocalModelPicker: View {
             // the same compact pill as the destructive action below them. The
             // width belongs on the label.
             case .failedIntegrity:
-                Button { download(model) } label: {
+                Button {
+                    onboarding ? downloadAndUse(model) : download(model)
+                } label: {
                     Text("Download again").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
             case .notDownloaded:
-                Button { download(model) } label: {
-                    Text("Download \(model.sizeLabel)").frame(maxWidth: .infinity)
+                Button {
+                    onboarding ? downloadAndUse(model) : download(model)
+                } label: {
+                    Text(
+                        onboarding
+                            ? "Download and continue · \(model.sizeLabel)"
+                            : "Download \(model.sizeLabel)"
+                    )
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
@@ -303,6 +410,16 @@ struct LocalModelPicker: View {
         }
     }
 
+    private func downloadAndUse(_ model: LocalModelDescriptor) {
+        manager.startDownload(model) {
+            guard manager.isDownloaded(model.id) else {
+                onChange()
+                return
+            }
+            prepare(model)
+        }
+    }
+
     private func prepare(_ model: LocalModelDescriptor) {
         modelLoadError = nil
         modelLoadTask?.cancel()
@@ -325,6 +442,63 @@ struct LocalModelPicker: View {
             }
             modelLoadTask = nil
         }
+    }
+}
+
+private struct ModelGuidanceChoiceSheet: View {
+    let selected: ModelGuidancePriority
+    let onSelect: (ModelGuidancePriority) -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(
+                        "Your language stays the same. Choose whether the first download "
+                            + "should favour a balanced match, a smaller download, or "
+                            + "measured accuracy when that comparison is available."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+
+                Section("What matters most?") {
+                    ForEach(ModelGuidancePriority.allCases) { priority in
+                        Button {
+                            onSelect(priority)
+                        } label: {
+                            HStack(alignment: .top, spacing: VocaMetrics.related + 2) {
+                                Image(
+                                    systemName: priority == selected
+                                        ? "checkmark.circle.fill"
+                                        : "circle"
+                                )
+                                .foregroundStyle(
+                                    priority == selected ? Color.brand : .secondary
+                                )
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(priority.title)
+                                        .font(.headline)
+                                    Text(priority.detail)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle("Help me choose")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

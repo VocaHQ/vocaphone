@@ -44,6 +44,9 @@ import com.vocahq.vocaphone.local.DeviceProfile
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
+import com.vocahq.vocaphone.local.ModelGuidance
+import com.vocahq.vocaphone.local.ModelGuidanceIntent
+import com.vocahq.vocaphone.local.ModelGuidancePriority
 import com.vocahq.vocaphone.local.ModelPick
 
 internal const val MORE_MODELS_LABEL = SetupCopy.BROWSE_MODELS
@@ -67,6 +70,7 @@ fun LocalModelPicker(
     onDelete: ((LocalModelDescriptor) -> Unit)? = null,
     usingGateway: Boolean = false,
     compact: Boolean = false,
+    guidanceLanguage: String = "",
 ) {
     val usable = remember(state.totalRamGB) {
         LocalModelCatalog.usableOnDevice(state.totalRamGB).sortedBy { it.sizeBytes }
@@ -74,13 +78,28 @@ fun LocalModelPicker(
     val profile = remember(state.totalRamGB) {
         DeviceProfile.current(state.totalRamGB)
     }
-    // Four answers rather than one: the accurate English model, the widest
-    // multilingual one, the phone language's specialist, and the smallest
-    // download that still covers it. The first leads as the recommendation.
-    val picks = remember(profile, profile.language) {
-        LocalModelCatalog.recommendations(profile)
+    var guidancePriority by remember { mutableStateOf(ModelGuidancePriority.BALANCED) }
+    var guidanceOpen by remember { mutableStateOf(false) }
+    val guidanceProfile = remember(profile, guidanceLanguage) {
+        profile.copy(language = guidanceLanguage.ifBlank { profile.language })
     }
-    val recommended = picks.first().model
+    val guidance = remember(guidanceProfile, guidancePriority) {
+        ModelGuidance.recommend(
+            guidanceProfile,
+            ModelGuidanceIntent(
+                language = guidanceProfile.language,
+                priority = guidancePriority,
+            ),
+        )
+    }
+    // Settings keeps the richer role-based catalog. Setup gets one answer so
+    // people do not have to compare several technical model names.
+    val picks = remember(profile, guidance.intent.language) {
+        LocalModelCatalog.recommendations(
+            profile.copy(language = guidance.intent.language),
+        )
+    }
+    val recommended = if (compact) guidance.model ?: picks.first().model else picks.first().model
     val alternates = picks.drop(1)
     val selectedModel = usable.firstOrNull { it.id == selectedModelId }
 
@@ -96,7 +115,7 @@ fun LocalModelPicker(
         filterModelCatalog(usable, query, engineFilter, sizeFilter, languageFilter)
     }
     val recommendedVisible = if (compact) {
-        usable.any { it.id == recommended.id }
+        guidance.model != null && usable.any { it.id == recommended.id }
     } else {
         filtered.any { it.id == recommended.id }
     }
@@ -112,7 +131,7 @@ fun LocalModelPicker(
         engineFilter != ModelEngineFilter.ALL ||
         sizeFilter != ModelSizeFilter.ANY ||
         languageFilter != ModelLanguageFilter.ANY
-    val showAlternates = alternates.isNotEmpty() && (compact || !browsing)
+    val showAlternates = alternates.isNotEmpty() && !compact && !browsing
     val alternateIds = if (showAlternates) alternates.map { it.model.id }.toSet() else emptySet()
     val availableModels = filtered.filter {
         it.id !in state.downloaded &&
@@ -144,6 +163,20 @@ fun LocalModelPicker(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+
+    if (compact && guidance.model == null) {
+        Notice {
+            Text(
+                "No model on this phone matches ${guidance.languageName}.",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                "Choose another language or use your self-hosted gateway. Browse shows models that need a different language or setup.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 
     if (!compact && selectedModel != null) {
@@ -192,8 +225,19 @@ fun LocalModelPicker(
                 } else {
                     null
                 },
+                guidanceReason = guidance.reason.takeIf { compact },
+                guidanceDetail = guidance.downloadDetail.takeIf { compact },
             )
         }
+    }
+
+    if (compact && guidance.model != null) {
+        SecondaryButton(
+            text = SetupCopy.HELP_ME_CHOOSE,
+            onClick = { guidanceOpen = true },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 
     if (showAlternates) {
@@ -293,6 +337,18 @@ fun LocalModelPicker(
         }
     }
 
+    if (compact && guidanceOpen) {
+        ModelGuidanceSheet(
+            selected = guidancePriority,
+            languageName = guidance.languageName,
+            onSelect = {
+                guidancePriority = it
+                guidanceOpen = false
+            },
+            onDismiss = { guidanceOpen = false },
+        )
+    }
+
     state.message?.let {
         Text(
             it,
@@ -374,17 +430,22 @@ private fun RecommendedModelCard(
     onDownloadAndUse: (LocalModelDescriptor) -> Unit,
     onCancelDownload: () -> Unit,
     onBrowse: (() -> Unit)? = null,
+    guidanceReason: String? = null,
+    guidanceDetail: String? = null,
 ) {
     FeaturedCard {
-        Text("Recommended for this phone", style = MaterialTheme.typography.titleSmall)
+        Text(
+            if (compact) "Recommended for you" else "Recommended for this phone",
+            style = MaterialTheme.typography.titleSmall,
+        )
         Text(model.displayName, style = MaterialTheme.typography.titleMedium)
         Text(
-            if (compact) model.setupMeta() else model.catalogMeta(),
+            if (compact) (guidanceDetail ?: model.setupMeta()) else model.catalogMeta(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            model.recommendationWhy(),
+            guidanceReason ?: model.recommendationWhy(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -436,7 +497,7 @@ private fun CompactRecommendedActions(
         leading = { item ->
             if (!downloaded) {
                 PrimaryButton(
-                    text = SetupCopy.DOWNLOAD,
+                    text = SetupCopy.DOWNLOAD_AND_CONTINUE,
                     onClick = { onDownloadAndUse(model) },
                     enabled = !busy,
                     modifier = item,
@@ -475,6 +536,54 @@ private fun CompactRecommendedActions(
             )
         },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelGuidanceSheet(
+    selected: ModelGuidancePriority,
+    languageName: String,
+    onSelect: (ModelGuidancePriority) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("What matters most?", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "We will keep $languageName as the language and change only the model priority.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ModelGuidancePriority.entries.forEach { priority ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (priority == selected) {
+                        PrimaryButton(
+                            text = priority.title,
+                            onClick = { onSelect(priority) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        SecondaryButton(
+                            text = priority.title,
+                            onClick = { onSelect(priority) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Text(
+                        priority.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
