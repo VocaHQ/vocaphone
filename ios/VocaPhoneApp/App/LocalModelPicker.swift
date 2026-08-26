@@ -27,6 +27,7 @@ struct LocalModelPicker: View {
     @State private var availableModelsExpanded = false
     @State private var pendingDeletion: LocalModelDescriptor?
     @State private var guidancePriority: ModelGuidancePriority = .balanced
+    @State private var guidanceLanguageOverride: String?
 
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
@@ -45,7 +46,22 @@ struct LocalModelPicker: View {
     }
 
     private var recommendationLanguage: String {
-        guidanceLanguage.isEmpty ? LocalModelCatalog.deviceLanguage : guidanceLanguage
+        let requested = guidanceLanguageOverride ?? guidanceLanguage
+        if requested.isEmpty || requested == TranscriptionLanguage.automatic.rawValue {
+            return LocalModelCatalog.deviceLanguage
+        }
+        return requested.lowercased()
+    }
+
+    private var deviceLanguageName: String {
+        TranscriptionLanguage(rawValue: LocalModelCatalog.deviceLanguage)?.displayName
+            ?? Locale.current.localizedString(forLanguageCode: LocalModelCatalog.deviceLanguage)
+            ?? LocalModelCatalog.deviceLanguage.uppercased()
+    }
+
+    private var guidanceLanguageSelection: String {
+        let requested = guidanceLanguageOverride ?? guidanceLanguage
+        return requested.isEmpty ? TranscriptionLanguage.automatic.rawValue : requested
     }
 
     private var picks: [ModelPick] {
@@ -213,7 +229,10 @@ struct LocalModelPicker: View {
                 row(for: model, onboarding: true)
                 ModelGuidanceChoiceButton(
                     selection: $guidancePriority,
-                    enabled: !isBusy
+                    language: guidanceLanguageSelection,
+                    deviceLanguageName: deviceLanguageName,
+                    enabled: !isBusy,
+                    onApply: applyGuidance
                 )
             } header: {
                 Text("Recommended for you")
@@ -253,6 +272,13 @@ struct LocalModelPicker: View {
                 Text("Choose another language in Dictation settings, or use your self-hosted gateway.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                ModelGuidanceChoiceButton(
+                    selection: $guidancePriority,
+                    language: guidanceLanguageSelection,
+                    deviceLanguageName: deviceLanguageName,
+                    enabled: !isBusy,
+                    onApply: applyGuidance
+                )
             } header: {
                 Text("No guided match")
             }
@@ -329,7 +355,9 @@ struct LocalModelPicker: View {
                 .controlSize(.large)
                 .disabled(isBusy)
             case .ready:
-                VocaPrimaryButton(title: "Use this model") { prepare(model) }
+                VocaPrimaryButton(title: "Use this model") {
+                    prepare(model, languageOverride: onboarding ? recommendationLanguage : nil)
+                }
                     .disabled(isBusy)
             case .selected:
                 EmptyView()
@@ -410,17 +438,19 @@ struct LocalModelPicker: View {
                 onChange()
                 return
             }
-            prepare(model)
+            prepare(model, languageOverride: onboarding ? recommendationLanguage : nil)
         }
     }
 
-    private func prepare(_ model: LocalModelDescriptor) {
+    private func prepare(_ model: LocalModelDescriptor, languageOverride: String? = nil) {
         modelLoadError = nil
         modelLoadTask?.cancel()
         modelLoadTask = Task { @MainActor in
             do {
+                let requestedLanguage = languageOverride.flatMap(TranscriptionLanguage.init(rawValue:))
+                    ?? KeyboardPreferences.transcriptionLanguage
                 let language = ModelLanguageSupport.resolve(
-                    KeyboardPreferences.transcriptionLanguage,
+                    requestedLanguage,
                     modelLanguages: model.selectableLanguageCodes
                 )
                 try await manager.prepare(
@@ -441,6 +471,14 @@ struct LocalModelPicker: View {
             modelLoadTask = nil
         }
     }
+
+    private func applyGuidance(language: String, priority: ModelGuidancePriority) {
+        guidanceLanguageOverride = language
+        guidancePriority = priority
+        if let language = TranscriptionLanguage(rawValue: language) {
+            KeyboardPreferences.transcriptionLanguage = language
+        }
+    }
 }
 
 /// Owns the sheet from one stable view. `LocalModelPicker` emits several
@@ -449,7 +487,10 @@ struct LocalModelPicker: View {
 /// can pop onboarding back to its root instead of presenting the choices.
 private struct ModelGuidanceChoiceButton: View {
     @Binding var selection: ModelGuidancePriority
+    let language: String
+    let deviceLanguageName: String
     let enabled: Bool
+    let onApply: (String, ModelGuidancePriority) -> Void
     @State private var isPresented = false
 
     var body: some View {
@@ -463,7 +504,9 @@ private struct ModelGuidanceChoiceButton: View {
         .sheet(isPresented: $isPresented) {
             ModelGuidanceChoiceSheet(
                 selected: selection,
-                onSelect: { selection = $0 }
+                selectedLanguage: language,
+                deviceLanguageName: deviceLanguageName,
+                onApply: onApply
             )
         }
     }
@@ -473,35 +516,79 @@ private struct ModelGuidanceChoiceSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let selected: ModelGuidancePriority
-    let onSelect: (ModelGuidancePriority) -> Void
+    let selectedLanguage: String
+    let deviceLanguageName: String
+    let onApply: (String, ModelGuidancePriority) -> Void
+
+    @State private var languageSelection: String
+    @State private var prioritySelection: ModelGuidancePriority
+
+    init(
+        selected: ModelGuidancePriority,
+        selectedLanguage: String,
+        deviceLanguageName: String,
+        onApply: @escaping (String, ModelGuidancePriority) -> Void
+    ) {
+        self.selected = selected
+        self.selectedLanguage = selectedLanguage
+        self.deviceLanguageName = deviceLanguageName
+        self.onApply = onApply
+        _languageSelection = State(initialValue: selectedLanguage)
+        _prioritySelection = State(initialValue: selected)
+    }
+
+    private var languageOptions: [(code: String, name: String)] {
+        var options: [(code: String, name: String)] = [
+            (
+                TranscriptionLanguage.automatic.rawValue,
+                "Use iPhone language (\(deviceLanguageName))"
+            )
+        ]
+        options += TranscriptionLanguage.allCases
+            .filter { $0 != .automatic }
+            .map { ($0.rawValue, $0.displayName) }
+        if !options.contains(where: { $0.code == selectedLanguage }),
+           let name = Locale.current.localizedString(forLanguageCode: selectedLanguage) {
+            options.insert((selectedLanguage, name), at: 1)
+        }
+        return options
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     Text(
-                        "Your language stays the same. Choose whether the first download "
-                            + "should favour a balanced match, a smaller download, or "
-                            + "measured accuracy when that comparison is available."
+                        "Tell us the language you speak most. Then choose what matters "
+                            + "most for the first download."
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 }
 
+                Section("What language do you speak most?") {
+                    Picker("Primary language", selection: $languageSelection) {
+                        ForEach(languageOptions, id: \.code) { option in
+                            Text(option.name).tag(option.code)
+                        }
+                    }
+                }
+
                 Section("What matters most?") {
                     ForEach(ModelGuidancePriority.allCases) { priority in
                         Button {
-                            onSelect(priority)
+                            prioritySelection = priority
+                            onApply(languageSelection, priority)
                             dismiss()
                         } label: {
                             HStack(alignment: .top, spacing: VocaMetrics.related + 2) {
                                 Image(
-                                    systemName: priority == selected
+                                    systemName: priority == prioritySelection
                                         ? "checkmark.circle.fill"
                                         : "circle"
                                 )
                                 .foregroundStyle(
-                                    priority == selected ? Color.brand : .secondary
+                                    priority == prioritySelection ? Color.brand : .secondary
                                 )
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(priority.title)
@@ -520,7 +607,10 @@ private struct ModelGuidanceChoiceSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        onApply(languageSelection, prioritySelection)
+                        dismiss()
+                    }
                 }
             }
         }

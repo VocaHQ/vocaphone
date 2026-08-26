@@ -41,6 +41,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.R
+import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.local.DeviceProfile
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
@@ -49,6 +50,7 @@ import com.vocahq.vocaphone.local.ModelGuidance
 import com.vocahq.vocaphone.local.ModelGuidanceIntent
 import com.vocahq.vocaphone.local.ModelGuidancePriority
 import com.vocahq.vocaphone.local.ModelPick
+import java.util.Locale
 
 internal const val MORE_MODELS_LABEL = SetupCopy.BROWSE_MODELS
 
@@ -72,6 +74,7 @@ fun LocalModelPicker(
     usingGateway: Boolean = false,
     compact: Boolean = false,
     guidanceLanguage: String = "",
+    onGuidanceLanguage: (String) -> Unit = {},
 ) {
     val usable = remember(state.totalRamGB) {
         LocalModelCatalog.usableOnDevice(state.totalRamGB).sortedBy { it.sizeBytes }
@@ -81,8 +84,19 @@ fun LocalModelPicker(
     }
     var guidancePriority by rememberSaveable { mutableStateOf(ModelGuidancePriority.BALANCED) }
     var guidanceOpen by rememberSaveable { mutableStateOf(false) }
-    val guidanceProfile = remember(profile, guidanceLanguage) {
-        profile.copy(language = guidanceLanguage.ifBlank { profile.language })
+    var guidanceLanguageSelection by rememberSaveable(guidanceLanguage, profile.language) {
+        mutableStateOf(guidanceLanguage.ifBlank { TranscriptionLanguage.AUTOMATIC.wireValue })
+    }
+    val selectedGuidanceLanguage = if (
+        guidanceLanguageSelection.isBlank() ||
+            guidanceLanguageSelection == TranscriptionLanguage.AUTOMATIC.wireValue
+    ) {
+        profile.language
+    } else {
+        guidanceLanguageSelection
+    }
+    val guidanceProfile = remember(profile, selectedGuidanceLanguage) {
+        profile.copy(language = selectedGuidanceLanguage)
     }
     val guidance = remember(guidanceProfile, guidancePriority) {
         ModelGuidance.recommend(
@@ -232,7 +246,7 @@ fun LocalModelPicker(
         }
     }
 
-    if (compact && guidance.model != null) {
+    if (compact) {
         SecondaryButton(
             text = SetupCopy.HELP_ME_CHOOSE,
             onClick = { guidanceOpen = true },
@@ -341,9 +355,12 @@ fun LocalModelPicker(
     if (compact && guidanceOpen) {
         ModelGuidanceSheet(
             selected = guidancePriority,
-            languageName = guidance.languageName,
-            onSelect = {
-                guidancePriority = it
+            selectedLanguage = guidanceLanguageSelection,
+            deviceLanguageName = deviceLanguageDisplayName(profile.language),
+            onApply = { language, priority ->
+                guidanceLanguageSelection = language
+                guidancePriority = priority
+                onGuidanceLanguage(language)
                 guidanceOpen = false
             },
             onDismiss = { guidanceOpen = false },
@@ -543,10 +560,27 @@ private fun CompactRecommendedActions(
 @Composable
 private fun ModelGuidanceSheet(
     selected: ModelGuidancePriority,
-    languageName: String,
-    onSelect: (ModelGuidancePriority) -> Unit,
+    selectedLanguage: String,
+    deviceLanguageName: String,
+    onApply: (String, ModelGuidancePriority) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var languageSelection by rememberSaveable(selectedLanguage) {
+        mutableStateOf(selectedLanguage)
+    }
+    var prioritySelection by rememberSaveable(selected) { mutableStateOf(selected) }
+    val languageOptions = remember(selectedLanguage) {
+        buildList {
+            add(TranscriptionLanguage.AUTOMATIC.wireValue)
+            addAll(TranscriptionLanguage.entries
+                .filter { it != TranscriptionLanguage.AUTOMATIC }
+                .map { it.wireValue })
+            if (selectedLanguage.isNotBlank() && selectedLanguage !in this) {
+                add(1, selectedLanguage)
+            }
+        }
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -555,24 +589,39 @@ private fun ModelGuidanceSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("What matters most?", style = MaterialTheme.typography.titleLarge)
+            Text("Tell us about your dictation", style = MaterialTheme.typography.titleLarge)
             Text(
-                "We will keep $languageName as the language and change only the model priority.",
+                "Choose the language you speak most, then tell us what matters most for the first download.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Text("Primary language", style = MaterialTheme.typography.titleMedium)
+            SettingDropdown(
+                options = languageOptions,
+                selected = languageSelection,
+                label = { guidanceLanguageLabel(it, deviceLanguageName) },
+                detail = { guidanceLanguageDetail(it, deviceLanguageName) },
+                onSelect = { languageSelection = it },
+            )
+            Text("What matters most?", style = MaterialTheme.typography.titleMedium)
             ModelGuidancePriority.entries.forEach { priority ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (priority == selected) {
+                    if (priority == prioritySelection) {
                         PrimaryButton(
                             text = priority.title,
-                            onClick = { onSelect(priority) },
+                            onClick = {
+                                prioritySelection = priority
+                                onApply(languageSelection, priority)
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
                         SecondaryButton(
                             text = priority.title,
-                            onClick = { onSelect(priority) },
+                            onClick = {
+                                prioritySelection = priority
+                                onApply(languageSelection, priority)
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -586,6 +635,30 @@ private fun ModelGuidanceSheet(
         }
     }
 }
+
+private fun guidanceLanguageLabel(code: String, deviceLanguageName: String): String {
+    if (code == TranscriptionLanguage.AUTOMATIC.wireValue) {
+        return "Use phone language ($deviceLanguageName)"
+    }
+    return TranscriptionLanguage.entries
+        .firstOrNull { it.wireValue == code }
+        ?.displayName
+        ?: code.uppercase()
+}
+
+private fun guidanceLanguageDetail(code: String, deviceLanguageName: String): String =
+    if (code == TranscriptionLanguage.AUTOMATIC.wireValue) {
+        "Currently detected as $deviceLanguageName."
+    } else {
+        "Prefer models that cover ${guidanceLanguageLabel(code, deviceLanguageName)}."
+    }
+
+private fun deviceLanguageDisplayName(code: String): String =
+    TranscriptionLanguage.entries
+        .firstOrNull { it.wireValue == code }
+        ?.displayName
+        ?: Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault())
+            .ifBlank { code.uppercase(Locale.ROOT) }
 
 @Composable
 private fun ModelCatalogSearch(

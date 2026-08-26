@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.BuildConfig
 import com.vocahq.vocaphone.R
+import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
@@ -70,6 +71,7 @@ fun SetupScreen(
     settings: VocaPhoneSettings,
     localModels: LocalModelState,
     onOpenGateway: () -> Unit,
+    onLanguage: (TranscriptionLanguage) -> Unit,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
     onDownloadLocalModel: (LocalModelDescriptor) -> Unit,
@@ -146,6 +148,7 @@ fun SetupScreen(
                         onDownloadAndUse = onDownloadAndUseLocalModel,
                         onCancelDownload = onCancelLocalModelDownload,
                         guidanceLanguage = settings.language.wireValue,
+                        onGuidanceLanguage = { onLanguage(TranscriptionLanguage.fromWire(it)) },
                     )
                 }
             }
