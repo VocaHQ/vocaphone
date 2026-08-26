@@ -128,6 +128,17 @@ struct LocalModelCatalogTests {
         #expect(result.reason.contains("English"))
     }
 
+    @Test func guidanceDoesNotMislabelAnUnlistedPhoneLanguageAsAutomatic() {
+        let result = LocalModelCatalog.guidance(
+            deviceMemoryGB: 8,
+            intent: ModelGuidanceIntent(language: "af", priority: .balanced)
+        )
+
+        #expect(result.intent.language == "af")
+        #expect(!result.languageName.isEmpty)
+        #expect(result.languageName != TranscriptionLanguage.automatic.displayName)
+    }
+
     /// The list is what makes a 670 MB default acceptable: someone on cellular
     /// can see a small answer to the same question without going hunting through
     /// the catalog.

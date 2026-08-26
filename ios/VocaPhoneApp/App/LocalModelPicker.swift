@@ -35,13 +35,17 @@ struct LocalModelPicker: View {
     }
 
     private var guidance: ModelGuidanceResult {
-        let language = guidanceLanguage.isEmpty
-            ? LocalModelCatalog.deviceLanguage
-            : guidanceLanguage
         return LocalModelCatalog.guidance(
             deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
-            intent: ModelGuidanceIntent(language: language, priority: guidancePriority)
+            intent: ModelGuidanceIntent(
+                language: recommendationLanguage,
+                priority: guidancePriority
+            )
         )
+    }
+
+    private var recommendationLanguage: String {
+        guidanceLanguage.isEmpty ? LocalModelCatalog.deviceLanguage : guidanceLanguage
     }
 
     private var picks: [ModelPick] {
@@ -49,7 +53,10 @@ struct LocalModelPicker: View {
             guard let model = guidance.model else { return [] }
             return [ModelPick(role: .guided, model: model)]
         }
-        return LocalModelCatalog.recommendations(deviceMemoryGB: LocalModelCatalog.deviceMemoryGB)
+        return LocalModelCatalog.recommendations(
+            deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
+            language: recommendationLanguage
+        )
     }
 
     /// Picks not yet on the phone. The installed ones already have a row above
@@ -204,7 +211,10 @@ struct LocalModelPicker: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 row(for: model, onboarding: true)
-                ModelGuidanceChoiceButton(selection: $guidancePriority)
+                ModelGuidanceChoiceButton(
+                    selection: $guidancePriority,
+                    enabled: !isBusy
+                )
             } header: {
                 Text("Recommended for you")
             } footer: {
@@ -409,9 +419,13 @@ struct LocalModelPicker: View {
         modelLoadTask?.cancel()
         modelLoadTask = Task { @MainActor in
             do {
+                let language = ModelLanguageSupport.resolve(
+                    KeyboardPreferences.transcriptionLanguage,
+                    modelLanguages: model.selectableLanguageCodes
+                )
                 try await manager.prepare(
                     model,
-                    language: KeyboardPreferences.effectiveTranscriptionLanguage.rawValue
+                    language: language.rawValue
                 )
                 guard !Task.isCancelled else { return }
                 LocalTranscriptionPreferences.modelIdentifier = model.id
@@ -435,6 +449,7 @@ struct LocalModelPicker: View {
 /// can pop onboarding back to its root instead of presenting the choices.
 private struct ModelGuidanceChoiceButton: View {
     @Binding var selection: ModelGuidancePriority
+    let enabled: Bool
     @State private var isPresented = false
 
     var body: some View {
@@ -444,6 +459,7 @@ private struct ModelGuidanceChoiceButton: View {
         .buttonStyle(.bordered)
         .controlSize(.large)
         .frame(maxWidth: .infinity)
+        .disabled(!enabled)
         .sheet(isPresented: $isPresented) {
             ModelGuidanceChoiceSheet(
                 selected: selection,

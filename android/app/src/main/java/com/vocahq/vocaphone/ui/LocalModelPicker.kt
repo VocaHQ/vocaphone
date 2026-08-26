@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,8 +79,8 @@ fun LocalModelPicker(
     val profile = remember(state.totalRamGB) {
         DeviceProfile.current(state.totalRamGB)
     }
-    var guidancePriority by remember { mutableStateOf(ModelGuidancePriority.BALANCED) }
-    var guidanceOpen by remember { mutableStateOf(false) }
+    var guidancePriority by rememberSaveable { mutableStateOf(ModelGuidancePriority.BALANCED) }
+    var guidanceOpen by rememberSaveable { mutableStateOf(false) }
     val guidanceProfile = remember(profile, guidanceLanguage) {
         profile.copy(language = guidanceLanguage.ifBlank { profile.language })
     }

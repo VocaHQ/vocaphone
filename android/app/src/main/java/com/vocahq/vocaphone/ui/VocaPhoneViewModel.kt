@@ -519,10 +519,27 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                     if (useWhenReady) {
                         container.workScope.launch {
+                            val current = container.settings.current()
+                            val intended = current.copy(
+                                localTranscriptionEnabled = true,
+                                localModelId = model.id,
+                            )
+                            try {
+                                container.localModels.prepare(
+                                    modelID = model.id,
+                                    language = intended.effectiveLanguage.wireValue,
+                                    quality = intended.transcriptionQuality,
+                                    translateTo = intended.translationTarget,
+                                )
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Exception) {
+                                container.localModels.reportPreparationFailure(model)
+                                return@launch
+                            }
                             container.settings.setLocalModel(model.id)
                             container.settings.setLocalTranscriptionEnabled(true)
                             refreshSetup()
-                            preloadLocalEngine()
                         }
                     }
                 }

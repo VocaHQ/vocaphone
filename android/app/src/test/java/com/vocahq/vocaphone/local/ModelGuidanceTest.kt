@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.local
 
+import com.vocahq.vocaphone.core.TranscriptionLanguage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -77,6 +78,18 @@ class ModelGuidanceTest {
 
         assertEquals("ru", result.intent.language)
         assertTrue(result.model?.coversLanguage("ru") == true)
+    }
+
+    @Test
+    fun anUnlistedPhoneLanguageIsNotMislabelledAsAutomatic() {
+        val result = ModelGuidance.recommend(
+            profile(8, language = "af"),
+            ModelGuidanceIntent("auto"),
+        )
+
+        assertEquals("af", result.intent.language)
+        assertTrue(result.languageName.isNotBlank())
+        assertTrue(result.languageName != TranscriptionLanguage.AUTOMATIC.displayName)
     }
 
     @Test

@@ -924,7 +924,9 @@ struct ModelGuidanceResult: Sendable {
     let reason: String
 
     var languageName: String {
-        TranscriptionLanguage(rawValue: intent.language)?.displayName ?? intent.language
+        TranscriptionLanguage(rawValue: intent.language)?.displayName
+            ?? Locale.current.localizedString(forLanguageCode: intent.language)
+            ?? intent.language.uppercased()
     }
 }
 
@@ -952,11 +954,12 @@ extension LocalModelCatalog {
 
         let balanced = recommended(deviceMemoryGB: deviceMemoryGB, language: language)
             .takeIf { candidates.contains($0) }
+            ?? candidates.min(by: stableGuidanceOrder)
+            ?? candidates[0]
         let model: LocalModelDescriptor
         switch intent.priority {
         case .balanced:
-            model = balanced ?? candidates.min { $0.sizeBytes < $1.sizeBytes }
-                ?? candidates[0]
+            model = balanced
         case .lighter:
             model = candidates.min {
                 if $0.sizeBytes != $1.sizeBytes { return $0.sizeBytes < $1.sizeBytes }
@@ -964,10 +967,7 @@ extension LocalModelCatalog {
                 return $0.id < $1.id
             } ?? candidates[0]
         case .quality:
-            model = balanced ?? candidates.min {
-                if $0.sizeBytes != $1.sizeBytes { return $0.sizeBytes < $1.sizeBytes }
-                return $0.id < $1.id
-            } ?? candidates[0]
+            model = balanced
         }
 
         let reason: String
@@ -988,7 +988,18 @@ extension LocalModelCatalog {
     }
 
     private static func displayName(for language: String) -> String {
-        TranscriptionLanguage(rawValue: language)?.displayName ?? language
+        TranscriptionLanguage(rawValue: language)?.displayName
+            ?? Locale.current.localizedString(forLanguageCode: language)
+            ?? language.uppercased()
+    }
+
+    private static func stableGuidanceOrder(
+        _ lhs: LocalModelDescriptor,
+        _ rhs: LocalModelDescriptor
+    ) -> Bool {
+        if lhs.sizeBytes != rhs.sizeBytes { return lhs.sizeBytes < rhs.sizeBytes }
+        if lhs.minimumRamGB != rhs.minimumRamGB { return lhs.minimumRamGB < rhs.minimumRamGB }
+        return lhs.id < rhs.id
     }
 }
 

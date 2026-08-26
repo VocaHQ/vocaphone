@@ -39,7 +39,7 @@ data class ModelGuidanceResult(
     val reason: String,
 ) {
     val languageName: String
-        get() = TranscriptionLanguage.fromWire(intent.language).displayName
+        get() = guidanceLanguageName(intent.language)
 
     val isAvailable: Boolean get() = model != null
 
@@ -80,31 +80,33 @@ object ModelGuidance {
                 model = null,
                 intent = intent.copy(language = language),
                 confidence = ModelGuidanceConfidence.NO_MATCH,
-                reason = "No on-device model in this build supports ${languageName(language)} on this phone.",
+                reason = "No on-device model in this build supports ${guidanceLanguageName(language)} on this phone.",
             )
         }
 
         val normalized = intent.copy(language = language)
         val rankingProfile = profile.copy(language = language)
+        val balanced = LocalModelCatalog.recommended(rankingProfile).takeIf { it in candidates }
+            ?: candidates.sortedWith(
+                compareByDescending<LocalModelDescriptor> { scoreModel(it, rankingProfile) }
+                    .thenBy { it.sizeBytes }
+                    .thenBy { it.minimumRamGB }
+                    .thenBy { it.id },
+            ).first()
         val selected = when (intent.priority) {
-            ModelGuidancePriority.BALANCED ->
-                LocalModelCatalog.recommended(rankingProfile).takeIf { it in candidates }
-                    ?: candidates.maxBy { scoreModel(it, rankingProfile) }
+            ModelGuidancePriority.BALANCED -> balanced
             ModelGuidancePriority.LIGHTER ->
                 candidates.minWith(compareBy<LocalModelDescriptor> { it.sizeBytes }
                     .thenBy { it.minimumRamGB }
                     .thenBy { it.id })
-            ModelGuidancePriority.QUALITY ->
-                LocalModelCatalog.recommended(rankingProfile).takeIf { it in candidates }
-                    ?: candidates.minWith(compareBy<LocalModelDescriptor> { it.sizeBytes }
-                        .thenBy { it.id })
+            ModelGuidancePriority.QUALITY -> balanced
         }
 
         val reason = when (intent.priority) {
             ModelGuidancePriority.BALANCED ->
-                "A balanced match that fits this phone and covers ${languageName(language)}."
+                "A balanced match that fits this phone and covers ${guidanceLanguageName(language)}."
             ModelGuidancePriority.LIGHTER ->
-                "The smallest compatible download that covers ${languageName(language)}."
+                "The smallest compatible download that covers ${guidanceLanguageName(language)}."
             ModelGuidancePriority.QUALITY ->
                 "Language-specific accuracy comparisons are not available yet, so we kept the balanced match."
         }
@@ -115,7 +117,11 @@ object ModelGuidance {
             reason = reason,
         )
     }
+}
 
-    private fun languageName(code: String): String =
-        TranscriptionLanguage.fromWire(code).displayName
+private fun guidanceLanguageName(code: String): String {
+    val known = TranscriptionLanguage.entries.firstOrNull { it.wireValue == code }
+    if (known != null) return known.displayName
+    return Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault())
+        .ifBlank { code.uppercase(Locale.ROOT) }
 }

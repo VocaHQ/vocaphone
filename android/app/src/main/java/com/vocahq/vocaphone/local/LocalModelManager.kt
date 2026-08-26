@@ -236,6 +236,18 @@ class LocalModelManager(
         activeDownloadJob.getAndSet(null)?.cancel()
     }
 
+    /**
+     * Keeps a verified download recoverable when native engine initialization
+     * fails. Selection is deliberately not changed: setup must not claim that a
+     * model is ready until the runtime has loaded it successfully once.
+     */
+    fun reportPreparationFailure(model: LocalModelDescriptor) {
+        _state.value = _state.value.copy(
+            message = "Could not load ${model.displayName}. " +
+                "The verified download is still available; try using it again.",
+        )
+    }
+
     suspend fun download(model: LocalModelDescriptor) = downloadMutex.withLock {
         require(LocalModelCatalog.isUsableOnDevice(model, totalRamGB)) {
             if (model.engine == LocalModelEngine.SHERPA_ONNX && !LocalModelCatalog.sherpaAvailable) {
