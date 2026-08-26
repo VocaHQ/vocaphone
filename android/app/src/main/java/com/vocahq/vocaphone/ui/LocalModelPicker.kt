@@ -611,7 +611,6 @@ private fun ModelGuidanceSheet(
                             text = priority.title,
                             onClick = {
                                 prioritySelection = priority
-                                onApply(languageSelection, priority)
                             },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -620,7 +619,6 @@ private fun ModelGuidanceSheet(
                             text = priority.title,
                             onClick = {
                                 prioritySelection = priority
-                                onApply(languageSelection, priority)
                             },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -632,6 +630,11 @@ private fun ModelGuidanceSheet(
                     )
                 }
             }
+            PrimaryButton(
+                text = "Use this recommendation",
+                onClick = { onApply(languageSelection, prioritySelection) },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
