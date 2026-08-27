@@ -167,6 +167,10 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun refreshSetup() {
         viewModelScope.launch {
+            // Cheap, and stale here is wrong in the direction that matters: the
+            // setup card decides whether to warn about a 670 MB download from
+            // the radio the phone came back on, not the one it left on.
+            container.localModels.refreshConditions()
             val configuration = container.settings.current()
             _setup.value = SetupStatus.read(
                 context = getApplication(),

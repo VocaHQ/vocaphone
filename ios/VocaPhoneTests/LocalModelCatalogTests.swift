@@ -102,9 +102,27 @@ struct LocalModelCatalogTests {
             .min { $0.sizeBytes < $1.sizeBytes }
 
         #expect(lighter.model?.id == smallest?.id)
-        #expect(quality.model?.id == balanced.model?.id)
-        #expect(quality.reason.contains("not available"))
         #expect(lighter.reason.contains("smallest"))
+        #expect(balanced.model != nil)
+
+        // "Best accuracy" has to be able to differ from "smallest download",
+        // or it is a control that does nothing.
+        #expect(quality.model?.id != lighter.model?.id)
+        #expect((quality.model?.sizeBytes ?? 0) > (lighter.model?.sizeBytes ?? 0))
+        #expect(quality.reason.contains("most capable"))
+    }
+
+    @Test func guidanceQualityNeverReturnsAModelTheiPhoneCannotRun() {
+        for memory in [2, 4, 8, 16] {
+            let quality = LocalModelCatalog.guidance(
+                deviceMemoryGB: memory,
+                intent: ModelGuidanceIntent(language: "en", priority: .quality)
+            )
+            if let model = quality.model {
+                #expect(model.minimumRamGB <= memory)
+                #expect(model.covers("en"))
+            }
+        }
     }
 
     @Test func guidanceAutomaticLanguageUsesThePhoneLanguage() {

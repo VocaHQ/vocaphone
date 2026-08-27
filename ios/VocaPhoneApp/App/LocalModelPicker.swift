@@ -29,6 +29,11 @@ struct LocalModelPicker: View {
     @State private var guidancePriority: ModelGuidancePriority = .balanced
     @State private var guidanceLanguageOverride: String?
 
+    /// Read so the card can say what a large download costs before it starts.
+    /// Computed rather than stored: a stored property would join the memberwise
+    /// initializer, and reading it here tracks the observation just the same.
+    private var network: NetworkConditions { NetworkConditions.shared }
+
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
     private var installedModels: [LocalModelDescriptor] {
@@ -84,6 +89,51 @@ struct LocalModelPicker: View {
     private var availableModels: [LocalModelDescriptor] {
         let recommended = Set(recommendedPicks.map(\.model.id))
         return usable.filter { state(for: $0) == .notDownloaded && !recommended.contains($0.id) }
+    }
+
+    private var downloadDetailLine: String? {
+        let parts = [manager.downloadSizeProgress, manager.downloadTimeRemaining]
+        let line = parts.compactMap { $0 }.joined(separator: " · ")
+        return line.isEmpty ? nil : line
+    }
+
+    /// The same guidance run at the other end of the trade-off. Shown as one
+    /// concrete swap rather than a grid: the setup card stays a single answer,
+    /// but the fact that a small option exists no longer lives only behind a
+    /// sheet most people never open.
+    private var guidanceAlternative: LocalModelDescriptor? {
+        guard onboarding, let current = guidance.model else { return nil }
+        let lighter = LocalModelCatalog.guidance(
+            deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
+            intent: ModelGuidanceIntent(language: recommendationLanguage, priority: .lighter)
+        ).model
+        guard let lighter, lighter.id != current.id else { return nil }
+        guard state(for: lighter) == .notDownloaded else { return nil }
+        return lighter
+    }
+
+    private var downloadWarning: DownloadWarning? {
+        guard onboarding, let model = guidance.model else { return nil }
+        // Nothing to warn about once the transfer is running, and this reads the
+        // volume synchronously: the picker redraws on every progress tick.
+        guard manager.downloadingModelID == nil else { return nil }
+        return DownloadReadiness.warning(
+            sizeBytes: model.sizeBytes,
+            freeBytes: manager.availableStorageBytes,
+            metered: network.isMetered
+        )
+    }
+
+    /// The one sentence a warning is worth. Written so it says what to do, not
+    /// only what is wrong.
+    private func warningHeadline(_ warning: DownloadWarning) -> String {
+        switch warning {
+        case let .notEnoughStorage(freeBytes, requiredBytes):
+            "Needs \(DownloadReadiness.byteLabel(requiredBytes)) free · "
+                + "\(DownloadReadiness.byteLabel(freeBytes)) available. Free up space first."
+        case let .meteredConnection(sizeBytes):
+            "You are on cellular · \(DownloadReadiness.byteLabel(sizeBytes)) download."
+        }
     }
 
     private func role(of model: LocalModelDescriptor) -> ModelPickRole? {
@@ -217,16 +267,38 @@ struct LocalModelPicker: View {
                     .foregroundStyle(.secondary)
             }
         } else if let model = guidance.model {
+            let warning = downloadWarning
             Section {
-                Text("We picked one model that fits this iPhone and your language.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text("Works with \(guidance.languageName) · \(model.sizeLabel) download")
-                    .font(.subheadline)
                 Text(guidance.reason)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if let warning {
+                    Text(warningHeadline(warning))
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
                 row(for: model, onboarding: true)
+                if let alternative = guidanceAlternative {
+                    VStack(alignment: .leading, spacing: VocaMetrics.related) {
+                        Text(
+                            warning.isStorage
+                                ? "\(alternative.displayName) needs only \(alternative.sizeLabel)."
+                                : "Need something smaller? \(alternative.displayName) · "
+                                    + "\(alternative.sizeLabel)."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        Button {
+                            downloadAndUse(alternative)
+                        } label: {
+                            Text("Use \(alternative.displayName) instead")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(isBusy)
+                    }
+                }
                 ModelGuidanceChoiceButton(
                     selection: $guidancePriority,
                     language: guidanceLanguageSelection,
@@ -237,7 +309,14 @@ struct LocalModelPicker: View {
             } header: {
                 Text("Recommended for you")
             } footer: {
-                Text("You can change the model later in Settings. The model name and engine are shown above.")
+                // Says what the one visible choice was made on, so the "Help me
+                // choose" button reads as a way to change an answer rather than
+                // as a second, unrelated question.
+                Text(
+                    "Chosen for \(guidance.languageName) · \(guidancePriority.title). "
+                        + "Tap Help me choose to change either, or pick any model below. "
+                        + "You can switch models later in Settings."
+                )
             }
 
             let otherInstalled = installedModels.filter { $0.id != model.id }
@@ -295,9 +374,9 @@ struct LocalModelPicker: View {
         return VStack(alignment: .leading, spacing: VocaMetrics.related + 2) {
             VocaStatusLine(
                 status: state.status,
-                title: onboarding ? "Your match" : model.displayName,
+                title: model.displayName,
                 detail: onboarding
-                    ? "\(model.displayName) · \(model.sizeLabel) · \(model.languages)"
+                    ? "\(model.sizeLabel) · \(model.languages)"
                     : detail(for: model, state: state)
             )
 
@@ -312,6 +391,15 @@ struct LocalModelPicker: View {
                             .font(.subheadline.monospacedDigit())
                     }
                     ProgressView(value: manager.progress)
+                    // A bare percentage on a 670 MB download reads as stuck.
+                    // The size says how much is actually moving, and the
+                    // estimate stays absent until it has settled rather than
+                    // swinging wildly through the first seconds.
+                    if let detail = downloadDetailLine {
+                        Text(detail)
+                            .font(.footnote.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                     Button("Cancel") {
                         manager.cancelDownload()
                     }
@@ -356,7 +444,7 @@ struct LocalModelPicker: View {
                 .disabled(isBusy)
             case .ready:
                 VocaPrimaryButton(title: "Use this model") {
-                    prepare(model, languageOverride: onboarding ? recommendationLanguage : nil)
+                    prepare(model, languageOverride: onboarding ? guidanceLanguageOverride : nil)
                 }
                     .disabled(isBusy)
             case .selected:
@@ -438,7 +526,7 @@ struct LocalModelPicker: View {
                 onChange()
                 return
             }
-            prepare(model, languageOverride: onboarding ? recommendationLanguage : nil)
+            prepare(model, languageOverride: onboarding ? guidanceLanguageOverride : nil)
         }
     }
 
@@ -554,13 +642,26 @@ private struct ModelGuidanceChoiceSheet: View {
         return options
     }
 
+    /// What the current answers would actually produce, recomputed as they
+    /// change. Two abstract questions with no visible consequence is what made
+    /// this sheet hard to answer; the preview is the answer to both.
+    private var preview: ModelGuidanceResult {
+        LocalModelCatalog.guidance(
+            deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
+            intent: ModelGuidanceIntent(
+                language: languageSelection,
+                priority: prioritySelection
+            )
+        )
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     Text(
-                        "Tell us the language you speak most. Then choose what matters "
-                            + "most for the first download."
+                        "Tell us the language you speak most and what matters most "
+                            + "for the download. The match below updates as you choose."
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -578,8 +679,6 @@ private struct ModelGuidanceChoiceSheet: View {
                     ForEach(ModelGuidancePriority.allCases) { priority in
                         Button {
                             prioritySelection = priority
-                            onApply(languageSelection, priority)
-                            dismiss()
                         } label: {
                             HStack(alignment: .top, spacing: VocaMetrics.related + 2) {
                                 Image(
@@ -600,6 +699,27 @@ private struct ModelGuidanceChoiceSheet: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(
+                            priority == prioritySelection ? [.isSelected] : []
+                        )
+                    }
+                }
+
+                Section("You would get") {
+                    if let model = preview.model {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.displayName)
+                                .font(.headline)
+                            Text(preview.downloadDetail ?? model.sizeLabel)
+                                .font(.subheadline)
+                            Text(preview.reason)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(preview.reason)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -607,10 +727,14 @@ private struct ModelGuidanceChoiceSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
+                    Button("Cancel", role: .cancel) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Use this match") {
                         onApply(languageSelection, prioritySelection)
                         dismiss()
                     }
+                    .disabled(preview.model == nil)
                 }
             }
         }

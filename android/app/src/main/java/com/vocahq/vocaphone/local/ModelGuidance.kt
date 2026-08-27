@@ -9,16 +9,16 @@ enum class ModelGuidancePriority(
     val detail: String,
 ) {
     BALANCED(
-        title = "Let VocaPhone decide",
-        detail = "A balanced match for this phone and your language.",
+        title = "Balanced",
+        detail = "The best all-round match for this phone and your language.",
     ),
     LIGHTER(
-        title = "Keep it light",
-        detail = "Prefer the smallest compatible download.",
+        title = "Smallest download",
+        detail = "Least data and storage. Best on mobile data.",
     ),
     QUALITY(
-        title = "Prioritize quality",
-        detail = "Use measured accuracy when available; otherwise keep a balanced match.",
+        title = "Best accuracy",
+        detail = "The most capable model this phone can run. Larger download.",
     ),
 }
 
@@ -99,16 +99,27 @@ object ModelGuidance {
                 candidates.minWith(compareBy<LocalModelDescriptor> { it.sizeBytes }
                     .thenBy { it.minimumRamGB }
                     .thenBy { it.id })
-            ModelGuidancePriority.QUALITY -> balanced
+            ModelGuidancePriority.QUALITY ->
+                candidates.maxWith(
+                    compareBy<LocalModelDescriptor> { qualityScore(it, rankingProfile) }
+                        .thenBy { it.sizeBytes }
+                        .thenByDescending { it.id },
+                )
         }
 
+        val languageName = guidanceLanguageName(language)
         val reason = when (intent.priority) {
             ModelGuidancePriority.BALANCED ->
-                "A balanced match that fits this phone and covers ${guidanceLanguageName(language)}."
+                "A balanced match that fits this phone and covers $languageName."
             ModelGuidancePriority.LIGHTER ->
-                "The smallest compatible download that covers ${guidanceLanguageName(language)}."
+                "The smallest compatible download that covers $languageName."
             ModelGuidancePriority.QUALITY ->
-                "Language-specific accuracy comparisons are not available yet, so we kept the balanced match."
+                if (selected.id == balanced.id) {
+                    "The balanced match is already the most capable model this phone can run for $languageName."
+                } else {
+                    "The most capable model this phone can run for $languageName. " +
+                        "Bigger download than the balanced match."
+                }
         }
         return ModelGuidanceResult(
             model = selected,
@@ -117,6 +128,22 @@ object ModelGuidance {
             reason = reason,
         )
     }
+}
+
+/**
+ * How good a model is likely to be when download size is not the constraint.
+ *
+ * [scoreModel] deliberately penalizes anything over 500 MB, because a first-run
+ * default has to finish on a phone radio. Someone who explicitly asked for
+ * accuracy has answered that question themselves, so the penalty is added back
+ * here and nowhere else. Everything else about the score — the family ranking,
+ * the tier-aware Whisper class, the language match — still applies, and
+ * [DeviceProfile.fits] has already excluded anything this phone cannot run.
+ */
+private fun qualityScore(model: LocalModelDescriptor, profile: DeviceProfile): Int {
+    val base = scoreModel(model, profile)
+    if (base == Int.MIN_VALUE) return base
+    return base + if (model.sizeBytes > 500_000_000L) 50 else 0
 }
 
 private fun guidanceLanguageName(code: String): String {

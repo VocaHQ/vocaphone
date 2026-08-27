@@ -2,6 +2,7 @@ package com.vocahq.vocaphone.local
 
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,18 +45,51 @@ class ModelGuidanceTest {
     }
 
     @Test
-    fun qualityPreferenceStaysHonestUntilAccuracyEvidenceExists() {
-        val balanced = ModelGuidance.recommend(
+    fun qualityPrefersTheMostCapableModelThePhoneCanRun() {
+        val lighter = ModelGuidance.recommend(
             profile(8),
-            ModelGuidanceIntent("en", ModelGuidancePriority.BALANCED),
+            ModelGuidanceIntent("en", ModelGuidancePriority.LIGHTER),
         )
         val quality = ModelGuidance.recommend(
             profile(8),
             ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
         )
 
-        assertEquals(balanced.model?.id, quality.model?.id)
-        assertTrue(quality.reason.contains("not available yet"))
+        // The whole point of the option: it has to be able to differ from the
+        // smallest download, or it is a control that does nothing.
+        assertNotEquals(lighter.model?.id, quality.model?.id)
+        assertTrue((quality.model?.sizeBytes ?: 0) > (lighter.model?.sizeBytes ?: 0))
+    }
+
+    @Test
+    fun qualityNeverReturnsAModelThePhoneCannotRun() {
+        val profile = profile(3, sherpa = false)
+        val quality = ModelGuidance.recommend(
+            profile,
+            ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
+        )
+
+        val model = quality.model
+        assertNotNull(model)
+        assertTrue(profile.fits(model!!))
+    }
+
+    @Test
+    fun qualitySaysSoPlainlyWhenItLandsOnTheBalancedMatch() {
+        val quality = ModelGuidance.recommend(
+            profile(3, sherpa = false, language = "de"),
+            ModelGuidanceIntent("de", ModelGuidancePriority.QUALITY),
+        )
+        val balanced = ModelGuidance.recommend(
+            profile(3, sherpa = false, language = "de"),
+            ModelGuidanceIntent("de", ModelGuidancePriority.BALANCED),
+        )
+
+        if (quality.model?.id == balanced.model?.id) {
+            assertTrue(quality.reason.contains("already the most capable"))
+        } else {
+            assertTrue(quality.reason.contains("most capable"))
+        }
     }
 
     @Test

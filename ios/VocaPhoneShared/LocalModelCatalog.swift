@@ -887,17 +887,17 @@ enum ModelGuidancePriority: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .balanced: "Let VocaPhone decide"
-        case .lighter: "Keep it light"
-        case .quality: "Prioritize quality"
+        case .balanced: "Balanced"
+        case .lighter: "Smallest download"
+        case .quality: "Best accuracy"
         }
     }
 
     var detail: String {
         switch self {
-        case .balanced: "A balanced match for this iPhone and your language."
-        case .lighter: "Prefer the smallest compatible download."
-        case .quality: "Use measured accuracy when available; otherwise keep a balanced match."
+        case .balanced: "The best all-round match for this iPhone and your language."
+        case .lighter: "Least data and storage. Best on cellular."
+        case .quality: "The most capable model this iPhone can run. Larger download."
         }
     }
 }
@@ -927,6 +927,12 @@ struct ModelGuidanceResult: Sendable {
         TranscriptionLanguage(rawValue: intent.language)?.displayName
             ?? Locale.current.localizedString(forLanguageCode: intent.language)
             ?? intent.language.uppercased()
+    }
+
+    /// The one line that says what this download costs and what it covers.
+    /// Mirrors `downloadDetail` in `ModelGuidance.kt`.
+    var downloadDetail: String? {
+        model.map { "Works with \(languageName) · \($0.sizeLabel) download" }
     }
 }
 
@@ -967,17 +973,21 @@ extension LocalModelCatalog {
                 return $0.id < $1.id
             } ?? candidates[0]
         case .quality:
-            model = balanced
+            model = mostCapable(among: candidates, language: language) ?? balanced
         }
 
+        let languageName = displayName(for: language)
         let reason: String
         switch intent.priority {
         case .balanced:
-            reason = "A balanced match that fits this iPhone and covers \(displayName(for: language))."
+            reason = "A balanced match that fits this iPhone and covers \(languageName)."
         case .lighter:
-            reason = "The smallest compatible download that covers \(displayName(for: language))."
+            reason = "The smallest compatible download that covers \(languageName)."
         case .quality:
-            reason = "Language-specific accuracy comparisons are not available yet, so we kept the balanced match."
+            reason = model.id == balanced.id
+                ? "The balanced match is already the most capable model this iPhone can run for \(languageName)."
+                : "The most capable model this iPhone can run for \(languageName). "
+                    + "Bigger download than the balanced match."
         }
         return ModelGuidanceResult(
             model: model,
@@ -985,6 +995,33 @@ extension LocalModelCatalog {
             confidence: .goodDefault,
             reason: reason
         )
+    }
+
+    /// The best model in `candidates` when download size is not the constraint.
+    ///
+    /// The curated preference lists already rank models best-first, so an
+    /// explicit request for accuracy walks them rather than inventing a second
+    /// ranking. `multilingualPreference` leads with the widest and most capable
+    /// encoders, which is the same order accuracy wants here. Anything the
+    /// lists do not mention falls back to the largest model that still fits,
+    /// which is the only capability signal the catalog carries for it.
+    private static func mostCapable(
+        among candidates: [LocalModelDescriptor],
+        language: String
+    ) -> LocalModelDescriptor? {
+        let ids = Set(candidates.map(\.id))
+        let preference = language.lowercased() == "en"
+            ? englishPreference + multilingualPreference
+            : multilingualPreference + englishPreference
+        if let curated = preference.first(where: { ids.contains($0) }),
+           let model = candidates.first(where: { $0.id == curated }) {
+            return model
+        }
+        return candidates.max {
+            if $0.minimumRamGB != $1.minimumRamGB { return $0.minimumRamGB < $1.minimumRamGB }
+            if $0.sizeBytes != $1.sizeBytes { return $0.sizeBytes < $1.sizeBytes }
+            return $0.id > $1.id
+        }
     }
 
     private static func displayName(for language: String) -> String {
