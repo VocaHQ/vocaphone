@@ -23,6 +23,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.compose.ui.unit.dp
 import com.vocahq.vocaphone.BuildConfig
 import com.vocahq.vocaphone.R
@@ -256,10 +258,15 @@ internal fun SetupPermissionRow(
         satisfied -> SetupCopy.stepReady(step)
         else -> SetupCopy.permissionDetail(step)
     }
-    val label = if (activity != null) {
-        SetupPermissions.grantOrOpenLabel(activity, permission)
-    } else {
-        "Grant"
+    // Permission dialogs and Settings pause the activity. Equal SetupStatus
+    // after a denial does not recompose on its own, so watch lifecycle and
+    // re-read Grant vs Open when we resume.
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val label = when {
+        activity == null -> "Grant"
+        else -> when (lifecycleState) {
+            else -> SetupPermissions.grantOrOpenLabel(activity, permission)
+        }
     }
     ChecklistRow(
         title = step.label,
@@ -291,8 +298,13 @@ internal fun rememberRecentlyReadySteps(status: SetupStatus): Set<SetupStep> {
         previous = status
         if (newly.isEmpty()) return@LaunchedEffect
         recentlyReady = recentlyReady + newly
-        delay(2_000)
-        recentlyReady = recentlyReady - newly.toSet()
+        try {
+            delay(2_000)
+        } finally {
+            // Cancellation (another step flipping mid-delay) must still clear,
+            // or the ready line and live region stick forever.
+            recentlyReady = recentlyReady - newly.toSet()
+        }
     }
     return recentlyReady
 }

@@ -25,14 +25,16 @@ fun SetupRepair(
     onRefreshSetup: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val missing = status.remainingSteps
-    if (missing.isEmpty()) return
-
+    // Launcher must register unconditionally; early-return after the last
+    // remaining step would otherwise skip remember* and crash composition.
     val context = LocalContext.current
     val activity = context.findActivity()
     val requestPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { onRefreshSetup() }
+
+    val missing = status.remainingSteps
+    if (missing.isEmpty()) return
     val nextStep = missing.first()
 
     Column(
