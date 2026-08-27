@@ -339,6 +339,7 @@ fun VocaPhoneApp(
                 telemetryPendingCount = viewModel::telemetryPendingCount,
                 telemetryDeliveryStatus = viewModel::telemetryDeliveryStatus,
                 onFinish = { viewModel.setOnboardingComplete(true) },
+                onRefreshSetup = viewModel::refreshSetup,
                 modifier = content,
             )
 
@@ -352,6 +353,7 @@ fun VocaPhoneApp(
                 onRetry = viewModel::retry,
                 onDismiss = viewModel::dismissDictation,
                 onOpenGateway = { showingGateway = true },
+                onRefreshSetup = viewModel::refreshSetup,
                 onOpenLanguage = {
                     destination = Destination.SETTINGS
                     settingsPage = SettingsPage.HOME

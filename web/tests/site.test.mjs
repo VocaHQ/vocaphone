@@ -62,9 +62,11 @@ test("on-device transcription is the primary product promise", () => {
 });
 
 test("VocaGateway is presented as an explicit optional path", () => {
-  assert.match(html, /two local paths/i);
+  assert.match(html, /two paths/i);
+  assert.doesNotMatch(html, /two local paths/i);
   assert.match(html, /Mac, Linux machine, or home server/i);
   assert.match(html, /trusted LAN, an encrypted private\s+network, or HTTPS/i);
+  assert.match(html, /href="https:\/\/vocagateway\.vocahq\.com"/);
   assert.match(html, /href="https:\/\/github\.com\/VocaHQ\/vocagateway"/);
   assert.doesNotMatch(html, /no gateway\. no catch/i);
   assert.doesNotMatch(html, />no gateway needed</i);
@@ -118,8 +120,9 @@ test("production metadata is complete", () => {
     /property="og:image:width" content="1200"/,
     /property="og:image:height" content="630"/,
     /property="og:image:alt"\s+content="VocaPhone on Android and iPhone, on-device first with an optional self-hosted gateway"/,
+    /property="og:description"\s+content="Join the public TestFlight, or build from source, then install the keyboard and run speech-to-text on your iPhone\."/,
     /name="twitter:title" content="Install VocaPhone on iPhone"/,
-    /name="twitter:description"\s+content="Build VocaPhone from source, install the private keyboard, and run speech-to-text on your iPhone\."/,
+    /name="twitter:description"\s+content="Join the public TestFlight, or build from source, then install the private keyboard and run speech-to-text on your iPhone\."/,
     /name="twitter:image" content="https:\/\/vocaphone\.vocahq\.com\/assets\/og-image\.png"/,
     /name="twitter:image:alt"\s+content="VocaPhone on Android and iPhone, on-device first with an optional self-hosted gateway"/,
   ]) {
@@ -199,9 +202,9 @@ test("availability and install paths are honest", () => {
   assert.match(html, /There is\s+no App Store release yet/);
   assert.match(
     html,
-    /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases\/tag\/android\/v0\.1\.3"/,
+    /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases\/tag\/android\/v0\.1\.4"/,
   );
-  assert.match(html, /v0\.1\.3/);
+  assert.match(html, /v0\.1\.4/);
   assert.match(html, /io\.github\.mrsunglasses\.localflow/);
   assert.match(html, /href="\/iphone\/"/);
   assert.match(html, /SHA256SUMS\.txt/);
@@ -227,14 +230,14 @@ test("availability and install paths are honest", () => {
   assert.match(hero, /<use href="#mark-android"/);
   assert.match(hero, /<use href="#mark-apple"/);
   assert.ok(
-    hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.1.3"),
+    hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.1.4"),
     "hero is missing the Android release link",
   );
 
   const androidCard = androidInstallBlock(html);
   const uninstallAt = androidCard.indexOf("io.github.mrsunglasses.localflow");
   const tagHrefAt = androidCard.indexOf(
-    "https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.1.3",
+    "https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.1.4",
   );
   const checksumAt = androidCard.indexOf("SHA256SUMS.txt");
   assert.ok(uninstallAt !== -1, "uninstall note missing from Android install block");
@@ -251,6 +254,8 @@ test("availability and install paths are honest", () => {
     iphoneHtml,
     /href="https:\/\/github\.com\/VocaHQ\/vocaphone#build-and-test"/,
   );
+  assert.match(iphoneHtml, /iPhone · public TestFlight/);
+  assert.doesNotMatch(iphoneHtml, /iPhone · build from source/);
   assert.match(iphoneHtml, /href="https:\/\/testflight\.apple\.com\/join\/wd85wQ3W"/);
   assert.match(iphoneHtml, /There is no App Store release yet/);
   // The guide is the path that always works, so it must keep saying why it is
@@ -286,6 +291,15 @@ test("every platform mark points at a symbol that exists", () => {
   assert.doesNotMatch(css, /\.mark-sprite\s*\{[^}]*display:\s*none/);
 });
 
+test("decorative Notes mockup stays out of the heading outline", () => {
+  const notesMock = html.match(
+    /<div class="note-page">[\s\S]*?<\/div>\s*<\/div>\s*<div class="speech-chip">/,
+  );
+  assert.ok(notesMock, "Notes mockup missing");
+  assert.match(notesMock[0], /<p class="note-title">Tomorrow<\/p>/);
+  assert.doesNotMatch(notesMock[0], /<h[1-6]\b/);
+});
+
 test("decorative product frames do not expose focusable controls", () => {
   const hiddenFrames = [...html.matchAll(/<div class="phone-frame[^>]*aria-hidden="true">([\s\S]*?)<\/div>\s*<p>/g)];
   assert.ok(hiddenFrames.length >= 2);
@@ -298,6 +312,18 @@ test("numbered story headings remain in normal flow", () => {
   assert.match(
     css,
     /\.story-number\s*\{[\s\S]*?position:\s*static;[\s\S]*?margin-bottom:\s*24px;/,
+  );
+});
+
+test("display headings clear the fixed menu bar", () => {
+  assert.match(css, /--menu-bar-height:\s*58px;/);
+  assert.match(
+    css,
+    /html\s*\{[\s\S]*?scroll-padding-top:\s*calc\(var\(--menu-bar-height\) \+ 18px\);/,
+  );
+  assert.match(
+    css,
+    /\.download-copy h2,[\s\S]*?\.guide-hero h1,[\s\S]*?\{[\s\S]*?padding-top:\s*calc\(var\(--menu-bar-height\) \+ 18px\);[\s\S]*?scroll-margin-top:\s*calc\(var\(--menu-bar-height\) \+ 18px\);/,
   );
 });
 
