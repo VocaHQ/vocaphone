@@ -112,6 +112,33 @@ struct LocalModelCatalogTests {
         #expect(quality.reason.contains("most capable"))
     }
 
+    /// Bigger is not better when the smaller model was trained on the one
+    /// language being asked for. Picking the 25-language Parakeet here also
+    /// gives up pinning the language, because it detects for itself.
+    @Test func guidanceQualityKeepsALanguageSpecialistOverAGeneralModel() {
+        let quality = LocalModelCatalog.guidance(
+            deviceMemoryGB: 8,
+            intent: ModelGuidanceIntent(language: "ru", priority: .quality)
+        )
+
+        #expect(quality.model?.id == "giga-am-ctc-ru")
+        #expect(quality.model?.detectsLanguageAutomatically == false)
+    }
+
+    /// The specialist rule has to hold for every language the catalog names one
+    /// for, not just the Russian case that exposed it.
+    @Test func everyLanguageWithASpecialistKeepsItUnderQuality() {
+        for language in ["ru", "de", "es", "fr", "zh", "ja", "ko", "yue"] {
+            let quality = LocalModelCatalog.guidance(
+                deviceMemoryGB: 8,
+                intent: ModelGuidanceIntent(language: language, priority: .quality)
+            )
+            let model = quality.model
+            #expect(model != nil, "no quality match for \(language)")
+            #expect(model?.covers(language) == true, "\(language) pick cannot transcribe it")
+        }
+    }
+
     @Test func guidanceQualityNeverReturnsAModelTheiPhoneCannotRun() {
         for memory in [2, 4, 8, 16] {
             let quality = LocalModelCatalog.guidance(

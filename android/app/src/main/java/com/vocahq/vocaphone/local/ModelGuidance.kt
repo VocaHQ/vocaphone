@@ -100,11 +100,12 @@ object ModelGuidance {
                     .thenBy { it.minimumRamGB }
                     .thenBy { it.id })
             ModelGuidancePriority.QUALITY ->
-                candidates.maxWith(
-                    compareBy<LocalModelDescriptor> { qualityScore(it, rankingProfile) }
-                        .thenBy { it.sizeBytes }
-                        .thenByDescending { it.id },
-                )
+                languageSpecialist(candidates, language)
+                    ?: candidates.maxWith(
+                        compareBy<LocalModelDescriptor> { qualityScore(it, rankingProfile) }
+                            .thenBy { it.sizeBytes }
+                            .thenByDescending { it.id },
+                    )
         }
 
         val languageName = guidanceLanguageName(language)
@@ -128,6 +129,29 @@ object ModelGuidance {
             reason = reason,
         )
     }
+}
+
+/**
+ * The model trained on this one language, when the catalog has one.
+ *
+ * [scoreModel] ranks by family and by how close a Whisper build sits to the
+ * class this tier wants, and on a phone with no declared performance class that
+ * put a quantized Whisper base above GigaAM for Russian — a 74M generic encoder
+ * chosen over one trained on Russian alone, offered to the user as the accurate
+ * answer. The scores cannot see that difference, so the catalog's own statement
+ * about the language is consulted first.
+ *
+ * English is excluded deliberately: its starter is the *tiny* checkpoint, a
+ * compactness choice, and the general ranking already has a rich set of
+ * English-only models to choose the accurate one from.
+ */
+private fun languageSpecialist(
+    candidates: List<LocalModelDescriptor>,
+    language: String,
+): LocalModelDescriptor? {
+    if (language.equals("en", ignoreCase = true)) return null
+    val starter = LocalModelCatalog.starterForLanguage(language) ?: return null
+    return candidates.firstOrNull { it.id == starter.id }
 }
 
 /**

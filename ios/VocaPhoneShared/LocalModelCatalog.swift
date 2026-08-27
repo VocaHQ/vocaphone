@@ -999,17 +999,32 @@ extension LocalModelCatalog {
 
     /// The best model in `candidates` when download size is not the constraint.
     ///
-    /// The curated preference lists already rank models best-first, so an
-    /// explicit request for accuracy walks them rather than inventing a second
-    /// ranking. `multilingualPreference` leads with the widest and most capable
-    /// encoders, which is the same order accuracy wants here. Anything the
-    /// lists do not mention falls back to the largest model that still fits,
-    /// which is the only capability signal the catalog carries for it.
+    /// The language's own specialist comes first. Walking the general lists
+    /// straight away moved a Russian speaker off GigaAM, trained on Russian
+    /// alone, onto the 25-language Parakeet purely because it is four times the
+    /// size — a likely downgrade sold as an upgrade, and one that also gives up
+    /// pinning the language, since that model decides for itself from the audio.
+    /// `scoreModel` already reaches the same answer on Android by ranking the
+    /// family; this is the iOS catalog's way of saying it.
+    ///
+    /// After that the curated lists decide. `englishPreference` is ordered
+    /// best-first outright. `multilingualPreference` is ordered by breadth
+    /// rather than accuracy, but it leads with the largest and most capable
+    /// encoders, so it answers this question too. Anything the lists do not
+    /// mention falls back to the largest model that fits, the only capability
+    /// signal the catalog carries for it.
     private static func mostCapable(
         among candidates: [LocalModelDescriptor],
         language: String
     ) -> LocalModelDescriptor? {
         let ids = Set(candidates.map(\.id))
+        if let specialist = starterIDs[language.lowercased()],
+           ids.contains(specialist),
+           let model = candidates.first(where: { $0.id == specialist }) {
+            return model
+        }
+        // English-only entries can never cover another language, so the two
+        // lists are concatenated in the order that puts the useful one first.
         let preference = language.lowercased() == "en"
             ? englishPreference + multilingualPreference
             : multilingualPreference + englishPreference

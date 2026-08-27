@@ -565,7 +565,14 @@ private fun RecommendedModelCard(
             Text(
                 warningHeadline(warning),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                // Only the storage case is a hard stop. Painting "you are on
+                // mobile data" in the error colour reads as something broken
+                // rather than a cost worth knowing.
+                color = if (warning is DownloadWarning.NotEnoughStorage) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
         // One concrete alternative, named and priced, next to the action it

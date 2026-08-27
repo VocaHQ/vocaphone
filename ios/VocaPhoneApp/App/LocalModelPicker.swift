@@ -275,7 +275,10 @@ struct LocalModelPicker: View {
                 if let warning {
                     Text(warningHeadline(warning))
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        // Only the storage case is a hard stop. Painting "you
+                        // are on cellular" the same red reads as something
+                        // broken rather than a cost worth knowing.
+                        .foregroundStyle(warning.isStorage ? Color.vocaError : Color.vocaWarning)
                 }
                 row(for: model, onboarding: true)
                 if let alternative = guidanceAlternative {
@@ -314,7 +317,6 @@ struct LocalModelPicker: View {
                 // as a second, unrelated question.
                 Text(
                     "Chosen for \(guidance.languageName) · \(guidancePriority.title). "
-                        + "Tap Help me choose to change either, or pick any model below. "
                         + "You can switch models later in Settings."
                 )
             }

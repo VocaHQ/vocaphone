@@ -61,6 +61,53 @@ class ModelGuidanceTest {
         assertTrue((quality.model?.sizeBytes ?: 0) > (lighter.model?.sizeBytes ?: 0))
     }
 
+    /**
+     * Bigger is not better when the smaller model was trained on the one
+     * language being asked for. This is the case that caught the iOS catalog
+     * walking its breadth-ordered list straight past the specialist.
+     */
+    @Test
+    fun qualityKeepsALanguageSpecialistOverAGeneralModel() {
+        val quality = ModelGuidance.recommend(
+            profile(8, language = "ru"),
+            ModelGuidanceIntent("ru", ModelGuidancePriority.QUALITY),
+        )
+
+        assertEquals("giga-am-ctc-ru", quality.model?.id)
+    }
+
+    /**
+     * The specialist rule has to hold for every language the catalog names one
+     * for, not just the Russian case that exposed it.
+     */
+    @Test
+    fun everyLanguageWithASpecialistKeepsItUnderQuality() {
+        val languages = listOf("ru", "de", "es", "fr", "zh", "ja", "ko", "yue")
+        languages.forEach { language ->
+            val specialist = LocalModelCatalog.starterForLanguage(language)
+            val quality = ModelGuidance.recommend(
+                profile(8, language = language),
+                ModelGuidanceIntent(language, ModelGuidancePriority.QUALITY),
+            )
+            assertEquals(
+                "quality for $language should stay on its specialist",
+                specialist?.id,
+                quality.model?.id,
+            )
+        }
+    }
+
+    /** English is the exception: its starter is the tiny compactness pick. */
+    @Test
+    fun englishIsNotHeldToTheTinyStarterUnderQuality() {
+        val quality = ModelGuidance.recommend(
+            profile(8, language = "en"),
+            ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
+        )
+
+        assertTrue(quality.model?.id != "moonshine-tiny-en")
+    }
+
     @Test
     fun qualityNeverReturnsAModelThePhoneCannotRun() {
         val profile = profile(3, sherpa = false)
