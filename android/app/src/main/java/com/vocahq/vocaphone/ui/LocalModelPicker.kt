@@ -131,7 +131,7 @@ fun LocalModelPicker(
     }
     val guidanceAlternative = lighter?.takeIf { it.id != guidance.model?.id }
     val warning = guidance.model
-        ?.takeIf { state.downloading == null }
+        ?.takeIf { state.downloading == null && it.id !in state.downloaded }
         ?.let {
             downloadWarning(
                 sizeBytes = it.sizeBytes,
@@ -516,7 +516,7 @@ private fun downloadProgressLine(state: LocalModelState): String {
 
 /**
  * The one sentence a warning is worth. Written so it says what to do, not only
- * what is wrong: "free up space" and "on mobile data" are both actionable,
+ * what is wrong: "free up space" and "may charge for data" are both actionable,
  * where "insufficient storage" is not.
  */
 private fun warningHeadline(warning: DownloadWarning): String = when (warning) {
@@ -524,7 +524,7 @@ private fun warningHeadline(warning: DownloadWarning): String = when (warning) {
         "Needs ${byteLabel(warning.requiredBytes)} free · " +
             "${byteLabel(warning.freeBytes)} available. Free up space first."
     is DownloadWarning.MeteredConnection ->
-        "You are on mobile data · ${byteLabel(warning.sizeBytes)} download."
+        "This connection may charge for data · ${byteLabel(warning.sizeBytes)} download."
 }
 
 @Composable

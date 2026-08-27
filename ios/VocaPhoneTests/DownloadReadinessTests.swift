@@ -70,6 +70,14 @@ struct DownloadReadinessTests {
         )
     }
 
+    @Test func aMissingModelFolderUsesItsExistingVolumeForCapacity() {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-local-models-\(UUID().uuidString)", isDirectory: true)
+
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        #expect(DownloadReadiness.availableStorageBytes(at: folder) > 0)
+    }
+
     @Test func headroomScalesWithTheModelButNeverDropsBelowTheFloor() {
         #expect(DownloadReadiness.storageHeadroomBytes(small) == 128_000_000)
         #expect(DownloadReadiness.storageHeadroomBytes(large) == large / 4)

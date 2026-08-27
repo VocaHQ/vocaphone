@@ -116,7 +116,7 @@ struct LocalModelPicker: View {
         guard onboarding, let model = guidance.model else { return nil }
         // Nothing to warn about once the transfer is running, and this reads the
         // volume synchronously: the picker redraws on every progress tick.
-        guard manager.downloadingModelID == nil else { return nil }
+        guard manager.downloadingModelID == nil, !manager.isDownloaded(model.id) else { return nil }
         return DownloadReadiness.warning(
             sizeBytes: model.sizeBytes,
             freeBytes: manager.availableStorageBytes,
@@ -132,7 +132,7 @@ struct LocalModelPicker: View {
             "Needs \(DownloadReadiness.byteLabel(requiredBytes)) free · "
                 + "\(DownloadReadiness.byteLabel(freeBytes)) available. Free up space first."
         case let .meteredConnection(sizeBytes):
-            "You are on cellular · \(DownloadReadiness.byteLabel(sizeBytes)) download."
+            "This connection may charge for data · \(DownloadReadiness.byteLabel(sizeBytes)) download."
         }
     }
 

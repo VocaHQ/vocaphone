@@ -61,6 +61,22 @@ class ModelGuidanceTest {
         assertTrue((quality.model?.sizeBytes ?: 0) > (lighter.model?.sizeBytes ?: 0))
     }
 
+    @Test
+    fun qualityDescribesTheActualDownloadTradeoffAgainstBalanced() {
+        val balanced = ModelGuidance.recommend(
+            profile(8),
+            ModelGuidanceIntent("en", ModelGuidancePriority.BALANCED),
+        )
+        val quality = ModelGuidance.recommend(
+            profile(8),
+            ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
+        )
+
+        assertTrue((quality.model?.sizeBytes ?: Long.MAX_VALUE) < (balanced.model?.sizeBytes ?: 0))
+        assertTrue(ModelGuidancePriority.QUALITY.detail.contains("Download size can differ"))
+        assertTrue(quality.reason.contains("Smaller download than the balanced match"))
+    }
+
     /**
      * Bigger is not better when the smaller model was trained on the one
      * language being asked for. This is the case that caught the iOS catalog

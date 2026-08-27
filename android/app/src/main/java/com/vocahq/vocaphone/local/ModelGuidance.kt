@@ -14,11 +14,11 @@ enum class ModelGuidancePriority(
     ),
     LIGHTER(
         title = "Smallest download",
-        detail = "Least data and storage. Best on mobile data.",
+        detail = "Least data and storage. Best on a metered connection.",
     ),
     QUALITY(
         title = "Best accuracy",
-        detail = "The most capable model this phone can run. Larger download.",
+        detail = "The most capable model this phone can run. Download size can differ.",
     ),
 }
 
@@ -119,7 +119,7 @@ object ModelGuidance {
                     "The balanced match is already the most capable model this phone can run for $languageName."
                 } else {
                     "The most capable model this phone can run for $languageName. " +
-                        "Bigger download than the balanced match."
+                        qualityDownloadComparison(selected, balanced)
                 }
         }
         return ModelGuidanceResult(
@@ -129,6 +129,16 @@ object ModelGuidance {
             reason = reason,
         )
     }
+}
+
+/** Keep the trade-off copy true even when capability and download size disagree. */
+private fun qualityDownloadComparison(
+    selected: LocalModelDescriptor,
+    balanced: LocalModelDescriptor,
+): String = when {
+    selected.sizeBytes > balanced.sizeBytes -> "Bigger download than the balanced match."
+    selected.sizeBytes < balanced.sizeBytes -> "Smaller download than the balanced match."
+    else -> "About the same download size as the balanced match."
 }
 
 /**

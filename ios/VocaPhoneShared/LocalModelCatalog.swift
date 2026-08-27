@@ -896,8 +896,8 @@ enum ModelGuidancePriority: String, CaseIterable, Identifiable, Sendable {
     var detail: String {
         switch self {
         case .balanced: "The best all-round match for this iPhone and your language."
-        case .lighter: "Least data and storage. Best on cellular."
-        case .quality: "The most capable model this iPhone can run. Larger download."
+        case .lighter: "Least data and storage. Best on a metered connection."
+        case .quality: "The most capable model this iPhone can run. Download size can differ."
         }
     }
 }
@@ -987,7 +987,7 @@ extension LocalModelCatalog {
             reason = model.id == balanced.id
                 ? "The balanced match is already the most capable model this iPhone can run for \(languageName)."
                 : "The most capable model this iPhone can run for \(languageName). "
-                    + "Bigger download than the balanced match."
+                    + qualityDownloadComparison(model, balanced)
         }
         return ModelGuidanceResult(
             model: model,
@@ -1052,6 +1052,19 @@ extension LocalModelCatalog {
         if lhs.sizeBytes != rhs.sizeBytes { return lhs.sizeBytes < rhs.sizeBytes }
         if lhs.minimumRamGB != rhs.minimumRamGB { return lhs.minimumRamGB < rhs.minimumRamGB }
         return lhs.id < rhs.id
+    }
+
+    private static func qualityDownloadComparison(
+        _ model: LocalModelDescriptor,
+        _ balanced: LocalModelDescriptor
+    ) -> String {
+        if model.sizeBytes > balanced.sizeBytes {
+            return "Bigger download than the balanced match."
+        }
+        if model.sizeBytes < balanced.sizeBytes {
+            return "Smaller download than the balanced match."
+        }
+        return "About the same download size as the balanced match."
     }
 }
 

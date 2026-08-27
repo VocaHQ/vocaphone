@@ -122,7 +122,18 @@ enum DownloadReadiness {
     /// would evict to make room, which is what a model download can actually
     /// claim — the raw free-bytes value understates it badly on a full phone.
     static func availableStorageBytes(at url: URL) -> Int64 {
-        let values = try? url.resourceValues(
+        // The first-run `LocalModels` folder does not exist yet. Asking its URL
+        // for volume capacity fails and reads as zero, which used to skip the
+        // very storage check this helper exists for. Capacity belongs to the
+        // volume, so walk to the nearest existing parent instead.
+        let fileManager = FileManager.default
+        var volumeURL = url
+        while !fileManager.fileExists(atPath: volumeURL.path) {
+            let parent = volumeURL.deletingLastPathComponent()
+            guard parent.path != volumeURL.path else { return 0 }
+            volumeURL = parent
+        }
+        let values = try? volumeURL.resourceValues(
             forKeys: [.volumeAvailableCapacityForImportantUsageKey]
         )
         return Int64(values?.volumeAvailableCapacityForImportantUsage ?? 0)
