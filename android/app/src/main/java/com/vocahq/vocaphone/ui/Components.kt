@@ -80,9 +80,6 @@ internal object AdaptiveLayout {
     fun stackActions(widthDp: Float, fontScale: Float): Boolean =
         effectiveWidth(widthDp, fontScale) < 360f
 
-    fun stackChecklistAction(widthDp: Float, fontScale: Float): Boolean =
-        effectiveWidth(widthDp, fontScale) < 400f
-
     fun stackInfo(widthDp: Float, fontScale: Float): Boolean =
         effectiveWidth(widthDp, fontScale) < 320f
 
@@ -480,35 +477,25 @@ fun ChecklistRow(
     modifier: Modifier = Modifier,
     actionColor: Color = MaterialTheme.colorScheme.primary,
 ) {
-    BoxWithConstraints(modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        val stacked = !satisfied && AdaptiveLayout.stackChecklistAction(
-            maxWidth.value,
-            LocalDensity.current.fontScale,
+    // Always a single row: label takes the leftover width and wraps, the short
+    // action (Grant, Open, Set up) stays vertically centered. Stacking under
+    // 400dp looked broken on every handset and still looked wrong on a foldable
+    // cover screen; weight + wrap scales from a tiny phone to an open foldable.
+    Row(
+        modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChecklistContent(
+            title = title,
+            detail = detail,
+            satisfied = satisfied,
+            modifier = Modifier.weight(1f),
         )
-        if (stacked) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ChecklistContent(title = title, detail = detail, satisfied = false)
-                TextButton(
-                    onClick = onAction,
-                    modifier = Modifier.align(Alignment.End),
-                    colors = ButtonDefaults.textButtonColors(contentColor = actionColor),
-                ) { Text(actionLabel) }
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ChecklistContent(
-                    title = title,
-                    detail = detail,
-                    satisfied = satisfied,
-                    modifier = Modifier.weight(1f),
-                )
-                if (!satisfied) {
-                    TextButton(
-                        onClick = onAction,
-                        colors = ButtonDefaults.textButtonColors(contentColor = actionColor),
-                    ) { Text(actionLabel) }
-                }
-            }
+        if (!satisfied) {
+            TextButton(
+                onClick = onAction,
+                colors = ButtonDefaults.textButtonColors(contentColor = actionColor),
+            ) { Text(actionLabel) }
         }
     }
 }
