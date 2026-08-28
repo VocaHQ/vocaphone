@@ -787,7 +787,7 @@ enum LocalModelCatalog {
     }
 
     /// The widest-coverage model that still covers this phone's own language.
-    private static func bestMultilingual(
+    static func bestMultilingual(
         deviceMemoryGB: Int,
         language: String
     ) -> LocalModelDescriptor? {
@@ -881,7 +881,7 @@ enum LocalModelCatalog {
 enum ModelGuidancePriority: String, CaseIterable, Identifiable, Sendable {
     case balanced
     case lighter
-    case quality
+    case multilingual
 
     var id: String { rawValue }
 
@@ -889,7 +889,7 @@ enum ModelGuidancePriority: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .balanced: "Balanced"
         case .lighter: "Smallest download"
-        case .quality: "Best accuracy"
+        case .multilingual: "Works across languages"
         }
     }
 
@@ -897,7 +897,7 @@ enum ModelGuidancePriority: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .balanced: "The best all-round match for this iPhone and your language."
         case .lighter: "Least data and storage. Best on a metered connection."
-        case .quality: "The most capable model this iPhone can run. Download size can differ."
+        case .multilingual: "One model for several languages, instead of a specialist in one."
         }
     }
 }
@@ -972,8 +972,11 @@ extension LocalModelCatalog {
                 if $0.minimumRamGB != $1.minimumRamGB { return $0.minimumRamGB < $1.minimumRamGB }
                 return $0.id < $1.id
             } ?? candidates[0]
-        case .quality:
-            model = mostCapable(among: candidates, language: language) ?? balanced
+        case .multilingual:
+            model = bestMultilingual(deviceMemoryGB: deviceMemoryGB, language: language)
+                .flatMap { pick in candidates.contains(pick) ? pick : nil }
+                ?? candidates.max(by: widestCoverage)
+                ?? balanced
         }
 
         let languageName = displayName(for: language)
@@ -983,11 +986,11 @@ extension LocalModelCatalog {
             reason = "A balanced match that fits this iPhone and covers \(languageName)."
         case .lighter:
             reason = "The smallest compatible download that covers \(languageName)."
-        case .quality:
+        case .multilingual:
             reason = model.id == balanced.id
-                ? "The balanced match is already the most capable model this iPhone can run for \(languageName)."
-                : "The most capable model this iPhone can run for \(languageName). "
-                    + qualityDownloadComparison(model, balanced)
+                ? "The balanced match already covers several languages on this iPhone."
+                : "Covers \(model.languages), so you can switch language without "
+                    + "switching model. " + qualityDownloadComparison(model, balanced)
         }
         return ModelGuidanceResult(
             model: model,
@@ -997,46 +1000,22 @@ extension LocalModelCatalog {
         )
     }
 
-    /// The best model in `candidates` when download size is not the constraint.
+    /// How wide a model's coverage is, for ranking breadth.
     ///
-    /// The language's own specialist comes first. Walking the general lists
-    /// straight away moved a Russian speaker off GigaAM, trained on Russian
-    /// alone, onto the 25-language Parakeet purely because it is four times the
-    /// size — a likely downgrade sold as an upgrade, and one that also gives up
-    /// pinning the language, since that model decides for itself from the audio.
-    /// `scoreModel` already reaches the same answer on Android by ranking the
-    /// family; this is the iOS catalog's way of saying it.
-    ///
-    /// After that the curated lists decide. `englishPreference` is ordered
-    /// best-first outright. `multilingualPreference` is ordered by breadth
-    /// rather than accuracy, but it leads with the largest and most capable
-    /// encoders, so it answers this question too. Anything the lists do not
-    /// mention falls back to the largest model that fits, the only capability
-    /// signal the catalog carries for it.
-    private static func mostCapable(
-        among candidates: [LocalModelDescriptor],
-        language: String
-    ) -> LocalModelDescriptor? {
-        let ids = Set(candidates.map(\.id))
-        if let specialist = starterIDs[language.lowercased()],
-           ids.contains(specialist),
-           let model = candidates.first(where: { $0.id == specialist }) {
-            return model
+    /// An empty `languageCodes` means no restriction rather than no coverage —
+    /// that is how the multilingual Whisper builds are declared — so it sorts
+    /// above every model that names its languages.
+    private static func widestCoverage(
+        _ lhs: LocalModelDescriptor,
+        _ rhs: LocalModelDescriptor
+    ) -> Bool {
+        func breadth(_ model: LocalModelDescriptor) -> Int {
+            if model.englishOnly { return 1 }
+            return model.languageCodes.isEmpty ? .max : model.languageCodes.count
         }
-        // English-only entries can never cover another language, so the two
-        // lists are concatenated in the order that puts the useful one first.
-        let preference = language.lowercased() == "en"
-            ? englishPreference + multilingualPreference
-            : multilingualPreference + englishPreference
-        if let curated = preference.first(where: { ids.contains($0) }),
-           let model = candidates.first(where: { $0.id == curated }) {
-            return model
-        }
-        return candidates.max {
-            if $0.minimumRamGB != $1.minimumRamGB { return $0.minimumRamGB < $1.minimumRamGB }
-            if $0.sizeBytes != $1.sizeBytes { return $0.sizeBytes < $1.sizeBytes }
-            return $0.id > $1.id
-        }
+        if breadth(lhs) != breadth(rhs) { return breadth(lhs) < breadth(rhs) }
+        if lhs.sizeBytes != rhs.sizeBytes { return lhs.sizeBytes < rhs.sizeBytes }
+        return lhs.id > rhs.id
     }
 
     private static func displayName(for language: String) -> String {

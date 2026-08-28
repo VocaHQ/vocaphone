@@ -93,10 +93,6 @@ struct LocalModelCatalogTests {
             deviceMemoryGB: 8,
             intent: ModelGuidanceIntent(language: "en", priority: .lighter)
         )
-        let quality = LocalModelCatalog.guidance(
-            deviceMemoryGB: 8,
-            intent: ModelGuidanceIntent(language: "en", priority: .quality)
-        )
         let smallest = LocalModelCatalog.all
             .filter { $0.minimumRamGB <= 8 && $0.covers("en") }
             .min { $0.sizeBytes < $1.sizeBytes }
@@ -105,52 +101,37 @@ struct LocalModelCatalogTests {
         #expect(lighter.reason.contains("smallest"))
         #expect(balanced.model != nil)
 
-        // "Best accuracy" has to be able to differ from "smallest download",
-        // or it is a control that does nothing.
-        #expect(quality.model?.id != lighter.model?.id)
-        #expect((quality.model?.sizeBytes ?? 0) > (lighter.model?.sizeBytes ?? 0))
-        #expect(quality.reason.contains("most capable"))
     }
 
-    /// Bigger is not better when the smaller model was trained on the one
-    /// language being asked for. Picking the 25-language Parakeet here also
-    /// gives up pinning the language, because it detects for itself.
-    @Test func guidanceQualityKeepsALanguageSpecialistOverAGeneralModel() {
-        let quality = LocalModelCatalog.guidance(
-            deviceMemoryGB: 8,
-            intent: ModelGuidanceIntent(language: "ru", priority: .quality)
-        )
+    /// The reason this option exists at all. "Best accuracy" was replaced
+    /// because it returned the balanced match on every language and every
+    /// memory size, which is a control that does nothing.
+    @Test func multilingualIsADifferentAnswerWhereverAWiderModelFits() {
+        var differed = 0
+        for language in ["en", "ru", "de", "ja", "zh"] {
+            for memory in [8, 4, 3] {
+                let balanced = LocalModelCatalog.guidance(
+                    deviceMemoryGB: memory,
+                    intent: ModelGuidanceIntent(language: language, priority: .balanced)
+                ).model
+                let wide = LocalModelCatalog.guidance(
+                    deviceMemoryGB: memory,
+                    intent: ModelGuidanceIntent(language: language, priority: .multilingual)
+                ).model
 
-        #expect(quality.model?.id == "giga-am-ctc-ru")
-        #expect(quality.model?.detectsLanguageAutomatically == false)
-    }
-
-    /// The specialist rule has to hold for every language the catalog names one
-    /// for, not just the Russian case that exposed it.
-    @Test func everyLanguageWithASpecialistKeepsItUnderQuality() {
-        for language in ["ru", "de", "es", "fr", "zh", "ja", "ko", "yue"] {
-            let quality = LocalModelCatalog.guidance(
-                deviceMemoryGB: 8,
-                intent: ModelGuidanceIntent(language: language, priority: .quality)
-            )
-            let model = quality.model
-            #expect(model != nil, "no quality match for \(language)")
-            #expect(model?.covers(language) == true, "\(language) pick cannot transcribe it")
-        }
-    }
-
-    @Test func guidanceQualityNeverReturnsAModelTheiPhoneCannotRun() {
-        for memory in [2, 4, 8, 16] {
-            let quality = LocalModelCatalog.guidance(
-                deviceMemoryGB: memory,
-                intent: ModelGuidanceIntent(language: "en", priority: .quality)
-            )
-            if let model = quality.model {
-                #expect(model.minimumRamGB <= memory)
-                #expect(model.covers("en"))
+                #expect(wide != nil, "no multilingual match for \(language) at \(memory)GB")
+                #expect(wide?.covers(language) == true, "\(language) pick cannot transcribe it")
+                #expect(wide?.englishOnly == false, "\(language) got an English-only model")
+                #expect((wide?.minimumRamGB ?? .max) <= memory, "\(language) pick does not fit")
+                if wide?.id != balanced?.id { differed += 1 }
             }
         }
+        // The option has to actually earn its place on ordinary iPhones.
+        #expect(differed >= 10, "multilingual never differed from balanced")
     }
+
+
+
 
     @Test func guidanceAutomaticLanguageUsesThePhoneLanguage() {
         let result = LocalModelCatalog.guidance(

@@ -9,6 +9,9 @@ import org.junit.Test
 
 class ModelGuidanceTest {
 
+    private val allLanguages = listOf("en", "ru", "de", "ja", "zh")
+
+
     private fun profile(
         ram: Long,
         sherpa: Boolean = true,
@@ -44,115 +47,70 @@ class ModelGuidanceTest {
         assertTrue(result.downloadDetail?.contains("32 MB") == true)
     }
 
-    @Test
-    fun qualityPrefersTheMostCapableModelThePhoneCanRun() {
-        val lighter = ModelGuidance.recommend(
-            profile(8),
-            ModelGuidanceIntent("en", ModelGuidancePriority.LIGHTER),
-        )
-        val quality = ModelGuidance.recommend(
-            profile(8),
-            ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
-        )
 
-        // The whole point of the option: it has to be able to differ from the
-        // smallest download, or it is a control that does nothing.
-        assertNotEquals(lighter.model?.id, quality.model?.id)
-        assertTrue((quality.model?.sizeBytes ?: 0) > (lighter.model?.sizeBytes ?: 0))
-    }
 
-    @Test
-    fun qualityDescribesTheActualDownloadTradeoffAgainstBalanced() {
-        val balanced = ModelGuidance.recommend(
-            profile(8),
-            ModelGuidanceIntent("en", ModelGuidancePriority.BALANCED),
-        )
-        val quality = ModelGuidance.recommend(
-            profile(8),
-            ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
-        )
 
-        assertTrue((quality.model?.sizeBytes ?: Long.MAX_VALUE) < (balanced.model?.sizeBytes ?: 0))
-        assertTrue(ModelGuidancePriority.QUALITY.detail.contains("Download size can differ"))
-        assertTrue(quality.reason.contains("Smaller download than the balanced match"))
-    }
+
+
+
 
     /**
-     * Bigger is not better when the smaller model was trained on the one
-     * language being asked for. This is the case that caught the iOS catalog
-     * walking its breadth-ordered list straight past the specialist.
+     * The reason this option exists at all. "Best accuracy" was replaced
+     * because it returned the balanced match on every language and every tier,
+     * which is a control that does nothing.
+     *
+     * A phone that cannot hold a wider model is the one honest exception, and
+     * the reason text says so rather than pretending otherwise.
      */
     @Test
-    fun qualityKeepsALanguageSpecialistOverAGeneralModel() {
-        val quality = ModelGuidance.recommend(
-            profile(8, language = "ru"),
-            ModelGuidanceIntent("ru", ModelGuidancePriority.QUALITY),
-        )
+    fun multilingualIsADifferentAnswerWhereverAWiderModelFits() {
+        var differed = 0
+        allLanguages.forEach { language ->
+            listOf(8L, 4L, 3L).forEach { ram ->
+                val device = profile(ram, language = language)
+                val balanced = ModelGuidance.recommend(
+                    device,
+                    ModelGuidanceIntent(language, ModelGuidancePriority.BALANCED),
+                ).model
+                val multilingual = ModelGuidance.recommend(
+                    device,
+                    ModelGuidanceIntent(language, ModelGuidancePriority.MULTILINGUAL),
+                ).model
 
-        assertEquals("giga-am-ctc-ru", quality.model?.id)
+                assertNotNull("no multilingual match for $language at ${ram}GB", multilingual)
+                if (multilingual?.id != balanced?.id) differed++
+            }
+        }
+        // The option has to actually earn its place on ordinary phones.
+        assertTrue("multilingual never differed from balanced anywhere", differed >= 10)
     }
 
-    /**
-     * The specialist rule has to hold for every language the catalog names one
-     * for, not just the Russian case that exposed it.
-     */
     @Test
-    fun everyLanguageWithASpecialistKeepsItUnderQuality() {
-        val languages = listOf("ru", "de", "es", "fr", "zh", "ja", "ko", "yue")
-        languages.forEach { language ->
-            val specialist = LocalModelCatalog.starterForLanguage(language)
-            val quality = ModelGuidance.recommend(
+    fun multilingualCoversMoreThanOneLanguageAndStillTheRequestedOne() {
+        allLanguages.forEach { language ->
+            val result = ModelGuidance.recommend(
                 profile(8, language = language),
-                ModelGuidanceIntent(language, ModelGuidancePriority.QUALITY),
+                ModelGuidanceIntent(language, ModelGuidancePriority.MULTILINGUAL),
             )
-            assertEquals(
-                "quality for $language should stay on its specialist",
-                specialist?.id,
-                quality.model?.id,
-            )
+
+            val model = result.model
+            assertNotNull("no multilingual match for $language", model)
+            assertTrue("$language pick cannot transcribe it", model!!.coversLanguage(language))
+            assertTrue("$language pick is English-only", !model.englishOnly)
         }
     }
 
-    /** English is the exception: its starter is the tiny compactness pick. */
     @Test
-    fun englishIsNotHeldToTheTinyStarterUnderQuality() {
-        val quality = ModelGuidance.recommend(
-            profile(8, language = "en"),
-            ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
+    fun multilingualNeverReturnsAModelThePhoneCannotRun() {
+        val device = profile(3, sherpa = false)
+        val result = ModelGuidance.recommend(
+            device,
+            ModelGuidanceIntent("en", ModelGuidancePriority.MULTILINGUAL),
         )
 
-        assertTrue(quality.model?.id != "moonshine-tiny-en")
-    }
-
-    @Test
-    fun qualityNeverReturnsAModelThePhoneCannotRun() {
-        val profile = profile(3, sherpa = false)
-        val quality = ModelGuidance.recommend(
-            profile,
-            ModelGuidanceIntent("en", ModelGuidancePriority.QUALITY),
-        )
-
-        val model = quality.model
+        val model = result.model
         assertNotNull(model)
-        assertTrue(profile.fits(model!!))
-    }
-
-    @Test
-    fun qualitySaysSoPlainlyWhenItLandsOnTheBalancedMatch() {
-        val quality = ModelGuidance.recommend(
-            profile(3, sherpa = false, language = "de"),
-            ModelGuidanceIntent("de", ModelGuidancePriority.QUALITY),
-        )
-        val balanced = ModelGuidance.recommend(
-            profile(3, sherpa = false, language = "de"),
-            ModelGuidanceIntent("de", ModelGuidancePriority.BALANCED),
-        )
-
-        if (quality.model?.id == balanced.model?.id) {
-            assertTrue(quality.reason.contains("already the most capable"))
-        } else {
-            assertTrue(quality.reason.contains("most capable"))
-        }
+        assertTrue(device.fits(model!!))
     }
 
     @Test

@@ -16,9 +16,9 @@ enum class ModelGuidancePriority(
         title = "Smallest download",
         detail = "Least data and storage. Best on a metered connection.",
     ),
-    QUALITY(
-        title = "Best accuracy",
-        detail = "The most capable model this phone can run. Download size can differ.",
+    MULTILINGUAL(
+        title = "Works across languages",
+        detail = "One model for several languages, instead of a specialist in one.",
     ),
 }
 
@@ -99,10 +99,11 @@ object ModelGuidance {
                 candidates.minWith(compareBy<LocalModelDescriptor> { it.sizeBytes }
                     .thenBy { it.minimumRamGB }
                     .thenBy { it.id })
-            ModelGuidancePriority.QUALITY ->
-                languageSpecialist(candidates, language)
+            ModelGuidancePriority.MULTILINGUAL ->
+                LocalModelCatalog.bestMultilingual(rankingProfile)
+                    ?.takeIf { it in candidates }
                     ?: candidates.maxWith(
-                        compareBy<LocalModelDescriptor> { qualityScore(it, rankingProfile) }
+                        compareBy<LocalModelDescriptor> { languageBreadth(it) }
                             .thenBy { it.sizeBytes }
                             .thenByDescending { it.id },
                     )
@@ -114,12 +115,12 @@ object ModelGuidance {
                 "A balanced match that fits this phone and covers $languageName."
             ModelGuidancePriority.LIGHTER ->
                 "The smallest compatible download that covers $languageName."
-            ModelGuidancePriority.QUALITY ->
+            ModelGuidancePriority.MULTILINGUAL ->
                 if (selected.id == balanced.id) {
-                    "The balanced match is already the most capable model this phone can run for $languageName."
+                    "The balanced match already covers several languages on this phone."
                 } else {
-                    "The most capable model this phone can run for $languageName. " +
-                        qualityDownloadComparison(selected, balanced)
+                    "Covers ${selected.languages}, so you can switch language without " +
+                        "switching model. ${qualityDownloadComparison(selected, balanced)}"
                 }
         }
         return ModelGuidanceResult(
@@ -142,42 +143,16 @@ private fun qualityDownloadComparison(
 }
 
 /**
- * The model trained on this one language, when the catalog has one.
+ * How many languages a model transcribes, for ranking breadth.
  *
- * [scoreModel] ranks by family and by how close a Whisper build sits to the
- * class this tier wants, and on a phone with no declared performance class that
- * put a quantized Whisper base above GigaAM for Russian — a 74M generic encoder
- * chosen over one trained on Russian alone, offered to the user as the accurate
- * answer. The scores cannot see that difference, so the catalog's own statement
- * about the language is consulted first.
- *
- * English is excluded deliberately: its starter is the *tiny* checkpoint, a
- * compactness choice, and the general ranking already has a rich set of
- * English-only models to choose the accurate one from.
+ * An empty [LocalModelDescriptor.languageCodes] means no restriction rather
+ * than no coverage — that is how the multilingual Whisper builds are declared —
+ * so it sorts above every model that names its languages.
  */
-private fun languageSpecialist(
-    candidates: List<LocalModelDescriptor>,
-    language: String,
-): LocalModelDescriptor? {
-    if (language.equals("en", ignoreCase = true)) return null
-    val starter = LocalModelCatalog.starterForLanguage(language) ?: return null
-    return candidates.firstOrNull { it.id == starter.id }
-}
-
-/**
- * How good a model is likely to be when download size is not the constraint.
- *
- * [scoreModel] deliberately penalizes anything over 500 MB, because a first-run
- * default has to finish on a phone radio. Someone who explicitly asked for
- * accuracy has answered that question themselves, so the penalty is added back
- * here and nowhere else. Everything else about the score — the family ranking,
- * the tier-aware Whisper class, the language match — still applies, and
- * [DeviceProfile.fits] has already excluded anything this phone cannot run.
- */
-private fun qualityScore(model: LocalModelDescriptor, profile: DeviceProfile): Int {
-    val base = scoreModel(model, profile)
-    if (base == Int.MIN_VALUE) return base
-    return base + if (model.sizeBytes > 500_000_000L) 50 else 0
+private fun languageBreadth(model: LocalModelDescriptor): Int = when {
+    model.englishOnly -> 1
+    model.languageCodes.isEmpty() -> Int.MAX_VALUE
+    else -> model.languageCodes.size
 }
 
 private fun guidanceLanguageName(code: String): String {
