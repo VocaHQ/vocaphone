@@ -57,6 +57,40 @@ struct SnippetExpanderTests {
         #expect(expander.expand(in: "sig", using: snippets) == "sent from my brb device")
     }
 
+    /// Boundaries are spelled out as a Unicode class rather than left to
+    /// `\b`, so a trigger outside ASCII matches here and on Android alike.
+    @Test func nonASCIITriggerExpands() {
+        let snippets = [Snippet(trigger: "büro", expansion: "the office")]
+        #expect(
+            expander.expand(in: "meet me at büro later", using: snippets)
+                == "meet me at the office later"
+        )
+        #expect(
+            expander.expand(in: "the bürogebäude is closed", using: snippets)
+                == "the bürogebäude is closed"
+        )
+    }
+
+    @Test func nonLatinScriptTriggerExpands() {
+        let snippets = [Snippet(trigger: "पता", expansion: "221B Baker Street")]
+        #expect(
+            expander.expand(in: "भेजें पता पर", using: snippets)
+                == "भेजें 221B Baker Street पर"
+        )
+    }
+
+    @Test func caseFoldingAppliesToNonASCIITriggers() {
+        let snippets = [Snippet(trigger: "über", expansion: "above")]
+        #expect(expander.expand(in: "ÜBER all", using: snippets) == "above all")
+    }
+
+    /// A trigger stored with stray whitespace still matches on its own words,
+    /// rather than being compiled with the padding baked into the pattern.
+    @Test func triggerWhitespaceIsIgnoredWhenMatching() {
+        let snippets = [Snippet(trigger: "  brb  ", expansion: "be right back")]
+        #expect(expander.expand(in: "brb everyone", using: snippets) == "be right back everyone")
+    }
+
     /// Replacement runs in reverse match order so earlier ranges in the
     /// string stay valid while later ones are rewritten.
     @Test func multipleMatchesInOneStringAllExpand() {

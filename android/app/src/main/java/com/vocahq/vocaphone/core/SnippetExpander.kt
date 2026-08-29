@@ -20,21 +20,30 @@ object SnippetExpander {
 
     fun expand(text: String, snippets: List<Snippet>): String {
         val active = snippets
-            .filter { it.trigger.isNotBlank() }
+            .map { it.copy(trigger = it.trigger.trim()) }
+            .filter { it.trigger.isNotEmpty() }
             // Longer, more specific triggers win over a shorter one that could
             // be a substring of it ("my email" before "email").
             .sortedByDescending { it.trigger.length }
         if (active.isEmpty()) return text
 
-        val pattern = Pattern.compile(
-            active.joinToString("|") { "(${boundaryPattern(it.trigger)})" },
-            Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE or Pattern.UNICODE_CHARACTER_CLASS,
-        )
+        // A trigger that cannot be compiled must cost the user the expansion,
+        // not the dictation: without this the throw propagates out of deliver()
+        // and the transcript is never inserted at all.
+        val pattern = runCatching {
+            Pattern.compile(
+                active.joinToString("|") { "(${boundaryPattern(it.trigger)})" },
+                Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE,
+            )
+        }.getOrNull() ?: return text
         val matcher = pattern.matcher(text)
         val matches = mutableListOf<Triple<Int, Int, Int>>()
         while (matcher.find()) {
-            val groupIndex = (1..active.size).first { matcher.group(it) != null } - 1
-            matches += Triple(matcher.start(), matcher.end(), groupIndex)
+            // Exactly one branch of the alternation can have matched, but skip
+            // rather than throw if that ever stops holding: this runs inside
+            // delivery, where an exception costs the whole transcript.
+            val groupIndex = (1..active.size).firstOrNull { matcher.group(it) != null } ?: continue
+            matches += Triple(matcher.start(), matcher.end(), groupIndex - 1)
         }
         if (matches.isEmpty()) return text
 
@@ -46,15 +55,26 @@ object SnippetExpander {
     }
 
     /**
-     * `\b` on a side whose edge character is a word character; otherwise a
-     * non-whitespace lookaround, so a punctuation-only trigger like "->" still
-     * matches at the start or end of the string, where `\b` would not fire.
+     * A word-character edge is bounded by [WORD] spelled out rather than by
+     * `\b`. `\b` is not portable here: it resolves against ASCII-only `\w` on
+     * the desktop JVM the unit tests run on, but against Unicode `\w` in the
+     * ICU engine Android ships, so a trigger like "büro" would pass a test and
+     * still fail on a phone. Naming the class keeps both engines in step.
+     * `UNICODE_CHARACTER_CLASS` would do the same on the JVM but throws on
+     * Android, which is the other half of the same trap.
+     *
+     * A punctuation-only trigger like "->" has no word character to bound, so
+     * it takes a non-whitespace lookaround, which also lets it match at the
+     * very start and end of the string.
      */
     private fun boundaryPattern(trigger: String): String {
-        val prefix = if (trigger.first().isWordChar()) "\\b" else "(?<!\\S)"
-        val suffix = if (trigger.last().isWordChar()) "\\b" else "(?!\\S)"
+        val prefix = if (trigger.first().isWordChar()) "(?<!$WORD)" else "(?<!\\S)"
+        val suffix = if (trigger.last().isWordChar()) "(?!$WORD)" else "(?!\\S)"
         return prefix + Pattern.quote(trigger) + suffix
     }
 
     private fun Char.isWordChar(): Boolean = isLetterOrDigit() || this == '_'
+
+    /** Letters and digits in any script, plus the underscore. */
+    private const val WORD = "[\\p{L}\\p{N}_]"
 }

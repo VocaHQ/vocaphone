@@ -1368,7 +1368,9 @@ struct SnippetsSettingsView: View {
         // one stays visible and editable in `snippets` until it's valid.
         SnippetStore.snippets = snippets.compactMap {
             let trimmedTrigger = $0.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedTrigger.isEmpty, !$0.expansion.isEmpty else { return nil }
+            let blankExpansion = $0.expansion
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            guard !trimmedTrigger.isEmpty, !blankExpansion else { return nil }
             var valid = $0
             valid.trigger = trimmedTrigger
             return valid
@@ -1428,7 +1430,7 @@ private struct AddSnippetView: View {
                     }
                     .disabled(
                         trigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || expansion.isEmpty
+                            || expansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
                 }
             }

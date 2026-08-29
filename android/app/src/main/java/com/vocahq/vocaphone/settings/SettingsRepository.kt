@@ -489,9 +489,12 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    // A blank expansion would silently delete its trigger from every later
+    // transcript, so it never reaches storage; the expansion is otherwise kept
+    // as typed, since leading or trailing spaces can be the point of it.
     suspend fun addSnippet(trigger: String, expansion: String) {
         val cleaned = trigger.trim()
-        if (cleaned.isEmpty()) return
+        if (cleaned.isEmpty() || expansion.isBlank()) return
         context.dataStore.edit { preferences ->
             val current = Snippet.decode(preferences[Keys.SNIPPETS])
             val added = Snippet(id = UUID.randomUUID().toString(), trigger = cleaned, expansion = expansion)
@@ -501,7 +504,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateSnippet(id: String, trigger: String, expansion: String) {
         val cleaned = trigger.trim()
-        if (cleaned.isEmpty()) return
+        if (cleaned.isEmpty() || expansion.isBlank()) return
         context.dataStore.edit { preferences ->
             val current = Snippet.decode(preferences[Keys.SNIPPETS])
             val next = current.map {

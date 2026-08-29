@@ -11,8 +11,12 @@ protocol SnippetExpanding {
 /// second pass would see it as ordinary dictated text.
 final class SnippetExpander: SnippetExpanding {
     func expand(in text: String, using snippets: [Snippet]) -> String {
-        let candidates = snippets.filter {
-            !$0.trigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let candidates = snippets.compactMap { snippet -> Snippet? in
+            let trigger = snippet.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trigger.isEmpty else { return nil }
+            var trimmed = snippet
+            trimmed.trigger = trigger
+            return trimmed
         }
         guard !candidates.isEmpty else { return text }
 
@@ -47,17 +51,23 @@ final class SnippetExpander: SnippetExpanding {
         return nil
     }
 
-    /// A trigger that starts or ends on a letter, digit, or underscore uses
-    /// `\b`; one that starts or ends on punctuation — "brb", ")))" — cannot,
-    /// because `\b` only fires at a word/non-word boundary and punctuation is
-    /// non-word on both sides. A non-whitespace lookaround matches it at
-    /// either edge of the string as well as between words.
+    /// A trigger that starts or ends on a letter, digit, or underscore is
+    /// bounded by ``word`` spelled out rather than by `\b`, so this matches
+    /// the Android expander character for character — `\b` resolves against
+    /// each engine's own idea of a word character, and the two do not agree.
+    /// A trigger that starts or ends on punctuation — "->", ")))" — has no
+    /// word character to bound, and `\b` would never fire beside it anyway;
+    /// a non-whitespace lookaround matches it at either edge of the string as
+    /// well as between words.
     private func boundaryPattern(for trigger: String) -> String {
         let escaped = NSRegularExpression.escapedPattern(for: trigger)
-        let left = isWordCharacter(trigger.first) ? "\\b" : "(?<!\\S)"
-        let right = isWordCharacter(trigger.last) ? "\\b" : "(?!\\S)"
+        let left = isWordCharacter(trigger.first) ? "(?<!\(Self.word))" : "(?<!\\S)"
+        let right = isWordCharacter(trigger.last) ? "(?!\(Self.word))" : "(?!\\S)"
         return left + escaped + right
     }
+
+    /// Letters and digits in any script, plus the underscore.
+    private static let word = "[\\p{L}\\p{N}_]"
 
     private func isWordCharacter(_ character: Character?) -> Bool {
         guard let character else { return false }

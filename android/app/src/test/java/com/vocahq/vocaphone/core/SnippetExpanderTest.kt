@@ -79,6 +79,54 @@ class SnippetExpanderTest {
         )
     }
 
+    /**
+     * The boundary class is spelled out instead of using `\b` so that this
+     * passes for the same reason on the desktop JVM and on a phone: `\b` reads
+     * ASCII-only `\w` here and Unicode `\w` in Android's ICU engine, so a
+     * green test would say nothing about the device.
+     */
+    @Test
+    fun `a non-ASCII trigger matches`() {
+        val snippets = listOf(Snippet("1", "büro", "the office"))
+        assertEquals(
+            "meet me at the office later",
+            SnippetExpander.expand("meet me at büro later", snippets),
+        )
+    }
+
+    @Test
+    fun `a non-ASCII trigger does not match inside a longer word`() {
+        val snippets = listOf(Snippet("1", "büro", "the office"))
+        assertEquals(
+            "the bürogebäude is closed",
+            SnippetExpander.expand("the bürogebäude is closed", snippets),
+        )
+    }
+
+    @Test
+    fun `a non-Latin script trigger matches`() {
+        val snippets = listOf(Snippet("1", "पता", "221B Baker Street"))
+        assertEquals(
+            "भेजें 221B Baker Street पर",
+            SnippetExpander.expand("भेजें पता पर", snippets),
+        )
+    }
+
+    @Test
+    fun `case folding applies to non-ASCII triggers`() {
+        val snippets = listOf(Snippet("1", "über", "above"))
+        assertEquals("above all", SnippetExpander.expand("ÜBER all", snippets))
+    }
+
+    @Test
+    fun `trigger whitespace is ignored when matching`() {
+        val snippets = listOf(Snippet("1", "  brb  ", "be right back"))
+        assertEquals(
+            "be right back everyone",
+            SnippetExpander.expand("brb everyone", snippets),
+        )
+    }
+
     @Test
     fun `multiple matches are replaced without shifting earlier ranges`() {
         val snippets = listOf(
