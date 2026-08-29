@@ -220,19 +220,47 @@ class TranscriptRepairTest {
     @Test
     fun `spacing around marks is normalized`() {
         assertEquals("hello there, how are you", TranscriptRepair.apply("hello there ,how are you"))
-        assertEquals("one. two. three", TranscriptRepair.apply("one.two.three"))
+        // Not hostname-shaped — a digit cannot be a top-level domain.
+        assertEquals(
+            "stop. 42 people came to the party",
+            TranscriptRepair.apply("stop.42 people came to the party"),
+        )
     }
 
     /**
-     * A bare hostname has to end in something that is actually a domain, or
-     * "the report.Then I left" is masked as one and the missing space after the
-     * full stop can never be repaired.
+     * A capital after the full stop is a sentence starting, not a domain, and
+     * the space it is missing has to be put back.
      */
     @Test
-    fun `a dotted pair of words is not a hostname`() {
+    fun `a capital after a full stop is not a hostname`() {
         assertEquals(
             "I finished the report. Then I left",
             TranscriptRepair.apply("I finished the report.Then I left"),
+        )
+        assertEquals(
+            "Report. Then I left the office",
+            TranscriptRepair.apply("Report.Then I left the office"),
+        )
+    }
+
+    /**
+     * There are roughly 1,500 top-level domains, so a hostname is recognized by
+     * being written in lowercase throughout rather than by a list of them.
+     * Splitting a dictated address in half is data loss; a missing space is not.
+     */
+    @Test
+    fun `an unlisted top-level domain is still a hostname`() {
+        assertEquals(
+            "visit example.museum for details",
+            TranscriptRepair.apply("visit example.museum for details"),
+        )
+        assertEquals(
+            "read more at my-site.photography today",
+            TranscriptRepair.apply("read more at my-site.photography today"),
+        )
+        assertEquals(
+            "Example.com is the site we use",
+            TranscriptRepair.apply("Example.com is the site we use"),
         )
         assertEquals(
             "visit example.com/a.b. thanks",

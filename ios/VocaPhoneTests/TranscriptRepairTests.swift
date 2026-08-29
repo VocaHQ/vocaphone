@@ -170,16 +170,42 @@ struct TranscriptRepairTests {
 
     @Test func spacingAroundMarksIsNormalized() {
         #expect(TranscriptRepair.apply("hello there ,how are you") == "hello there, how are you")
-        #expect(TranscriptRepair.apply("one.two.three") == "one. two. three")
+        // Not hostname-shaped — a digit cannot be a top-level domain.
+        #expect(
+            TranscriptRepair.apply("stop.42 people came to the party")
+                == "stop. 42 people came to the party"
+        )
     }
 
-    /// A bare hostname has to end in something that is actually a domain, or
-    /// "the report.Then I left" is masked as one and the missing space after
-    /// the full stop can never be repaired.
-    @Test func aDottedPairOfWordsIsNotAHostname() {
+    /// A capital after the full stop is a sentence starting, not a domain, and
+    /// the space it is missing has to be put back.
+    @Test func aCapitalAfterAFullStopIsNotAHostname() {
         #expect(
             TranscriptRepair.apply("I finished the report.Then I left")
                 == "I finished the report. Then I left"
+        )
+        #expect(
+            TranscriptRepair.apply("Report.Then I left the office")
+                == "Report. Then I left the office"
+        )
+    }
+
+    /// There are roughly 1,500 top-level domains, so a hostname is recognized
+    /// by being written in lowercase throughout rather than by a list of them.
+    /// Splitting a dictated address in half is data loss; a missing space is
+    /// not.
+    @Test func anUnlistedTopLevelDomainIsStillAHostname() {
+        #expect(
+            TranscriptRepair.apply("visit example.museum for details")
+                == "visit example.museum for details"
+        )
+        #expect(
+            TranscriptRepair.apply("read more at my-site.photography today")
+                == "read more at my-site.photography today"
+        )
+        #expect(
+            TranscriptRepair.apply("Example.com is the site we use")
+                == "Example.com is the site we use"
         )
         #expect(
             TranscriptRepair.apply("visit example.com/a.b. thanks")

@@ -16,26 +16,41 @@ struct ProtectedSpans {
     let text: String
     let tokens: [String]
 
-    /// Top-level domains a bare hostname is allowed to end in, plus any
-    /// two-letter country code.
-    ///
-    /// Matching *any* dotted pair instead — which this did — masks
-    /// `report.Then` in "I finished the report.Then I left" and the missing
-    /// space after the full stop can then never be repaired. Deliberately
-    /// case-sensitive: a real domain is written in lowercase, and `.To` at the
-    /// start of a sentence is not one.
+    /// Top-level domains common enough to recognize even when the name in
+    /// front of them was capitalized — "Example.com" opening a sentence.
     private static let topLevelDomains =
         "com|org|net|edu|gov|int|mil|io|dev|app|ai|co|me|tv|cc|xyz|info|biz"
         + "|online|site|tech|store|blog|cloud|link|live|news|shop|space|wiki|zone"
         + "|[a-z]{2}"
 
+    /// Any other bare hostname, recognized by case rather than by a list.
+    ///
+    /// There are roughly 1,500 top-level domains, so an allowlist misses real
+    /// ones — `example.museum` — and punctuation repair then splits the address
+    /// in half. Matching *any* dotted pair instead has the opposite fault: it
+    /// masks `report.Then` in "I finished the report.Then I left", and the
+    /// missing space can never be repaired.
+    ///
+    /// Case is what actually separates them. A hostname is written in
+    /// lowercase from end to end; a full stop that ended a sentence is followed
+    /// by a capital. This clause requires the former, and the leading `\b`
+    /// keeps it from matching the tail of a capitalized word.
+    ///
+    /// What is left over is `report.then` — an all-lowercase run-on, from an
+    /// engine that emits a full stop but no capital. That one is genuinely
+    /// ambiguous, and it is masked, because leaving a space out is a blemish
+    /// where breaking an address in half is data loss.
+    private static let lowercaseHostname = "\\b(?:[a-z0-9][a-z0-9-]*\\.)+[a-z]{2,24}\\b"
+
+    private static let path = "(?:/[^\\s]*[^\\s.,;:!?\\\"“”'\\)\\]])?"
+
     private static let pattern =
         "((?i:https?)://[^\\s]+[^\\s.,;:!?\\\"“”'\\)\\]]"
         + "|[\\w.+-]+@(?:[\\w-]+\\.)+[A-Za-z]{2,}"
-        + "|(?:[\\w-]+\\.)+(?:" + topLevelDomains + ")\\b"
         // A path may contain dots; it may not end on the full stop that ends
         // the sentence the address is sitting in.
-        + "(?:/[^\\s]*[^\\s.,;:!?\\\"“”'\\)\\]])?"
+        + "|(?:[\\w-]+\\.)+(?:" + topLevelDomains + ")\\b" + path
+        + "|" + lowercaseHostname + path
         + "|\\d+(?:[.,:/]\\d+)+"
         + "|\\d+(?i:st|nd|rd|th)\\b"
         + "|(?:[A-Za-z]\\.){2,})"
