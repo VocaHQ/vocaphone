@@ -19,6 +19,13 @@ class SnippetExpanderTest {
         assertEquals("hello world", SnippetExpander.expand("hello world", snippets))
     }
 
+    /** A blank expansion must leave the trigger alone, not delete it. */
+    @Test
+    fun `blank expansions are ignored`() {
+        val snippets = listOf(Snippet("1", "brb", "   "))
+        assertEquals("brb in five", SnippetExpander.expand("brb in five", snippets))
+    }
+
     @Test
     fun `matching is case insensitive`() {
         val snippets = listOf(Snippet("1", "brb", "be right back"))

@@ -1310,6 +1310,7 @@ struct TranscriptionLanguageList: View {
 struct SnippetsSettingsView: View {
     @State private var snippets: [Snippet] = SnippetStore.snippets
     @State private var isAddingSnippet = false
+    @State private var editing: Snippet?
 
     var body: some View {
         List {
@@ -1318,8 +1319,8 @@ struct SnippetsSettingsView: View {
                     Text("No snippets yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach($snippets) { $snippet in
-                        SnippetRow(snippet: $snippet, onChange: persist)
+                    ForEach(snippets) { snippet in
+                        SnippetRow(snippet: snippet) { editing = snippet }
                     }
                     .onDelete(perform: delete)
                 }
@@ -1343,8 +1344,20 @@ struct SnippetsSettingsView: View {
             }
         }
         .sheet(isPresented: $isAddingSnippet) {
-            AddSnippetView { trigger, expansion in
+            SnippetEditorView(title: "Add Snippet", confirmation: "Add") { trigger, expansion in
                 snippets.append(Snippet(trigger: trigger, expansion: expansion))
+                persist()
+            }
+        }
+        .sheet(item: $editing) { snippet in
+            SnippetEditorView(
+                title: "Edit Snippet",
+                confirmation: "Save",
+                snippet: snippet
+            ) { trigger, expansion in
+                guard let index = snippets.firstIndex(where: { $0.id == snippet.id }) else { return }
+                snippets[index].trigger = trigger
+                snippets[index].expansion = expansion
                 persist()
             }
         }
@@ -1355,54 +1368,68 @@ struct SnippetsSettingsView: View {
         persist()
     }
 
+    /// Editing happens behind Cancel and Save, so every row here is already
+    /// valid and the whole list is written as-is. Filtering at this point
+    /// instead — dropping a row that momentarily failed validation — is what
+    /// would make a half-finished edit delete an existing snippet outright.
     private func persist() {
-        // The trigger is what matching keys off, so stray whitespace around it
-        // is noise; the expansion is left untouched because leading or
-        // trailing whitespace there can be exactly what the user wanted.
-        //
-        // A row mid-edit can be blank — an in-progress trigger, an emptied
-        // expansion — and each keystroke calls persist(). Writing that blank
-        // straight to the store would either leave an inert snippet or, worse,
-        // an empty expansion that silently deletes the trigger from every
-        // future dictation. Only fully-valid rows reach the store; the blank
-        // one stays visible and editable in `snippets` until it's valid.
-        SnippetStore.snippets = snippets.compactMap {
-            let trimmedTrigger = $0.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
-            let blankExpansion = $0.expansion
-                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            guard !trimmedTrigger.isEmpty, !blankExpansion else { return nil }
-            var valid = $0
-            valid.trigger = trimmedTrigger
-            return valid
-        }
+        SnippetStore.snippets = snippets
     }
 }
 
 private struct SnippetRow: View {
-    @Binding var snippet: Snippet
-    let onChange: () -> Void
+    let snippet: Snippet
+    let onEdit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: VocaMetrics.related) {
-            TextField("Trigger", text: $snippet.trigger)
-                .font(.body.weight(.semibold))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .onChange(of: snippet.trigger) { _, _ in onChange() }
-            TextField("Expansion", text: $snippet.expansion, axis: .vertical)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .onChange(of: snippet.expansion) { _, _ in onChange() }
+        Button(action: onEdit) {
+            HStack {
+                VStack(alignment: .leading, spacing: VocaMetrics.tight) {
+                    Text(snippet.trigger)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(snippet.expansion)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .padding(.vertical, VocaMetrics.related / 2)
+        .accessibilityHint("Edits this snippet")
     }
 }
 
-private struct AddSnippetView: View {
+/// Add and edit share one form. Nothing it collects reaches the store until
+/// Save, so a trigger cleared halfway through retyping is never mistaken for
+/// a snippet the user wanted emptied or removed.
+private struct SnippetEditorView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var trigger = ""
-    @State private var expansion = ""
-    let onAdd: (String, String) -> Void
+    @State private var trigger: String
+    @State private var expansion: String
+    let title: String
+    let confirmation: String
+    let onSave: (String, String) -> Void
+
+    init(
+        title: String,
+        confirmation: String,
+        snippet: Snippet? = nil,
+        onSave: @escaping (String, String) -> Void
+    ) {
+        self.title = title
+        self.confirmation = confirmation
+        self.onSave = onSave
+        _trigger = State(initialValue: snippet?.trigger ?? "")
+        _expansion = State(initialValue: snippet?.expansion ?? "")
+    }
+
+    private var trimmedTrigger: String {
+        trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         NavigationStack {
@@ -1417,19 +1444,23 @@ private struct AddSnippetView: View {
                         .lineLimit(3...6)
                 }
             }
-            .navigationTitle("Add Snippet")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        onAdd(trigger.trimmingCharacters(in: .whitespacesAndNewlines), expansion)
+                    Button(confirmation) {
+                        // The trigger is what matching keys off, so stray
+                        // whitespace around it is noise; the expansion is kept
+                        // as typed, since leading or trailing whitespace there
+                        // can be exactly what the user wanted.
+                        onSave(trimmedTrigger, expansion)
                         dismiss()
                     }
                     .disabled(
-                        trigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        trimmedTrigger.isEmpty
                             || expansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
                 }

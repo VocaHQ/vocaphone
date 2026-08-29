@@ -12,6 +12,12 @@ struct SnippetExpanderTests {
         #expect(expander.expand(in: "brb", using: snippets) == "brb")
     }
 
+    /// A blank expansion must leave the trigger alone, not delete it.
+    @Test func blankExpansionsAreIgnored() {
+        let snippets = [Snippet(trigger: "brb", expansion: "   ")]
+        #expect(expander.expand(in: "brb in five", using: snippets) == "brb in five")
+    }
+
     @Test func matchingIsCaseInsensitive() {
         let snippets = [Snippet(trigger: "brb", expansion: "be right back")]
         #expect(expander.expand(in: "BRB everyone", using: snippets) == "be right back everyone")

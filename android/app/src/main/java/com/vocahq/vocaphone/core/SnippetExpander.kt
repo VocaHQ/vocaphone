@@ -19,9 +19,12 @@ import java.util.regex.Pattern
 object SnippetExpander {
 
     fun expand(text: String, snippets: List<Snippet>): String {
+        // A blank expansion is skipped rather than applied: settings will not
+        // save one, and a stored one would quietly delete its trigger from
+        // every transcript, which is never what an empty field meant.
         val active = snippets
             .map { it.copy(trigger = it.trigger.trim()) }
-            .filter { it.trigger.isNotEmpty() }
+            .filter { it.trigger.isNotEmpty() && it.expansion.isNotBlank() }
             // Longer, more specific triggers win over a shorter one that could
             // be a substring of it ("my email" before "email").
             .sortedByDescending { it.trigger.length }

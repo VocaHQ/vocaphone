@@ -11,9 +11,13 @@ protocol SnippetExpanding {
 /// second pass would see it as ordinary dictated text.
 final class SnippetExpander: SnippetExpanding {
     func expand(in text: String, using snippets: [Snippet]) -> String {
+        // A blank expansion is skipped rather than applied: the settings screen
+        // will not save one, and a stored one would quietly delete its trigger
+        // from every transcript, which is never what an empty field meant.
         let candidates = snippets.compactMap { snippet -> Snippet? in
             let trigger = snippet.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trigger.isEmpty else { return nil }
+            let expansion = snippet.expansion.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trigger.isEmpty, !expansion.isEmpty else { return nil }
             var trimmed = snippet
             trimmed.trigger = trigger
             return trimmed
