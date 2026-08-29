@@ -207,6 +207,16 @@ struct TranscriptRepairTests {
             TranscriptRepair.apply("Example.com is the site we use")
                 == "Example.com is the site we use"
         )
+        // The name in front of the dot carries no signal, so a capitalized one
+        // with an unlisted domain has to survive too.
+        #expect(
+            TranscriptRepair.apply("visit Example.museum for details")
+                == "visit Example.museum for details"
+        )
+        #expect(
+            TranscriptRepair.apply("see Acme.photography today")
+                == "see Acme.photography today"
+        )
         #expect(
             TranscriptRepair.apply("visit example.com/a.b. thanks")
                 == "visit example.com/a.b. thanks"

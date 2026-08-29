@@ -16,41 +16,38 @@ struct ProtectedSpans {
     let text: String
     let tokens: [String]
 
-    /// Top-level domains common enough to recognize even when the name in
-    /// front of them was capitalized — "Example.com" opening a sentence.
-    private static let topLevelDomains =
-        "com|org|net|edu|gov|int|mil|io|dev|app|ai|co|me|tv|cc|xyz|info|biz"
-        + "|online|site|tech|store|blog|cloud|link|live|news|shop|space|wiki|zone"
-        + "|[a-z]{2}"
+    /// A bare hostname, recognized by the case of its last label rather than by
+    /// a list of top-level domains.
+    ///
+    /// An allowlist cannot work: there are roughly 1,500 top-level domains, and
+    /// every one left off it — `example.museum` — gets its dot read as sentence
+    /// punctuation and the address split in half. Matching *any* dotted pair
+    /// instead has the opposite fault: it masks `report.Then` in "I finished
+    /// the report.Then I left", and the missing space can never be repaired.
+    ///
+    /// The whole signal is in the label **after** the final dot. A top-level
+    /// domain is written in lowercase; a full stop that ended a sentence is
+    /// followed by a capital. Nothing before that dot carries information —
+    /// requiring the name to be lowercase too only loses `Example.museum` —
+    /// so this asks about the last label and nothing else. The leading `\b`
+    /// keeps it from matching the tail of a longer word.
+    ///
+    /// Two things are left over, both preferred to the alternative. An
+    /// all-caps `EXAMPLE.COM` is not recognized, and `report.then` — an
+    /// all-lowercase run-on, from an engine that emits a full stop but no
+    /// capital — is masked as though it were a hostname. Neither is a shape a
+    /// speech model realistically produces, and where the two errors do meet,
+    /// a missing space is a blemish and a broken address is data loss.
+    private static let hostname = "\\b(?:[\\w-]+\\.)+[a-z]{2,24}\\b"
 
-    /// Any other bare hostname, recognized by case rather than by a list.
-    ///
-    /// There are roughly 1,500 top-level domains, so an allowlist misses real
-    /// ones — `example.museum` — and punctuation repair then splits the address
-    /// in half. Matching *any* dotted pair instead has the opposite fault: it
-    /// masks `report.Then` in "I finished the report.Then I left", and the
-    /// missing space can never be repaired.
-    ///
-    /// Case is what actually separates them. A hostname is written in
-    /// lowercase from end to end; a full stop that ended a sentence is followed
-    /// by a capital. This clause requires the former, and the leading `\b`
-    /// keeps it from matching the tail of a capitalized word.
-    ///
-    /// What is left over is `report.then` — an all-lowercase run-on, from an
-    /// engine that emits a full stop but no capital. That one is genuinely
-    /// ambiguous, and it is masked, because leaving a space out is a blemish
-    /// where breaking an address in half is data loss.
-    private static let lowercaseHostname = "\\b(?:[a-z0-9][a-z0-9-]*\\.)+[a-z]{2,24}\\b"
-
+    /// A path may contain dots; it may not end on the full stop that ends the
+    /// sentence the address is sitting in.
     private static let path = "(?:/[^\\s]*[^\\s.,;:!?\\\"“”'\\)\\]])?"
 
     private static let pattern =
         "((?i:https?)://[^\\s]+[^\\s.,;:!?\\\"“”'\\)\\]]"
         + "|[\\w.+-]+@(?:[\\w-]+\\.)+[A-Za-z]{2,}"
-        // A path may contain dots; it may not end on the full stop that ends
-        // the sentence the address is sitting in.
-        + "|(?:[\\w-]+\\.)+(?:" + topLevelDomains + ")\\b" + path
-        + "|" + lowercaseHostname + path
+        + "|" + hostname + path
         + "|\\d+(?:[.,:/]\\d+)+"
         + "|\\d+(?i:st|nd|rd|th)\\b"
         + "|(?:[A-Za-z]\\.){2,})"

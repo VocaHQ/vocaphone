@@ -262,6 +262,16 @@ class TranscriptRepairTest {
             "Example.com is the site we use",
             TranscriptRepair.apply("Example.com is the site we use"),
         )
+        // The name in front of the dot carries no signal, so a capitalized one
+        // with an unlisted domain has to survive too.
+        assertEquals(
+            "visit Example.museum for details",
+            TranscriptRepair.apply("visit Example.museum for details"),
+        )
+        assertEquals(
+            "see Acme.photography today",
+            TranscriptRepair.apply("see Acme.photography today"),
+        )
         assertEquals(
             "visit example.com/a.b. thanks",
             TranscriptRepair.apply("visit example.com/a.b. thanks"),
