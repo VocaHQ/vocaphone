@@ -57,6 +57,22 @@ enum SherpaFamily: String, Codable, Sendable {
 
     static let greedySearch = "greedy_search"
 
+    /// Whether the accuracy setting changes the recognizer this family builds.
+    ///
+    /// It changes exactly two config fields, and greedy search reads neither:
+    /// `decoding_method` is pinned, and `max_active_paths` is the beam width a
+    /// beam search would have used. So while `supportsBeamSearch` is false the
+    /// three accuracy settings produce a byte-identical recognizer — and
+    /// treating quality as part of this family's cached identity rebuilds a
+    /// several-hundred-megabyte ONNX graph to arrive at the one already loaded.
+    var nativeConfigVariesWithQuality: Bool { supportsBeamSearch }
+
+    /// The quality this family's recognizer is actually built at, so a cache key
+    /// cannot record a distinction the native config does not have.
+    func effectiveQuality(_ quality: TranscriptionQuality) -> TranscriptionQuality {
+        nativeConfigVariesWithQuality ? quality : .default
+    }
+
     /// The only safe way to turn a quality setting into a decoding method.
     func decodingMethod(for quality: TranscriptionQuality) -> String {
         supportsBeamSearch ? quality.sherpaDecodingMethod : Self.greedySearch

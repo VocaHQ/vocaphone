@@ -18,7 +18,7 @@ gateway/.venv/
 gateway/.pytest_cache/
 gateway/.ruff_cache/
 gateway/.mypy_cache/
-gateway/.omo/
+.omo/
 gateway/data/
 gateway/*.db
 gateway/*.sqlite

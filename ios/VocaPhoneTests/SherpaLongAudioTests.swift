@@ -130,12 +130,14 @@ struct SherpaLongAudioTests {
                     return .empty
                 }
                 defer { shortResult += 1 }
-                return SherpaTranscript(text: shortResult == 0 ? "first half" : "second half")
+                return .decoded(
+                    SherpaTranscript(text: shortResult == 0 ? "first half" : "second half")
+                )
             },
             deduplicateOverlap: true
         )
 
-        #expect(transcript.text == "first half second half")
+        #expect(transcript.transcriptOrEmpty.text == "first half second half")
         // Half the boundary overlap on each side, exactly as Android splits.
         #expect(decodedSizes == [160_000, 84_000, 84_000])
     }
@@ -167,13 +169,13 @@ struct SherpaLongAudioTests {
             decodeOnce: { samples in
                 decodedSizes.append(samples.count)
                 defer { attempts += 1 }
-                return SherpaTranscript(text: attempts == 1 ? "recovered" : "")
+                return .decoded(SherpaTranscript(text: attempts == 1 ? "recovered" : ""))
             },
             deduplicateOverlap: true,
             recoverAudibleShortInput: true
         )
 
-        #expect(transcript.text == "recovered")
+        #expect(transcript.transcriptOrEmpty.text == "recovered")
         #expect(decodedSizes == [80_000, 80_000])
     }
 
@@ -273,12 +275,65 @@ struct SherpaLongAudioTests {
             decodeOnce: { samples in
                 samples.count > SherpaLongAudio.minimumSuspectChunkSamples
                     ? .empty
-                    : SherpaTranscript(text: "to the shop")
+                    : .decoded(SherpaTranscript(text: "to the shop"))
             },
             deduplicateOverlap: false
         )
 
-        #expect(transcript.text == "to the shop to the shop")
+        #expect(transcript.transcriptOrEmpty.text == "to the shop to the shop")
+    }
+
+    // MARK: - Native failures never enter the ladder
+
+    /// The amplification the typed outcome removes. A recognizer that will not
+    /// open a stream answers with no text, and the ladder used to read that as
+    /// a model with nothing to say — spending four more decodes on the same
+    /// broken state and then reporting it as an empty transcript.
+    @Test func aNativeFailureStopsTheLadderAtOnce() {
+        var attempts = 0
+
+        let outcome = SherpaEmptyChunkRecovery.decode(
+            samples: Self.tone(seconds: 3),
+            decodeOnce: { _ in
+                attempts += 1
+                return .failed(.streamUnavailable)
+            },
+            deduplicateOverlap: true,
+            recoverAudibleShortInput: true
+        )
+
+        #expect(attempts == 1)
+        #expect(outcome.nativeFailure == .streamUnavailable)
+    }
+
+    /// Including partway up the ladder: the first decode can answer and a later
+    /// rung still find the engine gone.
+    @Test func aNativeFailureOnARetryIsNotReadAsAnEmptyResult() {
+        var attempts = 0
+
+        let outcome = SherpaEmptyChunkRecovery.decode(
+            samples: Self.tone(seconds: 3),
+            decodeOnce: { _ in
+                attempts += 1
+                return attempts == 1 ? .empty : .failed(.resultMissing)
+            },
+            deduplicateOverlap: true,
+            recoverAudibleShortInput: true
+        )
+
+        #expect(attempts == 2)
+        #expect(outcome.nativeFailure == .resultMissing)
+    }
+
+    /// A truncated transcript is the opposite failure to an empty one — text was
+    /// produced and lost — and must never be reported as no speech.
+    @Test func everyBridgeStatusMapsToItsOwnFailure() {
+        #expect(SherpaNativeFailure.forStatus(-1) == .invalidArgument)
+        #expect(SherpaNativeFailure.forStatus(-2) == .streamUnavailable)
+        #expect(SherpaNativeFailure.forStatus(-3) == .resultMissing)
+        #expect(SherpaNativeFailure.forStatus(-4) == .outputTruncated)
+        // A status the bridge grows later must not read as a successful decode.
+        #expect(SherpaNativeFailure.forStatus(-99) == .unknown)
     }
 
     // MARK: - Merge width

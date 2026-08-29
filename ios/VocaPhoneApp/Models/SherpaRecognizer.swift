@@ -141,42 +141,58 @@ final class SherpaRecognizer: @unchecked Sendable {
     /// A boundary the silence search found is already cut clean here, so only
     /// a guessed one carries audio across, and while translating that seam is
     /// left as it decoded rather than merged by matching words.
-    func transcribe(_ samples: [Float]) -> SherpaTranscript {
+    func transcribe(_ samples: [Float]) -> SherpaDecodeOutcome {
         var transcript = SherpaTranscript.empty
+        var previousEnd = 0
+        var loudestSoFar = 0.0
         for chunk in SherpaLongAudio.chunks(samples) {
             let bounded = Array(samples[chunk.start..<chunk.endExclusive])
-            // Whether a short empty answer is ordinary depends on what came
-            // before it, not on how long the window is. A short window that
-            // follows text is the retained overlap a recording ending just
-            // after a boundary leaves behind, and an empty answer for it is
-            // correct. A short window with nothing decoded ahead of it is the
-            // whole of what the user said so far — the reported failure — and
-            // it earns the bounded recovery ladder however short it is.
-            let nothingDecodedYet = transcript.text.isEmpty
-            let decoded = SherpaEmptyChunkRecovery.decode(
+            // Whether a short empty answer is ordinary is a question about the
+            // audio this window did not inherit from the one before it. A final
+            // window that is only the retained overlap has nothing new in it,
+            // and an empty answer there is correct. A final window carrying a
+            // whole further sentence is the reported failure, and it is that
+            // whether or not an earlier window already produced text — judging
+            // it by the transcript so far is what let a closing sentence
+            // disappear behind a successful opening one.
+            let newRegion = SherpaLongAudio.newRegion(
+                of: samples, chunk: chunk, previousEnd: previousEnd
+            )
+            let newRegionLevel = SherpaLongAudio.loudestFrame(newRegion)
+            let carriesNewSpeech = SherpaLongAudio.carriesRecoverableSpeech(
+                newRegion: newRegion,
+                loudestFrame: newRegionLevel,
+                loudestFrameSoFar: loudestSoFar
+            )
+            let outcome = SherpaEmptyChunkRecovery.decode(
                 samples: bounded,
                 decodeOnce: decode,
                 deduplicateOverlap: !translating,
-                recoverAudibleShortInput: nothingDecodedYet
+                recoverAudibleShortInput: carriesNewSpeech
             )
+            guard case let .decoded(decoded) = outcome else { return outcome }
+            loudestSoFar = max(loudestSoFar, newRegionLevel)
+            previousEnd = chunk.endExclusive
             transcript = transcript.appending(
                 decoded, deduplicateOverlap: chunk.overlapsPrevious && !translating
             )
         }
-        return SherpaTranscript(
-            text: transcript.text.trimmingCharacters(in: .whitespacesAndNewlines),
-            language: transcript.language
+        return .decoded(
+            SherpaTranscript(
+                text: transcript.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                language: transcript.language
+            )
         )
     }
 
-    func transcribeChunk(_ samples: [Float]) -> SherpaTranscript {
+    func transcribeChunk(_ samples: [Float]) -> SherpaDecodeOutcome {
         SherpaEmptyChunkRecovery.decode(
             samples: samples, decodeOnce: decode, deduplicateOverlap: !translating
         )
     }
 
-    private func decode(_ samples: [Float]) -> SherpaTranscript {
-        guard !samples.isEmpty else { return .empty }
+    private func decode(_ samples: [Float]) -> SherpaDecodeOutcome {
+        guard !samples.isEmpty else { return .failed(.invalidArgument) }
         let samples = SherpaFeatureDither.applied(to: samples, dither: featureDither)
         decodeLock.lock()
         defer { decodeLock.unlock() }
@@ -198,10 +214,14 @@ final class SherpaRecognizer: @unchecked Sendable {
                 }
             }
         }
-        guard result >= 0 else { return .empty }
-        return SherpaTranscript(
-            text: Self.string(from: output),
-            language: SherpaTranscript.languageCode(Self.string(from: languageOutput))
+        // A negative status is the engine failing to answer, and it must never
+        // reach the caller looking like a model that answered nothing.
+        guard result >= 0 else { return .failed(.forStatus(result)) }
+        return .decoded(
+            SherpaTranscript(
+                text: Self.string(from: output),
+                language: SherpaTranscript.languageCode(Self.string(from: languageOutput))
+            )
         )
     }
 

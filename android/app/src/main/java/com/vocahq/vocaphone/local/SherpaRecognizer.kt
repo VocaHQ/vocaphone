@@ -51,21 +51,32 @@ internal class SherpaRecognizer private constructor(
      */
     fun transcribe(samples: FloatArray): SherpaTranscript {
         var transcript = SherpaTranscript.EMPTY
+        var previousEnd = 0
+        var loudestSoFar = 0.0
         SherpaLongAudio.chunks(samples).forEach { chunk ->
-            // Whether a short empty answer is ordinary depends on what came
-            // before it, not on how long the window is. A short window that
-            // follows text is the retained overlap a recording ending just
-            // after a boundary leaves behind, and an empty answer for it is
-            // correct. A short window with nothing decoded ahead of it is the
-            // whole of what the user said so far -- the reported failure -- and
-            // it earns the bounded recovery ladder however short it is.
-            val nothingDecodedYet = transcript.text.isEmpty()
+            // Whether a short empty answer is ordinary is a question about the
+            // audio this window did not inherit from the one before it. A final
+            // window that is only the retained overlap has nothing new in it,
+            // and an empty answer there is correct. A final window carrying a
+            // whole further sentence is the reported failure, and it is that
+            // whether or not an earlier window already produced text -- judging
+            // it by the transcript so far is what let a closing sentence
+            // disappear behind a successful opening one.
+            val newRegion = SherpaLongAudio.newRegion(samples, chunk, previousEnd)
+            val newRegionLevel = SherpaLongAudio.loudestFrame(newRegion)
+            val carriesNewSpeech = SherpaLongAudio.carriesRecoverableSpeech(
+                newRegion = newRegion,
+                loudestFrame = newRegionLevel,
+                loudestFrameSoFar = loudestSoFar,
+            )
             val chunkResult = SherpaEmptyChunkRecovery.decode(
                 samples = samples.copyOfRange(chunk.start, chunk.endExclusive),
                 decodeOnce = ::decode,
                 deduplicateOverlap = !translating,
-                recoverAudibleShortInput = nothingDecodedYet,
+                recoverAudibleShortInput = carriesNewSpeech,
             )
+            loudestSoFar = maxOf(loudestSoFar, newRegionLevel)
+            previousEnd = chunk.endExclusive
             transcript = transcript.append(
                 chunkResult,
                 deduplicateOverlap = chunk.overlapsPrevious && !translating,

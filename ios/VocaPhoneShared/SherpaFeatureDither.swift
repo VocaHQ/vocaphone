@@ -11,10 +11,16 @@ import Foundation
 ///
 /// The Android client asks the runtime for this by setting
 /// `FeatureConfig.dither`. The pinned iOS runtime (sherpa-onnx v1.12.34) has no
-/// `dither` field on `SherpaOnnxFeatureConfig`, so there is nothing to set;
-/// applying the same Gaussian to the samples on the way in is numerically the
-/// same thing one stage earlier, and is what keeps the two platforms honest
-/// until the runtime upgrade is evaluated on its own.
+/// `dither` field on `SherpaOnnxFeatureConfig`, so there is nothing to set, and
+/// the same Gaussian is applied to the samples one stage earlier instead.
+///
+/// That is an approximation rather than the same computation. Kaldi dithers
+/// inside each extracted frame, and frames overlap — a 25 ms window every
+/// 10 ms — so a sample that appears in two or three frames is given independent
+/// noise in each. Dithering the waveform gives every frame the same noise for
+/// that sample. It breaks the constant windows this exists for, which is what
+/// #2258 turns on, but it is not bit-equivalent to the native path and should
+/// be replaced by the config field when a runtime that has one is evaluated.
 ///
 /// This matters most for the empty-result recovery ladder, which pads a short
 /// recording with silence. Without dither that padding is a run of exact zeros
@@ -59,10 +65,12 @@ enum SherpaFeatureDither {
 /// construction. Doing it in `Float` is what a `Float` cannot survive here: a
 /// 53-bit draw rounds up to exactly 1 once in about 2^24 values, one nudge past
 /// that makes `log` positive, and the square root of the negative that follows
-/// is a `NaN` written straight into the waveform. At 16 kHz that is a coin flip
-/// every couple of decodes, and a single `NaN` sample is an empty transcript —
-/// the failure this file exists to prevent.
-private struct SherpaDitherGenerator {
+/// is a `NaN` written straight into the waveform. Only the magnitude's draw can
+/// do it, so a ten second decode risks it eighty thousand times — on the order
+/// of one recording in two hundred. Rare enough to survive a test suite, often
+/// enough to be seen on a phone, and a single `NaN` sample is an empty
+/// transcript: the failure this file exists to prevent.
+struct SherpaDitherGenerator {
     private var state: UInt64
 
     init(seed: UInt64) { state = seed }
@@ -77,8 +85,17 @@ private struct SherpaDitherGenerator {
 
     /// A uniform in `(0, 1]`, exactly. 52 bits leaves `Double` a spare bit, so
     /// `bits + 1` is exact and the largest result is 1 rather than a hair above.
+    ///
+    /// Split out from the draw so the boundary can be asserted directly. Feeding
+    /// a generator and hoping it reaches the top of its range is how the first
+    /// version of this test passed against the implementation that produced the
+    /// `NaN`: one in 2^24 is not something a test suite finds by sampling.
+    static func unitInterval(bits: UInt64) -> Double {
+        (Double(bits >> 12) + 1) / Double(UInt64(1) << 52)
+    }
+
     private mutating func nextUnitInterval() -> Double {
-        (Double(next() >> 12) + 1) / Double(UInt64(1) << 52)
+        Self.unitInterval(bits: next())
     }
 
     mutating func nextNormalPair() -> (Float, Float) {

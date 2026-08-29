@@ -159,6 +159,32 @@ enum SherpaLongAudio {
         loudestFrame < silentFrameRMS
     }
 
+    /// The part of `chunk` that is not inherited from the window before it.
+    ///
+    /// A chunk that overlaps its predecessor begins with audio that predecessor
+    /// already decoded. Everything a later window can *lose* is what comes after
+    /// that, so it is what the emptiness of its answer has to be judged on.
+    static func newRegion(of samples: [Float], chunk: Chunk, previousEnd: Int) -> [Float] {
+        let start = min(max(chunk.start, previousEnd), chunk.endExclusive)
+        return Array(samples[start..<chunk.endExclusive])
+    }
+
+    /// Whether an empty answer for `newRegion` is a loss worth spending decodes
+    /// on, rather than the ordinary silence at the end of a recording.
+    ///
+    /// Two things have to hold. The region must be longer than the widest
+    /// overlap the chunker ever retains, because below that it cannot be told
+    /// apart from that overlap — a recording ending just after a boundary leaves
+    /// exactly such a tail, and it is a fragment of a word at best. And it must
+    /// carry speech next to what the recording has already been heard to
+    /// contain, so a trailing pause is not amplified into a retry.
+    static func carriesRecoverableSpeech(
+        newRegion: [Float], loudestFrame: Double, loudestFrameSoFar: Double
+    ) -> Bool {
+        guard newRegion.count > overlapSamples else { return false }
+        return carriesSpeech(loudestFrame: loudestFrame, loudestFrameSoFar: loudestFrameSoFar)
+    }
+
     /// Whether `samples` carries speech rather than the room between sentences.
     ///
     /// `loudestFrameSoFar` is the loudest frame heard earlier in the same

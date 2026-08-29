@@ -263,6 +263,90 @@ class SherpaLongAudioTest {
         assertEquals(listOf(224_000, 116_000, 116_000), decodedSizes)
     }
 
+    /**
+     * The tail that stays ignorable, and the one that never was. A window can be
+     * well under the suspect length and still be the last seconds of the
+     * recording; asking whether the *chunk* was long enough let a closing
+     * sentence vanish behind a successful opening one.
+     */
+    @Test
+    fun `only new audio past the retained overlap is worth recovering`() {
+        val overlapSamples = SherpaLongAudio.OVERLAP_MILLIS * SherpaLongAudio.SAMPLE_RATE / 1_000
+        val overlapOnly = FloatArray(overlapSamples) { 0.4f }
+        val newSpeech = FloatArray(2 * SherpaLongAudio.SAMPLE_RATE) { 0.4f }
+        val roomTone = FloatArray(2 * SherpaLongAudio.SAMPLE_RATE) { 0.01f }
+
+        assertFalse(
+            SherpaLongAudio.carriesRecoverableSpeech(
+                overlapOnly, SherpaLongAudio.loudestFrame(overlapOnly), 0.4,
+            ),
+        )
+        assertTrue(
+            SherpaLongAudio.carriesRecoverableSpeech(
+                newSpeech, SherpaLongAudio.loudestFrame(newSpeech), 0.4,
+            ),
+        )
+        // Past the overlap but not speech next to what has already been heard.
+        assertFalse(
+            SherpaLongAudio.carriesRecoverableSpeech(
+                roomTone, SherpaLongAudio.loudestFrame(roomTone), 0.4,
+            ),
+        )
+    }
+
+    @Test
+    fun `a new region is what the window did not inherit from the one before it`() {
+        val samples = FloatArray(20 * SherpaLongAudio.SAMPLE_RATE) { 0.2f }
+        val chunk = SherpaAudioChunk(
+            start = 9 * SherpaLongAudio.SAMPLE_RATE,
+            endExclusive = 20 * SherpaLongAudio.SAMPLE_RATE,
+            overlapsPrevious = true,
+        )
+
+        val newRegion = SherpaLongAudio.newRegion(
+            samples, chunk, previousEnd = 10 * SherpaLongAudio.SAMPLE_RATE,
+        )
+
+        // The second onward, not the eleven seconds the window covers.
+        assertEquals(10 * SherpaLongAudio.SAMPLE_RATE, newRegion.size)
+    }
+
+    /**
+     * Scripts written without spaces. Every transcript is one "word" on each
+     * side of the seam, so the word matcher never fires: the overlap is written
+     * twice with a space wedged into a script that does not use spaces. iOS has
+     * had a bounded character path; this is Android's.
+     */
+    @Test
+    fun `an unspaced script has its overlap removed without a separator`() {
+        assertEquals(
+            "你好世界再见",
+            SherpaTranscriptMerger.append("你好世界", "世界再见"),
+        )
+        assertEquals(
+            "こんにちは世界",
+            SherpaTranscriptMerger.append("こんにちは", "にちは世界"),
+        )
+    }
+
+    @Test
+    fun `an unspaced repeat wider than the audio overlap is preserved`() {
+        // Seven characters is more than half a second of speech can hold, so it
+        // is repetition the speaker produced rather than duplicated audio.
+        assertEquals(
+            "一二三四五六七一二三四五六七",
+            SherpaTranscriptMerger.append("一二三四五六七", "一二三四五六七"),
+        )
+    }
+
+    @Test
+    fun `a translated unspaced seam is never deduplicated`() {
+        assertEquals(
+            "你好世界 世界再见",
+            SherpaTranscriptMerger.append("你好世界", "世界再见", deduplicateOverlap = false),
+        )
+    }
+
     @Test
     fun `overlapped words are merged once`() {
         assertEquals(

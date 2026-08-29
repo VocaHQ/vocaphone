@@ -25,21 +25,34 @@ enum TranscriptionQuality: String, Codable, CaseIterable, Identifiable, Sendable
         }
     }
 
-    /// No local engine on this platform searches wider than greedy, so nothing
-    /// here may promise that it does. WhisperKit has no beam search at all, and
-    /// every bundled sherpa family is pinned to `greedy_search` — see
-    /// `SherpaFamily.supportsBeamSearch`. What the setting actually buys on iOS
-    /// is re-decoding: how many times a window that came back wrong is tried
-    /// again. Revisit this copy if beam search is ever restored.
-    var detail: String {
-        switch self {
-        case .fast:
-            "Quickest result. Skips the retries that rescue a hard passage."
-        case .balanced:
-            "Retries a window that comes back empty or looks wrong."
-        case .accurate:
-            "Retries hardest before giving up. Noticeably slower on older iPhones."
+    /// What this setting buys, for the engine it is being shown next to.
+    ///
+    /// No local engine on this platform searches wider than greedy — WhisperKit
+    /// has no beam search at all, and every bundled sherpa family is pinned to
+    /// `greedy_search`, see `SherpaFamily.supportsBeamSearch` — so nothing here
+    /// may promise that it does. What is left is re-decoding, and that is where
+    /// the two engines part company: Whisper re-runs a degenerate window at a
+    /// raised temperature and the count comes from this setting, while sherpa's
+    /// empty-result recovery is a fixed ladder that does not consult it. Saying
+    /// otherwise for sherpa describes a control that currently does nothing.
+    func detail(for engine: LocalModelEngine) -> String {
+        switch engine {
+        case .whisperKit: whisperKitDetail
+        case .sherpaOnnx: sherpaDetail
         }
+    }
+
+    private var whisperKitDetail: String {
+        switch self {
+        case .fast: "Quickest result. Skips the retries that rescue a hard passage."
+        case .balanced: "Retries a window that comes back empty or looks wrong."
+        case .accurate: "Retries hardest before giving up. Noticeably slower on older iPhones."
+        }
+    }
+
+    private var sherpaDetail: String {
+        "This model runs one safe decoding mode, so the accuracy setting does "
+            + "not change its result. It applies to Whisper models."
     }
 
     /// How many times a window whose result looks degenerate — too repetitive,
