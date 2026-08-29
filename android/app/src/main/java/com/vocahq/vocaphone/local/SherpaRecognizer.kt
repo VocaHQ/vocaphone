@@ -66,6 +66,7 @@ internal class SherpaRecognizer private constructor(
             val newRegionLevel = SherpaLongAudio.loudestFrame(newRegion)
             val carriesNewSpeech = SherpaLongAudio.carriesRecoverableSpeech(
                 newRegion = newRegion,
+                inheritsAudio = chunk.overlapsPrevious,
                 loudestFrame = newRegionLevel,
                 loudestFrameSoFar = loudestSoFar,
             )

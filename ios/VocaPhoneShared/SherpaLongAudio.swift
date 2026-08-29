@@ -172,16 +172,25 @@ enum SherpaLongAudio {
     /// Whether an empty answer for `newRegion` is a loss worth spending decodes
     /// on, rather than the ordinary silence at the end of a recording.
     ///
-    /// Two things have to hold. The region must be longer than the widest
-    /// overlap the chunker ever retains, because below that it cannot be told
-    /// apart from that overlap — a recording ending just after a boundary leaves
-    /// exactly such a tail, and it is a fragment of a word at best. And it must
-    /// carry speech next to what the recording has already been heard to
+    /// It must carry speech next to what the recording has already been heard to
     /// contain, so a trailing pause is not amplified into a retry.
+    ///
+    /// `inheritsAudio` is what the length bar is for, and why it does not always
+    /// apply. A window that begins inside the one before it has to be told apart
+    /// from that retained overlap, and below the widest overlap the chunker ever
+    /// retains it cannot be — a recording ending just after a boundary leaves
+    /// exactly such a tail, a fragment of a word at best. A window that inherited
+    /// nothing has no overlap to be confused with: it is the whole of what the
+    /// user has said, and a two-word dictation is short precisely because that is
+    /// all there was to say. Applying the bar there was what stopped "yes" from
+    /// ever being retried.
     static func carriesRecoverableSpeech(
-        newRegion: [Float], loudestFrame: Double, loudestFrameSoFar: Double
+        newRegion: [Float],
+        inheritsAudio: Bool,
+        loudestFrame: Double,
+        loudestFrameSoFar: Double
     ) -> Bool {
-        guard newRegion.count > overlapSamples else { return false }
+        guard !inheritsAudio || newRegion.count > overlapSamples else { return false }
         return carriesSpeech(loudestFrame: loudestFrame, loudestFrameSoFar: loudestFrameSoFar)
     }
 

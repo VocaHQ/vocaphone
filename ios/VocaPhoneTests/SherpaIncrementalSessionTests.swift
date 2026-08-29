@@ -179,6 +179,7 @@ struct SherpaIncrementalSessionTests {
 
         #expect(!SherpaLongAudio.carriesRecoverableSpeech(
             newRegion: overlapOnly,
+            inheritsAudio: true,
             loudestFrame: SherpaLongAudio.loudestFrame(overlapOnly),
             loudestFrameSoFar: 0.4
         ))
@@ -191,6 +192,7 @@ struct SherpaIncrementalSessionTests {
 
         #expect(SherpaLongAudio.carriesRecoverableSpeech(
             newRegion: region,
+            inheritsAudio: true,
             loudestFrame: SherpaLongAudio.loudestFrame(region),
             loudestFrameSoFar: 0.4
         ))
@@ -203,7 +205,29 @@ struct SherpaIncrementalSessionTests {
 
         #expect(!SherpaLongAudio.carriesRecoverableSpeech(
             newRegion: region,
+            inheritsAudio: true,
             loudestFrame: SherpaLongAudio.loudestFrame(region),
+            loudestFrameSoFar: 0.4
+        ))
+    }
+
+    /// The length bar is for telling new audio apart from retained overlap, so
+    /// it cannot apply where nothing was retained. A one-word dictation is short
+    /// because that is all there was to say, and it was never decoded before.
+    @Test func aSoleWindowShorterThanTheOverlapIsStillRecoverable() {
+        let oneWord = [Float](repeating: 0.4, count: SherpaLongAudio.sampleRate / 4)
+
+        #expect(SherpaLongAudio.carriesRecoverableSpeech(
+            newRegion: oneWord,
+            inheritsAudio: false,
+            loudestFrame: SherpaLongAudio.loudestFrame(oneWord),
+            loudestFrameSoFar: 0
+        ))
+        // The same audio arriving as a tail behind a decoded window is not.
+        #expect(!SherpaLongAudio.carriesRecoverableSpeech(
+            newRegion: oneWord,
+            inheritsAudio: true,
+            loudestFrame: SherpaLongAudio.loudestFrame(oneWord),
             loudestFrameSoFar: 0.4
         ))
     }

@@ -161,6 +161,7 @@ final class SherpaRecognizer: @unchecked Sendable {
             let newRegionLevel = SherpaLongAudio.loudestFrame(newRegion)
             let carriesNewSpeech = SherpaLongAudio.carriesRecoverableSpeech(
                 newRegion: newRegion,
+                inheritsAudio: chunk.overlapsPrevious,
                 loudestFrame: newRegionLevel,
                 loudestFrameSoFar: loudestSoFar
             )

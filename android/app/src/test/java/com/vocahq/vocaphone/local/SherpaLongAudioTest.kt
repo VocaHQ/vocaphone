@@ -278,18 +278,40 @@ class SherpaLongAudioTest {
 
         assertFalse(
             SherpaLongAudio.carriesRecoverableSpeech(
-                overlapOnly, SherpaLongAudio.loudestFrame(overlapOnly), 0.4,
+                overlapOnly, true, SherpaLongAudio.loudestFrame(overlapOnly), 0.4,
             ),
         )
         assertTrue(
             SherpaLongAudio.carriesRecoverableSpeech(
-                newSpeech, SherpaLongAudio.loudestFrame(newSpeech), 0.4,
+                newSpeech, true, SherpaLongAudio.loudestFrame(newSpeech), 0.4,
             ),
         )
         // Past the overlap but not speech next to what has already been heard.
         assertFalse(
             SherpaLongAudio.carriesRecoverableSpeech(
-                roomTone, SherpaLongAudio.loudestFrame(roomTone), 0.4,
+                roomTone, true, SherpaLongAudio.loudestFrame(roomTone), 0.4,
+            ),
+        )
+    }
+
+    /**
+     * The length bar is for telling new audio apart from retained overlap, so it
+     * cannot apply where nothing was retained. A one-word dictation is short
+     * because that is all there was to say, and it was never decoded before.
+     */
+    @Test
+    fun `a sole window shorter than the overlap is still recoverable`() {
+        val oneWord = FloatArray(SherpaLongAudio.SAMPLE_RATE / 4) { 0.4f }
+
+        assertTrue(
+            SherpaLongAudio.carriesRecoverableSpeech(
+                oneWord, false, SherpaLongAudio.loudestFrame(oneWord), 0.0,
+            ),
+        )
+        // The same audio arriving as a tail behind a decoded window is not.
+        assertFalse(
+            SherpaLongAudio.carriesRecoverableSpeech(
+                oneWord, true, SherpaLongAudio.loudestFrame(oneWord), 0.4,
             ),
         )
     }

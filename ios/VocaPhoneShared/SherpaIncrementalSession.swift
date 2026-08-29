@@ -111,6 +111,7 @@ final class SherpaIncrementalSession: @unchecked Sendable {
             if decoded.text.isEmpty,
                SherpaLongAudio.carriesRecoverableSpeech(
                    newRegion: newRegion,
+                   inheritsAudio: retainedHead > 0,
                    loudestFrame: SherpaLongAudio.loudestFrame(newRegion),
                    loudestFrameSoFar: loudestFrame
                )
