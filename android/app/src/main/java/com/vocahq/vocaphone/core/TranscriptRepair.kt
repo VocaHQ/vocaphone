@@ -107,24 +107,63 @@ object TranscriptRepair {
     // region Fillers
 
     /**
-     * The hesitation sounds, after [canonical] has flattened however many
-     * letters the model chose to spell them with.
+     * Hesitation sounds that are not a word in any language this app
+     * transcribes, so they can go whatever was spoken.
      *
-     * Every one of these is non-lexical: there is no sentence in which the word
-     * carries meaning, which is the whole reason removing it is safe. That is
-     * also why `like`, `you know`, `I mean` and `actually` are **not** here.
-     * Each is a real word often enough that dropping it needs judgement about
-     * what the speaker meant, and this stage does not have any.
+     * Every one is non-lexical: there is no sentence in which it carries
+     * meaning, which is the whole reason removing it is safe. That is also why
+     * `like`, `you know`, `I mean` and `actually` are **not** here. Each is a
+     * real word often enough that dropping it needs judgement about what the
+     * speaker meant, and this stage does not have any.
      */
-    private val UNIVERSAL_FILLERS = setOf("um", "uhm", "umh", "uh", "er", "erm", "hm")
+    private val ALWAYS_SAFE_FILLERS = setOf("uh", "uhm", "umh", "erm", "hm")
+
+    /**
+     * English hesitation sounds that are ordinary words somewhere else.
+     *
+     * `um` is German for "at" — "um acht Uhr" — and `er` is German for "he" and
+     * Dutch for "there". Dropping them from a German transcript deletes
+     * content, so they go only when the transcript is English, or when
+     * Automatic was selected and [looksEnglish] recognizes the sentence around
+     * them.
+     */
+    private val ENGLISH_FILLERS = setOf("um", "er")
 
     /**
      * Sounds that mean *yes* or *no*, and must survive. `mhm` and `uh-huh` are
      * answers to a question, and a transcript that drops them says the opposite
      * of what was said. They are listed rather than merely absent so that
-     * widening [UNIVERSAL_FILLERS] cannot quietly swallow one.
+     * widening the filler sets cannot quietly swallow one.
      */
     private val AFFIRMATIONS = setOf("mhm", "mhmm", "mmhm", "uhuh", "uhhuh", "nuhuh", "huh", "hu")
+
+    /**
+     * Words that reach a filler spelling only because [canonical] flattens
+     * repeated letters, and so have to be caught before it runs. "Err on the
+     * side of caution" is the verb; a model writing a hesitation as `err`
+     * rather than `uh` is rare enough that keeping the word wins.
+     */
+    private val LITERAL_EXCEPTIONS = setOf("err")
+
+    /**
+     * High-frequency English words that are **not** also words in the other
+     * Latin-script languages this app transcribes. That exclusion is the whole
+     * point of the list, so it is shorter than a frequency table would be:
+     * `is` is Dutch, `was` and `will` are German, `for` is Danish, `of` is
+     * Dutch for "or", and `i` is Danish for "in". Any of those would call a
+     * German sentence English and cost it an "um".
+     */
+    private val ENGLISH_MARKERS = setOf(
+        "the", "and", "you", "your", "yours", "with", "that", "thats", "this",
+        "these", "those", "what", "whats", "which", "when", "where", "who",
+        "how", "have", "has", "had", "are", "were", "been", "being",
+        "not", "dont", "doesnt", "didnt", "isnt", "arent", "cant", "wont",
+        "it", "its", "they", "them", "their", "theyre", "she", "her", "his",
+        "there", "theres", "would", "could", "should", "about", "because",
+        "know", "think", "going", "please", "thanks", "very", "again", "only",
+        "over", "some", "than", "then", "through", "want", "need", "make",
+        "made", "take", "come", "from", "more", "most", "much", "many",
+    )
 
     /**
      * Only the non-lexical hesitation sounds, same bar as [UNIVERSAL_FILLERS].
@@ -155,37 +194,54 @@ object TranscriptRepair {
     /**
      * Collapses a run of one repeated letter, so however long the model drew
      * the sound out it lands on the same key: `ummmm` and `uhhh` become `um`
-     * and `uh`. Also drops the hyphen in `uh-huh`, which is why that spelling
-     * reaches [AFFIRMATIONS] intact.
+     * and `uh`. `uh-huh` arrives with its hyphen already gone — [Word.key]
+     * keeps only letters and digits — and so reaches [AFFIRMATIONS] intact.
      */
     private fun canonical(key: String): String {
         val result = StringBuilder(key.length)
         var previous: Char? = null
         for (character in key) {
-            if (character == '-') continue
             if (character != previous) result.append(character)
             previous = character
         }
         return result.toString()
     }
 
-    private fun isFiller(word: Word, code: String): Boolean {
+    /**
+     * Whether the English filler set applies. An explicit English transcript
+     * always qualifies; on Automatic the sentence has to say so itself, which
+     * keeps a German "um acht Uhr" intact at the cost of leaving a filler in a
+     * two-word English fragment that carries no marker.
+     */
+    private fun looksEnglish(code: String, words: List<Word>): Boolean {
+        if (code == "en") return true
+        if (code.isNotEmpty() && code != "auto") return false
+        return words.any { it.key in ENGLISH_MARKERS }
+    }
+
+    private fun isFiller(word: Word, code: String, english: Boolean): Boolean {
         if (word.isProtected) return false
         // A quoted filler is being talked about rather than said: someone
         // dictating `he said "um" a lot` means the word to be there.
         if (word.leading.any { it in QUOTES } || word.trailing.any { it in QUOTES }) return false
-        val key = canonical(word.key)
-        if (key.isEmpty() || key in AFFIRMATIONS) return false
-        return key in UNIVERSAL_FILLERS || LOCAL_FILLERS[code]?.contains(key) == true
+        val raw = word.key
+        if (raw.isEmpty() || raw in LITERAL_EXCEPTIONS) return false
+        val key = canonical(raw)
+        if (key in AFFIRMATIONS) return false
+        if (key in ALWAYS_SAFE_FILLERS) return true
+        if (english && key in ENGLISH_FILLERS) return true
+        return LOCAL_FILLERS[code]?.contains(key) == true
     }
 
     private fun removeFillers(text: String, code: String): String {
         var result = text
         UNSPACED_FILLERS[code]?.forEach { filler -> result = result.replace(filler, "") }
 
+        val words = split(result)
+        val english = looksEnglish(code, words)
         val kept = mutableListOf<Word>()
-        for (word in split(result)) {
-            if (!isFiller(word, code)) {
+        for (word in words) {
+            if (!isFiller(word, code, english)) {
                 kept += word
                 continue
             }
@@ -311,15 +367,20 @@ object TranscriptRepair {
      */
     private fun repairMarks(text: String, punctuation: SentencePunctuation): String {
         var result = text.replace(Regex("\\s+"), " ").trim()
+        // Built from the shared sets rather than a literal per rule, so the
+        // Swift original cannot quietly cover a different set of scripts.
+        val marks = "[${SentencePunctuation.UNIVERSAL_MARKS}]"
+        val terminators = "[${SentencePunctuation.UNIVERSAL_TERMINATORS}]"
+        val separators = "[${SentencePunctuation.UNIVERSAL_SEPARATORS}]"
 
         // Never a space before a mark.
-        result = result.replace(Regex("\\s+([.!?。！？।۔،,;:、၊…])"), "$1")
+        result = result.replace(Regex("\\s+($marks)"), "$1")
         // A run of one separator is one separator.
-        result = result.replace(Regex("([,;:、])\\1+"), "$1")
+        result = result.replace(Regex("($separators)\\1+"), "$1")
         // A separator touching a terminator: the terminator wins, whichever
         // order the model put them in.
-        result = result.replace(Regex("[,;:、]\\s*([.!?。！？।۔])"), "$1")
-        result = result.replace(Regex("([.!?。！？।۔])\\s*[,;:、]"), "$1")
+        result = result.replace(Regex("$separators\\s*($terminators)"), "$1")
+        result = result.replace(Regex("($terminators)\\s*$separators"), "$1")
         // Shouting and stammering. Four or more stops is an ellipsis that got
         // away; three stays an ellipsis.
         result = result.replace(Regex("!{2,}"), "!")
@@ -331,17 +392,20 @@ object TranscriptRepair {
         if (punctuation.join == " ") {
             // Always a space after a mark, unless another mark follows it —
             // that is an ellipsis or a quoted close, not two sentences.
-            result = result.replace(Regex("([,;:])(?=[^\\s,;:.!?…\\)\\]\"”’])"), "$1 ")
             result = result.replace(
-                Regex("([.!?])(?=[\\p{L}\\p{N}${ProtectedSpans.OPEN}])"),
+                Regex("($separators)(?=[^\\s${SentencePunctuation.UNIVERSAL_MARKS}\\)\\]\"”’])"),
+                "$1 ",
+            )
+            result = result.replace(
+                Regex("($terminators)(?=[\\p{L}\\p{N}${ProtectedSpans.OPEN}])"),
                 "$1 ",
             )
         }
 
         // A mark with nothing in front of it, and a separator with nothing
         // after it, are both left over from something that was removed.
-        result = result.replace(Regex("^[\\s,;:.!?、。…]+"), "")
-        result = result.replace(Regex("[,;:、]+\\s*$"), "")
+        result = result.replace(Regex("^[\\s${SentencePunctuation.UNIVERSAL_MARKS}]+"), "")
+        result = result.replace(Regex("($separators)+\\s*$"), "")
         return result.trim()
     }
 
@@ -388,19 +452,35 @@ object TranscriptRepair {
         "maybe", "now", "then", "today", "tomorrow", "yesterday",
     )
 
-    /** "so that", "but as" — a phrase, not a new clause. */
-    private val NOT_CLAUSE_STARTERS = setOf("that", "much", "many", "far", "long", "as")
+    /**
+     * After a conjunction these continue the phrase rather than opening a
+     * clause: "so that", "so much", "but as".
+     */
+    private val PHRASE_FOLLOWERS = setOf("that", "much", "many", "far", "long", "as")
+
+    private val DETERMINERS = setOf("the", "a", "an")
 
     /**
-     * After one of these, `okay` and `alright` are adjectives describing
-     * something, not somebody starting a sentence.
+     * Openers that are neither a subject nor an auxiliary but still start a
+     * sentence often enough to count as one beginning.
      */
-    private val COPULAS = setOf(
+    private val CLAUSE_OPENERS = setOf("so", "well", "just", "first", "next")
+
+    /**
+     * After one of these, `okay` and `alright` are describing something — "the
+     * results came back okay" — rather than somebody starting a new sentence.
+     * Copulas and the particles that finish a phrasal verb, which is the other
+     * position an adjective lands in.
+     */
+    private val ADJECTIVE_PREDECESSORS = setOf(
         "is", "are", "was", "were", "am", "be", "been", "being",
         "seem", "seems", "seemed", "look", "looks", "looked",
         "feel", "feels", "felt", "sound", "sounds", "sounded",
+        "went", "goes", "going", "gone", "doing", "does", "works", "worked",
+        "turned", "came", "back", "out", "up", "fine", "along",
         "not", "quite", "pretty", "totally", "perfectly", "really",
-        "its", "thats", "everything", "all", "more", "less", "about",
+        "its", "thats", "everything", "anything", "something", "nothing",
+        "all", "more", "less", "about", "mostly", "otherwise", "apparently",
     )
 
     private val AUXILIARIES = setOf(
@@ -409,6 +489,14 @@ object TranscriptRepair {
         "can", "cant", "could", "couldnt", "will", "wont", "would", "wouldnt",
         "should", "shouldnt", "shall", "may", "might", "must",
         "have", "has", "had", "havent", "hasnt", "hadnt", "am",
+    )
+
+    /**
+     * Modals that turn an inverted `had`/`were` opening into a condition rather
+     * than a question: "Had I known that, I would have called."
+     */
+    private val CONDITIONAL_MODALS = setOf(
+        "would", "could", "should", "might", "wouldve", "couldve", "shouldve",
     )
 
     private val QUESTION_WORDS = setOf(
@@ -446,11 +534,16 @@ object TranscriptRepair {
         var index = 1
         while (index < words.size) {
             val length = match(SENTENCE_STARTERS, words, index)
+            // A marker only ends the previous sentence when a clause of its own
+            // follows. "The results came back okay and we shipped" is one
+            // sentence; "…came back okay lets ship" is two, and the difference
+            // is entirely the next word.
             if (length == null ||
                 index + length + 2 > words.size ||
                 wordsSinceMark(words, index) < 4 ||
                 words[index - 1].trailing.isNotEmpty() ||
-                words[index - 1].key in COPULAS
+                words[index - 1].key in ADJECTIVE_PREDECESSORS ||
+                !startsClause(words[index + length].key)
             ) {
                 index++
                 continue
@@ -490,7 +583,11 @@ object TranscriptRepair {
             if (words[index - 1].trailing.isNotEmpty()) continue
             if (wordsSinceMark(words, index) < 4) continue
             val next = words[index + 1].key
-            if (next !in CLAUSE_STARTERS || next in NOT_CLAUSE_STARTERS) continue
+            if (next !in CLAUSE_STARTERS || next in PHRASE_FOLLOWERS) continue
+            // A determiner is the ambiguous case: "…but the tests are failing"
+            // is a clause, "…but the truth" is an object. Only the first has
+            // room for a verb after it.
+            if (next in DETERMINERS && index + 4 > words.size) continue
             words[index - 1].trailing = punctuation.separator
         }
     }
@@ -502,15 +599,29 @@ object TranscriptRepair {
      */
     private fun markQuestions(words: MutableList<Word>, punctuation: SentencePunctuation) {
         for (sentence in sentences(words, punctuation)) {
-            val last = words[sentence.last]
-            val closing = last.trailing.lastOrNull()
-            val open = closing == null || closing !in punctuation.terminators
-            if (!open && closing.toString() != punctuation.terminator) continue
+            val existing = words[sentence.last].trailing.lastOrNull {
+                it in punctuation.terminators
+            }
+            // A sentence the model closed with `!` was a choice. One it closed
+            // with the plain terminator, or did not close at all, was not.
+            if (existing != null && existing.toString() != punctuation.terminator) continue
             if (sentence.count() > MAX_QUESTION_WORDS) continue
             if (!isQuestion(words, sentence)) continue
-            if (!open) words[sentence.last].trailing = last.trailing.dropLast(1)
-            words[sentence.last].trailing += punctuation.question
+            close(words[sentence.last], punctuation.question, punctuation)
         }
+    }
+
+    /**
+     * Closes a word with [mark], replacing the terminator it already carries
+     * rather than doubling it, and going *inside* any quote or bracket. A
+     * question that reached the model in quotes ends `it?"`, never `it."?`.
+     */
+    private fun close(word: Word, mark: String, punctuation: SentencePunctuation) {
+        val existing = word.trailing.indexOfLast { it in punctuation.terminators }
+        if (existing >= 0) word.trailing = word.trailing.removeRange(existing, existing + 1)
+        val wrapper = word.trailing.indexOfFirst { it in QUOTES || it in ")]}»" }
+        val at = if (wrapper >= 0) wrapper else word.trailing.length
+        word.trailing = word.trailing.substring(0, at) + mark + word.trailing.substring(at)
     }
 
     private fun isQuestion(words: List<Word>, sentence: IntRange): Boolean {
@@ -526,7 +637,13 @@ object TranscriptRepair {
             }
             return false
         }
-        return keys[0] in AUXILIARIES && keys[1] in SUBJECT_PRONOUNS
+        if (keys[0] !in AUXILIARIES || keys[1] !in SUBJECT_PRONOUNS) return false
+        // "Had I known" and "Were it up to me" invert the same way a question
+        // does; the modal further along is what tells them apart.
+        if (keys[0] == "had" || keys[0] == "were") {
+            return keys.drop(2).none { it in CONDITIONAL_MODALS }
+        }
+        return true
     }
 
     // endregion
@@ -546,6 +663,15 @@ object TranscriptRepair {
         }
         return null
     }
+
+    /**
+     * Whether a clause could start at this word. The question a split has to
+     * answer is "is a new sentence beginning here", and a subject, an
+     * auxiliary, or a question word is what one begins with.
+     */
+    private fun startsClause(key: String): Boolean =
+        key in CLAUSE_STARTERS || key in AUXILIARIES || key in QUESTION_WORDS ||
+            key in CLAUSE_OPENERS
 
     private fun opensSentence(
         words: List<Word>,

@@ -95,11 +95,65 @@ class TranscriptRepairTest {
         assertEquals("eh what was that", TranscriptRepair.apply("eh what was that", "en"))
     }
 
+    /**
+     * `um` is German for "at" and `er` is German for "he" and Dutch for
+     * "there". Removing them from those transcripts deletes content, which is
+     * why they are the one part of the filler set that has to know what
+     * language it is looking at.
+     */
+    @Test
+    fun `fillers that are words elsewhere survive`() {
+        assertEquals(
+            "wir treffen uns um acht Uhr",
+            TranscriptRepair.apply("wir treffen uns um acht Uhr", "de"),
+        )
+        assertEquals(
+            "er kommt in einer Stunde",
+            TranscriptRepair.apply("er kommt in einer Stunde", "de"),
+        )
+        // The unambiguous German filler still goes, and "um" beside it stays.
+        assertEquals(
+            "wir sollten um acht liefern",
+            TranscriptRepair.apply("wir sollten ähm um acht liefern", "de"),
+        )
+    }
+
+    /**
+     * On Automatic nothing has said what the language is, so the sentence has
+     * to. A German one carries no English marker and keeps its "er".
+     */
+    @Test
+    fun `automatic needs the sentence to read as english`() {
+        assertEquals(
+            "er kommt in einer Stunde nach Hause",
+            TranscriptRepair.apply("er kommt in einer Stunde nach Hause"),
+        )
+        assertEquals(
+            "we should ship it that day",
+            TranscriptRepair.apply("um we should ship it that day"),
+        )
+        // Said explicitly, no marker is needed.
+        assertEquals("ship it", TranscriptRepair.apply("um ship it", "en"))
+    }
+
+    /**
+     * "err" only looks like a filler after repeated letters are flattened, so
+     * it is caught before that runs.
+     */
+    @Test
+    fun `the verb err survives`() {
+        assertEquals("to err is human", TranscriptRepair.apply("to err is human"))
+        assertEquals(
+            "i am not sure about that",
+            TranscriptRepair.apply("errr i am not sure about that"),
+        )
+    }
+
     /** Repairing a transcript down to nothing is a rule misfiring, not silence. */
     @Test
     fun `a transcript is never repaired away`() {
-        assertEquals("um", TranscriptRepair.apply("um"))
-        assertEquals("um uh", TranscriptRepair.apply("um uh"))
+        assertEquals("um", TranscriptRepair.apply("um", "en"))
+        assertEquals("um uh", TranscriptRepair.apply("um uh", "en"))
     }
 
     // endregion
@@ -315,6 +369,64 @@ class TranscriptRepairTest {
     }
 
     // endregion
+
+    /**
+     * "…but the truth" is an object, not a clause. Only a determiner with room
+     * for a verb after it is one.
+     */
+    @Test
+    fun `a determiner object does not take a comma`() {
+        assertEquals(
+            "nothing at all here matters but the truth",
+            TranscriptRepair.apply("nothing at all here matters but the truth"),
+        )
+        assertEquals(
+            "we can ship it on friday, but the tests are failing",
+            TranscriptRepair.apply("we can ship it on friday but the tests are failing"),
+        )
+    }
+
+    /** A marker only ends the previous sentence when a clause follows it. */
+    @Test
+    fun `a starter without a clause after it does not split`() {
+        assertEquals(
+            "the results came back okay and we shipped",
+            TranscriptRepair.apply("the results came back okay and we shipped"),
+        )
+        assertEquals(
+            "i tested the whole thing. anyway, we can ship",
+            TranscriptRepair.apply("i tested the whole thing anyway we can ship"),
+        )
+    }
+
+    /**
+     * "Had I known" inverts exactly the way a question does. The modal further
+     * along is the only thing that tells them apart.
+     */
+    @Test
+    fun `an inverted conditional is not a question`() {
+        assertEquals(
+            "had i known that i would have called",
+            TranscriptRepair.apply("had i known that i would have called"),
+        )
+        assertEquals("had you seen the report?", TranscriptRepair.apply("had you seen the report"))
+    }
+
+    /** The mark belongs to the sentence, so it goes inside what wraps it. */
+    @Test
+    fun `a question mark goes inside the quotes`() {
+        assertEquals("\"can you send it?\"", TranscriptRepair.apply("\"can you send it\""))
+        assertEquals("\"can you send it?\"", TranscriptRepair.apply("\"can you send it.\""))
+    }
+
+    /**
+     * The two clients build their punctuation classes from one shared set, so a
+     * script whose separator only one of them listed cannot drift.
+     */
+    @Test
+    fun `non-latin separators are spaced too`() {
+        assertEquals("مرحبا، كيف حالك", TranscriptRepair.apply("مرحبا ،كيف حالك", "ar"))
+    }
 
     // region Spans nothing may touch
 

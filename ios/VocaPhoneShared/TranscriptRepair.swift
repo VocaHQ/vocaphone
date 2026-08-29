@@ -114,24 +114,55 @@ enum TranscriptRepair {
 
     // MARK: - Fillers
 
-    /// The hesitation sounds, after ``canonical(_:)`` has flattened however many
-    /// letters the model chose to spell them with.
+    /// Hesitation sounds that are not a word in any language this app
+    /// transcribes, so they can go whatever was spoken.
     ///
-    /// Every one of these is non-lexical: there is no sentence in which the word
-    /// carries meaning, which is the whole reason removing it is safe. That is
-    /// also why `like`, `you know`, `I mean` and `actually` are **not** here.
-    /// Each is a real word often enough that dropping it needs judgement about
-    /// what the speaker meant, and this stage does not have any.
-    private static let universalFillers: Set<String> = [
-        "um", "uhm", "umh", "uh", "er", "erm", "hm",
-    ]
+    /// Every one is non-lexical: there is no sentence in which it carries
+    /// meaning, which is the whole reason removing it is safe. That is also why
+    /// `like`, `you know`, `I mean` and `actually` are **not** here. Each is a
+    /// real word often enough that dropping it needs judgement about what the
+    /// speaker meant, and this stage does not have any.
+    private static let alwaysSafeFillers: Set<String> = ["uh", "uhm", "umh", "erm", "hm"]
+
+    /// English hesitation sounds that are ordinary words somewhere else.
+    ///
+    /// `um` is German for "at" — "um acht Uhr" — and `er` is German for "he"
+    /// and Dutch for "there". Dropping them from a German transcript deletes
+    /// content, so they go only when the transcript is English, or when
+    /// Automatic was selected and ``looksEnglish(_:)`` recognizes the sentence
+    /// around them.
+    private static let englishFillers: Set<String> = ["um", "er"]
 
     /// Sounds that mean *yes* or *no*, and must survive. `mhm` and `uh-huh` are
     /// answers to a question, and a transcript that drops them says the opposite
     /// of what was said. They are listed rather than merely absent so that
-    /// widening ``universalFillers`` cannot quietly swallow one.
+    /// widening the filler sets cannot quietly swallow one.
     private static let affirmations: Set<String> = [
         "mhm", "mhmm", "mmhm", "uhuh", "uhhuh", "nuhuh", "huh", "hu",
+    ]
+
+    /// Words that reach a filler spelling only because ``canonical(_:)``
+    /// flattens repeated letters, and so have to be caught before it runs.
+    /// "Err on the side of caution" is the verb; a model writing a hesitation
+    /// as `err` rather than `uh` is rare enough that keeping the word wins.
+    private static let literalExceptions: Set<String> = ["err"]
+
+    /// High-frequency English words that are **not** also words in the other
+    /// Latin-script languages this app transcribes. That exclusion is the whole
+    /// point of the list, so it is shorter than a frequency table would be:
+    /// `is` is Dutch, `was` and `will` are German, `for` is Danish, `of` is
+    /// Dutch for "or", and `i` is Danish for "in". Any of those would call a
+    /// German sentence English and cost it an "um".
+    private static let englishMarkers: Set<String> = [
+        "the", "and", "you", "your", "yours", "with", "that", "thats", "this",
+        "these", "those", "what", "whats", "which", "when", "where", "who",
+        "how", "have", "has", "had", "are", "were", "been", "being",
+        "not", "dont", "doesnt", "didnt", "isnt", "arent", "cant", "wont",
+        "it", "its", "they", "them", "their", "theyre", "she", "her", "his",
+        "there", "theres", "would", "could", "should", "about", "because",
+        "know", "think", "going", "please", "thanks", "very", "again", "only",
+        "over", "some", "than", "then", "through", "want", "need", "make",
+        "made", "take", "come", "from", "more", "most", "much", "many",
     ]
 
     /// Only the non-lexical hesitation sounds, same bar as ``universalFillers``.
@@ -157,28 +188,42 @@ enum TranscriptRepair {
 
     /// Collapses a run of one repeated letter, so however long the model drew
     /// the sound out it lands on the same key: `ummmm` and `uhhh` become `um`
-    /// and `uh`. Also drops the hyphen in `uh-huh`, which is why that spelling
-    /// reaches ``affirmations`` intact.
+    /// and `uh`. `uh-huh` arrives with its hyphen already gone — ``Word/key``
+    /// keeps only letters and digits — and so reaches ``affirmations`` intact.
     private static func canonical(_ key: String) -> String {
         var result = ""
         var previous: Character?
-        for character in key where character != "-" {
+        for character in key {
             if character != previous { result.append(character) }
             previous = character
         }
         return result
     }
 
-    private static func isFiller(_ word: Word, code: String) -> Bool {
+    /// Whether the English filler set applies. An explicit English transcript
+    /// always qualifies; on Automatic the sentence has to say so itself, which
+    /// keeps a German "um acht Uhr" intact at the cost of leaving a filler in a
+    /// two-word English fragment that carries no marker.
+    private static func looksEnglish(_ code: String, words: [Word]) -> Bool {
+        if code == "en" { return true }
+        guard code.isEmpty || code == "auto" else { return false }
+        return words.contains { englishMarkers.contains($0.key) }
+    }
+
+    private static func isFiller(_ word: Word, code: String, english: Bool) -> Bool {
         guard !word.isProtected else { return false }
         // A quoted filler is being talked about rather than said: someone
         // dictating `he said "um" a lot` means the word to be there.
         guard !word.leading.contains(where: isQuote),
               !word.trailing.contains(where: isQuote)
         else { return false }
-        let key = canonical(word.key)
-        guard !key.isEmpty, !affirmations.contains(key) else { return false }
-        return universalFillers.contains(key) || localFillers[code]?.contains(key) == true
+        let raw = word.key
+        guard !raw.isEmpty, !literalExceptions.contains(raw) else { return false }
+        let key = canonical(raw)
+        guard !affirmations.contains(key) else { return false }
+        if alwaysSafeFillers.contains(key) { return true }
+        if english, englishFillers.contains(key) { return true }
+        return localFillers[code]?.contains(key) == true
     }
 
     private static func isQuote(_ character: Character) -> Bool {
@@ -191,9 +236,11 @@ enum TranscriptRepair {
             result = result.replacingOccurrences(of: filler, with: "")
         }
 
+        let words = split(result)
+        let english = looksEnglish(code, words: words)
         var kept: [Word] = []
-        for word in split(result) {
-            guard isFiller(word, code: code) else {
+        for word in words {
+            guard isFiller(word, code: code, english: english) else {
                 kept.append(word)
                 continue
             }
@@ -321,18 +368,20 @@ enum TranscriptRepair {
     ) -> String {
         var result = replacing("\\s+", with: " ", in: text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let marks = "[" + NSRegularExpression.escapedPattern(
-            for: SentencePunctuation.universalTerminators + ",;:、၊…"
-        ) + "]"
+        // Built from the shared sets rather than a literal per rule, so the
+        // Kotlin port cannot quietly cover a different set of scripts.
+        let marks = "[" + SentencePunctuation.universalMarks + "]"
+        let terminators = "[" + SentencePunctuation.universalTerminators + "]"
+        let separators = "[" + SentencePunctuation.universalSeparators + "]"
 
         // Never a space before a mark.
         result = replacing("\\s+(" + marks + ")", with: "$1", in: result)
         // A run of one separator is one separator.
-        result = replacing("([,;:、])\\1+", with: "$1", in: result)
+        result = replacing("(" + separators + ")\\1+", with: "$1", in: result)
         // A separator touching a terminator: the terminator wins, whichever
         // order the model put them in.
-        result = replacing("[,;:、]\\s*([.!?。！？।۔])", with: "$1", in: result)
-        result = replacing("([.!?。！？।۔])\\s*[,;:、]", with: "$1", in: result)
+        result = replacing(separators + "\\s*(" + terminators + ")", with: "$1", in: result)
+        result = replacing("(" + terminators + ")\\s*" + separators, with: "$1", in: result)
         // Shouting and stammering. Four or more stops is an ellipsis that got
         // away; three stays an ellipsis.
         result = replacing("!{2,}", with: "!", in: result)
@@ -345,17 +394,22 @@ enum TranscriptRepair {
             // Always a space after a mark, unless another mark follows it —
             // that is an ellipsis or a quoted close, not two sentences.
             result = replacing(
-                "([,;:])(?=[^\\s,;:.!?…\\)\\]\"”’])", with: "$1 ", in: result
+                "(" + separators + ")(?=[^\\s"
+                    + SentencePunctuation.universalMarks + "\\)\\]\"”’])",
+                with: "$1 ",
+                in: result
             )
             result = replacing(
-                "([.!?])(?=[\\p{L}\\p{N}\u{E000}])", with: "$1 ", in: result
+                "(" + terminators + ")(?=[\\p{L}\\p{N}\u{E000}])",
+                with: "$1 ",
+                in: result
             )
         }
 
         // A mark with nothing in front of it, and a separator with nothing
         // after it, are both left over from something that was removed.
-        result = replacing("^[\\s,;:.!?、。…]+", with: "", in: result)
-        result = replacing("[,;:、]+\\s*$", with: "", in: result)
+        result = replacing("^[\\s" + SentencePunctuation.universalMarks + "]+", with: "", in: result)
+        result = replacing("(" + separators + ")+\\s*$", with: "", in: result)
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -391,6 +445,18 @@ enum TranscriptRepair {
     /// Conjunctions that take a comma when they join two full clauses.
     private static let clauseConjunctions: Set<String> = ["but", "so", "yet", "however"]
 
+    /// After a conjunction these continue the phrase rather than opening a
+    /// clause: "so that", "so much", "but as".
+    private static let phraseFollowers: Set<String> = [
+        "that", "much", "many", "far", "long", "as",
+    ]
+
+    private static let determiners: Set<String> = ["the", "a", "an"]
+
+    /// Openers that are neither a subject nor an auxiliary but still start a
+    /// sentence often enough to count as one beginning.
+    private static let clauseOpeners: Set<String> = ["so", "well", "just", "first", "next"]
+
     /// Words that can open a clause of their own. The test for "is a full
     /// clause coming" is "does a subject start right here", which these are the
     /// common ones for.
@@ -403,14 +469,19 @@ enum TranscriptRepair {
         "maybe", "now", "then", "today", "tomorrow", "yesterday",
     ]
 
-    /// After one of these, `okay` and `alright` are adjectives describing
-    /// something, not somebody starting a sentence.
-    private static let copulas: Set<String> = [
+    /// After one of these, `okay` and `alright` are describing something —
+    /// "the results came back okay" — rather than somebody starting a new
+    /// sentence. Copulas and the particles that finish a phrasal verb, which is
+    /// the other position an adjective lands in.
+    private static let adjectivePredecessors: Set<String> = [
         "is", "are", "was", "were", "am", "be", "been", "being",
         "seem", "seems", "seemed", "look", "looks", "looked",
         "feel", "feels", "felt", "sound", "sounds", "sounded",
+        "went", "goes", "going", "gone", "doing", "does", "works", "worked",
+        "turned", "came", "back", "out", "up", "fine", "along",
         "not", "quite", "pretty", "totally", "perfectly", "really",
-        "its", "thats", "everything", "all", "more", "less", "about",
+        "its", "thats", "everything", "anything", "something", "nothing",
+        "all", "more", "less", "about", "mostly", "otherwise", "apparently",
     ]
 
     private static let auxiliaries: Set<String> = [
@@ -458,7 +529,12 @@ enum TranscriptRepair {
                   index + length + 2 <= words.count,
                   wordsSinceMark(words, before: index) >= 4,
                   words[index - 1].trailing.isEmpty,
-                  !copulas.contains(words[index - 1].key)
+                  !adjectivePredecessors.contains(words[index - 1].key),
+                  // A marker only ends the previous sentence when a clause of
+                  // its own follows. "The results came back okay and we
+                  // shipped" is one sentence; "…came back okay lets ship" is
+                  // two, and the difference is entirely the next word.
+                  startsClause(words[index + length].key)
             else {
                 index += 1
                 continue
@@ -492,14 +568,19 @@ enum TranscriptRepair {
         punctuation: SentencePunctuation
     ) {
         for index in words.indices where index >= 4 && index + 2 < words.count {
+            let next = words[index + 1].key
             guard clauseConjunctions.contains(words[index].key),
                   words[index].leading.isEmpty,
                   words[index].trailing.isEmpty,
                   words[index - 1].trailing.isEmpty,
                   wordsSinceMark(words, before: index) >= 4,
-                  clauseStarters.contains(words[index + 1].key),
+                  clauseStarters.contains(next),
                   // "so that", "so much", "but as" — a phrase, not a new clause.
-                  !["that", "much", "many", "far", "long", "as"].contains(words[index + 1].key)
+                  !phraseFollowers.contains(next),
+                  // A determiner is the ambiguous case: "…but the tests are
+                  // failing" is a clause, "…but the truth" is an object. Only
+                  // the first has room for a verb after it.
+                  !determiners.contains(next) || index + 4 <= words.count
             else { continue }
             words[index - 1].trailing = punctuation.separator
         }
@@ -513,17 +594,38 @@ enum TranscriptRepair {
         punctuation: SentencePunctuation
     ) {
         for sentence in sentences(words, punctuation: punctuation) {
-            let last = words[sentence.upperBound]
-            let closing = last.trailing.last
-            let open = closing == nil || !punctuation.terminators.contains(closing!)
-            guard open || String(closing!) == punctuation.terminator,
+            let existing = words[sentence.upperBound].trailing
+                .last { punctuation.terminators.contains($0) }
+            // A sentence the model closed with `!` was a choice. One it closed
+            // with the plain terminator, or did not close at all, was not.
+            guard existing == nil || String(existing!) == punctuation.terminator,
                   sentence.count <= maximumQuestionWords,
                   isQuestion(words, sentence)
             else { continue }
-            if !open { words[sentence.upperBound].trailing.removeLast() }
-            words[sentence.upperBound].trailing += punctuation.question
+            close(&words[sentence.upperBound], with: punctuation.question, punctuation: punctuation)
         }
     }
+
+    /// Closes a word with `mark`, replacing the terminator it already carries
+    /// rather than doubling it, and going *inside* any quote or bracket. A
+    /// question that reached the model in quotes ends `it?"`, never `it."?`.
+    private static func close(
+        _ word: inout Word,
+        with mark: String,
+        punctuation: SentencePunctuation
+    ) {
+        if let existing = word.trailing.lastIndex(where: { punctuation.terminators.contains($0) }) {
+            word.trailing.remove(at: existing)
+        }
+        let wrapper = word.trailing.firstIndex { isQuote($0) || ")]}»".contains($0) }
+        word.trailing.insert(contentsOf: mark, at: wrapper ?? word.trailing.endIndex)
+    }
+
+    /// Modals that turn an inverted `had`/`were` opening into a condition
+    /// rather than a question: "Had I known that, I would have called."
+    private static let conditionalModals: Set<String> = [
+        "would", "could", "should", "might", "wouldve", "couldve", "shouldve",
+    ]
 
     private static func isQuestion(_ words: [Word], _ sentence: ClosedRange<Int>) -> Bool {
         let keys = sentence.map { words[$0].key }
@@ -538,7 +640,13 @@ enum TranscriptRepair {
             }
             return false
         }
-        return auxiliaries.contains(keys[0]) && subjectPronouns.contains(keys[1])
+        guard auxiliaries.contains(keys[0]), subjectPronouns.contains(keys[1]) else { return false }
+        // "Had I known" and "Were it up to me" invert the same way a question
+        // does; the modal further along is what tells them apart.
+        if keys[0] == "had" || keys[0] == "were" {
+            return !keys.dropFirst(2).contains { conditionalModals.contains($0) }
+        }
+        return true
     }
 
     // MARK: - Inference helpers
@@ -562,6 +670,16 @@ enum TranscriptRepair {
             if matched { return phrase.count }
         }
         return nil
+    }
+
+    /// Whether a clause could start at this word. The question a split has to
+    /// answer is "is a new sentence beginning here", and a subject, an
+    /// auxiliary, or a question word is what one begins with.
+    private static func startsClause(_ key: String) -> Bool {
+        clauseStarters.contains(key)
+            || auxiliaries.contains(key)
+            || questionWords.contains(key)
+            || clauseOpeners.contains(key)
     }
 
     private static func opensSentence(

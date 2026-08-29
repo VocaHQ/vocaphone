@@ -75,10 +75,52 @@ struct TranscriptRepairTests {
         #expect(TranscriptRepair.apply("eh what was that", language: "en") == "eh what was that")
     }
 
+    /// `um` is German for "at" and `er` is German for "he" and Dutch for
+    /// "there". Removing them from those transcripts deletes content, which is
+    /// why they are the one part of the filler set that has to know what
+    /// language it is looking at.
+    @Test func fillersThatAreWordsElsewhereSurvive() {
+        #expect(
+            TranscriptRepair.apply("wir treffen uns um acht Uhr", language: "de")
+                == "wir treffen uns um acht Uhr"
+        )
+        #expect(
+            TranscriptRepair.apply("er kommt in einer Stunde", language: "de")
+                == "er kommt in einer Stunde"
+        )
+        // The unambiguous German filler still goes, and "um" beside it stays.
+        #expect(
+            TranscriptRepair.apply("wir sollten ähm um acht liefern", language: "de")
+                == "wir sollten um acht liefern"
+        )
+    }
+
+    /// On Automatic nothing has said what the language is, so the sentence has
+    /// to. A German one carries no English marker and keeps its "er".
+    @Test func automaticNeedsTheSentenceToReadAsEnglish() {
+        #expect(
+            TranscriptRepair.apply("er kommt in einer Stunde nach Hause")
+                == "er kommt in einer Stunde nach Hause"
+        )
+        #expect(TranscriptRepair.apply("um we should ship it that day") == "we should ship it that day")
+        // Said explicitly, no marker is needed.
+        #expect(TranscriptRepair.apply("um ship it", language: "en") == "ship it")
+    }
+
+    /// "err" only looks like a filler after repeated letters are flattened, so
+    /// it is caught before that runs.
+    @Test func theVerbErrSurvives() {
+        #expect(TranscriptRepair.apply("to err is human") == "to err is human")
+        #expect(
+            TranscriptRepair.apply("errr i am not sure about that")
+                == "i am not sure about that"
+        )
+    }
+
     /// Repairing a transcript down to nothing is a rule misfiring, not silence.
     @Test func aTranscriptIsNeverRepairedAway() {
-        #expect(TranscriptRepair.apply("um") == "um")
-        #expect(TranscriptRepair.apply("um uh") == "um uh")
+        #expect(TranscriptRepair.apply("um", language: "en") == "um")
+        #expect(TranscriptRepair.apply("um uh", language: "en") == "um uh")
     }
 
     // MARK: - False starts
@@ -237,6 +279,53 @@ struct TranscriptRepairTests {
     /// Someone chose the exclamation mark. Repair does not overrule it.
     @Test func anExclamationIsLeftAlone() {
         #expect(TranscriptRepair.apply("what a day!") == "what a day!")
+    }
+
+    /// "…but the truth" is an object, not a clause. Only a determiner with room
+    /// for a verb after it is one.
+    @Test func aDeterminerObjectDoesNotTakeAComma() {
+        #expect(
+            TranscriptRepair.apply("nothing at all here matters but the truth")
+                == "nothing at all here matters but the truth"
+        )
+        #expect(
+            TranscriptRepair.apply("we can ship it on friday but the tests are failing")
+                == "we can ship it on friday, but the tests are failing"
+        )
+    }
+
+    /// A marker only ends the previous sentence when a clause follows it.
+    @Test func aStarterWithoutAClauseAfterItDoesNotSplit() {
+        #expect(
+            TranscriptRepair.apply("the results came back okay and we shipped")
+                == "the results came back okay and we shipped"
+        )
+        #expect(
+            TranscriptRepair.apply("i tested the whole thing anyway we can ship")
+                == "i tested the whole thing. anyway, we can ship"
+        )
+    }
+
+    /// "Had I known" inverts exactly the way a question does. The modal further
+    /// along is the only thing that tells them apart.
+    @Test func anInvertedConditionalIsNotAQuestion() {
+        #expect(
+            TranscriptRepair.apply("had i known that i would have called")
+                == "had i known that i would have called"
+        )
+        #expect(TranscriptRepair.apply("had you seen the report") == "had you seen the report?")
+    }
+
+    /// The mark belongs to the sentence, so it goes inside what wraps it.
+    @Test func aQuestionMarkGoesInsideTheQuotes() {
+        #expect(TranscriptRepair.apply("\"can you send it\"") == "\"can you send it?\"")
+        #expect(TranscriptRepair.apply("\"can you send it.\"") == "\"can you send it?\"")
+    }
+
+    /// The two clients build their punctuation classes from one shared set, so
+    /// a script whose separator only one of them listed cannot drift.
+    @Test func nonLatinSeparatorsAreSpacedToo() {
+        #expect(TranscriptRepair.apply("مرحبا ،كيف حالك", language: "ar") == "مرحبا، كيف حالك")
     }
 
     // MARK: - Spans nothing may touch

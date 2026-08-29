@@ -695,6 +695,10 @@ class DictationController(
             val cleaned = DictatedTranscript.finished(
                 transcript,
                 style = configuration.style,
+                // Only repair reads this on a gateway route — the style is
+                // already applied — but a German transcript keeps its "um"
+                // only if this stage is told the language.
+                language = configuration.effectiveLanguage.wireValue,
                 styledUpstream = true,
                 repairSpeech = configuration.repairSpeech,
             )
@@ -785,6 +789,7 @@ class DictationController(
             val transcript = DictatedTranscript.finished(
                 session.transcript,
                 style = configuration.style,
+                language = configuration.effectiveLanguage.wireValue,
                 styledUpstream = true,
                 repairSpeech = configuration.repairSpeech,
             )

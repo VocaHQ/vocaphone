@@ -38,6 +38,20 @@ data class SentencePunctuation(
         /** Marks that never take a space before them and always take one after. */
         const val UNIVERSAL_TERMINATORS = ".!?。！？।۔။។།؟"
 
+        /** Marks that separate parts of a sentence rather than ending one. */
+        const val UNIVERSAL_SEPARATORS = ",;:،、၊"
+
+        /**
+         * Every character the repair stage treats as punctuation, in any
+         * script. One list rather than a per-rule literal, because a rule that
+         * inserts a mark and a rule that spaces around one disagreeing about
+         * what a mark *is* is invisible until a transcript in that script comes
+         * out wrong. Contains no character-class metacharacter, so it can be
+         * interpolated into a `[...]` on both platforms and produce the same
+         * class.
+         */
+        const val UNIVERSAL_MARKS = "$UNIVERSAL_TERMINATORS$UNIVERSAL_SEPARATORS…"
+
         val LATIN = SentencePunctuation(".", ",", "!", "?", ".!?", " ")
         val CJK = SentencePunctuation("。", "、", "！", "？", "。！？.!?", "")
         val ARABIC = SentencePunctuation(".", "،", "!", "؟", ".!?؟", " ")

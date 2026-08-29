@@ -950,6 +950,10 @@ final class RecordingCoordinator {
                 record.transcript = DictatedTranscript.finished(
                     transcript,
                     style: WritingStyle(rawValue: record.style) ?? .casual,
+                    // Only repair reads this on a gateway route — the style is
+                    // already applied — but a German transcript keeps its "um"
+                    // only if this stage is told the language.
+                    language: record.language,
                     styledUpstream: true,
                     repairSpeech: KeyboardPreferences.repairSpeech,
                     numbersAsDigits: KeyboardPreferences.numbersAsDigits
@@ -995,6 +999,7 @@ final class RecordingCoordinator {
             record.transcript = DictatedTranscript.finished(
                 transcript,
                 style: WritingStyle(rawValue: record.style) ?? .casual,
+                language: record.language,
                 styledUpstream: true,
                 repairSpeech: KeyboardPreferences.repairSpeech,
                 numbersAsDigits: KeyboardPreferences.numbersAsDigits

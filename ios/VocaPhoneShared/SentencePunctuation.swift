@@ -28,6 +28,17 @@ struct SentencePunctuation: Sendable, Equatable {
     /// Marks that never take a space before them and always take one after.
     static let universalTerminators = ".!?。！？।۔။។།؟"
 
+    /// Marks that separate parts of a sentence rather than ending one.
+    static let universalSeparators = ",;:،、၊"
+
+    /// Every character the repair stage treats as punctuation, in any script.
+    /// One list rather than a per-rule literal, because a rule that inserts a
+    /// mark and a rule that spaces around one disagreeing about what a mark
+    /// *is* is invisible until a transcript in that script comes out wrong.
+    /// Contains no character-class metacharacter, so it can be interpolated
+    /// into a `[...]` on both platforms and produce the same class.
+    static let universalMarks = universalTerminators + universalSeparators + "…"
+
     static let latin = SentencePunctuation(
         terminator: ".", separator: ",", exclamation: "!", question: "?",
         terminators: ".!?", join: " "
