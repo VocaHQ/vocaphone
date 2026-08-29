@@ -949,6 +949,9 @@ final class RecordingCoordinator {
             ) {
                 record.transcript = DictatedTranscript.finished(
                     transcript,
+                    style: WritingStyle(rawValue: record.style) ?? .casual,
+                    styledUpstream: true,
+                    repairSpeech: KeyboardPreferences.repairSpeech,
                     numbersAsDigits: KeyboardPreferences.numbersAsDigits
                 )
                 record.error = nil
@@ -991,6 +994,9 @@ final class RecordingCoordinator {
             }
             record.transcript = DictatedTranscript.finished(
                 transcript,
+                style: WritingStyle(rawValue: record.style) ?? .casual,
+                styledUpstream: true,
+                repairSpeech: KeyboardPreferences.repairSpeech,
                 numbersAsDigits: KeyboardPreferences.numbersAsDigits
             )
             record.error = nil
@@ -1119,6 +1125,7 @@ final class RecordingCoordinator {
                     reported: transcribed.language,
                     translateTo: KeyboardPreferences.translationTarget
                 ),
+                repairSpeech: KeyboardPreferences.repairSpeech,
                 numbersAsDigits: KeyboardPreferences.numbersAsDigits
             )
             record.error = nil
