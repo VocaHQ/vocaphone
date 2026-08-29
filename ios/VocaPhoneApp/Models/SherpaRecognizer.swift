@@ -13,10 +13,19 @@ final class SherpaRecognizer: @unchecked Sendable {
     /// Whether this recognizer was built to translate, which changes how a
     /// recording too long for one decode is put back together. See `transcribe`.
     private let translating: Bool
+    /// The feature noise this family needs, applied to the waveform because the
+    /// pinned runtime has no `dither` field to ask for it. See
+    /// `SherpaFeatureDither` and `SherpaFamily.featureDither`.
+    private let featureDither: Float
 
-    private init(native: UnsafeMutableRawPointer, translating: Bool = false) {
+    private init(
+        native: UnsafeMutableRawPointer,
+        translating: Bool = false,
+        featureDither: Float = 0
+    ) {
         self.native = native
         self.translating = translating
+        self.featureDither = featureDither
     }
 
     deinit {
@@ -113,7 +122,8 @@ final class SherpaRecognizer: @unchecked Sendable {
         // the caller asked for.
         return SherpaRecognizer(
             native: native,
-            translating: family.acceptsLanguage && !translateTo.isEmpty
+            translating: family.acceptsLanguage && !translateTo.isEmpty,
+            featureDither: family.featureDither
         )
     }
 
@@ -132,18 +142,22 @@ final class SherpaRecognizer: @unchecked Sendable {
     /// a guessed one carries audio across, and while translating that seam is
     /// left as it decoded rather than merged by matching words.
     func transcribe(_ samples: [Float]) -> SherpaTranscript {
-        let chunks = SherpaLongAudio.chunks(samples)
         var transcript = SherpaTranscript.empty
-        for chunk in chunks {
+        for chunk in SherpaLongAudio.chunks(samples) {
             let bounded = Array(samples[chunk.start..<chunk.endExclusive])
+            // Whether a short empty answer is ordinary depends on what came
+            // before it, not on how long the window is. A short window that
+            // follows text is the retained overlap a recording ending just
+            // after a boundary leaves behind, and an empty answer for it is
+            // correct. A short window with nothing decoded ahead of it is the
+            // whole of what the user said so far — the reported failure — and
+            // it earns the bounded recovery ladder however short it is.
+            let nothingDecodedYet = transcript.text.isEmpty
             let decoded = SherpaEmptyChunkRecovery.decode(
                 samples: bounded,
                 decodeOnce: decode,
                 deduplicateOverlap: !translating,
-                // A short final overlap is routinely empty; a short *complete*
-                // dictation with audible speech is the reported failure and
-                // deserves one bounded recovery ladder.
-                recoverAudibleShortInput: chunks.count == 1
+                recoverAudibleShortInput: nothingDecodedYet
             )
             transcript = transcript.appending(
                 decoded, deduplicateOverlap: chunk.overlapsPrevious && !translating
@@ -163,6 +177,7 @@ final class SherpaRecognizer: @unchecked Sendable {
 
     private func decode(_ samples: [Float]) -> SherpaTranscript {
         guard !samples.isEmpty else { return .empty }
+        let samples = SherpaFeatureDither.applied(to: samples, dither: featureDither)
         decodeLock.lock()
         defer { decodeLock.unlock() }
         var output = [CChar](repeating: 0, count: 131_072)
@@ -206,46 +221,6 @@ private extension SherpaFamily {
         case .nemoCtc: 5
         case .paraformer: 6
         }
-    }
-}
-
-private enum SherpaEmptyChunkRecovery {
-    static func decode(
-        samples: [Float],
-        decodeOnce: ([Float]) -> SherpaTranscript,
-        deduplicateOverlap: Bool,
-        recoverAudibleShortInput: Bool = false
-    ) -> SherpaTranscript {
-        guard !SherpaLongAudio.isEffectivelySilent(samples) else { return .empty }
-        let attempt = decodeOnce(samples)
-        let first = SherpaTranscript(
-            text: attempt.text.trimmingCharacters(in: .whitespacesAndNewlines),
-            language: attempt.language
-        )
-        guard first.text.isEmpty else { return first }
-        guard recoverAudibleShortInput || samples.count > SherpaLongAudio.minimumSuspectChunkSamples
-        else { return first }
-
-        // Very short speech can begin or end too close to the encoder context.
-        // A fresh stream and bounded padding are only worthwhile for a complete
-        // short recording; lengthy windows keep the established split ladder.
-        if recoverAudibleShortInput {
-            let repeated = decodeOnce(samples)
-            if !repeated.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return repeated
-            }
-            let padding = [Float](repeating: 0, count: SherpaLongAudio.sampleRate / 2)
-            let padded = decodeOnce(padding + samples + padding)
-            if !padded.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return padded
-            }
-        }
-
-        let midpoint = samples.count / 2
-        let overlap = min(SherpaLongAudio.overlapSamples, midpoint / 2)
-        let left = decodeOnce(Array(samples[..<min(samples.count, midpoint + overlap)]))
-        let right = decodeOnce(Array(samples[max(0, midpoint - overlap)...]))
-        return left.appending(right, deduplicateOverlap: deduplicateOverlap)
     }
 }
 

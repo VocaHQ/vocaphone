@@ -160,17 +160,73 @@ class SherpaLongAudioTest {
     }
 
     @Test
-    fun `a silent chunk is never retried`() {
+    fun `a silent chunk is never decoded at all`() {
         val decodedSizes = mutableListOf<Int>()
         SherpaEmptyChunkRecovery.decode(
             samples = FloatArray(10 * SherpaLongAudio.SAMPLE_RATE),
+            recoverAudibleShortInput = true,
             decodeOnce = { samples ->
                 decodedSizes += samples.size
                 SherpaTranscript.EMPTY
             },
         )
 
-        assertEquals(listOf(160_000), decodedSizes)
+        // Room tone answering with nothing is the correct answer, and the scan
+        // that says so is cheaper than the decode that would agree with it.
+        assertTrue(decodedSizes.isEmpty())
+    }
+
+    @Test
+    fun `a short recording still empty on a fresh stream is padded then split`() {
+        val decodedSizes = mutableListOf<Int>()
+        SherpaEmptyChunkRecovery.decode(
+            samples = FloatArray(3 * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
+            recoverAudibleShortInput = true,
+            decodeOnce = { samples ->
+                decodedSizes += samples.size
+                SherpaTranscript.EMPTY
+            },
+        )
+
+        // Whole, whole again, padded half a second either side, then the two
+        // halves. The ladder is fixed-length: it never subdivides again.
+        assertEquals(listOf(48_000, 48_000, 64_000, 28_000, 28_000), decodedSizes)
+    }
+
+    @Test
+    fun `the recovery split never decodes the whole waveform twice`() {
+        val decodedSizes = mutableListOf<Int>()
+        SherpaEmptyChunkRecovery.decode(
+            samples = FloatArray(SherpaLongAudio.SAMPLE_RATE / 4) { 0.2f },
+            recoverAudibleShortInput = true,
+            decodeOnce = { samples ->
+                decodedSizes += samples.size
+                SherpaTranscript.EMPTY
+            },
+        )
+
+        assertTrue(decodedSizes.takeLast(2).all { it < SherpaLongAudio.SAMPLE_RATE / 4 })
+    }
+
+    /**
+     * Translated windows are joined verbatim: the same audio does not come back
+     * as the same words, so nothing can pair the repeat the split creates.
+     */
+    @Test
+    fun `a translated recovery split is never text deduplicated`() {
+        val transcript = SherpaEmptyChunkRecovery.decode(
+            samples = FloatArray(10 * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
+            deduplicateOverlap = false,
+            decodeOnce = { samples ->
+                if (samples.size > 6 * SherpaLongAudio.SAMPLE_RATE) {
+                    SherpaTranscript.EMPTY
+                } else {
+                    SherpaTranscript("to the shop")
+                }
+            },
+        )
+
+        assertEquals("to the shop to the shop", transcript.text)
     }
 
     @Test

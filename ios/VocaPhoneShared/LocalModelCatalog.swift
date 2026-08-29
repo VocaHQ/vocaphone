@@ -14,11 +14,36 @@ enum SherpaFamily: String, Codable, Sendable {
     case nemoCtc
     case paraformer
 
-    /// NeMo TDT accepts `modified_beam_search`, but current sherpa-onnx builds
-    /// intermittently emit empty or hallucinated text with it. Keep every
-    /// bundled family on greedy decoding until a fixed runtime is shipped and
-    /// exercised on phones.
+    /// Whether this family can safely use `modified_beam_search`.
+    ///
+    /// This is not a preference, and it is false for two separate reasons that
+    /// both have to stay written down.
+    ///
+    /// sherpa-onnx validates the decoding method when the recognizer is built,
+    /// and every family except the transducer answers an unsupported one with
+    /// `exit(-1)` — not an exception, not an error return, but the process
+    /// gone. So the method can never be taken from the user's setting alone.
+    ///
+    /// NeMo TDT does accept the value, but its implementation in the bundled
+    /// runtimes can intermittently emit empty or hallucinated text (upstream
+    /// #3267; its proposed fix #3657 is not merged). That keeps the transducer
+    /// false too, until a fixed native runtime is pinned and exercised on a
+    /// phone. Both halves are load-bearing: restoring the transducer here is
+    /// only ever safe for the transducer.
     var supportsBeamSearch: Bool { false }
+
+    /// Tiny feature noise used only where zero dither can collapse valid speech.
+    ///
+    /// Kaldi's `dither=1` on int16 audio is approximately `1 / 32768` in the
+    /// float scale VocaPhone captures at. It is the upstream workaround for
+    /// Parakeet returning no tokens on valid audio with an all-zero dither
+    /// setting (sherpa-onnx #2258), and matches the Android client exactly.
+    ///
+    /// Android passes this into `FeatureConfig.dither`. The pinned iOS runtime
+    /// (v1.12.34) has no `dither` field on `SherpaOnnxFeatureConfig` at all, so
+    /// `SherpaFeatureDither` reproduces its effect on the waveform instead. Move
+    /// this to `config.feat_config.dither` once the runtime upgrade lands.
+    var featureDither: Float { self == .nemoTransducer ? 0.00003 : 0 }
 
     /// Whether the recognizer config for this family has a language field at all.
     ///

@@ -36,11 +36,48 @@ struct SherpaDecodingMethodTests {
             }
             for quality in TranscriptionQuality.allCases {
                 let method = family.decodingMethod(for: quality)
+                // Not `method == greedy || family.supportsBeamSearch`: with the
+                // flag false everywhere that reduces to the first clause and
+                // stops asserting anything. What has to hold is that a family
+                // is only ever sent a method it can survive, which for anything
+                // but the transducer means greedy and nothing else.
+                let survivable = family == .nemoTransducer
+                    ? [SherpaFamily.greedySearch, "modified_beam_search"]
+                    : [SherpaFamily.greedySearch]
+                let accepted = survivable.contains(method)
                 #expect(
-                    method == SherpaFamily.greedySearch || family.supportsBeamSearch,
+                    accepted,
                     "\(model.id) would be sent \(method), which \(family) cannot accept"
                 )
             }
         }
+    }
+
+    /// Parakeet's empty-result workaround, and the reason the padded recovery
+    /// retry is not a run of exact zeros into a zero-dither feature extractor.
+    @Test func onlyParakeetCarriesTheUpstreamEmptyResultDither() {
+        #expect(SherpaFamily.nemoTransducer.featureDither == 0.00003)
+        for family in Self.families where family != .nemoTransducer {
+            #expect(family.featureDither == 0, "\(family) does not need dither")
+        }
+    }
+
+    /// The value has to reach the samples, not just sit in the catalog: the
+    /// pinned runtime has no `feat_config.dither` to pass it to.
+    @Test func theDitherActuallyReachesTheWaveform() {
+        let silence = [Float](repeating: 0, count: 640)
+        let dithered = SherpaFeatureDither.applied(
+            to: silence, dither: SherpaFamily.nemoTransducer.featureDither
+        )
+        let movedSomething = dithered.contains { $0 != 0 }
+        let stayedInaudible = dithered.allSatisfy { abs($0) < 0.001 }
+
+        #expect(movedSomething, "a constant window must not stay constant")
+        #expect(stayedInaudible, "dither must stay inaudible")
+    }
+
+    @Test func aFamilyWithoutDitherIsHandedItsSamplesUntouched() {
+        let samples: [Float] = [0.1, -0.2, 0.3, 0]
+        #expect(SherpaFeatureDither.applied(to: samples, dither: 0) == samples)
     }
 }

@@ -1,0 +1,74 @@
+import Foundation
+
+/// Recovers a window that decoded to nothing but demonstrably carried speech.
+///
+/// Some attention-based models occasionally return no tokens for a waveform
+/// even though shorter speech from the same recording is recognized. This lives
+/// in the shared target rather than beside the recognizer so the ladder can be
+/// exercised without the native engine, exactly as Android's is.
+enum SherpaEmptyChunkRecovery {
+
+    /// - Parameters:
+    ///   - deduplicateOverlap: false when the caller is translating. The two
+    ///     halves overlap so the word crossing the centre survives, and matching
+    ///     the repeat back out only works when the same audio returns the same
+    ///     words — which is exactly what a translator does not promise.
+    ///   - recoverAudibleShortInput: true when an empty answer here cannot be
+    ///     the ordinary short trailing overlap. See `SherpaRecognizer.transcribe`
+    ///     for how that is decided.
+    static func decode(
+        samples: [Float],
+        decodeOnce: ([Float]) -> SherpaTranscript,
+        deduplicateOverlap: Bool,
+        recoverAudibleShortInput: Bool = false
+    ) -> SherpaTranscript {
+        // Room tone is the ordinary reason for an empty answer, and the cheapest
+        // thing to rule out before spending more decodes: the scan costs a pass
+        // over the samples, a retry costs inference.
+        guard !SherpaLongAudio.isEffectivelySilent(samples) else { return .empty }
+        let first = trimmed(decodeOnce(samples))
+        guard first.text.isEmpty else { return first }
+        // Length is what the split recovers from, so a window not long enough to
+        // have been dropped for its length has nothing there to recover — unless
+        // the caller has already established that this window is the recording.
+        guard recoverAudibleShortInput || samples.count > SherpaLongAudio.minimumSuspectChunkSamples
+        else { return first }
+
+        if recoverAudibleShortInput {
+            // A fresh offline stream can recover a nondeterministic no-token
+            // answer. Long windows keep the established split ladder and its
+            // predictable latency.
+            let repeated = trimmed(decodeOnce(samples))
+            if !repeated.text.isEmpty { return repeated }
+            // Very short speech can begin or end too close to the encoder
+            // context. Half a second either side is enough to move it inside,
+            // and is bounded so a recording cannot grow its own decode cost.
+            let padding = [Float](repeating: 0, count: SherpaLongAudio.sampleRate / 2)
+            let padded = trimmed(decodeOnce(padding + samples + padding))
+            if !padded.text.isEmpty { return padded }
+        }
+
+        // Retain context on both sides of the recovery boundary. A plain
+        // midpoint split could rescue an empty window while still deleting the
+        // word crossing its exact centre. One split and no more: a half-length
+        // window that is still empty is not being lost to its length, and
+        // subdividing again multiplies the decodes for nothing.
+        //
+        // Half the boundary overlap on each side, so the halves share exactly
+        // the interval a chunk boundary retains and the merger is never asked
+        // to match more repetition than the audio can account for. Clamped so a
+        // very short recording does not hand both halves the whole waveform.
+        let midpoint = samples.count / 2
+        let overlap = min(SherpaLongAudio.overlapSamples / 2, midpoint / 2)
+        let left = decodeOnce(Array(samples[..<min(samples.count, midpoint + overlap)]))
+        let right = decodeOnce(Array(samples[max(0, midpoint - overlap)...]))
+        return left.appending(right, deduplicateOverlap: deduplicateOverlap)
+    }
+
+    private static func trimmed(_ transcript: SherpaTranscript) -> SherpaTranscript {
+        SherpaTranscript(
+            text: transcript.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            language: transcript.language
+        )
+    }
+}

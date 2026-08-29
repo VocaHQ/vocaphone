@@ -25,14 +25,20 @@ enum TranscriptionQuality: String, Codable, CaseIterable, Identifiable, Sendable
         }
     }
 
+    /// No local engine on this platform searches wider than greedy, so nothing
+    /// here may promise that it does. WhisperKit has no beam search at all, and
+    /// every bundled sherpa family is pinned to `greedy_search` — see
+    /// `SherpaFamily.supportsBeamSearch`. What the setting actually buys on iOS
+    /// is re-decoding: how many times a window that came back wrong is tried
+    /// again. Revisit this copy if beam search is ever restored.
     var detail: String {
         switch self {
         case .fast:
             "Quickest result. Skips the retries that rescue a hard passage."
         case .balanced:
-            "Beam search where it is cheap, and a retry when a window looks wrong."
+            "Retries a window that comes back empty or looks wrong."
         case .accurate:
-            "Widest search on every model. Noticeably slower on older iPhones."
+            "Retries hardest before giving up. Noticeably slower on older iPhones."
         }
     }
 
@@ -62,6 +68,10 @@ enum TranscriptionQuality: String, Codable, CaseIterable, Identifiable, Sendable
     }
 
     /// What to ask a sherpa model for *if its family supports beam search*.
+    ///
+    /// No family currently does, so this is unreachable in practice. It stays
+    /// because the mapping is the thing to restore once a fixed runtime is
+    /// pinned, and because deleting it would leave nothing to restore.
     ///
     /// Never pass this to a recognizer without checking
     /// `SherpaFamily.supportsBeamSearch` first: the families that do not

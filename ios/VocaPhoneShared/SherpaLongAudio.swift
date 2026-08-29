@@ -220,7 +220,15 @@ struct SherpaTranscript: Sendable, Equatable {
 
 /// Joins text from overlapped chunks without writing the repeated boundary words.
 enum SherpaTranscriptMerger {
-    private static let maximumOverlapWords = 12
+    // The audio overlap is half a second at most, whether it came from a chunk
+    // boundary or from the recovery split. A wider text match than that half
+    // second can hold cannot be duplicated audio; it can only be a phrase the
+    // speaker genuinely repeated, and deleting it is the worse error. Android's
+    // `SherpaTranscriptMerger` uses the same bound for the same reason.
+    private static let maximumOverlapWords = 4
+    /// The same bound for scripts written without spaces, where half a second
+    /// of speech is a few characters rather than a few words.
+    private static let maximumOverlapCharacters = 6
 
     static func append(existing: String, next: String, deduplicateOverlap: Bool = true) -> String {
         let left = existing.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -246,7 +254,9 @@ enum SherpaTranscriptMerger {
 
         let leftCharacters = Array(left)
         let rightCharacters = Array(right)
-        let maximum = min(12, leftCharacters.count, rightCharacters.count)
+        let maximum = min(
+            maximumOverlapCharacters, leftCharacters.count, rightCharacters.count
+        )
         let overlap = maximum > 0
             ? stride(from: maximum, through: 1, by: -1).first { count in
                 Array(leftCharacters.suffix(count)) == Array(rightCharacters.prefix(count))
