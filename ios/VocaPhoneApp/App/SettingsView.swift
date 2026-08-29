@@ -1359,10 +1359,19 @@ struct SnippetsSettingsView: View {
         // The trigger is what matching keys off, so stray whitespace around it
         // is noise; the expansion is left untouched because leading or
         // trailing whitespace there can be exactly what the user wanted.
-        SnippetStore.snippets = snippets.map {
-            var trimmed = $0
-            trimmed.trigger = $0.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed
+        //
+        // A row mid-edit can be blank — an in-progress trigger, an emptied
+        // expansion — and each keystroke calls persist(). Writing that blank
+        // straight to the store would either leave an inert snippet or, worse,
+        // an empty expansion that silently deletes the trigger from every
+        // future dictation. Only fully-valid rows reach the store; the blank
+        // one stays visible and editable in `snippets` until it's valid.
+        SnippetStore.snippets = snippets.compactMap {
+            let trimmedTrigger = $0.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedTrigger.isEmpty, !$0.expansion.isEmpty else { return nil }
+            var valid = $0
+            valid.trigger = trimmedTrigger
+            return valid
         }
     }
 }
