@@ -147,22 +147,41 @@ enum TranscriptRepair {
     /// as `err` rather than `uh` is rare enough that keeping the word wins.
     private static let literalExceptions: Set<String> = ["err"]
 
+    /// How many markers a transcript needs before Automatic will treat it as
+    /// English.
+    ///
+    /// One is not enough. A German sentence only has to brush against a single
+    /// English-looking word to lose its "er", and "er kommt her" did exactly
+    /// that. Two independent markers is a far higher bar for an accident to
+    /// clear, and English prose of any length clears it easily.
+    private static let englishMarkersNeeded = 2
+
     /// High-frequency English words that are **not** also words in the other
     /// Latin-script languages this app transcribes. That exclusion is the whole
-    /// point of the list, so it is shorter than a frequency table would be:
-    /// `is` is Dutch, `was` and `will` are German, `for` is Danish, `of` is
-    /// Dutch for "or", and `i` is Danish for "in". Any of those would call a
-    /// German sentence English and cost it an "um".
+    /// point of the list, so it is much shorter than a frequency table would
+    /// be: `is` is Dutch, `was` and `will` are German, `for` is Danish, `of` is
+    /// Dutch for "or", `i` is Danish for "in", `her` is German for "hither",
+    /// `over` is Dutch, `want` is Dutch for "because", and `come` is Italian
+    /// for "how". Any of those would call a foreign sentence English and cost
+    /// it a word.
     private static let englishMarkers: Set<String> = [
         "the", "and", "you", "your", "yours", "with", "that", "thats", "this",
         "these", "those", "what", "whats", "which", "when", "where", "who",
         "how", "have", "has", "had", "are", "were", "been", "being",
         "not", "dont", "doesnt", "didnt", "isnt", "arent", "cant", "wont",
-        "it", "its", "they", "them", "their", "theyre", "she", "her", "his",
-        "there", "theres", "would", "could", "should", "about", "because",
-        "know", "think", "going", "please", "thanks", "very", "again", "only",
-        "over", "some", "than", "then", "through", "want", "need", "make",
-        "made", "take", "come", "from", "more", "most", "much", "many",
+        "wouldnt", "couldnt", "shouldnt", "havent", "hasnt",
+        "it", "its", "they", "them", "their", "theyre", "theres", "wheres",
+        "she", "his", "there", "would", "could", "should", "about", "because",
+        "know", "knew", "think", "thought", "going", "please", "thanks",
+        "very", "again", "only", "some", "than", "then", "through",
+        "need", "make", "made", "take", "took", "from", "more", "most",
+        "much", "many", "something", "anything", "everything", "nothing",
+        "yeah", "gonna", "wanna", "gotta", "ive", "youre", "youve",
+        "today", "tomorrow", "yesterday", "here", "there", "everyone",
+        "people", "thing", "things", "time", "good", "great", "sure",
+        "right", "wrong", "back", "down", "off", "got", "getting",
+        "said", "told", "asked", "does", "did", "doing", "actually",
+        "probably", "really", "always", "never", "maybe",
     ]
 
     /// Only the non-lexical hesitation sounds, same bar as ``universalFillers``.
@@ -200,14 +219,32 @@ enum TranscriptRepair {
         return result
     }
 
-    /// Whether the English filler set applies. An explicit English transcript
-    /// always qualifies; on Automatic the sentence has to say so itself, which
-    /// keeps a German "um acht Uhr" intact at the cost of leaving a filler in a
-    /// two-word English fragment that carries no marker.
+    /// Letters that belong to another Latin alphabet. A transcript carrying one
+    /// is not English whatever else it contains, and this is the cheapest hard
+    /// veto available before counting anything.
+    private static let foreignLetters = "äöüßåæøœçñõãêôîûàèìòùáéíóúýðþğışłżźćęą"
+
+    /// Whether the English filler set applies.
+    ///
+    /// An explicit `en` always qualifies, and so does a language the engine
+    /// detected as English. On Automatic nothing has said what the language is,
+    /// so the sentence has to say it itself — twice over, and without a letter
+    /// from another alphabet in it.
+    ///
+    /// The cost is a filler left in a short English fragment that carries fewer
+    /// than two markers. That is the right direction to be wrong in: leaving an
+    /// "um" is a blemish, and deleting the subject of a German sentence is not.
     private static func looksEnglish(_ code: String, words: [Word]) -> Bool {
         if code == "en" { return true }
         guard code.isEmpty || code == "auto" else { return false }
-        return words.contains { englishMarkers.contains($0.key) }
+        var seen = Set<String>()
+        for word in words {
+            if word.text.lowercased().contains(where: { foreignLetters.contains($0) }) {
+                return false
+            }
+            if englishMarkers.contains(word.key) { seen.insert(word.key) }
+        }
+        return seen.count >= englishMarkersNeeded
     }
 
     private static func isFiller(_ word: Word, code: String, english: Bool) -> Bool {
@@ -266,25 +303,28 @@ enum TranscriptRepair {
 
     // MARK: - Stutters
 
-    /// Words whose immediate repeat is a stutter rather than a sentence.
-    /// Closed-class only: an article or a pronoun said twice in a row is the
-    /// speaker restarting, where a repeated content word ("very very") is
-    /// emphasis the speaker meant.
+    /// Words whose immediate repeat is a stutter and essentially never
+    /// grammar: determiners, prepositions, conjunctions and subject pronouns. A
+    /// repeated content word ("very very") is emphasis the speaker meant, and
+    /// is not here.
+    ///
+    /// Deliberately narrower than "closed class". A copula, an auxiliary or a
+    /// possessive or a modal doubles legitimately far too often to guess at —
+    /// "what it is is a problem", "the things I have have value", "I gave her
+    /// her coat", "I can can peaches", "there, there" — so none of those are
+    /// here either. The cost of leaving a real stutter in is a duplicated word;
+    /// the cost of being wrong is a deleted one.
     private static let functionWords: Set<String> = [
-        "the", "a", "an", "and", "but", "so", "or", "to", "of", "in", "on", "at",
-        "for", "with", "from", "by", "as", "if", "then", "than",
+        "the", "a", "an", "and", "but", "or", "to", "of", "in", "on", "at",
+        "for", "with", "from", "by", "as", "if", "than",
         "i", "you", "we", "they", "he", "she", "it", "this", "these", "those",
-        "there", "my", "your", "our", "their", "his", "her", "its",
-        "is", "are", "was", "were", "am", "be", "been",
-        "do", "does", "did", "have", "has",
-        "can", "could", "will", "would", "should", "must",
         "what", "when", "where", "why", "who", "how",
     ]
 
-    /// Doubles that are ordinary English. "The thing that that man said" and
-    /// "she had had enough" are both correct, and both look exactly like a
-    /// stutter to a rule that only compares two words.
-    private static let legitimateDoubles: Set<String> = ["that", "had"]
+    /// Doubles that are ordinary English even though the word is on the list
+    /// above. "The thing that that man said" is correct, and looks exactly like
+    /// a stutter to a rule that only compares two words.
+    private static let legitimateDoubles: Set<String> = ["that"]
 
     /// Longest false start collapsed. Beyond this it is a repeated sentence,
     /// which ``TranscriptSanitizer`` already has thresholds for.
@@ -295,6 +335,11 @@ enum TranscriptRepair {
     /// Only an immediate repeat, and only the second copy is kept, because it is
     /// the copy the speaker carried on from: "we should, we should probably
     /// ship" has the comma on the abandoned half and the sentence on the other.
+    ///
+    /// A multi-word repeat also has to be followed by something. That is what
+    /// separates a false start from a phrase said twice on purpose: the speaker
+    /// who restarts goes on to finish the sentence, where "I love you I love
+    /// you" and "no no no no" end where they end.
     private static func collapseStutters(
         _ text: String,
         punctuation: SentencePunctuation
@@ -338,6 +383,9 @@ enum TranscriptRepair {
         punctuation: SentencePunctuation
     ) -> Bool {
         guard index + length * 2 <= words.count else { return false }
+        // A repeat with nothing after it was said twice on purpose. A false
+        // start is the beginning of a sentence the speaker then finishes.
+        if length > 1, index + length * 2 >= words.count { return false }
         for offset in 0..<length {
             let first = words[index + offset]
             let second = words[index + length + offset]
@@ -497,6 +545,12 @@ enum TranscriptRepair {
         "why", "whys", "who", "whos", "whom", "whose", "how", "hows",
     ]
 
+    /// A `how` question may put a quantifier and its noun in front of the
+    /// auxiliary: "How many people are coming?". That is a question shape, not
+    /// the noun-clause shape that makes "what the problem is remains unclear"
+    /// a statement.
+    private static let howQuantifiers: Set<String> = ["many", "much"]
+
     private static let subjectPronouns: Set<String> = [
         "i", "you", "we", "they", "he", "she", "it", "there",
         "that", "this", "anyone", "anybody", "someone", "somebody", "everyone",
@@ -545,6 +599,12 @@ enum TranscriptRepair {
         }
     }
 
+    /// Quantifiers that turn an opener into a phrase. "However many people come"
+    /// means "no matter how many", and the comma would say the opposite.
+    private static let quantifierFollowers: Set<String> = [
+        "many", "much", "long", "far", "little", "few", "often", "else",
+    ]
+
     /// "Okay we should ship" — the marker opens the sentence and the rest of it
     /// follows, which in writing takes a comma.
     private static func commaAfterOpeners(
@@ -555,7 +615,8 @@ enum TranscriptRepair {
             guard opensSentence(words, at: index, punctuation: punctuation),
                   let length = match(openersTakingComma, in: words, at: index),
                   words[index + length - 1].trailing.isEmpty,
-                  index + length + 2 <= words.count
+                  index + length + 2 <= words.count,
+                  !quantifierFollowers.contains(words[index + length].key)
             else { continue }
             words[index + length - 1].trailing = punctuation.separator
         }
@@ -631,12 +692,26 @@ enum TranscriptRepair {
         let keys = sentence.map { words[$0].key }
         guard keys.count >= 2 else { return false }
         if questionWords.contains(keys[0]) {
-            // "What time is it" asks; "What I meant was simple" states. Both
-            // reach an auxiliary, but only the second puts a subject in front
-            // of it — the wh-word is that clause's own subject or object.
-            for offset in 1..<min(keys.count, 4) {
+            // "What time is it" asks; "What I meant was simple" and "what the
+            // problem is remains unclear" state. A question inverts the
+            // auxiliary to the front, so it turns up within a word or two of
+            // the wh-word; an embedded noun clause puts a whole subject there
+            // first and pushes the auxiliary back.
+            //
+            // Two words of room is the normal allowance. "How many people are
+            // coming" has a quantifier and its noun in front of the auxiliary,
+            // so it gets one extra explicitly-recognized shape. Reading "what
+            // john said was wrong" as a question is not worth that wider rule.
+            for offset in 1..<min(keys.count, 3) {
                 if subjectPronouns.contains(keys[offset]) { return false }
+                if determiners.contains(keys[offset]) { return false }
                 if auxiliaries.contains(keys[offset]) { return true }
+            }
+            if keys.count >= 4,
+               keys[0] == "how",
+               howQuantifiers.contains(keys[1]),
+               auxiliaries.contains(keys[3]) {
+                return true
             }
             return false
         }

@@ -102,6 +102,7 @@ struct TranscriptRepairTests {
             TranscriptRepair.apply("er kommt in einer Stunde nach Hause")
                 == "er kommt in einer Stunde nach Hause"
         )
+        #expect(TranscriptRepair.apply("er kommt her") == "er kommt her")
         #expect(TranscriptRepair.apply("um we should ship it that day") == "we should ship it that day")
         // Said explicitly, no marker is needed.
         #expect(TranscriptRepair.apply("um ship it", language: "en") == "ship it")
@@ -151,6 +152,7 @@ struct TranscriptRepairTests {
     @Test func aDoubledContentWordSurvives() {
         #expect(TranscriptRepair.apply("that is very very good") == "that is very very good")
         #expect(TranscriptRepair.apply("no no not that one") == "no no not that one")
+        #expect(TranscriptRepair.apply("I love you I love you") == "I love you I love you")
     }
 
     /// Both of these are ordinary English and both look exactly like a stutter.
@@ -159,6 +161,9 @@ struct TranscriptRepairTests {
         #expect(
             TranscriptRepair.apply("the thing that that man said") == "the thing that that man said"
         )
+        #expect(TranscriptRepair.apply("I gave her her coat") == "I gave her her coat")
+        #expect(TranscriptRepair.apply("my my what a surprise") == "my my what a surprise")
+        #expect(TranscriptRepair.apply("I can can peaches") == "I can can peaches")
     }
 
     /// A sentence ended between the copies, so the second starts a new thought.
@@ -218,6 +223,10 @@ struct TranscriptRepairTests {
                 == "see Acme.photography today"
         )
         #expect(
+            TranscriptRepair.apply("visit NASA.GOV for details")
+                == "visit NASA.GOV for details"
+        )
+        #expect(
             TranscriptRepair.apply("visit example.com/a.b. thanks")
                 == "visit example.com/a.b. thanks"
         )
@@ -275,6 +284,10 @@ struct TranscriptRepairTests {
     @Test func anOpeningDiscourseMarkerTakesAComma() {
         #expect(TranscriptRepair.apply("okay lets ship it") == "okay, lets ship it")
         #expect(TranscriptRepair.apply("actually i changed my mind") == "actually, i changed my mind")
+        #expect(
+            TranscriptRepair.apply("however many people come we can fit them")
+                == "however many people come we can fit them"
+        )
     }
 
     /// "so" and "well" open a sentence far more often without a comma than
@@ -305,6 +318,10 @@ struct TranscriptRepairTests {
     /// subject sitting between it and the verb.
     @Test func aStatementStartingWithAWhWordIsNotAQuestion() {
         #expect(TranscriptRepair.apply("what i meant was simple") == "what i meant was simple")
+        #expect(
+            TranscriptRepair.apply("what the problem is remains unclear")
+                == "what the problem is remains unclear"
+        )
         #expect(TranscriptRepair.apply("how he did it is unclear") == "how he did it is unclear")
         #expect(
             TranscriptRepair.apply("when i get there i will call you")

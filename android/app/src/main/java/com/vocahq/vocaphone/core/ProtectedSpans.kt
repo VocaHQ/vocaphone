@@ -45,14 +45,19 @@ class ProtectedSpans private constructor(
          * so this asks about the last label and nothing else. The leading `\b`
          * keeps it from matching the tail of a longer word.
          *
-         * Two things are left over, both preferred to the alternative. An
-         * all-caps `EXAMPLE.COM` is not recognized, and `report.then` — an
-         * all-lowercase run-on, from an engine that emits a full stop but no
-         * capital — is masked as though it were a hostname. Neither is a shape
-         * a speech model realistically produces, and where the two errors do
-         * meet, a missing space is a blemish and a broken address is data loss.
+         * All caps counts too, so `NASA.GOV` survives. What that cannot be is a
+         * sentence boundary: an engine that shouts the word after a full stop
+         * shouted the one before it as well, and `report.THEN` is not a shape
+         * any of them produce. Title Case is the one that stays out —
+         * `report.Then` is the sentence boundary this whole clause exists to
+         * preserve.
+         *
+         * One thing is left over: `report.then`, an all-lowercase run-on from an
+         * engine that emits a full stop but no capital, is masked as though it
+         * were a hostname. That shape is genuinely ambiguous, and a missing
+         * space is a blemish where a broken address is data loss.
          */
-        private const val HOSTNAME = """\b(?:[\w-]+\.)+[a-z]{2,24}\b"""
+        private const val HOSTNAME = """\b(?:[\w-]+\.)+(?:[a-z]{2,24}|[A-Z]{2,24})\b"""
 
         /**
          * A path may contain dots; it may not end on the full stop that ends

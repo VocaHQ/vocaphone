@@ -128,6 +128,7 @@ class TranscriptRepairTest {
             "er kommt in einer Stunde nach Hause",
             TranscriptRepair.apply("er kommt in einer Stunde nach Hause"),
         )
+        assertEquals("er kommt her", TranscriptRepair.apply("er kommt her"))
         assertEquals(
             "we should ship it that day",
             TranscriptRepair.apply("um we should ship it that day"),
@@ -192,6 +193,7 @@ class TranscriptRepairTest {
     fun `a doubled content word survives`() {
         assertEquals("that is very very good", TranscriptRepair.apply("that is very very good"))
         assertEquals("no no not that one", TranscriptRepair.apply("no no not that one"))
+        assertEquals("I love you I love you", TranscriptRepair.apply("I love you I love you"))
     }
 
     /** Both of these are ordinary English and both look exactly like a stutter. */
@@ -202,6 +204,9 @@ class TranscriptRepairTest {
             "the thing that that man said",
             TranscriptRepair.apply("the thing that that man said"),
         )
+        assertEquals("I gave her her coat", TranscriptRepair.apply("I gave her her coat"))
+        assertEquals("my my what a surprise", TranscriptRepair.apply("my my what a surprise"))
+        assertEquals("I can can peaches", TranscriptRepair.apply("I can can peaches"))
     }
 
     /** A sentence ended between the copies, so the second starts a new thought. */
@@ -271,6 +276,10 @@ class TranscriptRepairTest {
         assertEquals(
             "see Acme.photography today",
             TranscriptRepair.apply("see Acme.photography today"),
+        )
+        assertEquals(
+            "visit NASA.GOV for details",
+            TranscriptRepair.apply("visit NASA.GOV for details"),
         )
         assertEquals(
             "visit example.com/a.b. thanks",
@@ -344,6 +353,10 @@ class TranscriptRepairTest {
             "actually, i changed my mind",
             TranscriptRepair.apply("actually i changed my mind"),
         )
+        assertEquals(
+            "however many people come we can fit them",
+            TranscriptRepair.apply("however many people come we can fit them"),
+        )
     }
 
     /**
@@ -393,6 +406,10 @@ class TranscriptRepairTest {
     @Test
     fun `a statement starting with a wh-word is not a question`() {
         assertEquals("what i meant was simple", TranscriptRepair.apply("what i meant was simple"))
+        assertEquals(
+            "what the problem is remains unclear",
+            TranscriptRepair.apply("what the problem is remains unclear"),
+        )
         assertEquals("how he did it is unclear", TranscriptRepair.apply("how he did it is unclear"))
         assertEquals(
             "when i get there i will call you",
