@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.vocahq.vocaphone.VocaPhoneApplication
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.DictationPhase
+import com.vocahq.vocaphone.core.DictationState
 import com.vocahq.vocaphone.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -87,31 +88,49 @@ class DictationService : Service() {
     }
 
     private fun observeUntilIdle() {
-        observer?.cancel()
+        val previous = observer
         val controller = VocaPhoneApplication.container(this).dictation
         observer = scope.launch {
-            // Capture starts a moment after `start` returns, so the service must
-            // wait for the microphone to actually be held before it treats an idle
-            // state as the end of the dictation. The timeout is the last resort;
-            // a start that resolves without ever recording says so, and waiting
-            // it out held a microphone foreground service — an ongoing "VocaPhone
-            // is recording" notification and the system's microphone indicator —
-            // for ten seconds over a dictation that never began. Tapping the mic
-            // before the gateway is configured did exactly that.
-            val settled = withTimeoutOrNull(START_TIMEOUT_MILLIS) {
-                controller.state.first { DictationStartWatch.hasSettled(it.phase) }
+            try {
+                // Capture starts a moment after `start` returns, so the service
+                // must wait for the controller to move off the idle snapshot it
+                // subscribed with. StateFlow conflates, so a short tap can skip
+                // LISTENING/FINALIZING and land on a new IDLE — that new instance
+                // is still progress, and treating only hasSettled phases as the
+                // end of the wait left "Listening" up until the timeout.
+                val initial = controller.state.value
+                val progressed = withTimeoutOrNull(START_TIMEOUT_MILLIS) {
+                    controller.state.first { DictationStartWatch.hasProgressed(it, initial) }
+                }
+                if (progressed != null && !progressed.phase.isTerminal) {
+                    var lastStatus: String? = null
+                    controller.state
+                        .onEach { state ->
+                            if (state.statusText != lastStatus) {
+                                lastStatus = state.statusText
+                                publish(state.statusText)
+                            }
+                        }
+                        .first { it.phase.isTerminal }
+                }
+            } finally {
+                if (observer === coroutineContext[Job]) {
+                    stopForegroundAndSelf()
+                }
             }
-            if (settled?.phase?.holdsMicrophone == true) {
-                controller.state
-                    .onEach { notificationManager().notify(NOTIFICATION_ID, notification(it.statusText)) }
-                    .first { it.phase.isTerminal }
-            }
-            stopForegroundAndSelf()
         }
+        previous?.cancel()
+    }
+
+    private fun publish(status: String) {
+        startForeground(
+            NOTIFICATION_ID,
+            notification(status),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+        )
     }
 
     private fun stopForegroundAndSelf() {
-        observer?.cancel()
         observer = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -227,6 +246,10 @@ class DictationService : Service() {
  * [DictationService] starts before capture begins, so it needs to recognise the
  * outcomes that never reach the microphone at all — otherwise the only thing
  * that ends the wait is a timeout the user spends looking at a notification.
+ *
+ * Phase checks alone are not enough: the controller publishes on Default and
+ * the service collects on Main, so StateFlow can skip LISTENING/FINALIZING.
+ * [hasProgressed] is the StateFlow-safe test.
  */
 internal object DictationStartWatch {
     fun hasSettled(phase: DictationPhase): Boolean = when (phase) {
@@ -237,6 +260,16 @@ internal object DictationStartWatch {
         DictationPhase.PERMISSION_REPAIR, DictationPhase.FAILED -> true
         else -> false
     }
+
+    /**
+     * The service subscribed with [initial], the idle value already in the
+     * flow. Any later instance — including a new Idle from a short-tap reset,
+     * or Transcribing when Listening was conflated away — means the start
+     * attempt has moved. Identity, not [DictationState.equals]: two Idle
+     * snapshots compare equal, and that was the hang.
+     */
+    fun hasProgressed(current: DictationState, initial: DictationState): Boolean =
+        current !== initial
 }
 
 /**
