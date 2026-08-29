@@ -26,9 +26,17 @@ enum SherpaFeatureDither {
     ///
     /// A non-positive `dither` returns the samples untouched, so the families
     /// that do not need this pay one comparison and no copy.
+    ///
+    /// The noise is drawn fresh on every call, as Kaldi's is. That is what makes
+    /// the recovery ladder's second attempt a real second attempt: the runtime
+    /// dithers a Parakeet decode differently each time it runs, so re-deciding
+    /// the same waveform is not guaranteed to reproduce the same no-token
+    /// answer. Seeding this identically each call would hand the model
+    /// byte-identical features and make that rung of the ladder cost a decode
+    /// to learn nothing.
     static func applied(to samples: [Float], dither: Float) -> [Float] {
         guard dither > 0, !samples.isEmpty else { return samples }
-        var generator = SherpaDitherGenerator(seed: 0x9E37_79B9_7F4A_7C15)
+        var generator = SherpaDitherGenerator(seed: UInt64.random(in: UInt64.min...UInt64.max))
         var result = samples
         var index = 0
         // Box-Muller returns two independent normals per pair of uniforms, so
@@ -45,12 +53,15 @@ enum SherpaFeatureDither {
     }
 }
 
-/// A small deterministic generator so a decode is reproducible across attempts.
+/// SplitMix64, and a Box-Muller pair on top of it.
 ///
-/// The recovery ladder decodes the same waveform twice on purpose, and the
-/// point of the repeat is a fresh native stream rather than fresh noise. Seeding
-/// this identically each call keeps the difference between the two attempts on
-/// the side being tested.
+/// Every step of the uniform is computed in `Double` and bounded to `(0, 1]` by
+/// construction. Doing it in `Float` is what a `Float` cannot survive here: a
+/// 53-bit draw rounds up to exactly 1 once in about 2^24 values, one nudge past
+/// that makes `log` positive, and the square root of the negative that follows
+/// is a `NaN` written straight into the waveform. At 16 kHz that is a coin flip
+/// every couple of decodes, and a single `NaN` sample is an empty transcript —
+/// the failure this file exists to prevent.
 private struct SherpaDitherGenerator {
     private var state: UInt64
 
@@ -64,14 +75,16 @@ private struct SherpaDitherGenerator {
         return z ^ (z >> 31)
     }
 
-    /// A uniform in `(0, 1]`. Never zero, which `log` could not survive.
-    private mutating func nextUnitInterval() -> Float {
-        Float(next() >> 11) / Float(UInt64(1) << 53) + Float.ulpOfOne
+    /// A uniform in `(0, 1]`, exactly. 52 bits leaves `Double` a spare bit, so
+    /// `bits + 1` is exact and the largest result is 1 rather than a hair above.
+    private mutating func nextUnitInterval() -> Double {
+        (Double(next() >> 12) + 1) / Double(UInt64(1) << 52)
     }
 
     mutating func nextNormalPair() -> (Float, Float) {
-        let magnitude = (-2 * log(nextUnitInterval())).squareRoot()
-        let angle = 2 * Float.pi * nextUnitInterval()
-        return (magnitude * cos(angle), magnitude * sin(angle))
+        // `log(1)` is 0, which is a magnitude of zero and not a special case.
+        let magnitude = (-2 * Foundation.log(nextUnitInterval())).squareRoot()
+        let angle = 2 * Double.pi * nextUnitInterval()
+        return (Float(magnitude * cos(angle)), Float(magnitude * sin(angle)))
     }
 }

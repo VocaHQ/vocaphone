@@ -260,6 +260,9 @@ internal object SherpaEmptyChunkRecovery {
      *   halves overlap so the word crossing the centre survives, and matching
      *   the repeat back out only works when the same audio returns the same
      *   words — which is exactly what a translator does not promise.
+     * @param recoverAudibleShortInput true when an empty answer here cannot be
+     *   the ordinary short trailing overlap. See [SherpaRecognizer.transcribe]
+     *   for how that is decided.
      */
     fun decode(
         samples: FloatArray,
@@ -280,14 +283,18 @@ internal object SherpaEmptyChunkRecovery {
         // enough to be dropped for its length has nothing there to recover --
         // unless the caller has already established that this window is the
         // whole of what the user has said so far.
-        if (!recoverAudibleShortInput &&
+        val short =
             samples.size <= SherpaLongAudio.MIN_SUSPECT_CHUNK_SECONDS * SherpaLongAudio.SAMPLE_RATE
-        ) return firstAttempt
+        if (!recoverAudibleShortInput && short) return firstAttempt
 
-        if (recoverAudibleShortInput) {
+        // The two extra rungs are for short speech and stay there. A ten-second
+        // window is already the length the split recovers from, and padding it
+        // by half a second either side buys nothing for the cost of a whole
+        // further decode -- so a long window keeps the established ladder and
+        // its predictable latency however little has been decoded before it.
+        if (short) {
             // A fresh offline stream can recover a nondeterministic no-token
-            // answer for a complete short recording. Long windows keep the
-            // established split ladder and its predictable latency.
+            // answer.
             val repeated = decodeOnce(samples)
             if (repeated.text.isNotEmpty()) return repeated
             // Very short speech can begin or end too close to the encoder

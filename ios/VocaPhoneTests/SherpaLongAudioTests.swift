@@ -195,6 +195,25 @@ struct SherpaLongAudioTests {
         #expect(decodedSizes == [48_000, 48_000, 64_000, 28_000, 28_000])
     }
 
+    /// The extra rungs are for short speech. A long first chunk with nothing
+    /// decoded ahead of it is still a long window: repeating it and padding it
+    /// costs two whole further decodes and recovers what the split already does.
+    @Test func aLongWindowKeepsTheSplitLadderEvenWithNothingDecodedBeforeIt() {
+        var decodedSizes: [Int] = []
+
+        _ = SherpaEmptyChunkRecovery.decode(
+            samples: Self.tone(seconds: 10),
+            decodeOnce: { samples in
+                decodedSizes.append(samples.count)
+                return .empty
+            },
+            deduplicateOverlap: true,
+            recoverAudibleShortInput: true
+        )
+
+        #expect(decodedSizes == [160_000, 84_000, 84_000])
+    }
+
     /// A very short recording must not hand both halves the whole waveform.
     @Test func theRecoverySplitNeverDecodesTheWholeWaveformTwice() {
         var decodedSizes: [Int] = []

@@ -193,6 +193,26 @@ class SherpaLongAudioTest {
         assertEquals(listOf(48_000, 48_000, 64_000, 28_000, 28_000), decodedSizes)
     }
 
+    /**
+     * The extra rungs are for short speech. A long first chunk with nothing
+     * decoded ahead of it is still a long window: repeating it and padding it
+     * costs two whole further decodes and recovers what the split already does.
+     */
+    @Test
+    fun `a long window keeps the split ladder even with nothing decoded before it`() {
+        val decodedSizes = mutableListOf<Int>()
+        SherpaEmptyChunkRecovery.decode(
+            samples = FloatArray(10 * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
+            recoverAudibleShortInput = true,
+            decodeOnce = { samples ->
+                decodedSizes += samples.size
+                SherpaTranscript.EMPTY
+            },
+        )
+
+        assertEquals(listOf(160_000, 84_000, 84_000), decodedSizes)
+    }
+
     @Test
     fun `the recovery split never decodes the whole waveform twice`() {
         val decodedSizes = mutableListOf<Int>()

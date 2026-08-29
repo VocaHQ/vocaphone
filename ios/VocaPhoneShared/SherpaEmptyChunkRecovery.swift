@@ -31,13 +31,17 @@ enum SherpaEmptyChunkRecovery {
         // Length is what the split recovers from, so a window not long enough to
         // have been dropped for its length has nothing there to recover — unless
         // the caller has already established that this window is the recording.
-        guard recoverAudibleShortInput || samples.count > SherpaLongAudio.minimumSuspectChunkSamples
-        else { return first }
+        let short = samples.count <= SherpaLongAudio.minimumSuspectChunkSamples
+        guard recoverAudibleShortInput || !short else { return first }
 
-        if recoverAudibleShortInput {
+        // The two extra rungs are for short speech and stay there. A ten-second
+        // window is already the length the split recovers from, and padding it
+        // by half a second either side buys nothing for the cost of a whole
+        // further decode — so a long window keeps the established ladder and its
+        // predictable latency however little has been decoded before it.
+        if short {
             // A fresh offline stream can recover a nondeterministic no-token
-            // answer. Long windows keep the established split ladder and its
-            // predictable latency.
+            // answer.
             let repeated = trimmed(decodeOnce(samples))
             if !repeated.text.isEmpty { return repeated }
             // Very short speech can begin or end too close to the encoder

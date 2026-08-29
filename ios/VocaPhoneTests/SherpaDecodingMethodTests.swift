@@ -76,6 +76,35 @@ struct SherpaDecodingMethodTests {
         #expect(stayedInaudible, "dither must stay inaudible")
     }
 
+    /// Box-Muller reaches for `log` of a uniform, and a uniform built in `Float`
+    /// rounds up to just past 1 about once in every 2^24 draws — one negative
+    /// square root, one `NaN` sample, one empty transcript. At 16 kHz a ten
+    /// second decode draws eighty thousand times, so "rare" is every couple of
+    /// recordings. Far more draws than that, and every one has to be finite.
+    @Test func theDitherNeverWritesANaNIntoTheWaveform() {
+        let dither = SherpaFamily.nemoTransducer.featureDither
+        for _ in 0..<20 {
+            let block = SherpaFeatureDither.applied(
+                to: [Float](repeating: 0, count: 100_000), dither: dither
+            )
+            let allFinite = block.allSatisfy(\.isFinite)
+            #expect(allFinite, "a dithered sample must always be a number")
+        }
+    }
+
+    /// The runtime dithers each decode differently, which is what makes the
+    /// recovery ladder's second attempt worth its inference. Identical noise
+    /// would hand the model identical features and learn nothing.
+    @Test func theDitherIsDrawnFreshForEveryDecode() {
+        let silence = [Float](repeating: 0, count: 4_096)
+        let dither = SherpaFamily.nemoTransducer.featureDither
+
+        let first = SherpaFeatureDither.applied(to: silence, dither: dither)
+        let second = SherpaFeatureDither.applied(to: silence, dither: dither)
+
+        #expect(first != second)
+    }
+
     @Test func aFamilyWithoutDitherIsHandedItsSamplesUntouched() {
         let samples: [Float] = [0.1, -0.2, 0.3, 0]
         #expect(SherpaFeatureDither.applied(to: samples, dither: 0) == samples)
