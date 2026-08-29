@@ -65,6 +65,7 @@ enum class SettingsPage(val title: String) {
     MODELS("Models"),
     KEYBOARD("Keyboard"),
     DICTATION("Dictation"),
+    SNIPPETS("Snippets"),
     CONNECTION("Speech"),
     ABOUT("About"),
     ;
@@ -74,6 +75,7 @@ enum class SettingsPage(val title: String) {
             "models" -> MODELS
             "keyboard" -> KEYBOARD
             "dictation" -> DICTATION
+            "snippets" -> SNIPPETS
             "connection" -> CONNECTION
             "about" -> ABOUT
             else -> HOME
@@ -233,6 +235,17 @@ fun SettingsScreen(
                     )
                     SettingsMenuDivider()
                     SettingsMenuRow(
+                        title = "Snippets",
+                        supporting = when (val count = settings.snippets.size) {
+                            0 -> "Expand a short phrase into longer text"
+                            1 -> "1 snippet"
+                            else -> "$count snippets"
+                        },
+                        icon = R.drawable.ic_snippets,
+                        onClick = { onPageChange(SettingsPage.SNIPPETS) },
+                    )
+                    SettingsMenuDivider()
+                    SettingsMenuRow(
                         title = "About",
                         supporting = "VocaPhone ${appInfo.versionName}",
                         icon = R.drawable.ic_about,
@@ -350,12 +363,6 @@ fun SettingsScreen(
                     words = settings.personalDictionary,
                     onSave = onPersonalDictionary,
                 )
-                SnippetsSection(
-                    snippets = settings.snippets,
-                    onAdd = onAddSnippet,
-                    onUpdate = onUpdateSnippet,
-                    onDelete = onDeleteSnippet,
-                )
                 Section("Clipboard") {
                     SettingToggle(
                         title = "Clipboard chip",
@@ -373,6 +380,15 @@ fun SettingsScreen(
                         onCheckedChange = onClipboardHistory,
                     )
                 }
+            }
+
+            SettingsPage.SNIPPETS -> {
+                SnippetsSection(
+                    snippets = settings.snippets,
+                    onAdd = onAddSnippet,
+                    onUpdate = onUpdateSnippet,
+                    onDelete = onDeleteSnippet,
+                )
             }
 
             SettingsPage.DICTATION -> {
@@ -728,6 +744,10 @@ private fun PersonalDictionarySection(
 /**
  * Trigger phrases dictated text is expanded against once a dictation
  * finishes, after the writing style has already run.
+ *
+ * Its own page rather than a section under Keyboard: it rewrites what
+ * dictation types, has nothing to do with the key layout, and nobody scrolls
+ * to the bottom of another page to discover a feature they don't know exists.
  */
 @Composable
 private fun SnippetsSection(
@@ -741,7 +761,7 @@ private fun SnippetsSection(
     var pendingDelete by remember { mutableStateOf<Snippet?>(null) }
 
     Section(
-        title = "Text snippets",
+        title = "Your snippets",
         supporting = "A short trigger that expands to longer text when dictation " +
             "finishes. Matching ignores case, so \"brb\" and \"BRB\" both work.",
     ) {
