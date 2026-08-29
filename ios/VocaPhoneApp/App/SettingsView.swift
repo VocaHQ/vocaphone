@@ -27,6 +27,10 @@ struct SettingsView: View {
         KeyboardPreferences.writingStyleKey,
         store: KeyboardPreferences.defaults
     ) private var writingStyleRawValue = WritingStyle.casual.rawValue
+    @AppStorage(
+        SnippetStore.key,
+        store: SnippetStore.defaults
+    ) private var snippetsData = Data()
 
     var body: some View {
         List {
@@ -42,6 +46,12 @@ struct SettingsView: View {
                     detail: language.displayName + " · " + writingStyle.displayName,
                     symbol: "mic"
                 ) { DictationSettingsView() }
+
+                destination(
+                    "Snippets",
+                    detail: snippetCountDetail,
+                    symbol: "text.badge.plus"
+                ) { SnippetsSettingsView() }
 
                 destination(
                     "Transcription",
@@ -94,6 +104,11 @@ struct SettingsView: View {
 
     private var writingStyle: WritingStyle {
         WritingStyle(rawValue: writingStyleRawValue) ?? .casual
+    }
+
+    private var snippetCountDetail: String {
+        let count = (try? JSONDecoder().decode([Snippet].self, from: snippetsData))?.count ?? 0
+        return count == 0 ? "None" : "\(count) snippet\(count == 1 ? "" : "s")"
     }
 
     /// A row that carries its current value, so the hub answers most questions
@@ -1288,6 +1303,130 @@ struct TranscriptionLanguageList: View {
     }
 }
 
+// MARK: - Snippets
+
+/// A trigger typed while dictating that expands into the longer text beside
+/// it — a signature, an address, anything worth saying shorter.
+struct SnippetsSettingsView: View {
+    @State private var snippets: [Snippet] = SnippetStore.snippets
+    @State private var isAddingSnippet = false
+
+    var body: some View {
+        List {
+            Section {
+                if snippets.isEmpty {
+                    Text("No snippets yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach($snippets) { $snippet in
+                        SnippetRow(snippet: $snippet, onChange: persist)
+                    }
+                    .onDelete(perform: delete)
+                }
+            } footer: {
+                Text(
+                    "Say a trigger while dictating and vocaphone replaces it with the "
+                        + "expansion. Matching ignores case; the expansion is inserted "
+                        + "exactly as written, including its spacing."
+                )
+            }
+        }
+        .navigationTitle("Snippets")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isAddingSnippet = true
+                } label: {
+                    Label("Add Snippet", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $isAddingSnippet) {
+            AddSnippetView { trigger, expansion in
+                snippets.append(Snippet(trigger: trigger, expansion: expansion))
+                persist()
+            }
+        }
+    }
+
+    private func delete(at offsets: IndexSet) {
+        snippets.remove(atOffsets: offsets)
+        persist()
+    }
+
+    private func persist() {
+        // The trigger is what matching keys off, so stray whitespace around it
+        // is noise; the expansion is left untouched because leading or
+        // trailing whitespace there can be exactly what the user wanted.
+        SnippetStore.snippets = snippets.map {
+            var trimmed = $0
+            trimmed.trigger = $0.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed
+        }
+    }
+}
+
+private struct SnippetRow: View {
+    @Binding var snippet: Snippet
+    let onChange: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: VocaMetrics.related) {
+            TextField("Trigger", text: $snippet.trigger)
+                .font(.body.weight(.semibold))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .onChange(of: snippet.trigger) { _, _ in onChange() }
+            TextField("Expansion", text: $snippet.expansion, axis: .vertical)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .onChange(of: snippet.expansion) { _, _ in onChange() }
+        }
+        .padding(.vertical, VocaMetrics.related / 2)
+    }
+}
+
+private struct AddSnippetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var trigger = ""
+    @State private var expansion = ""
+    let onAdd: (String, String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Trigger") {
+                    TextField("e.g. sig", text: $trigger)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+                Section("Expansion") {
+                    TextField("Text to insert", text: $expansion, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+            }
+            .navigationTitle("Add Snippet")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        onAdd(trigger.trimmingCharacters(in: .whitespacesAndNewlines), expansion)
+                        dismiss()
+                    }
+                    .disabled(
+                        trigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || expansion.isEmpty
+                    )
+                }
+            }
+        }
+    }
+}
+
 #if DEBUG
 
 // MARK: - Previews
@@ -1323,6 +1462,12 @@ struct TranscriptionLanguageList: View {
 #Preview("Settings — keyboard") {
     PreviewHost {
         NavigationStack { KeyboardSettingsView() }
+    }
+}
+
+#Preview("Settings — snippets") {
+    PreviewHost {
+        NavigationStack { SnippetsSettingsView() }
     }
 }
 
