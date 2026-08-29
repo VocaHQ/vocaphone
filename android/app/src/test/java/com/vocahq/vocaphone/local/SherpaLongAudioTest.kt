@@ -143,6 +143,23 @@ class SherpaLongAudioTest {
     }
 
     @Test
+    fun `an audible complete short recording gets a bounded fresh-stream retry`() {
+        val decodedSizes = mutableListOf<Int>()
+        var attempts = 0
+        val transcript = SherpaEmptyChunkRecovery.decode(
+            samples = FloatArray(5 * SherpaLongAudio.SAMPLE_RATE) { 0.2f },
+            recoverAudibleShortInput = true,
+            decodeOnce = { samples ->
+                decodedSizes += samples.size
+                SherpaTranscript(if (attempts++ == 1) "recovered" else "")
+            },
+        )
+
+        assertEquals("recovered", transcript.text)
+        assertEquals(listOf(80_000, 80_000), decodedSizes)
+    }
+
+    @Test
     fun `a silent chunk is never retried`() {
         val decodedSizes = mutableListOf<Int>()
         SherpaEmptyChunkRecovery.decode(

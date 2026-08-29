@@ -5,6 +5,11 @@ import Foundation
 /// VocaPhone needs.
 final class SherpaRecognizer: @unchecked Sendable {
     private let native: UnsafeMutableRawPointer
+    /// sherpa-onnx recognizers are mutable native objects. Incremental decoding
+    /// runs off the main actor while a retry or settings preparation can also
+    /// reach this instance, so one recognizer must never decode two streams at
+    /// once.
+    private let decodeLock = NSLock()
     /// Whether this recognizer was built to translate, which changes how a
     /// recording too long for one decode is put back together. See `transcribe`.
     private let translating: Bool
@@ -127,14 +132,23 @@ final class SherpaRecognizer: @unchecked Sendable {
     /// a guessed one carries audio across, and while translating that seam is
     /// left as it decoded rather than merged by matching words.
     func transcribe(_ samples: [Float]) -> SherpaTranscript {
-        let transcript = SherpaLongAudio.chunks(samples)
-            .reduce(into: SherpaTranscript.empty) { transcript, chunk in
-                let bounded = Array(samples[chunk.start..<chunk.endExclusive])
-                let decoded = SherpaEmptyChunkRecovery.decode(samples: bounded, decodeOnce: decode)
-                transcript = transcript.appending(
-                    decoded, deduplicateOverlap: chunk.overlapsPrevious && !translating
-                )
-            }
+        let chunks = SherpaLongAudio.chunks(samples)
+        var transcript = SherpaTranscript.empty
+        for chunk in chunks {
+            let bounded = Array(samples[chunk.start..<chunk.endExclusive])
+            let decoded = SherpaEmptyChunkRecovery.decode(
+                samples: bounded,
+                decodeOnce: decode,
+                deduplicateOverlap: !translating,
+                // A short final overlap is routinely empty; a short *complete*
+                // dictation with audible speech is the reported failure and
+                // deserves one bounded recovery ladder.
+                recoverAudibleShortInput: chunks.count == 1
+            )
+            transcript = transcript.appending(
+                decoded, deduplicateOverlap: chunk.overlapsPrevious && !translating
+            )
+        }
         return SherpaTranscript(
             text: transcript.text.trimmingCharacters(in: .whitespacesAndNewlines),
             language: transcript.language
@@ -142,11 +156,15 @@ final class SherpaRecognizer: @unchecked Sendable {
     }
 
     func transcribeChunk(_ samples: [Float]) -> SherpaTranscript {
-        SherpaEmptyChunkRecovery.decode(samples: samples, decodeOnce: decode)
+        SherpaEmptyChunkRecovery.decode(
+            samples: samples, decodeOnce: decode, deduplicateOverlap: !translating
+        )
     }
 
     private func decode(_ samples: [Float]) -> SherpaTranscript {
         guard !samples.isEmpty else { return .empty }
+        decodeLock.lock()
+        defer { decodeLock.unlock() }
         var output = [CChar](repeating: 0, count: 131_072)
         // Only ever holds a short tag such as "<|en|>".
         var languageOutput = [CChar](repeating: 0, count: 32)
@@ -193,7 +211,10 @@ private extension SherpaFamily {
 
 private enum SherpaEmptyChunkRecovery {
     static func decode(
-        samples: [Float], decodeOnce: ([Float]) -> SherpaTranscript
+        samples: [Float],
+        decodeOnce: ([Float]) -> SherpaTranscript,
+        deduplicateOverlap: Bool,
+        recoverAudibleShortInput: Bool = false
     ) -> SherpaTranscript {
         guard !SherpaLongAudio.isEffectivelySilent(samples) else { return .empty }
         let attempt = decodeOnce(samples)
@@ -201,12 +222,30 @@ private enum SherpaEmptyChunkRecovery {
             text: attempt.text.trimmingCharacters(in: .whitespacesAndNewlines),
             language: attempt.language
         )
-        guard first.text.isEmpty,
-              samples.count > SherpaLongAudio.minimumSuspectChunkSamples
+        guard first.text.isEmpty else { return first }
+        guard recoverAudibleShortInput || samples.count > SherpaLongAudio.minimumSuspectChunkSamples
         else { return first }
+
+        // Very short speech can begin or end too close to the encoder context.
+        // A fresh stream and bounded padding are only worthwhile for a complete
+        // short recording; lengthy windows keep the established split ladder.
+        if recoverAudibleShortInput {
+            let repeated = decodeOnce(samples)
+            if !repeated.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return repeated
+            }
+            let padding = [Float](repeating: 0, count: SherpaLongAudio.sampleRate / 2)
+            let padded = decodeOnce(padding + samples + padding)
+            if !padded.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return padded
+            }
+        }
+
         let midpoint = samples.count / 2
-        return decodeOnce(Array(samples[..<midpoint]))
-            .appending(decodeOnce(Array(samples[midpoint...])), deduplicateOverlap: false)
+        let overlap = min(SherpaLongAudio.overlapSamples, midpoint / 2)
+        let left = decodeOnce(Array(samples[..<min(samples.count, midpoint + overlap)]))
+        let right = decodeOnce(Array(samples[max(0, midpoint - overlap)...]))
+        return left.appending(right, deduplicateOverlap: deduplicateOverlap)
     }
 }
 

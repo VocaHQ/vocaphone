@@ -1,14 +1,15 @@
 import Foundation
 
 /// Keeps offline encoders away from unbounded long-recording sequences. The
-/// boundary search prefers a quiet 100 ms frame around ten seconds and retains
-/// a short overlap when continuous speech cannot be split cleanly.
+/// boundary search prefers a sustained quiet run around ten seconds and retains
+/// context on every boundary so low-energy phonemes are not lost.
 enum SherpaLongAudio {
     static let sampleRate = 16_000
     static let longAudioThresholdSeconds = 12
     static let targetChunkSeconds = 10
     static let maxChunkSeconds = 14
     static let overlapSamples = sampleRate / 2
+    static let silenceOverlapSamples = sampleRate / 5
     /// A chunk shorter than this answering with no tokens is ordinary rather
     /// than a loss: it is the half second of retained overlap a recording that
     /// ends just after a boundary leaves behind, or a fragment of a word.
@@ -30,6 +31,7 @@ enum SherpaLongAudio {
     }
 
     private static let silenceFrameSamples = sampleRate / 10
+    private static let silenceRunFrames = 3
     private static let silenceSearchSamples = sampleRate * 2
     private static let minChunkSamples = sampleRate * 4
     private static let minSilenceRMS = 0.0125
@@ -62,10 +64,10 @@ enum SherpaLongAudio {
                 maxEnd: min(start + maximum, samples.count - minChunkSamples)
             )
             let end = silence ?? idealEnd
-            let useOverlap = silence == nil
+            let retainedSamples = silence == nil ? overlapSamples : silenceOverlapSamples
             result.append(Chunk(start: start, endExclusive: end, overlapsPrevious: overlapsPrevious))
-            start = useOverlap ? max(end - overlapSamples, start + 1) : end
-            overlapsPrevious = useOverlap
+            start = max(end - retainedSamples, start + 1)
+            overlapsPrevious = true
         }
         return result
     }
@@ -83,10 +85,8 @@ enum SherpaLongAudio {
             maxEnd: streamingWindowSeconds * sampleRate
         )
         let end = silence ?? target
-        return StreamingSplit(
-            endExclusive: end,
-            nextStart: silence == nil ? end - overlapSamples : end
-        )
+        let retainedSamples = silence == nil ? overlapSamples : silenceOverlapSamples
+        return StreamingSplit(endExclusive: end, nextStart: max(end - retainedSamples, 1))
     }
 
     private static func findSilenceBoundary(
@@ -98,22 +98,27 @@ enum SherpaLongAudio {
             / silenceFrameSamples * silenceFrameSamples
         guard first <= last else { return nil }
 
+        var levels: [(Int, Double)] = []
         var peak = 0.0
-        var lowest = Double.greatestFiniteMagnitude
-        var quietStart = -1
         var frame = first
         while frame <= last {
             let value = rms(samples, start: frame, endExclusive: frame + silenceFrameSamples)
             peak = max(peak, value)
-            if value < lowest {
-                lowest = value
-                quietStart = frame
-            }
+            levels.append((frame, value))
             frame += silenceFrameSamples
         }
         let threshold = max(minSilenceRMS, peak * silenceRMSRatio)
-        guard quietStart >= 0, lowest <= threshold else { return nil }
-        return min(max(quietStart + silenceFrameSamples / 2, minEnd), maxEnd)
+        var best: Int?
+        guard levels.count >= silenceRunFrames else { return nil }
+        for start in 0...(levels.count - silenceRunFrames) {
+            let run = levels[start..<(start + silenceRunFrames)]
+            guard run.allSatisfy({ $0.1 <= threshold }) else { continue }
+            let boundary = run.first!.0 + silenceFrameSamples * silenceRunFrames / 2
+            if best == nil || abs(boundary - idealEnd) < abs(best! - idealEnd) {
+                best = boundary
+            }
+        }
+        return best.map { min(max($0, minEnd), maxEnd) }
     }
 
     private static func rms(_ samples: [Float], start: Int, endExclusive: Int) -> Double {

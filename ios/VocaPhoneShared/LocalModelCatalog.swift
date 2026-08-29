@@ -14,14 +14,11 @@ enum SherpaFamily: String, Codable, Sendable {
     case nemoCtc
     case paraformer
 
-    /// Whether this family accepts `modified_beam_search`.
-    ///
-    /// This is not a preference. sherpa-onnx validates the decoding method when
-    /// the recognizer is built, and every family except the transducer answers
-    /// an unsupported one with `exit(-1)` — not an exception, not an error
-    /// return, but the process gone. So the method has to be decided from the
-    /// family and never from the user's setting alone.
-    var supportsBeamSearch: Bool { self == .nemoTransducer }
+    /// NeMo TDT accepts `modified_beam_search`, but current sherpa-onnx builds
+    /// intermittently emit empty or hallucinated text with it. Keep every
+    /// bundled family on greedy decoding until a fixed runtime is shipped and
+    /// exercised on phones.
+    var supportsBeamSearch: Bool { false }
 
     /// Whether the recognizer config for this family has a language field at all.
     ///

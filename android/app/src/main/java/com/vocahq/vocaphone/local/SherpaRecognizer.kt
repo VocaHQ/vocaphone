@@ -51,8 +51,17 @@ internal class SherpaRecognizer private constructor(
      */
     fun transcribe(samples: FloatArray): SherpaTranscript {
         var transcript = SherpaTranscript.EMPTY
-        SherpaLongAudio.chunks(samples).forEach { chunk ->
-            val chunkResult = transcribeChunk(samples.copyOfRange(chunk.start, chunk.endExclusive))
+        val chunks = SherpaLongAudio.chunks(samples)
+        chunks.forEach { chunk ->
+            val chunkResult = SherpaEmptyChunkRecovery.decode(
+                samples = samples.copyOfRange(chunk.start, chunk.endExclusive),
+                decodeOnce = ::decode,
+                deduplicateOverlap = !translating,
+                // An empty final overlap is normal. A complete, audible short
+                // recording that produced no tokens is not; recover it before
+                // surfacing an empty-transcript failure.
+                recoverAudibleShortInput = chunks.size == 1,
+            )
             transcript = transcript.append(
                 chunkResult,
                 deduplicateOverlap = chunk.overlapsPrevious && !translating,
@@ -252,6 +261,7 @@ internal object SherpaEmptyChunkRecovery {
         samples: FloatArray,
         decodeOnce: (FloatArray) -> SherpaTranscript,
         deduplicateOverlap: Boolean = true,
+        recoverAudibleShortInput: Boolean = false,
     ): SherpaTranscript {
         val firstAttempt = decodeOnce(samples)
         // Length is what this recovers from, so a window that is not long
@@ -259,12 +269,23 @@ internal object SherpaEmptyChunkRecovery {
         // tone is the other ordinary reason for an empty answer, and the
         // cheapest thing to rule out before spending two more decodes: the
         // scan costs a pass over the samples, the retry costs inference.
-        if (firstAttempt.text.isNotEmpty() ||
-            samples.size <=
-            SherpaLongAudio.MIN_SUSPECT_CHUNK_SECONDS * SherpaLongAudio.SAMPLE_RATE ||
-            SherpaLongAudio.isEffectivelySilent(samples)
-        ) {
+        if (firstAttempt.text.isNotEmpty() || SherpaLongAudio.isEffectivelySilent(samples)) {
             return firstAttempt
+        }
+
+        if (!recoverAudibleShortInput &&
+            samples.size <= SherpaLongAudio.MIN_SUSPECT_CHUNK_SECONDS * SherpaLongAudio.SAMPLE_RATE
+        ) return firstAttempt
+
+        if (recoverAudibleShortInput) {
+            // A fresh offline stream can recover a nondeterministic no-token
+            // answer for a complete short recording. Long windows keep the
+            // established split ladder and its predictable latency.
+            val repeated = decodeOnce(samples)
+            if (repeated.text.isNotEmpty()) return repeated
+            val padding = FloatArray(SherpaLongAudio.SAMPLE_RATE / 2)
+            val padded = decodeOnce(padding + samples + padding)
+            if (padded.text.isNotEmpty()) return padded
         }
 
         // Retain context on both sides of the recovery boundary. A plain

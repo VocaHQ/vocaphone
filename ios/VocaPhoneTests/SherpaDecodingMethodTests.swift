@@ -9,8 +9,8 @@ struct SherpaDecodingMethodTests {
         .nemoTransducer, .senseVoice, .moonshine, .dolphinCtc, .canary, .nemoCtc, .paraformer
     ]
 
-    @Test func onlyTheTransducerFamilyMayBeAskedForBeamSearch() {
-        for family in Self.families where family != .nemoTransducer {
+    @Test func everyBundledFamilyStaysOnGreedySearch() {
+        for family in Self.families {
             for quality in TranscriptionQuality.allCases {
                 #expect(
                     family.decodingMethod(for: quality) == SherpaFamily.greedySearch,
@@ -20,10 +20,10 @@ struct SherpaDecodingMethodTests {
         }
     }
 
-    @Test func theTransducerStillWidensItsSearchWhenQualityAsksForIt() {
+    @Test func parakeetNeverEntersTheUnstableNeMoTDTBeamDecoder() {
         #expect(SherpaFamily.nemoTransducer.decodingMethod(for: .fast) == "greedy_search")
-        #expect(SherpaFamily.nemoTransducer.decodingMethod(for: .balanced) == "modified_beam_search")
-        #expect(SherpaFamily.nemoTransducer.decodingMethod(for: .accurate) == "modified_beam_search")
+        #expect(SherpaFamily.nemoTransducer.decodingMethod(for: .balanced) == "greedy_search")
+        #expect(SherpaFamily.nemoTransducer.decodingMethod(for: .accurate) == "greedy_search")
     }
 
     @Test func everyModelInTheCatalogResolvesToAMethodItsFamilySurvives() {
