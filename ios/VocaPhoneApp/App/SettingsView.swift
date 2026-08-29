@@ -363,6 +363,10 @@ struct DictationSettingsView: View {
         store: KeyboardPreferences.defaults
     ) private var numbersAsDigits = false
     @AppStorage(
+        KeyboardPreferences.repairSpeechKey,
+        store: KeyboardPreferences.defaults
+    ) private var repairSpeech = true
+    @AppStorage(
         KeyboardPreferences.transcriptionLanguageKey,
         store: KeyboardPreferences.defaults
     ) private var transcriptionLanguageRawValue = TranscriptionLanguage.automatic.rawValue
@@ -393,6 +397,7 @@ struct DictationSettingsView: View {
             quickDictationSection
             languageSection
             writingStyleSection
+            cleanUpSection
             numbersSection
             microphoneSection
             recordingFeedbackSection
@@ -484,9 +489,35 @@ struct DictationSettingsView: View {
                 Text("“\(selectedWritingStyle.example)”")
                 Text(
                     "Styles only change formatting. Your words, times, links and "
-                        + "contractions are never altered; numbers change only if "
-                        + "you turn on Write numbers as digits below."
+                        + "contractions are never altered by a style; words change "
+                        + "only through Clean up speech, and numbers only through "
+                        + "Write numbers as digits, both below."
                 )
+            }
+        }
+    }
+
+    /// The one switch in Dictation that changes words rather than formatting,
+    /// which is why it says so in the footer instead of leaving it to be
+    /// discovered.
+    private var cleanUpSection: some View {
+        Section {
+            Toggle("Clean up speech", isOn: $repairSpeech)
+        } header: {
+            Text("Clean up")
+        } footer: {
+            VStack(alignment: .leading, spacing: VocaMetrics.related) {
+                Text(
+                    "Hesitation sounds and false starts are dropped, and missing "
+                        + "sentence punctuation is filled in: “so um we should we "
+                        + "should ship it friday” becomes “So we should ship it Friday.”"
+                )
+                Text(
+                    "Only sounds with no meaning go — “um”, “uh”, “er”. Real words "
+                        + "stay, including “like”, “you know” and “I mean”, and so do "
+                        + "“mhm” and “uh-huh”, which are answers."
+                )
+                Text("Never applied to the Raw writing style.")
             }
         }
     }
@@ -665,6 +696,23 @@ struct TranscriptionSettingsView: View {
 
     private var source: TranscriptionSourceStatus { coordinator.transcriptionSource }
 
+    /// The engine the accuracy control is currently describing. Whisper is the
+    /// safe default: it is the engine the setting has always applied to.
+    private var selectedLocalEngine: LocalModelEngine {
+        LocalTranscriptionPreferences.modelIdentifier
+            .flatMap(LocalModelCatalog.descriptor(for:))?
+            .engine ?? .whisperKit
+    }
+
+    /// Whether changing accuracy would build a different recognizer at all.
+    private var selectedLocalEngineVariesWithQuality: Bool {
+        guard let descriptor = LocalTranscriptionPreferences.modelIdentifier
+            .flatMap(LocalModelCatalog.descriptor(for:))
+        else { return true }
+        guard descriptor.engine == .sherpaOnnx else { return true }
+        return descriptor.sherpaFamily?.nativeConfigVariesWithQuality ?? true
+    }
+
     var body: some View {
         List {
             routeSection
@@ -743,7 +791,13 @@ struct TranscriptionSettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .onChange(of: transcriptionQualityRawValue) { _, _ in reloadLocalEngine() }
+            .onChange(of: transcriptionQualityRawValue) { _, _ in
+                // Only where the setting reaches the native config. Rebuilding a
+                // several-hundred-megabyte graph to produce a byte-identical one
+                // is a long "Loading…" and a peak-memory spike for nothing.
+                guard selectedLocalEngineVariesWithQuality else { return }
+                reloadLocalEngine()
+            }
             if let loading = coordinator.localModels.loadingMessage {
                 Text(loading).foregroundStyle(.secondary)
             }
@@ -757,7 +811,7 @@ struct TranscriptionSettingsView: View {
             Text("Accuracy")
         } footer: {
             VStack(alignment: .leading, spacing: VocaMetrics.related) {
-                Text(selectedTranscriptionQuality.detail)
+                Text(selectedTranscriptionQuality.detail(for: selectedLocalEngine))
                 Text(
                     "This governs models running on this iPhone. Transcription on "
                         + "your gateway is unaffected."

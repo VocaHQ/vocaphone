@@ -44,6 +44,7 @@ import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.TranscriptionQuality
 import com.vocahq.vocaphone.core.WritingStyle
 import com.vocahq.vocaphone.local.LocalModelCatalog
+import com.vocahq.vocaphone.local.LocalModelEngine
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.AudioRetention
@@ -84,6 +85,7 @@ fun SettingsScreen(
     onLanguage: (TranscriptionLanguage) -> Unit,
     onTranslateTo: (TranscriptionLanguage) -> Unit,
     onStyle: (WritingStyle) -> Unit,
+    onRepairSpeech: (Boolean) -> Unit,
     onDictationTone: (DictationTone) -> Unit,
     onPreviewDictationTone: (DictationTone) -> Unit,
     tonePreviewListening: Boolean,
@@ -235,7 +237,11 @@ fun SettingsScreen(
             SettingsPage.MODELS -> {
                 Section(
                     title = "Accuracy",
-                    supporting = "${settings.transcriptionQuality.detail}\n" +
+                    supporting = "${
+                        settings.transcriptionQuality.detail(
+                            localModel?.engine ?: LocalModelEngine.WHISPER,
+                        )
+                    }\n" +
                         "Applies to models running on this phone. The gateway decides for itself.",
                 ) {
                     ChipChoiceRow(
@@ -369,6 +375,26 @@ fun SettingsScreen(
                         settings.style.example,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Section(
+                    title = "Clean up",
+                    // The one switch on this page that changes words rather
+                    // than formatting, which is why it says so here instead of
+                    // leaving it to be discovered.
+                    supporting = "The only setting that changes your words. " +
+                        "Never applied to the Raw writing style.",
+                ) {
+                    SettingToggle(
+                        title = "Clean up speech",
+                        detail = "Drops hesitation sounds and false starts, and fills in " +
+                            "missing sentence punctuation: \"so um we should we should ship " +
+                            "it friday\" becomes \"So we should ship it Friday.\" Only sounds " +
+                            "with no meaning go — \"um\", \"uh\", \"er\". Real words stay, " +
+                            "including \"like\" and \"you know\", and so do \"mhm\" and " +
+                            "\"uh-huh\", which are answers.",
+                        checked = settings.repairSpeech,
+                        onCheckedChange = onRepairSpeech,
                     )
                 }
                 Section(
