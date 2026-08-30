@@ -44,6 +44,7 @@ protocol KeyGridViewDelegate: AnyObject {
 /// per key reacting to `touchUpInside`.
 final class KeyGridView: UIView {
     weak var delegate: (any KeyGridViewDelegate)?
+    private let feedback: any KeyboardFeedbackProviding
 
     var metrics: KeyboardMetrics {
         didSet { if metrics != oldValue { rebuild() } }
@@ -143,9 +144,14 @@ final class KeyGridView: UIView {
         }
     }
 
-    init(metrics: KeyboardMetrics, palette: KeyboardPalette) {
+    init(
+        metrics: KeyboardMetrics,
+        palette: KeyboardPalette,
+        feedback: any KeyboardFeedbackProviding = KeyboardHaptics.shared
+    ) {
         self.metrics = metrics
         self.palette = palette
+        self.feedback = feedback
         super.init(frame: .zero)
         isMultipleTouchEnabled = true
         // Previews for the top row rise above the grid's own bounds.
@@ -283,6 +289,7 @@ final class KeyGridView: UIView {
     /// Discards every cached plane. Only geometry or colour changes need this;
     /// a plane switch goes through `activatePlane`.
     private func rebuild() {
+        hitMap = KeyHitMap(targets: [])
         endDeleteRepeat()
         releaseTouches()
         for (_, plane) in planeCache {
@@ -299,6 +306,9 @@ final class KeyGridView: UIView {
     }
 
     private func activatePlane() {
+        // `setNeedsLayout()` is deferred. Never let touches arriving in that
+        // window resolve old target indices against the new plane's views.
+        hitMap = KeyHitMap(targets: [])
         endDeleteRepeat()
         releaseTouches()
         keyViews.forEach { $0.isHidden = true }
@@ -452,7 +462,7 @@ final class KeyGridView: UIView {
                     // mid-air would look like a dropped frame.
                     swipeTrail.begin(at: item.initialPoint)
                     bringSubviewToFront(swipeTrail)
-                    KeyboardHaptics.shared.swipeBegan()
+                    feedback.swipeBegan()
                 }
                 if item.isSwiping {
                     item.swipePath.append(point)
@@ -516,26 +526,34 @@ final class KeyGridView: UIView {
                 let choice = alternativesView?.highlightedOption
                 dismissAlternatives()
                 guard commit, let choice else { continue }
-                KeyboardHaptics.shared.textCommitted()
+                feedback.textCommitted()
                 delegate?.keyGrid(self, didProduce: .text(choice))
                 if shiftState == .on { shiftState = .off }
                 continue
             }
-            guard shouldCommit, !item.key.spec.cap.actsOnTouchDown else { continue }
-            commitKey(item.key)
+            completeKeyInteraction(
+                item.key,
+                shouldCommit: shouldCommit && !item.key.spec.cap.actsOnTouchDown
+            )
         }
     }
 
-    private func commitKey(_ key: KeyView) {
-        KeyboardHaptics.shared.textCommitted()
+    /// The single completion boundary for ordinary taps and slide correction.
+    /// Keeping the commit decision here makes cancellation testable without
+    /// constructing UIKit-owned `UITouch` instances.
+    func completeKeyInteraction(_ key: KeyView, shouldCommit: Bool) {
+        guard shouldCommit else { return }
         switch key.spec.cap {
         case .character:
             guard let text = key.previewText else { return }
+            feedback.textCommitted()
             delegate?.keyGrid(self, didProduce: .text(text))
             if shiftState == .on { shiftState = .off }
         case .space:
+            feedback.textCommitted()
             delegate?.keyGrid(self, didProduce: .space)
         case .newline:
+            feedback.textCommitted()
             delegate?.keyGrid(self, didProduce: .newline)
         default:
             break
@@ -543,7 +561,7 @@ final class KeyGridView: UIView {
     }
 
     private func performTouchDownAction(for key: KeyView, event: UIEvent?) {
-        KeyboardHaptics.shared.keyActionCommitted()
+        feedback.keyActionCommitted()
         switch key.spec.cap {
         case .delete:
             delegate?.keyGrid(self, didProduce: .deleteBackward)
@@ -572,7 +590,7 @@ final class KeyGridView: UIView {
                 else { return }
                 item.isCursorTracking = true
                 item.lastCursorStep = 0
-                KeyboardHaptics.shared.selectionChanged()
+                self.feedback.selectionChanged()
                 UIAccessibility.post(notification: .announcement, argument: "Cursor control")
             }
         }
@@ -630,7 +648,7 @@ final class KeyGridView: UIView {
         let trace = recognizer.trace(path)
         let candidates = recognizer.candidates(for: trace, in: wordList)
         guard let best = candidates.first else { return }
-        KeyboardHaptics.shared.swipeCommitted()
+        feedback.swipeCommitted()
         delegate?.keyGrid(
             self,
             didProduce: .swipeWord(best, alternates: Array(candidates.dropFirst()))
@@ -663,7 +681,7 @@ final class KeyGridView: UIView {
                 // The touch is consumed: lifting must not also switch planes,
                 // which is what the same key does on a tap.
                 self.tracked.removeAll { $0 === item }
-                KeyboardHaptics.shared.selectionChanged()
+                self.feedback.selectionChanged()
                 self.delegate?.keyGrid(self, didProduce: .emojiPanel)
             }
         }
@@ -722,14 +740,14 @@ final class KeyGridView: UIView {
 
         item.isChoosingAlternative = true
         item.longPressTimer = nil
-        KeyboardHaptics.shared.selectionChanged()
+        feedback.selectionChanged()
     }
 
     private func handleAlternativeMovement(_ item: TrackedTouch, point: CGPoint) {
         guard let popover = alternativesView else { return }
         let local = convert(point, to: popover)
         if popover.highlightOption(atX: local.x) {
-            KeyboardHaptics.shared.selectionChanged()
+            feedback.selectionChanged()
         }
     }
 
@@ -745,7 +763,7 @@ final class KeyGridView: UIView {
         shiftState = isDoubleTap ? .locked : (shiftState == .off ? .on : .off)
     }
 
-    private func key(at point: CGPoint, characterOnly: Bool) -> KeyView? {
+    func key(at point: CGPoint, characterOnly: Bool) -> KeyView? {
         guard let index = hitMap.targetIndex(at: point, characterOnly: characterOnly),
               keyViews.indices.contains(index)
         else { return nil }

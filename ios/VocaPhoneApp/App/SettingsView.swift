@@ -324,9 +324,9 @@ struct KeyboardSettingsView: View {
                 )
                 Text(
                     "Typing haptics are off by default. Keyboard clicks follow "
-                    + "the iPhone's Keyboard Clicks setting. Custom haptics "
-                        + "need Full Access and text haptics play only after text "
-                        + "is entered."
+                        + "the iPhone's Keyboard Clicks setting. When enabled, "
+                        + "custom haptics confirm committed typing and occasional "
+                        + "keyboard actions."
                 )
                 Text(
                     "Swipe to type is new and off by default. Slide from letter to "

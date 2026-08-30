@@ -1,5 +1,15 @@
 import UIKit
 
+@MainActor
+protocol KeyboardFeedbackProviding: AnyObject {
+    func textCommitted()
+    func keyActionCommitted()
+    func selectionChanged()
+    func action()
+    func swipeBegan()
+    func swipeCommitted()
+}
+
 /// The semantic feedback a keyboard interaction may produce. Keeping this as
 /// data lets tests prove that a cancelled touch cannot buzz or click, without
 /// pretending the simulator has a Taptic Engine.
@@ -56,7 +66,7 @@ enum KeyboardFeedbackPolicy {
 /// interaction has committed, and use restrained intensities because typing is
 /// the keyboard's highest-frequency action.
 @MainActor
-final class KeyboardHaptics {
+final class KeyboardHaptics: KeyboardFeedbackProviding {
     static let shared = KeyboardHaptics()
 
     /// Whether the extension can reach the Taptic Engine at all. Only the
