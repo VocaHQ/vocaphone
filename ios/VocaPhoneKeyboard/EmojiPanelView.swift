@@ -262,17 +262,17 @@ final class EmojiPanelView: UIView {
     }
 
     @objc private func spaceTapped() {
-        KeyboardHaptics.shared.keyPress()
+        KeyboardHaptics.shared.textCommitted()
         delegate?.emojiPanelDidRequestSpace(self)
     }
 
     @objc private func deleteTapped() {
-        KeyboardHaptics.shared.keyPress()
+        KeyboardHaptics.shared.keyActionCommitted()
         delegate?.emojiPanelDidRequestDelete(self)
     }
 
     @objc private func returnTapped() {
-        KeyboardHaptics.shared.keyPress()
+        KeyboardHaptics.shared.textCommitted()
         delegate?.emojiPanelDidRequestReturn(self)
     }
 }
@@ -305,7 +305,7 @@ extension EmojiPanelView: UICollectionViewDataSource, UICollectionViewDelegateFl
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard indexPath.item < glyphs.count else { return }
         let glyph = glyphs[indexPath.item]
-        KeyboardHaptics.shared.keyPress()
+        KeyboardHaptics.shared.textCommitted()
         EmojiRecents.note(glyph)
         delegate?.emojiPanel(self, didChoose: glyph)
     }

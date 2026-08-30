@@ -164,9 +164,9 @@ struct KeyboardSettingsView: View {
         store: KeyboardPreferences.defaults
     ) private var smartPunctuationEnabled = true
     @AppStorage(
-        KeyboardPreferences.keyboardHapticsKey,
+        KeyboardPreferences.typingHapticsKey,
         store: KeyboardPreferences.defaults
-    ) private var hapticsEnabled = true
+    ) private var typingHapticsEnabled = false
     @AppStorage(
         KeyboardPreferences.emojiSuggestionsKey,
         store: KeyboardPreferences.defaults
@@ -306,7 +306,7 @@ struct KeyboardSettingsView: View {
         Section {
             Toggle("Smart punctuation", isOn: $smartPunctuationEnabled)
             Toggle("Emoji suggestions", isOn: $emojiSuggestionsEnabled)
-            Toggle("Keyboard haptics", isOn: $hapticsEnabled)
+            Toggle("Typing haptics", isOn: $typingHapticsEnabled)
             Toggle("Swipe to type", isOn: $swipeTypingEnabled)
         } footer: {
             VStack(alignment: .leading, spacing: VocaMetrics.related) {
@@ -322,12 +322,11 @@ struct KeyboardSettingsView: View {
                         + "suggestion's place, and words without an obvious emoji "
                         + "get none."
                 )
-                // Said plainly rather than leaving people to wonder why their
-                // keyboard is silent.
                 Text(
-                    "Keyboard haptics need Full Access. Without it iOS gives the "
-                        + "keyboard no way to reach the Taptic Engine, and this "
-                        + "switch does nothing."
+                    "Typing haptics are off by default. Keyboard clicks follow "
+                    + "the iPhone's Keyboard Clicks setting. Custom haptics "
+                        + "need Full Access and text haptics play only after text "
+                        + "is entered."
                 )
                 Text(
                     "Swipe to type is new and off by default. Slide from letter to "

@@ -1,27 +1,60 @@
 import UIKit
 
+/// The semantic feedback a keyboard interaction may produce. Keeping this as
+/// data lets tests prove that a cancelled touch cannot buzz or click, without
+/// pretending the simulator has a Taptic Engine.
+enum KeyboardFeedbackEvent: Equatable {
+    case inputClick
+    case typingHaptic
+    case selectionHaptic
+    case actionHaptic
+    case swipeBeganHaptic
+    case swipeCommittedHaptic
+}
+
+enum KeyboardFeedbackInteraction {
+    case committedText
+    case committedKeyAction
+    case selectionChanged
+    case dictationAction
+    case swipeBegan
+    case swipeCommitted
+}
+
+enum KeyboardFeedbackPolicy {
+    static func events(
+        for interaction: KeyboardFeedbackInteraction,
+        typingHapticsEnabled: Bool,
+        hasFullAccess: Bool
+    ) -> [KeyboardFeedbackEvent] {
+        let allowsHaptics = typingHapticsEnabled && hasFullAccess
+        switch interaction {
+        case .committedText:
+            return [.inputClick] + (allowsHaptics ? [.typingHaptic] : [])
+        case .committedKeyAction:
+            // Shift, Delete, plane switching, and the globe act immediately;
+            // their visible state change is feedback enough. They still get the
+            // standard click so the custom keyboard keeps the iOS convention.
+            return [.inputClick]
+        case .selectionChanged:
+            return allowsHaptics ? [.selectionHaptic] : []
+        case .dictationAction:
+            return allowsHaptics ? [.actionHaptic] : []
+        case .swipeBegan:
+            return allowsHaptics ? [.swipeBeganHaptic] : []
+        case .swipeCommitted:
+            return allowsHaptics ? [.swipeCommittedHaptic] : []
+        }
+    }
+}
+
 /// Every buzz and click the keyboard makes, in one place.
 ///
-/// The keyboard used to ask for feedback at each call site, and got almost none
-/// of it:
-///
-/// * A key press called `UIDevice.playInputClick()`, which is the keyboard
-///   *click sound* and has never produced a haptic. Typing — the one gesture
-///   that happens hundreds of times a minute — was therefore the only
-///   interaction with no feedback at all.
-/// * Everywhere else built a `UIFeedbackGenerator` and fired it in the same
-///   statement. A generator that has not been prepared has to wake the Taptic
-///   Engine first, so the first tap produces nothing and the ones after it
-///   arrive late — which reads as "the haptics are broken", because from the
-///   user's side they are.
-///
-/// So the generators live as long as the keyboard does, are prepared before
-/// they are needed, and are re-prepared after each event while a burst of
-/// typing keeps them warm.
-///
-/// Haptics also need Full Access: an extension without it cannot reach the
-/// engine, and firing into that is how a preference ends up looking like a lie.
-/// The click *sound* does not, so it is gated on the preference alone.
+/// A standard keyboard click is audio feedback controlled by iOS Settings. It
+/// is not a haptic and must not be disabled by VocaPhone's optional tactile
+/// preference. Custom haptics are deliberately opt-in, occur only after an
+/// interaction has committed, and use restrained intensities because typing is
+/// the keyboard's highest-frequency action.
 @MainActor
 final class KeyboardHaptics {
     static let shared = KeyboardHaptics()
@@ -49,7 +82,7 @@ final class KeyboardHaptics {
 
     private var allowsHaptics: Bool {
         Self.allowsHaptics(
-            preferenceEnabled: KeyboardPreferences.keyboardHapticsEnabled,
+            preferenceEnabled: KeyboardPreferences.typingHapticsEnabled,
             hasFullAccess: hasFullAccess
         )
     }
@@ -93,58 +126,75 @@ final class KeyboardHaptics {
 
     // MARK: - Events
 
-    /// A character, space or return. The click sound and the tap together, which
-    /// is what the system keyboard does.
-    ///
-    /// `intensity` is a little under full: a key is the most repeated event on
-    /// the keyboard, and one at full strength turns a sentence into a rattle.
-    func keyPress() {
-        guard KeyboardPreferences.keyboardHapticsEnabled else { return }
-        // Sound needs no Full Access, so it stays available to keyboards that
-        // have not granted it.
-        UIDevice.current.playInputClick()
-        guard allowsHaptics else { return }
-        let generator = impact(&keyTapGenerator, style: .light)
-        generator.impactOccurred(intensity: 0.7)
-        // Prepared again immediately: a typist's next key is milliseconds away,
-        // and this is what keeps the engine warm through a burst.
-        generator.prepare()
+    /// A character, space, Return, or emoji that has actually inserted. Calling
+    /// this only after target resolution prevents a missed or cancelled touch
+    /// from confirming the wrong key in the person's hand.
+    func textCommitted() {
+        perform(.committedText)
+    }
+
+    /// An immediate keyboard control such as Shift, Delete, plane switching, or
+    /// the globe. These controls retain standard input-click feedback without
+    /// adding a custom impact to every tap.
+    func keyActionCommitted() {
+        perform(.committedKeyAction)
     }
 
     /// Moving between accent options, entering cursor control, opening the emoji
     /// panel: the user is choosing rather than committing.
     func selectionChanged() {
-        guard allowsHaptics else { return }
-        let generator = selection()
-        generator.selectionChanged()
-        generator.prepare()
+        perform(.selectionChanged)
     }
 
     /// A bar button — start, insert, cancel. Weightier than a key because it is
     /// rare and consequential.
     func action() {
-        guard allowsHaptics else { return }
-        let generator = impact(&actionGenerator, style: .soft)
-        generator.impactOccurred()
-        generator.prepare()
+        perform(.dictationAction)
     }
 
     /// The moment a slide becomes a swipe. Light, because the gesture is still
     /// in flight — this says "I am tracing now", not "I typed something".
     func swipeBegan() {
-        guard allowsHaptics else { return }
-        let generator = impact(&keyTapGenerator, style: .light)
-        generator.impactOccurred(intensity: 0.45)
-        generator.prepare()
+        perform(.swipeBegan)
     }
 
     /// A traced word has been committed. Firmer than the start: a whole word
     /// just landed, and the user's eyes are on the strip rather than the keys.
     func swipeCommitted() {
-        guard allowsHaptics else { return }
-        let generator = impact(&actionGenerator, style: .soft)
-        generator.impactOccurred(intensity: 0.8)
-        generator.prepare()
+        perform(.swipeCommitted)
+    }
+
+    private func perform(_ interaction: KeyboardFeedbackInteraction) {
+        for event in KeyboardFeedbackPolicy.events(
+            for: interaction,
+            typingHapticsEnabled: KeyboardPreferences.typingHapticsEnabled,
+            hasFullAccess: hasFullAccess
+        ) {
+            switch event {
+            case .inputClick:
+                UIDevice.current.playInputClick()
+            case .typingHaptic:
+                let generator = impact(&keyTapGenerator, style: .light)
+                generator.impactOccurred(intensity: 0.35)
+                generator.prepare()
+            case .selectionHaptic:
+                let generator = selection()
+                generator.selectionChanged()
+                generator.prepare()
+            case .actionHaptic:
+                let generator = impact(&actionGenerator, style: .soft)
+                generator.impactOccurred()
+                generator.prepare()
+            case .swipeBeganHaptic:
+                let generator = impact(&keyTapGenerator, style: .light)
+                generator.impactOccurred(intensity: 0.35)
+                generator.prepare()
+            case .swipeCommittedHaptic:
+                let generator = impact(&actionGenerator, style: .soft)
+                generator.impactOccurred(intensity: 0.5)
+                generator.prepare()
+            }
+        }
     }
 
     // MARK: - Generators

@@ -109,6 +109,9 @@ final class KeyGridView: UIView {
     /// any interaction that makes sense, and allocating a view per long press
     /// would churn labels the pool exists to avoid.
     private var alternativesView: KeyAlternativesView?
+    /// Rebuilt by layout from the same frames that are rendered. Touches never
+    /// scan UIKit subviews directly, so a gutter boundary has one stable owner.
+    private var hitMap = KeyHitMap(targets: [])
     private var tracked: [TrackedTouch] = []
     private var deleteTimer: Timer?
     private var spaceTrackpadTimer: Timer?
@@ -169,7 +172,10 @@ final class KeyGridView: UIView {
         // Every row resolves against the width of one letter column from the
         // ten-key reference row, which is what keeps columns aligned vertically.
         let unit = (available - 9 * metrics.columnGap) / 10
-        guard unit > 0 else { return }
+        guard unit > 0 else {
+            hitMap = KeyHitMap(targets: [])
+            return
+        }
 
         var keyIndex = 0
         var y: CGFloat = 0
@@ -196,6 +202,15 @@ final class KeyGridView: UIView {
             }
             y += metrics.keyHeight + metrics.rowGap
         }
+
+        hitMap = KeyHitMap(targets: keyViews.enumerated().map { index, key in
+            KeyHitMap.Target(
+                index: index,
+                frame: key.frame,
+                hitRect: key.hitRect,
+                isCharacter: key.spec.cap.isCharacter
+            )
+        })
     }
 
     private func resolvedWidths(
@@ -371,7 +386,6 @@ final class KeyGridView: UIView {
             let item = TrackedTouch(touch: touch, key: key, initialPoint: point)
             tracked.append(item)
             key.isHighlighted = true
-            KeyboardHaptics.shared.keyPress()
             showPreview(for: item)
             if key.spec.cap == .space { scheduleSpaceTrackpad(for: item) }
             scheduleAlternatives(for: item)
@@ -502,6 +516,7 @@ final class KeyGridView: UIView {
                 let choice = alternativesView?.highlightedOption
                 dismissAlternatives()
                 guard commit, let choice else { continue }
+                KeyboardHaptics.shared.textCommitted()
                 delegate?.keyGrid(self, didProduce: .text(choice))
                 if shiftState == .on { shiftState = .off }
                 continue
@@ -512,6 +527,7 @@ final class KeyGridView: UIView {
     }
 
     private func commitKey(_ key: KeyView) {
+        KeyboardHaptics.shared.textCommitted()
         switch key.spec.cap {
         case .character:
             guard let text = key.previewText else { return }
@@ -527,6 +543,7 @@ final class KeyGridView: UIView {
     }
 
     private func performTouchDownAction(for key: KeyView, event: UIEvent?) {
+        KeyboardHaptics.shared.keyActionCommitted()
         switch key.spec.cap {
         case .delete:
             delegate?.keyGrid(self, didProduce: .deleteBackward)
@@ -729,19 +746,10 @@ final class KeyGridView: UIView {
     }
 
     private func key(at point: CGPoint, characterOnly: Bool) -> KeyView? {
-        var closest: KeyView?
-        var shortestDistance = CGFloat.greatestFiniteMagnitude
-        for key in keyViews {
-            if characterOnly, !key.spec.cap.isCharacter { continue }
-            guard key.hitRect.contains(point) else { continue }
-            // Gutters belong to both neighbours, so ties go to the nearer centre.
-            let distance = hypot(point.x - key.frame.midX, point.y - key.frame.midY)
-            if distance < shortestDistance {
-                shortestDistance = distance
-                closest = key
-            }
-        }
-        return closest
+        guard let index = hitMap.targetIndex(at: point, characterOnly: characterOnly),
+              keyViews.indices.contains(index)
+        else { return nil }
+        return keyViews[index]
     }
 
     // MARK: - Delete repeat
