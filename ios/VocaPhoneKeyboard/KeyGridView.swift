@@ -195,9 +195,20 @@ final class KeyGridView: UIView {
 
             for (column, width) in widths.enumerated() {
                 let key = keyViews[keyIndex]
-                key.frame = CGRect(x: x, y: y, width: width, height: metrics.keyHeight)
+                let slotFrame = CGRect(
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: metrics.keyHeight
+                )
+                key.frame = visibleFrame(
+                    for: slotFrame,
+                    key: key,
+                    row: row,
+                    unit: unit
+                )
                 key.hitRect = hitRect(
-                    for: key.frame,
+                    for: slotFrame,
                     isLeading: column == 0,
                     isTrailing: column == widths.count - 1,
                     isTopRow: rowIndex == 0,
@@ -217,6 +228,38 @@ final class KeyGridView: UIView {
                 isCharacter: key.spec.cap.isCharacter
             )
         })
+    }
+
+    /// The native letters plane leaves a larger visual moat around Shift and
+    /// Delete without sacrificing their touch targets. Keep the original slot
+    /// for hit testing, and only inset the rendered key toward the outside.
+    private func visibleFrame(
+        for slotFrame: CGRect,
+        key: KeyView,
+        row: KeyRow,
+        unit: CGFloat
+    ) -> CGRect {
+        guard row.keys.first?.cap == .shift else { return slotFrame }
+        let nativeModifierWidth = unit + 12
+        let inset = max(slotFrame.width - nativeModifierWidth, 0)
+        switch key.spec.cap {
+        case .shift:
+            return CGRect(
+                x: slotFrame.minX,
+                y: slotFrame.minY,
+                width: slotFrame.width - inset,
+                height: slotFrame.height
+            )
+        case .delete:
+            return CGRect(
+                x: slotFrame.minX + inset,
+                y: slotFrame.minY,
+                width: slotFrame.width - inset,
+                height: slotFrame.height
+            )
+        default:
+            return slotFrame
+        }
     }
 
     private func resolvedWidths(

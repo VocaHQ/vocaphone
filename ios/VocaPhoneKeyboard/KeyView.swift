@@ -149,16 +149,25 @@ final class KeyView: UIView {
                 withConfiguration: symbolConfiguration
             )
         case .space:
-            titleLabel.text = "space"
-            titleLabel.font = functionFont
+            // The system spacebar is visually blank; its name remains available
+            // through the key's accessibility label.
+            titleLabel.text = nil
             symbolView.image = nil
         case .newline:
-            titleLabel.text = returnTitle
-            titleLabel.font = functionFont
-            symbolView.image = nil
+            if returnTitle == "return" {
+                titleLabel.text = nil
+                symbolView.image = UIImage(
+                    systemName: "return",
+                    withConfiguration: symbolConfiguration
+                )
+            } else {
+                titleLabel.text = returnTitle
+                titleLabel.font = functionFont
+                symbolView.image = nil
+            }
         case let .plane(plane):
             titleLabel.text = KeyLayout.planeTitle(plane)
-            titleLabel.font = functionFont
+            titleLabel.font = planeFont
             symbolView.image = nil
         }
 
@@ -218,6 +227,13 @@ final class KeyView: UIView {
         )
     }
 
+    private var planeFont: UIFont {
+        KeyFont.scaled(
+            metrics.functionFontSize + 4,
+            maximum: metrics.functionFontSize + 6
+        )
+    }
+
     private var shiftSymbolName: String {
         switch shift {
         case .off: "shift"
@@ -227,11 +243,11 @@ final class KeyView: UIView {
     }
 
     private func applyColors() {
-        // An engaged shift reads as a selected control rather than a pressed
-        // one, so it keeps the accent fill until the user turns it off.
-        let isShiftEngaged = spec.cap == .shift && shift != .off
-        let style: KeyStyle = isShiftEngaged ? .accent : spec.style
-        backgroundColor = isHighlighted && !isShiftEngaged
+        // Apple's Shift stays on the neutral key surface; its filled Shift or
+        // Caps Lock glyph carries the state. A persistent mint key made the
+        // resting keyboard look active and unlike the keyboard users know.
+        let style = spec.style
+        backgroundColor = isHighlighted
             ? palette.pressedBackground(for: style)
             : palette.background(for: style)
         let foreground = palette.foreground(for: style)
