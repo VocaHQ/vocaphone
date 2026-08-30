@@ -19,6 +19,13 @@ struct KeyHitMap {
 
     let targets: [Target]
 
+    /// The nearest visible centre among the targets claiming `point`.
+    ///
+    /// A gutter can land exactly on the midpoint between two keys. `targets` is
+    /// in layout order and the comparison is strictly closer, so such a tie
+    /// goes to the earlier key — the leftmost on a row — rather than to
+    /// whatever order the view hierarchy happens to be in after previews and
+    /// accessibility have moved subviews around.
     func targetIndex(at point: CGPoint, characterOnly: Bool) -> Int? {
         var winner: Target?
         var shortestDistance = CGFloat.greatestFiniteMagnitude
@@ -35,18 +42,6 @@ struct KeyHitMap {
             if distance < shortestDistance {
                 winner = target
                 shortestDistance = distance
-                continue
-            }
-
-            // A gutter can be exactly on the midpoint between two keys. The
-            // previous implementation happened to use subview iteration order;
-            // layout order states that tie-break explicitly and keeps it stable
-            // if the view hierarchy changes for previews or accessibility.
-            if distance == shortestDistance,
-               let currentWinner = winner,
-               target.index < currentWinner.index
-            {
-                winner = target
             }
         }
 

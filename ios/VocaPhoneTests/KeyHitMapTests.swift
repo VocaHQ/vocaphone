@@ -30,7 +30,9 @@ struct KeyHitMapTests {
     }
 
     @Test func exactBoundaryTieUsesStableLayoutOrder() {
-        // Both targets claim 42.5 and their centres are equally distant.
+        // Both targets claim 42.5 and their centres are equally distant, so the
+        // earlier key in layout order wins rather than whichever subview the
+        // hierarchy happened to hold last.
         #expect(map.targetIndex(at: CGPoint(x: 42.5, y: 20), characterOnly: false) == 0)
     }
 
@@ -44,7 +46,11 @@ struct KeyHitMapTests {
         #expect(map.targetIndex(at: CGPoint(x: 200, y: 20), characterOnly: false) == nil)
     }
 
-    @Test func changingPlanesInvalidatesTargetsUntilTheNewLayoutExists() throws {
+    /// `touchesBegan` walks an unordered set, so a second finger can land in the
+    /// same event that switched planes. If the switch left the map empty until
+    /// the next layout pass, that keystroke would resolve to nothing and be
+    /// silently dropped — which is what two-thumb typing looks like.
+    @Test func changingPlanesResolvesTheNewLayoutImmediately() throws {
         let metrics = KeyboardMetrics.resolved(for: UITraitCollection {
             $0.verticalSizeClass = .regular
         })
@@ -57,10 +63,57 @@ struct KeyHitMapTests {
         #expect(grid.key(at: oldPoint, characterOnly: false)?.spec.cap == .character("q"))
 
         grid.plane = .numbers
-        #expect(grid.key(at: oldPoint, characterOnly: false) == nil)
-
-        grid.layoutIfNeeded()
         #expect(grid.key(at: oldPoint, characterOnly: false)?.spec.cap == .character("1"))
+    }
+
+    /// The plane key acts on touch-down, and the switch releases every tracked
+    /// touch. The hold used to hang off that touch, so it was cancelled before
+    /// it could ever fire and the panel was unreachable by its own gesture.
+    @Test func holdingThePlaneKeyOpensTheEmojiPanelAndUndoesTheSwitch() {
+        let feedback = KeyboardFeedbackSpy()
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeGrid(feedback: feedback, delegate: delegate)
+
+        grid.plane = .letters
+        grid.beginPlaneHold(at: .zero)
+        // What the touch-down action does the instant the finger lands.
+        grid.plane = .numbers
+        grid.completePlaneHold()
+
+        #expect(grid.plane == .letters)
+        #expect(delegate.outputs == ["emojiPanel"])
+        #expect(feedback.events == [.selectionChanged])
+    }
+
+    /// A held Delete is a stream of deletions. Sounding only the first press
+    /// makes a long hold read as a keyboard that has stopped responding.
+    @Test func everyDeleteRepeatReportsItsOwnFeedback() {
+        let feedback = KeyboardFeedbackSpy()
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeGrid(feedback: feedback, delegate: delegate)
+
+        grid.scheduleNextDelete()
+        grid.scheduleNextDelete()
+
+        #expect(feedback.events == [.deleteRepeated, .deleteRepeated])
+        #expect(delegate.outputs == ["deleteBackward", "deleteBackward"])
+        grid.endActiveInteractions()
+    }
+
+    private static func makeGrid(
+        feedback: KeyboardFeedbackSpy,
+        delegate: KeyGridDelegateSpy
+    ) -> KeyGridView {
+        let metrics = KeyboardMetrics.resolved(for: UITraitCollection {
+            $0.verticalSizeClass = .regular
+        })
+        let grid = KeyGridView(
+            metrics: metrics,
+            palette: KeyboardPalette(isDark: false),
+            feedback: feedback
+        )
+        grid.delegate = delegate
+        return grid
     }
 
     @Test func cancelledAndSlideCorrectedKeysReportOnlyTheFinalCommit() throws {
@@ -90,13 +143,21 @@ struct KeyHitMapTests {
 }
 
 private final class KeyboardFeedbackSpy: KeyboardFeedbackProviding {
-    enum Event: Equatable { case textCommitted }
+    enum Event: Equatable {
+        case keyPressed
+        case textCommitted
+        case keyActionCommitted
+        case deleteRepeated
+        case selectionChanged
+    }
 
     private(set) var events: [Event] = []
 
+    func keyPressed() { events.append(.keyPressed) }
     func textCommitted() { events.append(.textCommitted) }
-    func keyActionCommitted() {}
-    func selectionChanged() {}
+    func keyActionCommitted() { events.append(.keyActionCommitted) }
+    func deleteRepeated() { events.append(.deleteRepeated) }
+    func selectionChanged() { events.append(.selectionChanged) }
     func action() {}
     func swipeBegan() {}
     func swipeCommitted() {}
@@ -104,13 +165,19 @@ private final class KeyboardFeedbackSpy: KeyboardFeedbackProviding {
 
 private final class KeyGridDelegateSpy: KeyGridViewDelegate {
     private(set) var insertedText: [String] = []
+    private(set) var outputs: [String] = []
 
     func keyGrid(_ grid: KeyGridView, didProduce output: KeyboardOutput) {
         if case let .text(text) = output { insertedText.append(text) }
+        switch output {
+        case .emojiPanel: outputs.append("emojiPanel")
+        case .deleteBackward: outputs.append("deleteBackward")
+        default: break
+        }
     }
 
     func keyGridDidChangeShift(_ grid: KeyGridView) {}
-    func keyGridShouldContinueDeleting(_ grid: KeyGridView) -> Bool { false }
+    func keyGridShouldContinueDeleting(_ grid: KeyGridView) -> Bool { true }
 }
 
 private extension CGRect {

@@ -328,6 +328,15 @@ struct KeyboardSettingsView: View {
                         + "custom haptics confirm committed typing and occasional "
                         + "keyboard actions."
                 )
+                // Said plainly rather than leaving people to wonder why their
+                // keyboard is silent: the switch really does nothing without
+                // Full Access, whatever it is set to.
+                Text(
+                    "Typing haptics also need Full Access. Without it iOS gives "
+                        + "the keyboard no way to reach the Taptic Engine, and "
+                        + "this switch does nothing. Keyboard clicks are "
+                        + "unaffected."
+                )
                 Text(
                     "Swipe to type is new and off by default. Slide from letter to "
                         + "letter without lifting; alternatives appear in the "

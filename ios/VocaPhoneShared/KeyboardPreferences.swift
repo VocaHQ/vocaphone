@@ -268,6 +268,9 @@ enum KeyboardPreferences {
     /// by iOS's Keyboard Clicks setting and deliberately do not share this
     /// preference.
     static let typingHapticsKey = "typingHapticsEnabled"
+    /// The default-on switch this preference replaced. Kept only so the
+    /// migration below has a name to clear; nothing reads its value.
+    static let legacyKeyboardHapticsKey = "keyboardHapticsEnabled"
     /// Marks the release that stopped treating the old, default-on keyboard
     /// haptic setting as a user's affirmative choice. We cannot distinguish an
     /// inherited default from an explicit toggle, so the one-time migration
@@ -401,15 +404,17 @@ enum KeyboardPreferences {
     }
 
     /// Existing releases stored a default-on `keyboardHapticsEnabled` value,
-    /// but that key did not tell us whether a person had ever chosen it. A
-    /// strong buzz on every character is disruptive enough that preserving the
-    /// old default would be worse than asking an interested person to opt in
-    /// again. Calling this repeatedly is safe for the app and keyboard.
+    /// but that key did not tell us whether a person had ever chosen it. A buzz
+    /// on every character is disruptive enough that preserving the old default
+    /// would be worse than asking an interested person to opt in again, so the
+    /// stale value is discarded rather than carried over — `typingHapticsKey`
+    /// already defaults to off, and writing that default explicitly would say
+    /// nothing the getter does not. Calling this repeatedly is safe.
     static func migrateTypingHapticsIfNeeded() {
         guard let defaults,
               defaults.object(forKey: typingHapticsMigrationKey) == nil
         else { return }
-        defaults.set(false, forKey: typingHapticsKey)
+        defaults.removeObject(forKey: legacyKeyboardHapticsKey)
         defaults.set(true, forKey: typingHapticsMigrationKey)
     }
 

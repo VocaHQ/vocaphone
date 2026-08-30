@@ -114,6 +114,12 @@ final class KeyGridView: UIView {
     /// scan UIKit subviews directly, so a gutter boundary has one stable owner.
     private var hitMap = KeyHitMap(targets: [])
     private var tracked: [TrackedTouch] = []
+    /// The plane key's hold-for-emoji gesture. Owned by the grid rather than by
+    /// a `TrackedTouch`, because the plane switch it rides on releases those.
+    private var planeHoldTimer: Timer?
+    private weak var planeHoldTouch: UITouch?
+    private var planeHoldOrigin: KeyPlane?
+    private var planeHoldPoint: CGPoint?
     private var deleteTimer: Timer?
     private var spaceTrackpadTimer: Timer?
     private var deleteRepeatCount = 0
@@ -334,6 +340,7 @@ final class KeyGridView: UIView {
     private func rebuild() {
         hitMap = KeyHitMap(targets: [])
         endDeleteRepeat()
+        cancelPlaneHold()
         releaseTouches()
         for (_, plane) in planeCache {
             plane.views.forEach { $0.removeFromSuperview() }
@@ -349,8 +356,8 @@ final class KeyGridView: UIView {
     }
 
     private func activatePlane() {
-        // `setNeedsLayout()` is deferred. Never let touches arriving in that
-        // window resolve old target indices against the new plane's views.
+        // Cleared here and rebuilt before this method returns: never let a
+        // touch resolve old target indices against the new plane's views.
         hitMap = KeyHitMap(targets: [])
         endDeleteRepeat()
         releaseTouches()
@@ -392,6 +399,11 @@ final class KeyGridView: UIView {
         updateKeys()
         invalidateIntrinsicContentSize()
         setNeedsLayout()
+        // `setNeedsLayout()` alone defers the new geometry to the next layout
+        // pass, and `touchesBegan` walks an unordered set: a second finger
+        // landing in the same event as a plane switch would resolve against an
+        // empty map and be silently dropped. Two-thumb typists hit that.
+        layoutIfNeeded()
     }
 
     /// Abandons everything in flight — held keys, delete repeat, an open accent
@@ -400,6 +412,7 @@ final class KeyGridView: UIView {
     /// dismissed, and a popover left behind reappears over the next field.
     func endActiveInteractions() {
         endDeleteRepeat()
+        cancelPlaneHold()
         releaseTouches()
     }
 
@@ -439,10 +452,17 @@ final class KeyGridView: UIView {
             let item = TrackedTouch(touch: touch, key: key, initialPoint: point)
             tracked.append(item)
             key.isHighlighted = true
+            // The click belongs to the press, not to the commit: the system
+            // keyboard sounds a key as the finger lands, and every key here
+            // does the same so the rhythm never depends on which key it was.
+            feedback.keyPressed()
             showPreview(for: item)
             if key.spec.cap == .space { scheduleSpaceTrackpad(for: item) }
             scheduleAlternatives(for: item)
-            schedulePlaneLongPress(for: item)
+            if case .plane = key.spec.cap {
+                beginPlaneHold(at: point)
+                planeHoldTouch = touch
+            }
             if key.spec.cap.actsOnTouchDown {
                 performTouchDownAction(for: key, event: event)
             }
@@ -451,6 +471,12 @@ final class KeyGridView: UIView {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
+            if planeHoldTouch === touch, let origin = planeHoldPoint {
+                let point = touch.location(in: self)
+                // Sliding off the plane key is a change of mind about the key,
+                // not a hold — the same 12pt slack the accent popover allows.
+                if hypot(point.x - origin.x, point.y - origin.y) > 12 { cancelPlaneHold() }
+            }
             guard let item = tracked.first(where: { $0.touch === touch }) else { continue }
             let point = touch.location(in: self)
 
@@ -537,6 +563,7 @@ final class KeyGridView: UIView {
 
     private func finish(_ touches: Set<UITouch>, commit: Bool) {
         for touch in touches {
+            if planeHoldTouch === touch { cancelPlaneHold() }
             guard let index = tracked.firstIndex(where: { $0.touch === touch }) else { continue }
             let item = tracked.remove(at: index)
             if item.key.spec.cap == .space {
@@ -707,27 +734,45 @@ final class KeyGridView: UIView {
     /// focus model has no finger to hold, and the alternatives are reachable
     /// through the key's accessibility custom actions instead — see
     /// ``KeyView/refresh()``.
-    /// Holding the plane key opens the emoji panel. Armed separately from the
-    /// accent popover, because the plane key is not a character key.
-    private func schedulePlaneLongPress(for item: TrackedTouch) {
-        guard case .plane = item.key.spec.cap, !UIAccessibility.isVoiceOverRunning else { return }
-        item.longPressTimer?.invalidate()
-        item.longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) {
-            [weak self, weak item] _ in
-            MainActor.assumeIsolated {
-                guard let self,
-                      let item,
-                      self.tracked.contains(where: { $0 === item })
-                else { return }
-                item.longPressTimer = nil
-                item.key.isHighlighted = false
-                // The touch is consumed: lifting must not also switch planes,
-                // which is what the same key does on a tap.
-                self.tracked.removeAll { $0 === item }
-                self.feedback.selectionChanged()
-                self.delegate?.keyGrid(self, didProduce: .emojiPanel)
-            }
+    /// Holding the plane key opens the emoji panel.
+    ///
+    /// The hold cannot hang off the `TrackedTouch` the way the accent popover
+    /// does. The plane key acts on touch-down, and switching planes rebuilds
+    /// the grid and releases every tracked touch — which invalidated this very
+    /// timer before it could ever fire, leaving the gesture unreachable. The
+    /// grid owns it instead, and remembers the plane the hold started from so
+    /// reaching the panel does not also leave a plane switch behind it.
+    /// Arms the hold, remembering the plane it started from. Split from touch
+    /// handling — and from the touch's own identity — so the gesture the plane
+    /// switch used to swallow can be tested without a UIKit-owned `UITouch`.
+    func beginPlaneHold(at point: CGPoint) {
+        guard !UIAccessibility.isVoiceOverRunning else { return }
+        cancelPlaneHold()
+        planeHoldOrigin = plane
+        planeHoldPoint = point
+        planeHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) {
+            [weak self] _ in
+            MainActor.assumeIsolated { self?.completePlaneHold() }
         }
+    }
+
+    func completePlaneHold() {
+        guard let origin = planeHoldOrigin else { return }
+        cancelPlaneHold()
+        // The tap already switched planes as the finger landed. A hold means
+        // the panel was wanted instead, so the switch is undone rather than
+        // left waiting underneath it.
+        plane = origin
+        feedback.selectionChanged()
+        delegate?.keyGrid(self, didProduce: .emojiPanel)
+    }
+
+    private func cancelPlaneHold() {
+        planeHoldTimer?.invalidate()
+        planeHoldTimer = nil
+        planeHoldTouch = nil
+        planeHoldOrigin = nil
+        planeHoldPoint = nil
     }
 
     private func scheduleAlternatives(for item: TrackedTouch) {
@@ -840,8 +885,9 @@ final class KeyGridView: UIView {
     }
 
     /// One repeat at a time, rescheduled at the ramped interval — a repeating
-    /// timer cannot change its own period.
-    private func scheduleNextDelete() {
+    /// timer cannot change its own period. Not private, so a test can step the
+    /// ramp without waiting out real seconds of held Delete.
+    func scheduleNextDelete() {
         deleteTimer?.invalidate()
         guard delegate?.keyGridShouldContinueDeleting(self) ?? true else {
             // The start of a line. Stopping here is what keeps a held Delete
@@ -854,6 +900,7 @@ final class KeyGridView: UIView {
         let output: KeyboardOutput = deleteRepeatCount > Self.deleteWordThreshold
             ? .deleteWord
             : .deleteBackward
+        feedback.deleteRepeated()
         delegate?.keyGrid(self, didProduce: output)
 
         // Eased from slow to fast over the first dozen repeats.

@@ -15,42 +15,70 @@ struct KeyboardHapticsTests {
         #expect(!KeyboardHaptics.allowsHaptics(preferenceEnabled: false, hasFullAccess: false))
     }
 
-    @Test func committedTextAlwaysUsesTheSystemClick() {
-        #expect(
-            KeyboardFeedbackPolicy.events(
-                for: .committedText,
-                typingHapticsEnabled: false,
-                hasFullAccess: false
-            ) == [.inputClick]
-        )
-        #expect(
-            KeyboardFeedbackPolicy.events(
-                for: .committedText,
-                typingHapticsEnabled: false,
-                hasFullAccess: true
-            ) == [.inputClick]
-        )
-        #expect(
-            KeyboardFeedbackPolicy.events(
-                for: .committedText,
-                typingHapticsEnabled: true,
-                hasFullAccess: true
-            ) == [.inputClick, .typingHaptic]
-        )
-    }
-
-    @Test func immediateKeyboardControlsClickWithoutAddingATypingImpact() {
+    /// The click is the press, not the commit — the system keyboard sounds a
+    /// key as the finger lands — and it never depends on the haptic preference.
+    @Test func pressingAKeyAlwaysClicksAndOnlyClicks() {
         for preferenceEnabled in [false, true] {
             for hasFullAccess in [false, true] {
                 #expect(
                     KeyboardFeedbackPolicy.events(
-                        for: .committedKeyAction,
+                        for: .keyPressed,
                         typingHapticsEnabled: preferenceEnabled,
                         hasFullAccess: hasFullAccess
                     ) == [.inputClick]
                 )
             }
         }
+    }
+
+    /// Committing adds only the tactile half: clicking again on lift would
+    /// double every keystroke.
+    @Test func committingCarriesTheHapticButNotASecondClick() {
+        for interaction in [
+            KeyboardFeedbackInteraction.committedText,
+            .committedKeyAction,
+        ] {
+            #expect(
+                KeyboardFeedbackPolicy.events(
+                    for: interaction,
+                    typingHapticsEnabled: false,
+                    hasFullAccess: true
+                ).isEmpty
+            )
+            #expect(
+                KeyboardFeedbackPolicy.events(
+                    for: interaction,
+                    typingHapticsEnabled: true,
+                    hasFullAccess: false
+                ).isEmpty
+            )
+            #expect(
+                KeyboardFeedbackPolicy.events(
+                    for: interaction,
+                    typingHapticsEnabled: true,
+                    hasFullAccess: true
+                ) == [.typingHaptic]
+            )
+        }
+    }
+
+    /// A held Delete is a stream of separate deletions, and each one sounds —
+    /// otherwise a hold reads as a keyboard that has stopped responding.
+    @Test func eachDeleteRepeatSoundsLikeItsOwnKeystroke() {
+        #expect(
+            KeyboardFeedbackPolicy.events(
+                for: .deleteRepeated,
+                typingHapticsEnabled: false,
+                hasFullAccess: true
+            ) == [.inputClick]
+        )
+        #expect(
+            KeyboardFeedbackPolicy.events(
+                for: .deleteRepeated,
+                typingHapticsEnabled: true,
+                hasFullAccess: true
+            ) == [.inputClick, .typingHaptic]
+        )
     }
 
     @Test func optionalHapticsAreSilentWithoutBothPermissions() {
@@ -95,8 +123,10 @@ struct KeyboardHapticsTests {
     @Test func everyEventIsSafeWithoutAnEngine() {
         let haptics = KeyboardHaptics.shared
         haptics.attach(to: UIView(), hasFullAccess: false)
+        haptics.keyPressed()
         haptics.textCommitted()
         haptics.keyActionCommitted()
+        haptics.deleteRepeated()
         haptics.selectionChanged()
         haptics.action()
         haptics.swipeBegan()
