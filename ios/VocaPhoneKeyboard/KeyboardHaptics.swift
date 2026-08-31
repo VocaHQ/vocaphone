@@ -80,9 +80,11 @@ enum KeyboardFeedbackPolicy {
 /// A standard keyboard click is audio feedback controlled by iOS Settings. It
 /// is not a haptic, must not be disabled by VocaPhone's optional tactile
 /// preference, and is played on touch-down because that is when the system
-/// keyboard plays it. Custom haptics are deliberately opt-in, wait for the
-/// interaction to commit, and use restrained intensities because typing is the
-/// keyboard's highest-frequency action.
+/// keyboard plays it. Custom haptics are deliberately opt-in and wait for the
+/// interaction to commit. Typing is played at full strength on the crispest
+/// style, because a key is a hard, short click and anything softer reads as
+/// weaker than every other keyboard on the phone. The rarer events vary against
+/// that reference rather than sitting below it.
 @MainActor
 final class KeyboardHaptics: KeyboardFeedbackProviding {
     static let shared = KeyboardHaptics()
@@ -144,8 +146,8 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
     /// problem this whole type exists to avoid.
     func warmUp() {
         guard allowsHaptics else { return }
-        impact(&keyTapGenerator, style: .light).prepare()
-        impact(&actionGenerator, style: .soft).prepare()
+        keyTapImpact().prepare()
+        actionImpact().prepare()
         selection().prepare()
     }
 
@@ -221,24 +223,33 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
             case .inputClick:
                 UIDevice.current.playInputClick()
             case .typingHaptic:
-                let generator = impact(&keyTapGenerator, style: .light)
-                generator.impactOccurred(intensity: 0.35)
+                // `.rigid` rather than `.light`: a key is a hard, short click,
+                // and `.light` is the softest and most diffuse of the styles —
+                // it reads as a nudge where the system keyboard reads as a
+                // press. Full intensity because a third of the engine's power
+                // is exactly what made this feel weaker than every other
+                // keyboard on the phone.
+                let generator = keyTapImpact()
+                generator.impactOccurred(intensity: 1)
                 generator.prepare()
             case .selectionHaptic:
                 let generator = selection()
                 generator.selectionChanged()
                 generator.prepare()
             case .actionHaptic:
-                let generator = impact(&actionGenerator, style: .soft)
+                let generator = actionImpact()
                 generator.impactOccurred()
                 generator.prepare()
             case .swipeBeganHaptic:
-                let generator = impact(&keyTapGenerator, style: .light)
-                generator.impactOccurred(intensity: 0.25)
+                // The same instrument as a keystroke, played softer: the
+                // gesture is still in flight, so it should register as related
+                // to typing but plainly not a committed character.
+                let generator = keyTapImpact()
+                generator.impactOccurred(intensity: 0.5)
                 generator.prepare()
             case .swipeCommittedHaptic:
-                let generator = impact(&actionGenerator, style: .soft)
-                generator.impactOccurred(intensity: 0.5)
+                let generator = actionImpact()
+                generator.impactOccurred(intensity: 0.8)
                 generator.prepare()
             }
         }
@@ -246,8 +257,22 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
 
     // MARK: - Generators
 
-    /// The stored generator for a role, made on first use and kept afterwards.
-    private func impact(
+    /// The keystroke generator: crisp and short, like a key.
+    ///
+    /// A generator's style is fixed when it is built, so each role owns its
+    /// style rather than taking it as an argument. Passing one to a cached
+    /// generator would have been silently ignored, leaving the keyboard playing
+    /// whichever texture happened to be requested first.
+    private func keyTapImpact() -> UIImpactFeedbackGenerator {
+        cached(&keyTapGenerator, style: .rigid)
+    }
+
+    /// The generator for rare, weightier events: softer and more diffuse.
+    private func actionImpact() -> UIImpactFeedbackGenerator {
+        cached(&actionGenerator, style: .soft)
+    }
+
+    private func cached(
         _ generator: inout UIImpactFeedbackGenerator?,
         style: UIImpactFeedbackGenerator.FeedbackStyle
     ) -> UIImpactFeedbackGenerator {

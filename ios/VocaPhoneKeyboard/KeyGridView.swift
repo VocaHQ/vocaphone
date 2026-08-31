@@ -128,7 +128,23 @@ final class KeyGridView: UIView {
     private final class TrackedTouch: @unchecked Sendable {
         let touch: UITouch
         var key: KeyView
+        /// Whether the finger may leave this key and type the one it lands on.
+        /// Characters always may. So do Shift and the plane key, because iOS
+        /// lets a press on either slide onto a letter or symbol, type it, and
+        /// drop the modifier — one of the gestures people type by reflex.
         let allowsSlide: Bool
+        /// Only a touch that began on a character may become a traced word. A
+        /// slide off Shift travels just as far and must not be read as one.
+        let allowsSwipe: Bool
+        /// Set when this touch began on the plane key: the plane to return to
+        /// once the slide has typed something. A plain tap leaves it nil, so
+        /// tapping `123` stays on the numbers plane the way it should.
+        let planeToRestore: KeyPlane?
+        /// A slide that started on a modifier only commits while the finger is
+        /// still over the key it landed on — sliding back to the modifier and
+        /// lifting types nothing, as on iOS.
+        var isModifierSlide: Bool { planeToRestore != nil || startedOnShift }
+        private let startedOnShift: Bool
         var preview: KeyPreviewView?
         let initialPoint: CGPoint
         var lastCursorStep = 0
@@ -142,11 +158,19 @@ final class KeyGridView: UIView {
         var swipePath: [CGPoint] = []
         var isSwiping = false
 
-        init(touch: UITouch, key: KeyView, initialPoint: CGPoint) {
+        init(
+            touch: UITouch,
+            key: KeyView,
+            initialPoint: CGPoint,
+            planeToRestore: KeyPlane? = nil
+        ) {
             self.touch = touch
             self.key = key
             self.initialPoint = initialPoint
-            allowsSlide = key.spec.cap.isCharacter
+            self.planeToRestore = planeToRestore
+            startedOnShift = key.spec.cap == .shift
+            allowsSwipe = key.spec.cap.isCharacter
+            allowsSlide = key.spec.cap.isCharacter || startedOnShift || planeToRestore != nil
         }
     }
 
@@ -190,6 +214,8 @@ final class KeyGridView: UIView {
         }
 
         var keyIndex = 0
+        var targets: [KeyHitMap.Target] = []
+        targets.reserveCapacity(keyViews.count)
         var y: CGFloat = 0
         for (rowIndex, row) in rows.enumerated() {
             let widths = resolvedWidths(for: row, unit: unit, available: available)
@@ -220,20 +246,26 @@ final class KeyGridView: UIView {
                     isTopRow: rowIndex == 0,
                     isBottomRow: rowIndex == rows.count - 1
                 )
+                // The slot, not `key.frame`: Shift and Delete render inset to
+                // leave the native moat around them, and measuring from the
+                // shrunken visual centre would hand their share of the gutter
+                // to the neighbouring letter — losing the touch target the
+                // inset was written to preserve.
+                targets.append(
+                    KeyHitMap.Target(
+                        index: keyIndex,
+                        frame: slotFrame,
+                        hitRect: key.hitRect,
+                        isCharacter: key.spec.cap.isCharacter
+                    )
+                )
                 x += width + metrics.columnGap
                 keyIndex += 1
             }
             y += metrics.keyHeight + metrics.rowGap
         }
 
-        hitMap = KeyHitMap(targets: keyViews.enumerated().map { index, key in
-            KeyHitMap.Target(
-                index: index,
-                frame: key.frame,
-                hitRect: key.hitRect,
-                isCharacter: key.spec.cap.isCharacter
-            )
-        })
+        hitMap = KeyHitMap(targets: targets)
     }
 
     /// The native letters plane leaves a larger visual moat around Shift and
@@ -464,7 +496,24 @@ final class KeyGridView: UIView {
                 planeHoldTouch = touch
             }
             if key.spec.cap.actsOnTouchDown {
+                let planeBefore = plane
                 performTouchDownAction(for: key, event: event)
+                // Switching planes rebuilds the grid and releases every touch,
+                // this one included. Re-register it against the plane the
+                // finger is now looking at, so it can slide onto a symbol and
+                // type it on lift the way the system keyboard does.
+                if case .plane = key.spec.cap, plane != planeBefore,
+                   let landed = self.key(at: point, characterOnly: false)
+                {
+                    let slide = TrackedTouch(
+                        touch: touch,
+                        key: landed,
+                        initialPoint: point,
+                        planeToRestore: planeBefore
+                    )
+                    tracked.append(slide)
+                    landed.isHighlighted = true
+                }
             }
         }
     }
@@ -512,7 +561,7 @@ final class KeyGridView: UIView {
                 continue
             }
 
-            if swipeTypingIsAvailable, item.allowsSlide {
+            if swipeTypingIsAvailable, item.allowsSwipe {
                 let travelled = hypot(
                     point.x - item.initialPoint.x,
                     point.y - item.initialPoint.y
@@ -562,6 +611,10 @@ final class KeyGridView: UIView {
     }
 
     private func finish(_ touches: Set<UITouch>, commit: Bool) {
+        // Applied after the loop: restoring the plane rebuilds the grid and
+        // releases every tracked touch, which would strand the other fingers
+        // of a multi-touch batch before they have been read.
+        var planeToRestore: KeyPlane?
         for touch in touches {
             if planeHoldTouch === touch { cancelPlaneHold() }
             guard let index = tracked.firstIndex(where: { $0.touch === touch }) else { continue }
@@ -572,7 +625,15 @@ final class KeyGridView: UIView {
             }
             item.longPressTimer?.invalidate()
             item.longPressTimer = nil
-            let shouldCommit = commit && item.key.isHighlighted && !item.isCursorTracking
+            var shouldCommit = commit && item.key.isHighlighted && !item.isCursorTracking
+            // A slide that began on Shift or the plane key tracks characters
+            // only, so sliding back onto the modifier leaves `item.key` on the
+            // letter it passed over. Lifting there must type nothing.
+            if item.isModifierSlide,
+               !item.key.hitRect.contains(touch.location(in: self))
+            {
+                shouldCommit = false
+            }
             item.key.isHighlighted = false
             recycle(item.preview)
             item.preview = nil
@@ -601,32 +662,42 @@ final class KeyGridView: UIView {
                 if shiftState == .on { shiftState = .off }
                 continue
             }
-            completeKeyInteraction(
+            let didCommit = completeKeyInteraction(
                 item.key,
                 shouldCommit: shouldCommit && !item.key.spec.cap.actsOnTouchDown
             )
+            // Typing a symbol this way returns to the plane the finger came
+            // from; lifting on the plane key itself commits nothing and stays.
+            if didCommit, let origin = item.planeToRestore { planeToRestore = origin }
         }
+        if let planeToRestore { plane = planeToRestore }
     }
 
     /// The single completion boundary for ordinary taps and slide correction.
     /// Keeping the commit decision here makes cancellation testable without
     /// constructing UIKit-owned `UITouch` instances.
-    func completeKeyInteraction(_ key: KeyView, shouldCommit: Bool) {
-        guard shouldCommit else { return }
+    @discardableResult
+    func completeKeyInteraction(_ key: KeyView, shouldCommit: Bool) -> Bool {
+        guard shouldCommit else { return false }
         switch key.spec.cap {
         case .character:
-            guard let text = key.previewText else { return }
+            guard let text = key.previewText else { return false }
             feedback.textCommitted()
             delegate?.keyGrid(self, didProduce: .text(text))
+            // Also what ends a slide off Shift: one capital, then back to
+            // lowercase. A locked Shift is a deliberate state and outranks it.
             if shiftState == .on { shiftState = .off }
+            return true
         case .space:
             feedback.textCommitted()
             delegate?.keyGrid(self, didProduce: .space)
+            return true
         case .newline:
             feedback.textCommitted()
             delegate?.keyGrid(self, didProduce: .newline)
+            return true
         default:
-            break
+            return false
         }
     }
 
@@ -866,9 +937,14 @@ final class KeyGridView: UIView {
     /// faster than the system keyboard at the start — so a hold meant to remove
     /// two letters removed five — and slower than it once a long deletion is
     /// genuinely under way.
-    private static let deleteInitialDelay: TimeInterval = 0.45
+    ///
+    /// The floor is the part that has to stay honest. iOS settles at roughly
+    /// ten characters a second and holds there; ramping to 0.045 s was more
+    /// than twice that, which is how a hold meant to clear a word clears the
+    /// sentence before the finger lifts.
+    private static let deleteInitialDelay: TimeInterval = 0.5
     private static let deleteSlowestInterval: TimeInterval = 0.16
-    private static let deleteFastestInterval: TimeInterval = 0.045
+    private static let deleteFastestInterval: TimeInterval = 0.09
     /// After this many repeats a hold is clearly a bulk deletion, and whole
     /// words go rather than letters.
     private static let deleteWordThreshold = 16
@@ -938,15 +1014,44 @@ final class KeyGridView: UIView {
             preview = dequeuePreview()
             item.preview = preview
         }
-        preview.show(text)
-
         let frame = item.key.frame
         let width = max(frame.width * 1.5, frame.width + 22)
-        let height = frame.height * 1.25
+        let balloonHeight = frame.height * 1.25
         let x = min(max(frame.midX - width / 2, 2), bounds.width - width - 2)
-        preview.frame = CGRect(x: x, y: frame.minY - height - 6, width: width, height: height)
+        // The preview reaches down over the key rather than floating above a
+        // gap: the neck is what joins the two on the system keyboard, and the
+        // gap is the tell that gives a third-party keyboard away.
+        preview.frame = CGRect(
+            x: x,
+            y: frame.minY - balloonHeight,
+            width: width,
+            height: balloonHeight + frame.height
+        )
+        preview.show(
+            text,
+            balloonHeight: balloonHeight,
+            neck: CGRect(
+                x: frame.minX - x,
+                y: balloonHeight,
+                width: frame.width,
+                height: frame.height
+            )
+        )
         bringSubviewToFront(preview)
     }
+
+#if DEBUG
+    /// Shows a key's preview with no touch behind it, so the balloon can be
+    /// rendered and looked at without installing the keyboard on a device.
+    ///
+    /// The throwaway `TrackedTouch` is deliberately not added to `tracked`: it
+    /// carries no real `UITouch`, and live touch tracking must never see one.
+    /// `showPreview` only reads the item, and the balloon it dequeues is a
+    /// subview of the grid, so it survives for the render either way.
+    func previewKeyForRendering(_ key: KeyView) {
+        showPreview(for: TrackedTouch(touch: UITouch(), key: key, initialPoint: .zero))
+    }
+#endif
 
     /// Reused rather than allocated per touch; a fast typist would otherwise
     /// create and discard a view for every keystroke.

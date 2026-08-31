@@ -258,20 +258,35 @@ final class KeyView: UIView {
 
 /// The magnified glyph shown above a pressed character key. The system keyboard
 /// relies on this to confirm what was typed while the fingertip covers the key.
+///
+/// Drawn as one path rather than a floating rounded rectangle. iOS joins the
+/// balloon to the key with a tapered neck, and a bubble hovering over a gap is
+/// the detail that gives a third-party keyboard away at a glance. The view
+/// therefore spans from the top of the balloon down to the bottom of the key,
+/// and ``show(_:balloonHeight:neck:)`` is told where the key sits inside it.
 final class KeyPreviewView: UIView {
     private let label = UILabel()
+    private let shape = CAShapeLayer()
+    private let keyCornerRadius: CGFloat
+    private let balloonCornerRadius: CGFloat
+    private var balloonHeight: CGFloat = 0
+    private var neck: CGRect = .zero
 
     init(palette: KeyboardPalette, metrics: KeyboardMetrics) {
+        keyCornerRadius = metrics.cornerRadius
+        balloonCornerRadius = metrics.cornerRadius + 4
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         isAccessibilityElement = false
-        backgroundColor = palette.standardKey
-        layer.cornerRadius = metrics.cornerRadius + 4
-        layer.cornerCurve = .continuous
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.22
-        layer.shadowRadius = 5
-        layer.shadowOffset = CGSize(width: 0, height: 3)
+        // The shape carries the fill and the shadow; the view itself must not
+        // paint a rectangle behind it.
+        backgroundColor = .clear
+        shape.fillColor = palette.standardKey.cgColor
+        shape.shadowColor = UIColor.black.cgColor
+        shape.shadowOpacity = 0.22
+        shape.shadowRadius = 5
+        shape.shadowOffset = CGSize(width: 0, height: 3)
+        layer.addSublayer(shape)
 
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true
@@ -291,14 +306,92 @@ final class KeyPreviewView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        label.frame = bounds
-        layer.shadowPath = UIBezierPath(
-            roundedRect: bounds,
-            cornerRadius: layer.cornerRadius
-        ).cgPath
+        // Geometry changes here are driven by the finger, so the implicit
+        // animation on a shape layer's path would smear the glyph across the
+        // keyboard as the touch slides between keys.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        shape.frame = bounds
+        let path = outline().cgPath
+        shape.path = path
+        shape.shadowPath = path
+        CATransaction.commit()
+        // The glyph belongs in the balloon, not centred over the whole view —
+        // the neck is the key the finger is already covering.
+        label.frame = CGRect(x: 0, y: 0, width: bounds.width, height: balloonHeight)
     }
 
-    func show(_ text: String) {
+    func show(_ text: String, balloonHeight: CGFloat, neck: CGRect) {
         label.text = text
+        self.balloonHeight = balloonHeight
+        self.neck = neck
+        setNeedsLayout()
+    }
+
+    /// The balloon, the tapered shoulders, and the neck over the key, as one
+    /// closed path drawn clockwise from the balloon's top-left corner.
+    private func outline() -> UIBezierPath {
+        let width = bounds.width
+        let height = bounds.height
+        let balloonBottom = balloonHeight
+        // A neck wider than the balloon, or one that has not been set yet,
+        // would fold the path inside out. Fall back to the plain balloon.
+        let minX = max(neck.minX, 0)
+        let maxX = min(neck.maxX, width)
+        guard balloonBottom > 0, height > balloonBottom, maxX - minX > 0, minX > 0 || maxX < width
+        else {
+            return UIBezierPath(
+                roundedRect: CGRect(x: 0, y: 0, width: width, height: max(height, 1)),
+                cornerRadius: balloonCornerRadius
+            )
+        }
+
+        let corner = min(balloonCornerRadius, width / 2, balloonBottom / 2)
+        let keyCorner = min(keyCornerRadius, (maxX - minX) / 2)
+        // How far the taper runs up into the balloon, and how far it runs down
+        // past the balloon before the neck settles vertical. The curve between
+        // them is cubic with both control points on the verticals it joins, so
+        // the shoulder leaves the balloon and meets the neck without a corner —
+        // the long concave sweep is most of what makes the system's preview
+        // read as one moulded shape rather than a box on a stick.
+        let shoulder = min(balloonBottom * 0.45, 20)
+        let drop = min((height - balloonBottom) * 0.35, 14)
+
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: corner, y: 0))
+        path.addLine(to: CGPoint(x: width - corner, y: 0))
+        path.addQuadCurve(
+            to: CGPoint(x: width, y: corner),
+            controlPoint: CGPoint(x: width, y: 0)
+        )
+        path.addLine(to: CGPoint(x: width, y: balloonBottom - shoulder))
+        path.addCurve(
+            to: CGPoint(x: maxX, y: balloonBottom + drop),
+            controlPoint1: CGPoint(x: width, y: balloonBottom + drop * 0.55),
+            controlPoint2: CGPoint(x: maxX, y: balloonBottom - shoulder * 0.55)
+        )
+        path.addLine(to: CGPoint(x: maxX, y: height - keyCorner))
+        path.addQuadCurve(
+            to: CGPoint(x: maxX - keyCorner, y: height),
+            controlPoint: CGPoint(x: maxX, y: height)
+        )
+        path.addLine(to: CGPoint(x: minX + keyCorner, y: height))
+        path.addQuadCurve(
+            to: CGPoint(x: minX, y: height - keyCorner),
+            controlPoint: CGPoint(x: minX, y: height)
+        )
+        path.addLine(to: CGPoint(x: minX, y: balloonBottom + drop))
+        path.addCurve(
+            to: CGPoint(x: 0, y: balloonBottom - shoulder),
+            controlPoint1: CGPoint(x: minX, y: balloonBottom - shoulder * 0.55),
+            controlPoint2: CGPoint(x: 0, y: balloonBottom + drop * 0.55)
+        )
+        path.addLine(to: CGPoint(x: 0, y: corner))
+        path.addQuadCurve(
+            to: CGPoint(x: corner, y: 0),
+            controlPoint: CGPoint(x: 0, y: 0)
+        )
+        path.close()
+        return path
     }
 }

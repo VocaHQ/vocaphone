@@ -100,6 +100,81 @@ struct KeyHitMapTests {
         grid.endActiveInteractions()
     }
 
+    /// Shift and Delete render inset to leave the native moat around them. The
+    /// moat is cosmetic: every point out to the slot boundary still belongs to
+    /// the modifier, which is what `visibleFrame` promises and what a thumb
+    /// aiming at the edge of Shift depends on.
+    @Test func theMoatAroundShiftIsCosmeticAndKeepsItsTouchTarget() throws {
+        let metrics = KeyboardMetrics.resolved(for: UITraitCollection {
+            $0.verticalSizeClass = .regular
+        })
+        let grid = KeyGridView(metrics: metrics, palette: KeyboardPalette(isDark: false))
+        grid.frame = CGRect(x: 0, y: 0, width: 393, height: metrics.gridHeight)
+        grid.layoutIfNeeded()
+
+        let shift = try #require(grid.keyViews.first { $0.spec.cap == .shift })
+        // Without an inset there is no moat and nothing to protect.
+        #expect(shift.frame.width < shift.hitRect.width - metrics.columnGap)
+
+        let y = shift.frame.midY
+        var x = shift.frame.maxX + 0.5
+        while x < shift.hitRect.maxX {
+            #expect(grid.key(at: CGPoint(x: x, y: y), characterOnly: false)?.spec.cap == .shift)
+            x += 0.5
+        }
+    }
+
+    /// Where two effective targets genuinely overlap, the winner is decided by
+    /// the layout slot rather than the shrunken visual frame — otherwise a key
+    /// that renders inset would be aimed at as though it were smaller than the
+    /// area it actually claims.
+    @Test func overlappingTargetsResolveByTheLayoutSlot() {
+        let inset = KeyHitMap(targets: [
+            // A modifier whose slot spans 0...60 but which renders 0...40.
+            KeyHitMap.Target(
+                index: 0,
+                frame: CGRect(x: 0, y: 0, width: 60, height: 40),
+                hitRect: CGRect(x: 0, y: 0, width: 70, height: 40),
+                isCharacter: false
+            ),
+            KeyHitMap.Target(
+                index: 1,
+                frame: CGRect(x: 66, y: 0, width: 34, height: 40),
+                hitRect: CGRect(x: 50, y: 0, width: 50, height: 40),
+                isCharacter: true
+            ),
+        ])
+        // 54 lies inside both hit rects. Measured from the slot centres, 30 and
+        // 83, the modifier is nearer; measured from a 0...40 visual centre of
+        // 20 it would lose the point to its neighbour.
+        #expect(inset.targetIndex(at: CGPoint(x: 54, y: 20), characterOnly: false) == 0)
+    }
+
+    /// Sliding off Shift onto a letter types one capital and returns to
+    /// lowercase — the reflex gesture the system keyboard has always had.
+    @Test func slidingOffShiftTypesOneCapitalThenReleasesShift() throws {
+        let feedback = KeyboardFeedbackSpy()
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeGrid(feedback: feedback, delegate: delegate)
+        grid.shiftState = .on
+
+        let landed = try #require(grid.keyViews.first { $0.spec.cap == KeyCap.character("q") })
+        #expect(grid.completeKeyInteraction(landed, shouldCommit: true))
+
+        #expect(delegate.insertedText == ["Q"])
+        #expect(grid.shiftState == .off)
+    }
+
+    /// A locked Shift is a deliberate state, so a slide off it does not undo it.
+    @Test func slidingOffALockedShiftKeepsCapsLock() throws {
+        let grid = Self.makeGrid(feedback: KeyboardFeedbackSpy(), delegate: KeyGridDelegateSpy())
+        grid.shiftState = .locked
+
+        let landed = try #require(grid.keyViews.first { $0.spec.cap == KeyCap.character("q") })
+        #expect(grid.completeKeyInteraction(landed, shouldCommit: true))
+        #expect(grid.shiftState == .locked)
+    }
+
     private static func makeGrid(
         feedback: KeyboardFeedbackSpy,
         delegate: KeyGridDelegateSpy
