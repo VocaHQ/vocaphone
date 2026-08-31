@@ -41,6 +41,79 @@ struct KeyHitMapTests {
         #expect(map.targetIndex(at: CGPoint(x: 110, y: 20), characterOnly: true) == nil)
     }
 
+    /// A finger that lands near the edge of a key and rolls as it lifts — which
+    /// is what typing at speed looks like — used to leave with the neighbour,
+    /// because the effective targets meet on a knife edge. It now has to clear
+    /// the key it pressed before the grid will hand it over.
+    @Test func aRollWithinTheHysteresisKeepsTheKeyItPressed() {
+        let hysteretic = KeyHitMap(targets: map.targets, hysteresis: 8)
+        // 41 is already inside key 1's effective target, but only 1pt outside
+        // key 0's slot.
+        #expect(hysteretic.retarget(from: 0, at: 41) == nil)
+        #expect(hysteretic.retarget(from: 0, at: 47) == nil)
+    }
+
+    /// A deliberate slide still lands: past the hysteresis the neighbour wins,
+    /// which is the slide-to-correct gesture the keyboard has always had.
+    @Test func aSlideBeyondTheHysteresisTakesTheNeighbour() {
+        let hysteretic = KeyHitMap(targets: map.targets, hysteresis: 8)
+        #expect(hysteretic.retarget(from: 0, at: 48) == 1)
+    }
+
+    /// Hysteresis is measured from the current key alone. Coming back onto the
+    /// key the finger started on is never a re-target, however far it went.
+    @Test func returningToTheOriginalKeyIsNotARetarget() {
+        let hysteretic = KeyHitMap(targets: map.targets, hysteresis: 8)
+        #expect(hysteretic.retarget(from: 0, at: 20) == nil)
+    }
+
+    /// The distance is to the nearest edge, so it is zero everywhere inside the
+    /// key and grows in whichever direction the finger actually left.
+    @Test func distanceToASlotIsZeroInsideItAndGrowsOutside() {
+        let slot = CGRect(x: 0, y: 0, width: 40, height: 40)
+        #expect(KeyHitMap.distance(from: slot, to: CGPoint(x: 20, y: 20)) == 0)
+        #expect(KeyHitMap.distance(from: slot, to: CGPoint(x: 46, y: 20)) == 6)
+        #expect(KeyHitMap.distance(from: slot, to: CGPoint(x: 20, y: -5)) == 5)
+    }
+
+    /// The hysteresis has to scale with the keys: a value that protects a 34pt
+    /// portrait column would be a much smaller share of a 56pt iPad one, and
+    /// the same roll would still slip through there.
+    @Test func layoutDerivesAHysteresisFromItsOwnColumnWidth() {
+        let metrics = KeyboardMetrics.resolved(for: UITraitCollection {
+            $0.verticalSizeClass = .regular
+        })
+        let grid = KeyGridView(metrics: metrics, palette: KeyboardPalette(isDark: false))
+        grid.frame = CGRect(x: 0, y: 0, width: 393, height: metrics.gridHeight)
+        grid.layoutIfNeeded()
+
+        // Wide enough that a keystroke's roll stays on its key, and narrow
+        // enough that a deliberate slide to the next letter still arrives.
+        #expect(grid.hitMap.hysteresis > metrics.columnGap)
+        #expect(grid.hitMap.hysteresis < 12)
+    }
+
+    /// The whole point, in the geometry people actually type on: a finger that
+    /// presses `d` a couple of points from its edge and skids six more must
+    /// still produce `d`.
+    @Test func aRollOffTheEdgeOfALetterStillTypesThatLetter() throws {
+        let metrics = KeyboardMetrics.resolved(for: UITraitCollection {
+            $0.verticalSizeClass = .regular
+        })
+        let grid = KeyGridView(metrics: metrics, palette: KeyboardPalette(isDark: false))
+        grid.frame = CGRect(x: 0, y: 0, width: 393, height: metrics.gridHeight)
+        grid.layoutIfNeeded()
+
+        let d = try #require(grid.keyViews.first { $0.spec.cap == .character("d") })
+        let index = try #require(grid.keyViews.firstIndex(of: d))
+        let rolled = CGPoint(x: d.frame.maxX + 4, y: d.frame.midY)
+
+        // The effective targets alone have already given the point away.
+        #expect(grid.key(at: rolled, characterOnly: true)?.spec.cap == .character("f"))
+        // The finger that pressed `d` keeps it.
+        #expect(grid.hitMap.retargetIndex(from: index, at: rolled, characterOnly: true) == nil)
+    }
+
     @Test func pointsOutsideEveryEffectiveTargetDoNotResolve() {
         #expect(map.targetIndex(at: CGPoint(x: -1, y: 20), characterOnly: false) == nil)
         #expect(map.targetIndex(at: CGPoint(x: 200, y: 20), characterOnly: false) == nil)
@@ -257,4 +330,12 @@ private final class KeyGridDelegateSpy: KeyGridViewDelegate {
 
 private extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }
+}
+
+private extension KeyHitMap {
+    /// The three-target fixture is one row 40pt tall, so every case in it varies
+    /// only in x. Naming that keeps the assertions to the number under test.
+    func retarget(from currentIndex: Int, at x: CGFloat) -> Int? {
+        retargetIndex(from: currentIndex, at: CGPoint(x: x, y: 20), characterOnly: false)
+    }
 }
