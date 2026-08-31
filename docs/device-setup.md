@@ -147,6 +147,9 @@ Run these checks on a physical iPhone after changing audio or App Group code:
 - Set **Stay ready for** to *Until I close vocaphone*, background the app, and
   confirm standby is still Ready well past 10 minutes. Force-quit vocaphone and
   confirm the keyboard falls back to opening the app.
+- Upgrading with Quick Dictation already off must show the one-time card on
+  Home offering to turn it back on, and must not arm the microphone until that
+  card is answered. **Not now** has to keep it off and never ask again.
 - Force-quit vocaphone while Quick Dictation is ready, wait at least 7 seconds,
   and tap Dictate. The keyboard must treat the heartbeat as stale and open the
   app instead of claiming that standby is ready.

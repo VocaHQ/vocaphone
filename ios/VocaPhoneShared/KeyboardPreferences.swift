@@ -285,6 +285,13 @@ enum KeyboardPreferences {
     /// Dictation again. Reopening vocaphone clears it. Kept in the App Group so
     /// the Live Activity's intent, which runs in its own process, can set it.
     static let quickDictationPausedKey = "quickDictationPausedUntilRelaunch"
+    /// Whether Home still owes this install the one-time offer to turn Quick
+    /// Dictation back on. See ``QuickDictationRecoveryOffer``.
+    static let quickDictationRecoveryOfferKey = "quickDictationRecoveryOfferPending"
+    /// Marks the release that stopped letting the Live Activity write the
+    /// durable preference, so the offer above is raised exactly once per
+    /// install rather than every launch.
+    static let quickDictationRecoveryMigrationKey = "quickDictationRecoveryMigrationV1"
     static let writingStyleKey = "writingStyle"
     static let numbersAsDigitsKey = "numbersAsDigitsEnabled"
     static let repairSpeechKey = "speechRepairEnabled"
@@ -368,6 +375,28 @@ enum KeyboardPreferences {
     /// temporary pause together. Every arming path asks this, not the switch.
     static var quickDictationArmable: Bool {
         quickDictationEnabled && !quickDictationPausedUntilRelaunch
+    }
+
+    static var quickDictationRecoveryOfferPending: Bool {
+        get { defaults?.bool(forKey: quickDictationRecoveryOfferKey) ?? false }
+        set { defaults?.set(newValue, forKey: quickDictationRecoveryOfferKey) }
+    }
+
+    /// Queues the recovery offer for installs that arrive at this release with
+    /// Quick Dictation already off, which older builds could do to somebody who
+    /// only meant to release the microphone once.
+    ///
+    /// The stored value is deliberately left alone. It cannot be told apart
+    /// from a deliberate Settings choice, and turning a microphone back on for
+    /// a person who chose to turn it off is not a fix. Running this repeatedly
+    /// is safe, and a user who is already on is never asked anything.
+    static func markQuickDictationRecoveryOfferIfNeeded() {
+        guard let defaults,
+              defaults.object(forKey: quickDictationRecoveryMigrationKey) == nil
+        else { return }
+        defaults.set(true, forKey: quickDictationRecoveryMigrationKey)
+        guard !quickDictationEnabled else { return }
+        quickDictationRecoveryOfferPending = true
     }
 
     /// Defaults to ``KeyboardHeightPreference/standard`` when absent, which is

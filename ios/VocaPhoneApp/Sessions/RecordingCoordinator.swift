@@ -453,8 +453,10 @@ final class RecordingCoordinator {
         KeyboardPreferences.quickDictationEnabled = enabled
         // Either way the pause has been overtaken by a deliberate choice: on,
         // and the user wants it armed now; off, and the durable switch is the
-        // stronger statement.
+        // stronger statement. The same goes for the recovery offer: the user has
+        // just answered the question it exists to ask.
         KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+        KeyboardPreferences.quickDictationRecoveryOfferPending = false
         if enabled {
             if recorder.recordPermission == .granted {
                 armQuickDictation()

@@ -218,6 +218,61 @@ struct ReliabilityFeatureTests {
         #expect(!rolling.isReady(at: laterOn.addingTimeInterval(30)))
     }
 
+    /// The offer exists for people an older build switched off, and it must not
+    /// reach anybody else — nor reappear after it has been answered.
+    @Test func theRecoveryOfferIsRaisedOnlyForInstallsThatArriveTurnedOff() {
+        #expect(QuickDictationRecoveryOffer.make(isPending: true, isEnabled: false) != nil)
+        // Already on: nothing to ask, whoever turned it on.
+        #expect(QuickDictationRecoveryOffer.make(isPending: true, isEnabled: true) == nil)
+        // Answered, or never affected.
+        #expect(QuickDictationRecoveryOffer.make(isPending: false, isEnabled: false) == nil)
+        #expect(QuickDictationRecoveryOffer.make(isPending: false, isEnabled: true) == nil)
+    }
+
+    /// The migration marks the offer; it must never turn the microphone back on
+    /// by itself, and it must run exactly once so "Not now" stays answered.
+    @Test func theRecoveryMigrationAsksRatherThanReArmingTheMicrophone() {
+        let defaults = KeyboardPreferences.defaults
+        let enabled = KeyboardPreferences.quickDictationEnabled
+        let offer = KeyboardPreferences.quickDictationRecoveryOfferPending
+        let migrated = defaults?
+            .object(forKey: KeyboardPreferences.quickDictationRecoveryMigrationKey)
+        defer {
+            KeyboardPreferences.quickDictationEnabled = enabled
+            KeyboardPreferences.quickDictationRecoveryOfferPending = offer
+            if let migrated {
+                defaults?.set(migrated, forKey: KeyboardPreferences.quickDictationRecoveryMigrationKey)
+            } else {
+                defaults?.removeObject(forKey: KeyboardPreferences.quickDictationRecoveryMigrationKey)
+            }
+        }
+
+        func resetMigration() {
+            defaults?.removeObject(forKey: KeyboardPreferences.quickDictationRecoveryMigrationKey)
+            KeyboardPreferences.quickDictationRecoveryOfferPending = false
+        }
+
+        // An install that arrives with the feature off is asked, and the stored
+        // preference is left exactly as the user's older build left it.
+        resetMigration()
+        KeyboardPreferences.quickDictationEnabled = false
+        KeyboardPreferences.markQuickDictationRecoveryOfferIfNeeded()
+        #expect(KeyboardPreferences.quickDictationRecoveryOfferPending)
+        #expect(!KeyboardPreferences.quickDictationEnabled)
+
+        // Answering it sticks: the migration has already run, so a later launch
+        // does not raise the card again.
+        KeyboardPreferences.quickDictationRecoveryOfferPending = false
+        KeyboardPreferences.markQuickDictationRecoveryOfferIfNeeded()
+        #expect(!KeyboardPreferences.quickDictationRecoveryOfferPending)
+
+        // An install that arrives with the feature on is never asked anything.
+        resetMigration()
+        KeyboardPreferences.quickDictationEnabled = true
+        KeyboardPreferences.markQuickDictationRecoveryOfferIfNeeded()
+        #expect(!KeyboardPreferences.quickDictationRecoveryOfferPending)
+    }
+
     @Test func standbyAcceptsARequestThatRacedWithRearming() {
         let started = Date(timeIntervalSince1970: 10_000)
         let availability = QuickDictationAvailability(

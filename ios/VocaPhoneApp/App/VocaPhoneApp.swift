@@ -69,6 +69,7 @@ struct VocaPhoneApp: App {
                 .onAppear {
                     KeyboardPreferences.containingAppIsForeground = true
                     KeyboardPreferences.migrateTypingHapticsIfNeeded()
+                    KeyboardPreferences.markQuickDictationRecoveryOfferIfNeeded()
                     Telemetry.shared.appFirstOpen()
                     // Started once here rather than lazily from the setup card:
                     // the first path update has to have landed by the time that
