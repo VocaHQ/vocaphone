@@ -79,6 +79,35 @@ struct TypingCandidatesTests {
         }
     }
 
+    /// Someone shouting has still chosen their letters. The curated table must
+    /// not rewrite a contraction typed with caps lock on, for the same reason
+    /// "WIP" is not a misspelling of "wip".
+    @Test func aShoutedContractionIsNotRewritten() {
+        for token in ["DONT", "CANT", "IM", "YOURE"] {
+            #expect(
+                TypingCandidates.autocorrection(
+                    Self.context(composition: token, isKnownToChecker: true)
+                ) == nil,
+                "\(token) should stand"
+            )
+        }
+    }
+
+    /// A text replacement is an instruction the user configured, so it expands
+    /// whatever case it is typed in. This is the deliberate split from the rule
+    /// above.
+    @Test func aShoutedShortcutStillExpands() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(
+                    composition: "OMW",
+                    isKnownToChecker: true,
+                    expansion: "On my way!"
+                )
+            ) == "On my way!"
+        )
+    }
+
     /// The words deliberately left out, because only grammar could tell them
     /// apart and a keyboard has none.
     @Test func ambiguousContractionsAreLeftAlone() {

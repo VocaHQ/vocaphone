@@ -270,11 +270,14 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     override func textDidChange(_ textInput: (any UITextInput)?) {
         super.textDidChange(textInput)
-        // Re-read once here and let everything below share it. This runs after
-        // every insertion this keyboard makes, so it is the single hottest place
-        // in the extension for a redundant hop into the host process.
-        let snapshot = refreshDocument()
-        defer { currentDocument = nil }
+        documentEvent { handleTextChange() }
+    }
+
+    /// Runs after every insertion this keyboard makes, which makes it the single
+    /// hottest place in the extension for a redundant hop into the host process.
+    /// One snapshot, shared by everything below.
+    private func handleTextChange() {
+        let snapshot = document
         // Moving to a different field brings different traits with it, and the
         // plane should reset so a number pad never leaves the user on letters.
         let documentID = currentDocumentID
@@ -385,11 +388,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     // MARK: - Typing
 
     func keyGrid(_ grid: KeyGridView, didProduce output: KeyboardOutput) {
-        // One read for the whole event. Established here rather than on first
-        // use, and cleared on the way out so the next event starts from what the
-        // document actually says then.
-        currentDocument = readDocument()
-        defer { currentDocument = nil }
+        documentEvent { handle(output) }
+    }
+
+    private func handle(_ output: KeyboardOutput) {
         switch output {
         case let .text(text):
             if let substitution = SmartPunctuation.substitution(
@@ -534,6 +536,22 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// on the way out.
     private var document: DocumentSnapshot {
         currentDocument ?? readDocument()
+    }
+
+    /// Runs `body` as one document event: one snapshot taken at the start,
+    /// released at the end.
+    ///
+    /// A helper rather than a `defer` written out at each entry point, because
+    /// writing it out is exactly what gets forgotten. `applyDocumentTraits` did,
+    /// and left a snapshot from `viewWillAppear` for the next keystroke to read
+    /// as though it described the document now; the emoji panel's handlers did
+    /// too, and left one from the emoji they had just inserted. Both are the
+    /// same mistake, and neither is possible through here.
+    @discardableResult
+    private func documentEvent<T>(_ body: () -> T) -> T {
+        currentDocument = readDocument()
+        defer { currentDocument = nil }
+        return body()
     }
 
     /// Re-reads the document after this keyboard has changed it. The insertion
@@ -1411,25 +1429,31 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
 extension KeyboardViewController: EmojiPanelViewDelegate {
     func emojiPanel(_ panel: EmojiPanelView, didChoose glyph: String) {
-        textDocumentProxy.insertText(glyph)
-        // An emoji ends a word as surely as a space does, and it is never
-        // something to autocorrect.
-        typing.resetComposition(origin: .suggestion, document: refreshDocument())
-        releaseUndoIfDetached()
+        documentEvent {
+            textDocumentProxy.insertText(glyph)
+            // An emoji ends a word as surely as a space does, and it is never
+            // something to autocorrect.
+            typing.resetComposition(origin: .suggestion, document: refreshDocument())
+            releaseUndoIfDetached()
+        }
     }
 
     func emojiPanelDidRequestDelete(_ panel: EmojiPanelView) {
-        deleteBackward()
-        releaseUndoIfDetached()
+        documentEvent {
+            deleteBackward()
+            releaseUndoIfDetached()
+        }
     }
 
     func emojiPanelDidRequestReturn(_ panel: EmojiPanelView) {
-        commitComposition(followedBy: "\n")
-        releaseUndoIfDetached()
+        documentEvent {
+            commitComposition(followedBy: "\n")
+            releaseUndoIfDetached()
+        }
     }
 
     func emojiPanelDidRequestSpace(_ panel: EmojiPanelView) {
-        insertSpace()
+        documentEvent { insertSpace() }
     }
 
     func emojiPanelDidRequestLetters(_ panel: EmojiPanelView) {
@@ -1461,8 +1485,10 @@ extension KeyboardViewController: DictationBarViewDelegate {
     /// the literal means nothing to it at all.
     func dictationBar(_ bar: DictationBarView, didChoose candidate: TypingCandidate) {
         guard !isPerformingInsertion else { return }
-        currentDocument = readDocument()
-        defer { currentDocument = nil }
+        documentEvent { apply(candidate) }
+    }
+
+    private func apply(_ candidate: TypingCandidate) {
         switch candidate.kind {
         case .literal:
             // The user's own spelling, asserted. Nothing is rewritten — the

@@ -279,8 +279,19 @@ enum TypingCandidates {
         // only a case and apostrophe away from nothing the checker will guess —
         // and refusing them is what made this keyboard visibly worse than the
         // system one at the corrections people notice first.
-        // Exact comparison here, and here it *is* the whole point: "i" → "I" is a
-        // case-only change, which is precisely what the general path below
+        // Acronyms stand. "WIP" is not a misspelling of "wip", and "DONT"
+        // typed with caps lock on is not asking to become "don't" — someone
+        // shouting has still chosen their letters.
+        //
+        // Above the curated table rather than below it, which is where this
+        // check used to sit: the table would otherwise rewrite a shouted
+        // contraction before the acronym rule ever ran. Deliberately *below*
+        // the lexicon, because a text replacement is an instruction the user
+        // configured, and "OMW" should expand whatever case it is typed in.
+        guard !isAllCaps(typed) else { return nil }
+
+        // Exact comparison here, and here it *is* the whole point: "i" → "I" is
+        // a case-only change, which is precisely what the general path below
         // refuses and precisely what this table exists to allow.
         //
         // Safe here and not for the lexicon above because this table is
@@ -321,9 +332,6 @@ enum TypingCandidates {
         guard typed.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "\u{2019}" }) else {
             return nil
         }
-
-        // Acronyms stand. "WIP" is not a misspelling of "wip".
-        guard !isAllCaps(typed) else { return nil }
 
         let guesses = context.systemGuesses.filter {
             $0.caseInsensitiveCompare(typed) != .orderedSame
