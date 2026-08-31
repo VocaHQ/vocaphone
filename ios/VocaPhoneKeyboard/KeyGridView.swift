@@ -145,7 +145,9 @@ final class KeyGridView: UIView {
         var isEngaged = true
         /// Set when a plane switch under another finger took this touch's
         /// keyboard away. It keeps the key it pressed and still commits it on
-        /// lift, but there is no map left to re-target it against.
+        /// lift, but `keyIndex` now points into a `keyViews` that has been
+        /// replaced, so nothing may re-target it — which is why `touchesMoved`
+        /// leaves a pinned touch alone entirely.
         var isPinned = false
         /// Whether the finger may leave this key and type the one it lands on.
         /// Characters always may. So do Shift and the plane key, because iOS
@@ -494,9 +496,13 @@ final class KeyGridView: UIView {
         swipeTrail.cancel()
         for item in tracked {
             // The popover and the balloon are both anchored to a plane that is
-            // going away, and a trace across a plane change means nothing.
+            // going away.
             item.longPressTimer?.invalidate()
             item.longPressTimer = nil
+            // A trace in flight commits nothing at all: its path crossed a
+            // plane that has gone, and the one letter the finger happens to
+            // have stopped over is not the word it was drawing.
+            if item.isSwiping { item.isEngaged = false }
             item.isSwiping = false
             item.swipePath = []
             item.isPinned = true
@@ -710,8 +716,9 @@ final class KeyGridView: UIView {
 
     private func finish(_ touches: Set<UITouch>, commit: Bool) {
         // Applied after the loop: restoring the plane rebuilds the grid and
-        // releases every tracked touch, which would strand the other fingers
-        // of a multi-touch batch before they have been read.
+        // pins every tracked touch, which would freeze the other fingers of a
+        // multi-touch batch — clearing their previews and stopping them
+        // tracking — before they have been read.
         var planeToRestore: KeyPlane?
         for touch in touches.sorted(by: { $0.timestamp < $1.timestamp }) {
             if planeHoldTouch === touch { cancelPlaneHold() }
@@ -1078,9 +1085,9 @@ final class KeyGridView: UIView {
     /// Distinct fingers on the grid.
     ///
     /// A slide off the plane key re-registers the same `UITouch` under a second
-    /// `TrackedTouch`, and today only the `releaseTouches` inside the plane
-    /// switch keeps the first from outliving it. Counting distinct touches
-    /// rather than entries means this stays right if that ordering ever moves.
+    /// `TrackedTouch`, and it is only the explicit removal of the first in
+    /// `touchesBegan` that stops the two coexisting. Counting distinct touches
+    /// rather than entries means this stays right if that ever slips.
     private var activeTouchCount: Int {
         var count = 0
         for (position, item) in tracked.enumerated()
