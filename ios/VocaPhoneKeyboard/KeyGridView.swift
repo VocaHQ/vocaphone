@@ -143,6 +143,10 @@ final class KeyGridView: UIView {
         /// clear the highlight the first was still relying on — a dropped
         /// keystroke that only ever showed up at speed.
         var isEngaged = true
+        /// Set when a plane switch under another finger took this touch's
+        /// keyboard away. It keeps the key it pressed and still commits it on
+        /// lift, but there is no map left to re-target it against.
+        var isPinned = false
         /// Whether the finger may leave this key and type the one it lands on.
         /// Characters always may. So do Shift and the plane key, because iOS
         /// lets a press on either slide onto a letter or symbol, type it, and
@@ -419,7 +423,7 @@ final class KeyGridView: UIView {
         // touch resolve old target indices against the new plane's views.
         hitMap = KeyHitMap(targets: [])
         endDeleteRepeat()
-        releaseTouches()
+        pinTouchesToTheirKeys()
         keyViews.forEach { $0.isHidden = true }
 
         let entry: (rows: [KeyRow], views: [KeyView])
@@ -473,6 +477,34 @@ final class KeyGridView: UIView {
         endDeleteRepeat()
         cancelPlaneHold()
         releaseTouches()
+    }
+
+    /// Freezes every touch in flight on the key it is already holding.
+    ///
+    /// A plane switch replaces `keyViews` and the hit map, so a finger that was
+    /// down when another thumb tapped `123` has nothing left to slide across.
+    /// It used to be dropped outright, which is a keystroke the user typed and
+    /// never saw: two-thumb typists hit `123` with one thumb while the other is
+    /// still on a letter all the time. `KeyView` carries its own spec, so the
+    /// pinned touch can still commit that letter when it lifts even though the
+    /// view behind it now belongs to a plane that is no longer on screen.
+    private func pinTouchesToTheirKeys() {
+        spaceTrackpadTimer?.invalidate()
+        spaceTrackpadTimer = nil
+        swipeTrail.cancel()
+        for item in tracked {
+            // The popover and the balloon are both anchored to a plane that is
+            // going away, and a trace across a plane change means nothing.
+            item.longPressTimer?.invalidate()
+            item.longPressTimer = nil
+            item.isSwiping = false
+            item.swipePath = []
+            item.isPinned = true
+            item.key.isHighlighted = false
+            recycle(item.preview)
+            item.preview = nil
+        }
+        dismissAlternatives()
     }
 
     private func releaseTouches() {
@@ -529,23 +561,26 @@ final class KeyGridView: UIView {
             if key.spec.cap.actsOnTouchDown {
                 let planeBefore = plane
                 performTouchDownAction(for: key, event: event)
-                // Switching planes rebuilds the grid and releases every touch,
-                // this one included. Re-register it against the plane the
-                // finger is now looking at, so it can slide onto a symbol and
-                // type it on lift the way the system keyboard does.
-                if case .plane = key.spec.cap, plane != planeBefore,
-                   let landedIndex = self.keyIndex(at: point, characterOnly: false)
-                {
-                    let landed = keyViews[landedIndex]
-                    let slide = TrackedTouch(
-                        touch: touch,
-                        key: landed,
-                        keyIndex: landedIndex,
-                        initialPoint: point,
-                        planeToRestore: planeBefore
-                    )
-                    tracked.append(slide)
-                    landed.isHighlighted = true
+                // Switching planes rebuilds the grid and pins every touch,
+                // this one included. Unlike the other fingers it has nothing
+                // worth committing — a plane key types nothing — so drop its
+                // entry and re-register it against the plane the finger is now
+                // looking at, letting it slide onto a symbol and type that on
+                // lift the way the system keyboard does.
+                if case .plane = key.spec.cap, plane != planeBefore {
+                    tracked.removeAll { $0 === item }
+                    if let landedIndex = self.keyIndex(at: point, characterOnly: false) {
+                        let landed = keyViews[landedIndex]
+                        let slide = TrackedTouch(
+                            touch: touch,
+                            key: landed,
+                            keyIndex: landedIndex,
+                            initialPoint: point,
+                            planeToRestore: planeBefore
+                        )
+                        tracked.append(slide)
+                        landed.isHighlighted = true
+                    }
                 }
             }
         }
@@ -560,6 +595,9 @@ final class KeyGridView: UIView {
                 if hypot(point.x - origin.x, point.y - origin.y) > 12 { cancelPlaneHold() }
             }
             guard let item = tracked.first(where: { $0.touch === touch }) else { continue }
+            // Pinned by a plane switch: the keys it was moving over are gone, so
+            // it waits for the lift that commits what it pressed.
+            guard !item.isPinned else { continue }
             let point = touch.location(in: self)
 
             if item.isChoosingAlternative {

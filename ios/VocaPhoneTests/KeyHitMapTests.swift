@@ -114,6 +114,143 @@ struct KeyHitMapTests {
         #expect(grid.hitMap.retargetIndex(from: index, at: rolled, characterOnly: true) == nil)
     }
 
+    /// Two-thumb typists tap `123` with one thumb while the other is still on a
+    /// letter. The switch used to release every tracked touch, so that letter
+    /// was a keystroke the user typed and never saw.
+    @Test func aPlaneSwitchKeepsTheFingerAlreadyDownOnALetter() throws {
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeLaidOutGrid(delegate: delegate)
+
+        let q = try #require(grid.keyViews.first { $0.spec.cap == .character("q") })
+        let planeKey = try #require(grid.keyViews.first { $0.spec.cap == .plane(.numbers) })
+
+        let letter = StubTouch(at: q.frame.center)
+        grid.touchesBegan([letter], with: nil)
+        grid.touchesBegan([StubTouch(at: planeKey.frame.center)], with: nil)
+        #expect(grid.plane == .numbers)
+
+        grid.touchesEnded([letter], with: nil)
+        #expect(delegate.insertedText == ["q"])
+    }
+
+    /// Pinned means frozen, not merely un-slidable: the plane it was moving
+    /// across is gone, so a drag can no longer pick up whatever digit happens to
+    /// have taken that spot.
+    @Test func aPinnedFingerCommitsWhatItPressedAndIgnoresTheDrag() throws {
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeLaidOutGrid(delegate: delegate)
+
+        let q = try #require(grid.keyViews.first { $0.spec.cap == .character("q") })
+        let w = try #require(grid.keyViews.first { $0.spec.cap == .character("w") })
+        let planeKey = try #require(grid.keyViews.first { $0.spec.cap == .plane(.numbers) })
+
+        let letter = StubTouch(at: q.frame.center)
+        grid.touchesBegan([letter], with: nil)
+        grid.touchesBegan([StubTouch(at: planeKey.frame.center)], with: nil)
+
+        letter.move(to: w.frame.center)
+        grid.touchesMoved([letter], with: nil)
+        grid.touchesEnded([letter], with: nil)
+
+        #expect(delegate.insertedText == ["q"])
+    }
+
+    /// The finger that pressed `123` is pinned by its own switch like every
+    /// other, but a plane key types nothing, so it must be replaced rather than
+    /// left behind — otherwise its lift consumes the slide's entry and the
+    /// symbol the finger slid onto never arrives.
+    @Test func theFingerThatSwitchedPlanesStillSlidesOntoASymbol() throws {
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeLaidOutGrid(delegate: delegate)
+
+        let planeKey = try #require(grid.keyViews.first { $0.spec.cap == .plane(.numbers) })
+        let touch = StubTouch(at: planeKey.frame.center)
+        grid.touchesBegan([touch], with: nil)
+
+        let four = try #require(grid.keyViews.first { $0.spec.cap == .character("4") })
+        touch.move(to: four.frame.center)
+        grid.touchesMoved([touch], with: nil)
+        grid.touchesEnded([touch], with: nil)
+
+        #expect(delegate.insertedText == ["4"])
+        // Typing a symbol this way returns to the plane the finger came from.
+        #expect(grid.plane == .letters)
+    }
+
+    /// The reported bug, driven through the real touch path: a finger that
+    /// presses `d` near its edge and skids as it lifts — every keystroke at
+    /// speed — used to type `f`.
+    @Test func aKeystrokeThatRollsOffTheEdgeStillTypesItsOwnLetter() throws {
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeLaidOutGrid(delegate: delegate)
+        let d = try #require(grid.keyViews.first { $0.spec.cap == .character("d") })
+
+        let touch = StubTouch(at: CGPoint(x: d.frame.maxX - 2, y: d.frame.midY))
+        grid.touchesBegan([touch], with: nil)
+        touch.move(to: CGPoint(x: d.frame.maxX + 4, y: d.frame.midY))
+        grid.touchesMoved([touch], with: nil)
+        grid.touchesEnded([touch], with: nil)
+
+        #expect(delegate.insertedText == ["d"])
+    }
+
+    /// A deliberate slide to the next letter is a gesture people use to fix a
+    /// target, and the hysteresis must not have eaten it.
+    @Test func aDeliberateSlideToTheNextLetterStillRetargets() throws {
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeLaidOutGrid(delegate: delegate)
+        let d = try #require(grid.keyViews.first { $0.spec.cap == .character("d") })
+        let f = try #require(grid.keyViews.first { $0.spec.cap == .character("f") })
+
+        let touch = StubTouch(at: d.frame.center)
+        grid.touchesBegan([touch], with: nil)
+        touch.move(to: f.frame.center)
+        grid.touchesMoved([touch], with: nil)
+        grid.touchesEnded([touch], with: nil)
+
+        #expect(delegate.insertedText == ["f"])
+    }
+
+    /// With a second finger down the grid stops following a drag at all, because
+    /// panels report two close contacts noisily and the finger that is lifting
+    /// reads as a slide. Both fingers type what they pressed.
+    @Test func aSecondFingerDownPinsBothToTheKeysTheyPressed() throws {
+        let delegate = KeyGridDelegateSpy()
+        let grid = Self.makeLaidOutGrid(delegate: delegate)
+        let d = try #require(grid.keyViews.first { $0.spec.cap == .character("d") })
+        let f = try #require(grid.keyViews.first { $0.spec.cap == .character("f") })
+        let k = try #require(grid.keyViews.first { $0.spec.cap == .character("k") })
+
+        let first = StubTouch(at: d.frame.center)
+        let second = StubTouch(at: k.frame.center)
+        grid.touchesBegan([first], with: nil)
+        grid.touchesBegan([second], with: nil)
+
+        // Far enough that a single finger would certainly have re-targeted.
+        first.move(to: f.frame.center)
+        grid.touchesMoved([first], with: nil)
+        grid.touchesEnded([first], with: nil)
+        grid.touchesEnded([second], with: nil)
+
+        #expect(delegate.insertedText == ["d", "k"])
+    }
+
+    private static func makeLaidOutGrid(delegate: KeyGridDelegateSpy) -> KeyGridView {
+        let metrics = KeyboardMetrics.resolved(for: UITraitCollection {
+            $0.verticalSizeClass = .regular
+        })
+        let grid = KeyGridView(
+            metrics: metrics,
+            palette: KeyboardPalette(isDark: false),
+            feedback: KeyboardFeedbackSpy()
+        )
+        grid.delegate = delegate
+        grid.shiftState = .off
+        grid.frame = CGRect(x: 0, y: 0, width: 393, height: metrics.gridHeight)
+        grid.layoutIfNeeded()
+        return grid
+    }
+
     @Test func pointsOutsideEveryEffectiveTargetDoNotResolve() {
         #expect(map.targetIndex(at: CGPoint(x: -1, y: 20), characterOnly: false) == nil)
         #expect(map.targetIndex(at: CGPoint(x: 200, y: 20), characterOnly: false) == nil)
@@ -330,6 +467,22 @@ private final class KeyGridDelegateSpy: KeyGridViewDelegate {
 
 private extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }
+}
+
+/// A `UITouch` that reports a location. UIKit only ever hands out real ones, and
+/// the grid reads nothing from a touch but its identity, its timestamp and where
+/// it is — so the touch paths can be driven end to end without a device.
+private final class StubTouch: UITouch {
+    private var point: CGPoint
+
+    init(at point: CGPoint) {
+        self.point = point
+        super.init()
+    }
+
+    func move(to point: CGPoint) { self.point = point }
+
+    override func location(in view: UIView?) -> CGPoint { point }
 }
 
 private extension KeyHitMap {
