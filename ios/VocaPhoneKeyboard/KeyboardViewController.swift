@@ -19,6 +19,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var hasRendered = false
     private var announcesStateChanges = false
     private var lastPublishedAt: Date?
+    private var lastPublishedFullAccess: Bool?
     private static let statusRepublishInterval: TimeInterval = 10
     private var isBarExpanded = false
     private var barLayout = DictationBarLayout.status
@@ -237,12 +238,17 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// that returning to the keyboard repeatedly is not a stream of file writes.
     private func publishKeyboardStatus() {
         let now = Date()
-        if let lastPublishedAt,
-           now.timeIntervalSince(lastPublishedAt) < Self.statusRepublishInterval
-        {
+        guard KeyboardStatusPublication.shouldPublish(
+            lastPublishedAt: lastPublishedAt,
+            lastPublishedFullAccess: lastPublishedFullAccess,
+            fullAccess: hasFullAccess,
+            now: now,
+            minimumInterval: Self.statusRepublishInterval
+        ) else {
             return
         }
         lastPublishedAt = now
+        lastPublishedFullAccess = hasFullAccess
         try? store.saveKeyboardStatus(
             KeyboardStatus(lastSeenAt: now, hasFullAccess: hasFullAccess)
         )
