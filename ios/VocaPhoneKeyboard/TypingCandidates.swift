@@ -252,11 +252,25 @@ enum TypingCandidates {
               !context.assertedWords.contains(typed.lowercased())
         else { return nil }
 
-        // A text replacement the user configured in Settings. Highest priority
-        // of anything here — it is not a guess at all, it is an instruction.
-        // Compared exactly, not case-insensitively. A replacement that differs
-        // only in case is still a replacement the user asked for.
-        if let expansion = context.lexiconExpansion, expansion != typed {
+        // A text replacement the user configured in Settings. Not a guess — an
+        // instruction — which is why it outranks everything below it.
+        //
+        // But it has to be a real *expansion*. `UILexicon` is not just the
+        // shortcuts someone typed into Settings: it also carries names from
+        // Contacts and the system's own proper nouns, as a lowercase
+        // `userInput` mapped to a properly-cased `documentText` — "world" to
+        // "World", "iphone" to "iPhone". Applying those on an exact match meant
+        // any ordinary word that happened to be in the user's address book was
+        // silently capitalised mid-sentence, with no way to tell which words
+        // would do it. That is the same thing the case-only guard further down
+        // exists to prevent, and this path was walking straight past it.
+        //
+        // A case-only lexicon entry is still *offered*: it reaches the strip
+        // through `lexiconEntries`, at the top of `rankedSuggestions`. Offering
+        // it is right. Imposing it is not.
+        if let expansion = context.lexiconExpansion,
+           expansion.lowercased() != typed.lowercased()
+        {
             return expansion
         }
 
@@ -265,9 +279,14 @@ enum TypingCandidates {
         // only a case and apostrophe away from nothing the checker will guess —
         // and refusing them is what made this keyboard visibly worse than the
         // system one at the corrections people notice first.
-        // Exact comparison again, and here it is the whole point: "i" → "I" is a
+        // Exact comparison here, and here it *is* the whole point: "i" → "I" is a
         // case-only change, which is precisely what the general path below
         // refuses and precisely what this table exists to allow.
+        //
+        // Safe here and not for the lexicon above because this table is
+        // curated: thirty-odd entries, each one a word whose capital is
+        // unambiguous in English. The lexicon is whatever happens to be in
+        // someone's contacts.
         if let replacement = ShortWordCorrections.replacement(for: typed),
            replacement != typed
         {

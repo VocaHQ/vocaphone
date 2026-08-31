@@ -117,6 +117,68 @@ struct TypingCandidatesTests {
         )
     }
 
+    /// The bug from the recording: typing "world" produced "World".
+    ///
+    /// `UILexicon` is not only the shortcuts someone typed into Settings — it
+    /// also carries Contacts names and system proper nouns as a lowercase
+    /// `userInput` mapped to a properly-cased `documentText`. Applying those on
+    /// an exact match silently capitalised any ordinary word that happened to be
+    /// in the user's address book, mid-sentence, with no way to predict which.
+    @Test func aLexiconEntryNeverAppliesAMereCapitalization() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(
+                    composition: "world",
+                    isKnownToChecker: true,
+                    expansion: "World"
+                )
+            ) == nil
+        )
+        // The words from the original report, for the same reason.
+        for (typed, cased) in [("are", "Are"), ("the", "The"), ("hello", "Hello")] {
+            #expect(
+                TypingCandidates.autocorrection(
+                    Self.context(composition: typed, isKnownToChecker: true, expansion: cased)
+                ) == nil,
+                "\(typed) must not be capitalised into \(cased)"
+            )
+        }
+    }
+
+    /// A genuine expansion still applies on its own — that is what the lexicon
+    /// is handed to keyboards for.
+    @Test func aGenuineExpansionStillApplies() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(
+                    composition: "omw",
+                    isKnownToChecker: true,
+                    expansion: "On my way!"
+                )
+            ) == "On my way!"
+        )
+        // A case change *plus* a real edit is an expansion, not a capitalization.
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(
+                    composition: "kp",
+                    isKnownToChecker: true,
+                    expansion: "Kanishk"
+                )
+            ) == "Kanishk"
+        )
+    }
+
+    /// The curated table keeps its case-only power, because every entry in it is
+    /// a word whose capital is unambiguous. This is the line between the two.
+    @Test func theCuratedTableStillCapitalisesI() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(composition: "i", isKnownToChecker: true, isInWordList: true)
+            ) == "I"
+        )
+    }
+
     /// A replacement carrying its own capitalization is a substitution, not a
     /// spelling of the typed word. Caps lock must not shout it.
     @Test func anExpansionKeepsItsOwnCapitalization() {
