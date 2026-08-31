@@ -68,6 +68,9 @@ struct ContentView: View {
                     isShowingSetup = true
                 }
                 coordinator.refreshSetupStatus()
+                // `scenePhase` does not change on a cold launch, so the pause a
+                // previous run left behind is cleared here too.
+                coordinator.endQuickDictationPause()
                 await coordinator.recoverRecentSession()
                 coordinator.prepareQuickDictationIfEnabled()
                 await coordinator.refreshGatewayHealth()
@@ -131,6 +134,7 @@ struct ContentView: View {
                 isRecording: coordinator.isRecording,
                 isQuickDictationReady: coordinator.isQuickDictationReady,
                 quickDictationExpiresAt: coordinator.quickDictationExpiresAt,
+                quickDictationDuration: coordinator.quickDictationDuration,
                 processingLocation: coordinator.activeRecord?.processingLocation,
                 transcript: coordinator.transcript,
                 errorMessage: coordinator.hasError ? coordinator.message : nil,

@@ -279,6 +279,12 @@ enum KeyboardPreferences {
     static let swipeTypingKey = "swipeTypingEnabled"
     static let numberRowKey = "numberRowEnabled"
     static let quickDictationKey = "quickDictationEnabled"
+    static let quickDictationDurationKey = "quickDictationDuration"
+    /// A stop from the Live Activity is a pause, not a preference change: the
+    /// user is silencing this window, not saying they never want Quick
+    /// Dictation again. Reopening vocaphone clears it. Kept in the App Group so
+    /// the Live Activity's intent, which runs in its own process, can set it.
+    static let quickDictationPausedKey = "quickDictationPausedUntilRelaunch"
     static let writingStyleKey = "writingStyle"
     static let numbersAsDigitsKey = "numbersAsDigitsEnabled"
     static let repairSpeechKey = "speechRepairEnabled"
@@ -323,6 +329,9 @@ enum KeyboardPreferences {
         }
     }
 
+    /// The durable switch. Only the Settings toggle writes it, so a stop from
+    /// the Dynamic Island can never leave a user wondering why Quick Dictation
+    /// stayed off for days.
     static var quickDictationEnabled: Bool {
         get {
             guard let defaults else { return true }
@@ -332,6 +341,33 @@ enum KeyboardPreferences {
         set {
             defaults?.set(newValue, forKey: quickDictationKey)
         }
+    }
+
+    /// Ten minutes for every existing install: the preference is new, and that
+    /// is the window those users already have.
+    static var quickDictationDuration: QuickDictationDuration {
+        get {
+            guard let rawValue = defaults?.string(forKey: quickDictationDurationKey),
+                  let duration = QuickDictationDuration(rawValue: rawValue)
+            else { return .tenMinutes }
+            return duration
+        }
+        set {
+            defaults?.set(newValue.rawValue, forKey: quickDictationDurationKey)
+        }
+    }
+
+    /// Set by the Live Activity's stop button, cleared the next time vocaphone
+    /// comes to the foreground. See ``quickDictationPausedKey``.
+    static var quickDictationPausedUntilRelaunch: Bool {
+        get { defaults?.bool(forKey: quickDictationPausedKey) ?? false }
+        set { defaults?.set(newValue, forKey: quickDictationPausedKey) }
+    }
+
+    /// Whether the app may arm standby right now — the durable switch and the
+    /// temporary pause together. Every arming path asks this, not the switch.
+    static var quickDictationArmable: Bool {
+        quickDictationEnabled && !quickDictationPausedUntilRelaunch
     }
 
     /// Defaults to ``KeyboardHeightPreference/standard`` when absent, which is

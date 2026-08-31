@@ -91,6 +91,11 @@ struct VocaPhoneApp: App {
                         }
                         return
                     }
+                    // A pause taken from the Live Activity ends here: coming
+                    // back to vocaphone is the "turn it back on" gesture, and
+                    // the alternative is a user hunting through Settings for a
+                    // switch they never knowingly flipped.
+                    coordinator.endQuickDictationPause()
                     Task {
                         await coordinator.recoverRecentSession()
                         coordinator.prepareQuickDictationIfEnabled()

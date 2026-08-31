@@ -183,6 +183,7 @@
 		7E28776EDC2BD3E8A8AFCED9 /* TypingPrivacyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05735C847A47FF442B4FB21A /* TypingPrivacyTests.swift */; };
 		7E3D8E857A83184E74B15433 /* GatewayEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0A752EC9784F6FD2274150 /* GatewayEndpoint.swift */; };
 		7E7D3327C8DF767DD960ECE9 /* SherpaDecodeOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EFEBD6293F9649D551A9014 /* SherpaDecodeOutcome.swift */; };
+		7F4E5E2A734F31B916574879 /* QuickDictationDuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783E7FC5F9553FD419487180 /* QuickDictationDuration.swift */; };
 		81131D34DE3F3CBDBA61BE4E /* SwipeTrailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEEBFC48C457EF15183DB453 /* SwipeTrailView.swift */; };
 		81BFE90A24876CEE127974AE /* TypingFieldPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2CD13AAF5FDF79DD5D0075 /* TypingFieldPolicy.swift */; };
 		81DDEADAD62C978ED52AAE90 /* SentencePunctuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78AF826E0D2C7820CBB4B78C /* SentencePunctuation.swift */; };
@@ -229,6 +230,7 @@
 		9C6AF2EE68EB7AA4D4CF0F61 /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA135DE504590121F6D8843 /* DiagnosticLog.swift */; };
 		9EE31A21EE5F9D71A15404DA /* SpellChecking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D4BE75828FCA9C70DFEDC96 /* SpellChecking.swift */; };
 		9F93D09F955DA7B5CC65F058 /* OnboardingPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8348F9E480C0343CD38657B /* OnboardingPresentationTests.swift */; };
+		9FAAEF705B6D4575B72F2D07 /* QuickDictationDuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783E7FC5F9553FD419487180 /* QuickDictationDuration.swift */; };
 		A018E5851AAB98E42FBBB65A /* DictationPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCCE5FE1A8242B96B8CA9FD /* DictationPresentation.swift */; };
 		A0420E3166FF08AE5059A805 /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9BB34E20645F3D8C78A0363 /* Telemetry.swift */; };
 		A0B8569F3B1A3F72EAC9C1DB /* TranscriptionQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E2BF42CAC209DA12464566 /* TranscriptionQuality.swift */; };
@@ -312,6 +314,7 @@
 		D4FEC9D26550CB1696FDF424 /* TextInsertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBB0D1B0CD48BA2F8F22986 /* TextInsertion.swift */; };
 		D6533E4D830A06E9845CE624 /* KeyboardViewPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8E5D91EDE2C0E67DFC0250 /* KeyboardViewPreview.swift */; };
 		D7038E651848C4EE6B0F722A /* TypingStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1AA0EB543777294237739CF /* TypingStripView.swift */; };
+		D73776692116A07EF59C6496 /* QuickDictationDuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783E7FC5F9553FD419487180 /* QuickDictationDuration.swift */; };
 		D7CC096732C721CE14B5F682 /* TextInsertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBB0D1B0CD48BA2F8F22986 /* TextInsertion.swift */; };
 		D8EE8A829E13191046F3F183 /* WordComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A6EEE8C98BCBF8D1D70D44 /* WordComposer.swift */; };
 		D9811B8978380027BF95D0D5 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7948F8C6C72A8D7A16C18562 /* SharedStore.swift */; };
@@ -372,6 +375,7 @@
 		FCE1FDC346554C0EE93845F0 /* SherpaEmptyChunkRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF256CF6ED209E00193BF135 /* SherpaEmptyChunkRecovery.swift */; };
 		FD06CBDABE4EA9640EECF39C /* SherpaLongAudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90C2BEEA5195CB9CB5A38CA /* SherpaLongAudioTests.swift */; };
 		FDBB4DF9D4816CD646C1644D /* TypingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9B9027C03A87FBC74CE1130 /* TypingEngine.swift */; };
+		FF899AF5E59FAA55FDA261ED /* QuickDictationDuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783E7FC5F9553FD419487180 /* QuickDictationDuration.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -490,6 +494,7 @@
 		71DC06463C8AA4C516363157 /* TranscriptRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptRepairTests.swift; sourceTree = "<group>"; };
 		755A4279065D41A705E1F19D /* DesignSystemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystemTests.swift; sourceTree = "<group>"; };
 		75FD84E65614D9F94D8EF0AC /* DictationBarComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationBarComponents.swift; sourceTree = "<group>"; };
+		783E7FC5F9553FD419487180 /* QuickDictationDuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickDictationDuration.swift; sourceTree = "<group>"; };
 		786DEF44BDB4C70935762971 /* VocaPhoneLiveActivity.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VocaPhoneLiveActivity.entitlements; sourceTree = "<group>"; };
 		78AF826E0D2C7820CBB4B78C /* SentencePunctuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentencePunctuation.swift; sourceTree = "<group>"; };
 		7948F8C6C72A8D7A16C18562 /* SharedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStore.swift; sourceTree = "<group>"; };
@@ -721,6 +726,7 @@
 				DBFB4BB0345784837C629340 /* PairingPayload.swift */,
 				D57FC525B204634FF41CDCDA /* ProtectedSpans.swift */,
 				0AB84927D76F9C32C4BE1547 /* QuickDictationAvailability.swift */,
+				783E7FC5F9553FD419487180 /* QuickDictationDuration.swift */,
 				AF6C44F954E7A62974C66109 /* SemanticPalette.swift */,
 				78AF826E0D2C7820CBB4B78C /* SentencePunctuation.swift */,
 				36767643E0E4AA29BBB3D4FD /* SessionRecord.swift */,
@@ -1167,6 +1173,7 @@
 				FAD55FD707FD21407E0980FA /* PairingPayload.swift in Sources */,
 				1D8B94886C8506BB36C1887C /* ProtectedSpans.swift in Sources */,
 				6192C923119F158CCE94B48E /* QuickDictationAvailability.swift in Sources */,
+				D73776692116A07EF59C6496 /* QuickDictationDuration.swift in Sources */,
 				EE7A49C4F95388AF42E1B30C /* SemanticPalette.swift in Sources */,
 				81DDEADAD62C978ED52AAE90 /* SentencePunctuation.swift in Sources */,
 				36295638EAABF35D05369EB0 /* SessionRecord.swift in Sources */,
@@ -1258,6 +1265,7 @@
 				2F1F7D8997BCA83AF5334382 /* PreviewMatrix.swift in Sources */,
 				C7ADFFD337103F3F6CF7BBA6 /* ProtectedSpans.swift in Sources */,
 				B4EE97A67B156A6D5BA0D258 /* QuickDictationAvailability.swift in Sources */,
+				FF899AF5E59FAA55FDA261ED /* QuickDictationDuration.swift in Sources */,
 				5D5A394AA7E8170CFE4E128B /* RecordingCoordinator.swift in Sources */,
 				A59723F937FABF80B8158883 /* RecordingSoundFeedback.swift in Sources */,
 				53A1176717AEAE72A1F5B9F1 /* SemanticPalette.swift in Sources */,
@@ -1336,6 +1344,7 @@
 				364C315F292BA4BD66E23C2A /* PairingPayload.swift in Sources */,
 				F231FFC3DFB742B826516E5E /* ProtectedSpans.swift in Sources */,
 				58CDCA65875E94B8F7BE0101 /* QuickDictationAvailability.swift in Sources */,
+				9FAAEF705B6D4575B72F2D07 /* QuickDictationDuration.swift in Sources */,
 				F4E8B1A9D00B14184B01B223 /* SemanticPalette.swift in Sources */,
 				54A3525CD8F0DFA70980501B /* SentencePunctuation.swift in Sources */,
 				3F3E17AFAAE8EB6B79A872BE /* SessionRecord.swift in Sources */,
@@ -1430,6 +1439,7 @@
 				B1A1053055864F55448F5FED /* ProMotionOptInTests.swift in Sources */,
 				D37101A845F65CA081F8B6E4 /* ProtectedSpans.swift in Sources */,
 				BCB8CA3BAACE6280D9ED4B22 /* QuickDictationAvailability.swift in Sources */,
+				7F4E5E2A734F31B916574879 /* QuickDictationDuration.swift in Sources */,
 				15E349A8DDDFD47EFA7EE2FA /* ReliabilityFeatureTests.swift in Sources */,
 				6CEF2A686643F72F4BCDD51D /* SemanticPalette.swift in Sources */,
 				C37AC6FC3CBF2147D8A50DDA /* SemanticPaletteTests.swift in Sources */,

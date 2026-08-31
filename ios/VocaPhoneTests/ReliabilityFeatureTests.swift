@@ -105,6 +105,119 @@ struct ReliabilityFeatureTests {
         #expect(availability.isReady(at: refreshedAt))
     }
 
+    /// The bug this replaced: stopping standby from the Dynamic Island wrote the
+    /// durable preference, so Quick Dictation stayed off until the user found
+    /// the switch in Settings. The two states are separate now, and every
+    /// arming path asks for both at once through `quickDictationArmable`.
+    @Test func pausingLeavesTheDurablePreferenceOn() {
+        let enabled = KeyboardPreferences.quickDictationEnabled
+        let paused = KeyboardPreferences.quickDictationPausedUntilRelaunch
+        defer {
+            KeyboardPreferences.quickDictationEnabled = enabled
+            KeyboardPreferences.quickDictationPausedUntilRelaunch = paused
+        }
+
+        KeyboardPreferences.quickDictationEnabled = true
+        KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+        #expect(KeyboardPreferences.quickDictationArmable)
+
+        // The Live Activity's Pause button, which is what
+        // `StopQuickDictationIntent` writes.
+        KeyboardPreferences.quickDictationPausedUntilRelaunch = true
+        #expect(!KeyboardPreferences.quickDictationArmable)
+        #expect(KeyboardPreferences.quickDictationEnabled)
+
+        // Reopening vocaphone, which is `endQuickDictationPause`.
+        KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+        #expect(KeyboardPreferences.quickDictationArmable)
+
+        // The Settings switch is the one that persists: clearing the pause does
+        // not undo it.
+        KeyboardPreferences.quickDictationEnabled = false
+        #expect(!KeyboardPreferences.quickDictationArmable)
+        KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+        #expect(!KeyboardPreferences.quickDictationArmable)
+    }
+
+    /// Both new preferences are absent for everyone upgrading, and the defaults
+    /// they fall back to have to be the behaviour those users already have.
+    @Test func newQuickDictationPreferencesDefaultToTodaysBehaviour() {
+        let storedDuration = KeyboardPreferences.defaults?
+            .string(forKey: KeyboardPreferences.quickDictationDurationKey)
+        let paused = KeyboardPreferences.quickDictationPausedUntilRelaunch
+        defer {
+            if let storedDuration {
+                KeyboardPreferences.defaults?
+                    .set(storedDuration, forKey: KeyboardPreferences.quickDictationDurationKey)
+            } else {
+                KeyboardPreferences.defaults?
+                    .removeObject(forKey: KeyboardPreferences.quickDictationDurationKey)
+            }
+            KeyboardPreferences.quickDictationPausedUntilRelaunch = paused
+        }
+
+        KeyboardPreferences.defaults?
+            .removeObject(forKey: KeyboardPreferences.quickDictationDurationKey)
+        KeyboardPreferences.defaults?
+            .removeObject(forKey: KeyboardPreferences.quickDictationPausedKey)
+
+        #expect(KeyboardPreferences.quickDictationDuration == .tenMinutes)
+        #expect(!KeyboardPreferences.quickDictationPausedUntilRelaunch)
+    }
+
+    @Test func standbyWindowsMatchTheDurationTheUserPicked() {
+        let armedAt = Date(timeIntervalSince1970: 10_000)
+
+        #expect(
+            QuickDictationDuration.tenMinutes.expiry(from: armedAt)
+                == armedAt.addingTimeInterval(600)
+        )
+        #expect(
+            QuickDictationDuration.twentyMinutes.expiry(from: armedAt)
+                == armedAt.addingTimeInterval(1_200)
+        )
+        #expect(!QuickDictationDuration.tenMinutes.renewsLease)
+        #expect(!QuickDictationDuration.twentyMinutes.renewsLease)
+        #expect(QuickDictationDuration.untilAppCloses.renewsLease)
+        // An unlimited window still takes a bounded lease, so a process that
+        // dies between heartbeats cannot leave a marker claiming the microphone
+        // is ready forever.
+        #expect(QuickDictationDuration.untilAppCloses.leaseSeconds > 0)
+    }
+
+    /// Every raw value is persisted, so renaming a case silently resets the
+    /// preference for everyone who chose it.
+    @Test func durationRawValuesAreStable() {
+        #expect(QuickDictationDuration.tenMinutes.rawValue == "tenMinutes")
+        #expect(QuickDictationDuration.twentyMinutes.rawValue == "twentyMinutes")
+        #expect(QuickDictationDuration.untilAppCloses.rawValue == "untilAppCloses")
+        #expect(QuickDictationDuration(rawValue: "nonsense") == nil)
+    }
+
+    @Test func onlyAnUnlimitedWindowMovesItsDeadline() {
+        let started = Date(timeIntervalSince1970: 10_000)
+        let bounded = QuickDictationAvailability(
+            activatedAt: started,
+            expiresAt: QuickDictationDuration.tenMinutes.expiry(from: started)
+        )
+        let laterOn = started.addingTimeInterval(120)
+
+        let heldWindow = bounded.renewingLease(.tenMinutes, at: laterOn)
+        #expect(heldWindow.expiresAt == bounded.expiresAt)
+        #expect(heldWindow.heartbeatAt == laterOn)
+        #expect(heldWindow.isReady(at: laterOn))
+
+        let rolling = QuickDictationAvailability(
+            activatedAt: started,
+            expiresAt: QuickDictationDuration.untilAppCloses.expiry(from: started)
+        ).renewingLease(.untilAppCloses, at: laterOn)
+        #expect(rolling.activatedAt == started)
+        #expect(rolling.expiresAt == QuickDictationDuration.untilAppCloses.expiry(from: laterOn))
+        #expect(rolling.isReady(at: laterOn))
+        // And it dies on its own once the heartbeats stop.
+        #expect(!rolling.isReady(at: laterOn.addingTimeInterval(30)))
+    }
+
     @Test func standbyAcceptsARequestThatRacedWithRearming() {
         let started = Date(timeIntervalSince1970: 10_000)
         let availability = QuickDictationAvailability(
