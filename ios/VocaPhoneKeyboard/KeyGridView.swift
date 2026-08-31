@@ -464,7 +464,14 @@ final class KeyGridView: UIView {
             plane.views.forEach { $0.removeFromSuperview() }
         }
         planeCache.removeAll()
-        previewPool.forEach { $0.removeFromSuperview() }
+        // Every balloon, not just the pooled ones. `releaseTouches` above starts
+        // a *fade* rather than hiding outright, so a preview that is still
+        // fading is in neither the pool nor any tracked touch — it used to
+        // survive the rebuild and then hand itself back to the fresh pool,
+        // carrying the palette and metrics it was built with. The next
+        // keystroke after a theme or height change dequeued it and drew the
+        // previous appearance's colours.
+        subviews.compactMap { $0 as? KeyPreviewView }.forEach { $0.removeFromSuperview() }
         previewPool.removeAll()
         alternativesView?.removeFromSuperview()
         alternativesView = nil

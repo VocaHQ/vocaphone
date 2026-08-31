@@ -385,8 +385,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     // MARK: - Typing
 
     func keyGrid(_ grid: KeyGridView, didProduce output: KeyboardOutput) {
-        // One read for the whole event. Cleared on the way out so the next one
-        // starts from what the document actually says now.
+        // One read for the whole event. Established here rather than on first
+        // use, and cleared on the way out so the next event starts from what the
+        // document actually says then.
+        currentDocument = readDocument()
         defer { currentDocument = nil }
         switch output {
         case let .text(text):
@@ -520,11 +522,18 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// keystroke: stale context here is a wrong autocorrect, not a slow one.
     private var currentDocument: DocumentSnapshot?
 
+    /// The event's snapshot if one has been established, and a fresh read
+    /// otherwise.
+    ///
+    /// Deliberately does *not* cache. It used to, which meant any caller
+    /// anywhere could quietly establish an event snapshot — and
+    /// `applyDocumentTraits`, reached from `viewWillAppear`, is not inside an
+    /// event and has no `defer` to clear one. The snapshot it left behind was
+    /// then reused by the next keystroke as though it described the document
+    /// now. Only the entry points below may set it, and each of them clears it
+    /// on the way out.
     private var document: DocumentSnapshot {
-        if let currentDocument { return currentDocument }
-        let snapshot = readDocument()
-        currentDocument = snapshot
-        return snapshot
+        currentDocument ?? readDocument()
     }
 
     /// Re-reads the document after this keyboard has changed it. The insertion
@@ -1306,7 +1315,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             keyGrid.returnKeyIsEnabled = true
             return
         }
-        let resolved = snapshot ?? document
+        // Read fresh when no event snapshot was handed in: this is reached from
+        // `viewWillAppear`, which is not inside an event.
+        let resolved = snapshot ?? readDocument()
         // The proxy answers with nothing while the keyboard is loading, which is
         // not the same as an empty field. Dimming Return on that would grey out
         // the Send button over a message the user has already written.
@@ -1386,26 +1397,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// field asks for none, and forcing sentence case there produced input the
     /// user had to correct on every word.
     private func updateAutomaticShift(for snapshot: DocumentSnapshot? = nil) {
-        let proxy = textDocumentProxy
-        let requested = proxy.autocapitalizationType ?? .sentences
-        guard requested != .allCharacters else {
-            keyGrid.shiftState = .locked
-            return
-        }
-        // A user-engaged caps lock outranks any automatic decision.
-        guard keyGrid.shiftState != .locked else { return }
-
-        let before = (snapshot ?? document).before ?? ""
-        switch requested {
-        case .none:
-            keyGrid.shiftState = .off
-        case .words:
-            keyGrid.shiftState = before.isEmpty || before.last?.isWhitespace == true ? .on : .off
-        default:
-            // "e.g. ", "Mr. " and "3. " all end in a full stop and none of them
-            // ends a sentence. See `SentenceBoundary`.
-            keyGrid.shiftState = SentenceBoundary.endsSentence(before) ? .on : .off
-        }
+        // `nil` means leave the shift key alone, which is the answer whenever
+        // the host declined to say what the document contains. See
+        // ``AutomaticShift``.
+        guard let state = AutomaticShift.state(
+            documentBefore: (snapshot ?? document).before,
+            autocapitalization: textDocumentProxy.autocapitalizationType ?? .sentences,
+            current: keyGrid.shiftState
+        ) else { return }
+        keyGrid.shiftState = state
     }
 }
 
@@ -1461,6 +1461,7 @@ extension KeyboardViewController: DictationBarViewDelegate {
     /// the literal means nothing to it at all.
     func dictationBar(_ bar: DictationBarView, didChoose candidate: TypingCandidate) {
         guard !isPerformingInsertion else { return }
+        currentDocument = readDocument()
         defer { currentDocument = nil }
         switch candidate.kind {
         case .literal:
