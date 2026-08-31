@@ -53,6 +53,24 @@ final class TypingEngine {
         /// that back too, or the sentence loses its spacing along with its
         /// correction.
         let boundary: String
+
+        /// Whether the correction is still the text immediately before the
+        /// cursor.
+        ///
+        /// A revert deletes a fixed number of characters and types the original
+        /// in their place, which is only meaningful where the replacement
+        /// actually is. Once the cursor has moved, those characters belong to
+        /// something else — and reverting there would delete four characters of
+        /// unrelated text and insert a word the user typed a paragraph ago.
+        ///
+        /// Checked against the document rather than remembered, for the same
+        /// reason ``SwipeAlternates/isArmed(word:documentBefore:)`` is: the
+        /// document is the thing that can be trusted, and a keyboard that
+        /// deletes on faith deletes the wrong thing.
+        func isArmed(documentBefore: String?) -> Bool {
+            guard let documentBefore else { return false }
+            return documentBefore.hasSuffix(replacement + boundary)
+        }
     }
 
     private let checker: any SpellChecking
@@ -219,8 +237,15 @@ final class TypingEngine {
 
     /// Consumes the pending revert. Asserting the restored word is the point:
     /// a user who put their word back once should not have to do it again.
-    func takeRevert() -> AppliedCorrection? {
-        guard let pendingRevert else { return nil }
+    func takeRevert(documentBefore: String?) -> AppliedCorrection? {
+        guard let pendingRevert,
+              pendingRevert.isArmed(documentBefore: documentBefore)
+        else {
+            // Either there was nothing to revert, or the cursor has left the
+            // correction behind. Both mean the offer is over.
+            self.pendingRevert = nil
+            return nil
+        }
         self.pendingRevert = nil
         publish(.none)
         assertedWords.insert(pendingRevert.typed.lowercased())
@@ -342,6 +367,25 @@ final class TypingEngine {
         guard KeyboardPreferences.typingSuggestionsEnabled, policy.allowsTypingIntelligence
         else {
             publish(.none)
+            return
+        }
+
+        // A correction that can still be taken back owns the strip, the same way
+        // a swiped word owns it while its alternates stand.
+        //
+        // This is also what retires the offer. `reconcile` runs on every
+        // keystroke in this field, so clearing the revert there would clear it
+        // on the very keystroke that applied the correction — the boundary key
+        // — and undo would be dead again. Asking the document instead means the
+        // offer survives exactly as long as the correction is still in front of
+        // the cursor, and disarms itself the moment the cursor moves away.
+        if let pendingRevert {
+            guard pendingRevert.isArmed(documentBefore: document.before) else {
+                self.pendingRevert = nil
+                publish(.none)
+                return
+            }
+            publish(TypingCandidates.revertStrip(typed: pendingRevert.typed))
             return
         }
 

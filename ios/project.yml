@@ -155,6 +155,9 @@ targets:
       # misspelled. Small, curated, and exactly the sort of table that needs a
       # test saying which words are deliberately absent.
       - path: VocaPhoneKeyboard/ShortWordCorrections.swift
+      # The correction the next Delete can take back, and the rule that decides
+      # whether it still points at the text it replaced.
+      - path: VocaPhoneKeyboard/TypingEngine.swift
       - path: VocaPhoneKeyboard/SpellChecking.swift
       - path: VocaPhoneKeyboard/SmartPunctuation.swift
       # The word-to-emoji table is the feature worth pinning: which names

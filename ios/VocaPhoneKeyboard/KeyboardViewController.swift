@@ -626,7 +626,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// so the strip is the surface this keyboard can honestly put it on.
     @discardableResult
     private func revertPendingCorrection() -> Bool {
-        guard let revert = typing.takeRevert() else { return false }
+        guard let revert = typing.takeRevert(documentBefore: document.before) else { return false }
         let removals = revert.replacement.count + revert.boundary.count
         for _ in 0..<removals { textDocumentProxy.deleteBackward() }
         textDocumentProxy.insertText(revert.typed + revert.boundary)

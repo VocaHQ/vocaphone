@@ -318,38 +318,44 @@ enum KeyLayout {
     /// the system keypad does — a stretched `0` there would be a target people
     /// hit by accident reaching for nothing.
     static func keypadRows(for plane: KeyPlane, includesGlobe: Bool) -> [KeyRow] {
-        // Three columns in every row, including the last. The system keypad is a
-        // regular block and reads as one; a bottom row of four keys under three
-        // is a grid that has come apart.
+        // Three columns in every row. The system keypad is a regular block and
+        // reads as one; a bottom row of four keys under three is a grid that has
+        // come apart.
         //
-        // The corner slot goes to whichever of these the field actually needs:
-        // the globe where iOS demands one, the decimal separator on a decimal
-        // pad, the "+" a dialable number can start with on a phone pad, and
-        // otherwise nothing at all — which is what the system keypad leaves
-        // there, rather than stretching the zero across a target nobody is
-        // aiming at.
-        let corner: KeyCap = if includesGlobe {
-            .globe
-        } else {
-            switch plane {
-            case .decimalPad: .character(".")
-            case .phonePad: .character("+")
-            default: .blank
-            }
+        // The bottom row is the exception, and only where it has to be. A
+        // decimal pad's "." and a phone pad's "+" are the *only* way to type
+        // those characters — these layouts have no second plane and no duplicate
+        // key — so when iOS also demands a globe there are four things that must
+        // be reachable and three slots. Giving the corner to the globe left a
+        // decimal pad that could not type a decimal point, which is not a
+        // narrower keyboard, it is a broken one. The row takes a fourth key
+        // instead; the digits above it stay on three.
+        var last: [KeySpec] = []
+        if includesGlobe {
+            last.append(KeySpec(cap: .globe, width: .multiple(keypadColumns), style: .function))
         }
-        let cornerStyle: KeyStyle = corner == .globe ? .function : .standard
+        switch plane {
+        case .decimalPad:
+            last.append(KeySpec(cap: .character("."), width: .multiple(keypadColumns)))
+        case .phonePad:
+            last.append(KeySpec(cap: .character("+"), width: .multiple(keypadColumns)))
+        default:
+            break
+        }
+        // A plain number pad with no globe has nothing for the corner, and iOS
+        // leaves it genuinely empty rather than stretching the zero across it —
+        // a target people would hit reaching for nothing.
+        if last.isEmpty {
+            last.append(KeySpec(cap: .blank, width: .multiple(keypadColumns)))
+        }
+        last.append(KeySpec(cap: .character("0"), width: .multiple(keypadColumns)))
+        last.append(KeySpec(cap: .delete, width: .multiple(keypadColumns), style: .function))
+
         return [
             keypadRow("123"),
             keypadRow("456"),
             keypadRow("789"),
-            KeyRow(
-                keys: [
-                    KeySpec(cap: corner, width: .multiple(keypadColumns), style: cornerStyle),
-                    KeySpec(cap: .character("0"), width: .multiple(keypadColumns)),
-                    KeySpec(cap: .delete, width: .multiple(keypadColumns), style: .function),
-                ],
-                alignment: .centered
-            ),
+            KeyRow(keys: last, alignment: .centered),
         ]
     }
 

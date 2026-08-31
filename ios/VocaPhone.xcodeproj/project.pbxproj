@@ -162,6 +162,7 @@
 		6BF87A2C089381E060D13D22 /* KeyAlternativesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0326EF6FB3E96C942C6065 /* KeyAlternativesTests.swift */; };
 		6C48D9ED8AF4FE61AB76AE49 /* StopQuickDictationIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 332854D2644CFCE5843E3F31 /* StopQuickDictationIntent.swift */; };
 		6CEF2A686643F72F4BCDD51D /* SemanticPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6C44F954E7A62974C66109 /* SemanticPalette.swift */; };
+		6EAFD2EC2E02A1270A140E47 /* TypingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9B9027C03A87FBC74CE1130 /* TypingEngine.swift */; };
 		70232F18D7B4AA7F6BB15C64 /* TelemetrySink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E413C2A7ADDFE5C3B5F27C7 /* TelemetrySink.swift */; };
 		7118F0F04A2C3D94C65EC00D /* TelemetrySink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E413C2A7ADDFE5C3B5F27C7 /* TelemetrySink.swift */; };
 		7280B936E153A21AC6D75B27 /* WordComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A6EEE8C98BCBF8D1D70D44 /* WordComposer.swift */; };
@@ -1489,6 +1490,7 @@
 				F9BE6A9D183361BABE1E286E /* TranscriptionSourceTests.swift in Sources */,
 				AA0483D40117344580501ABD /* TypingCandidates.swift in Sources */,
 				FC7578BC51E4E30002077CAC /* TypingCandidatesTests.swift in Sources */,
+				6EAFD2EC2E02A1270A140E47 /* TypingEngine.swift in Sources */,
 				044611DCE2FFB3B38B4BFACE /* TypingFieldPolicy.swift in Sources */,
 				4700DB7F7BE95078E7A8A563 /* TypingFieldPolicyTests.swift in Sources */,
 				7E28776EDC2BD3E8A8AFCED9 /* TypingPrivacyTests.swift in Sources */,

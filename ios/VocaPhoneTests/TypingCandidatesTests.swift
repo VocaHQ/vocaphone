@@ -568,3 +568,45 @@ struct TypingCandidatesTests {
         #expect(TypingCandidates.strip(ctx).candidates.isEmpty)
     }
 }
+
+/// A revert deletes a fixed number of characters and types the original in
+/// their place, which is only meaningful where the replacement actually is.
+struct AppliedCorrectionArmingTests {
+    private static let correction = TypingEngine.AppliedCorrection(
+        typed: "teh",
+        replacement: "the",
+        boundary: " "
+    )
+
+    /// Immediately after the correction, with it still in front of the cursor.
+    @Test func aCorrectionInFrontOfTheCursorIsArmed() {
+        #expect(Self.correction.isArmed(documentBefore: "the "))
+        #expect(Self.correction.isArmed(documentBefore: "I saw the "))
+    }
+
+    /// The cursor has moved on. Reverting here would delete four characters of
+    /// unrelated text and insert a word from a paragraph ago.
+    @Test func aCorrectionTheCursorHasLeftIsNotArmed() {
+        #expect(!Self.correction.isArmed(documentBefore: "the quick brown fox"))
+        #expect(!Self.correction.isArmed(documentBefore: "somewhere else entirely"))
+        #expect(!Self.correction.isArmed(documentBefore: ""))
+    }
+
+    /// The host declining to answer is not permission to delete on faith.
+    @Test func anUnansweredContextIsNotArmed() {
+        #expect(!Self.correction.isArmed(documentBefore: nil))
+    }
+
+    /// The boundary counts. "the" alone is a word the user typed, not the
+    /// correction plus the space that applied it.
+    @Test func theBoundaryIsPartOfWhatMustStillBeThere() {
+        #expect(!Self.correction.isArmed(documentBefore: "the"))
+        let punctuated = TypingEngine.AppliedCorrection(
+            typed: "teh",
+            replacement: "the",
+            boundary: "."
+        )
+        #expect(punctuated.isArmed(documentBefore: "the."))
+        #expect(!punctuated.isArmed(documentBefore: "the "))
+    }
+}

@@ -214,7 +214,27 @@ struct KeypadLayoutTests {
 
     @Test func theGlobeTakesTheEmptyCornerWhenItIsNeeded() {
         let rows = KeyLayout.keypadRows(for: .numberPad, includesGlobe: true)
-        #expect(rows[3].keys.first?.cap == .globe)
+        #expect(rows[3].keys.map(\.cap) == [.globe, .character("0"), .delete])
+    }
+
+    /// The globe must never cost a keypad the only key that types its own
+    /// character: these layouts have no second plane and no duplicate, so a
+    /// displaced "." is a decimal pad that cannot type a decimal point.
+    @Test func theGlobeNeverDisplacesAKeypadsOnlySeparator() {
+        for (plane, required) in [(KeyPlane.decimalPad, "."), (.phonePad, "+")] {
+            for globe in [true, false] {
+                let caps = KeyLayout.keypadRows(for: plane, includesGlobe: globe)
+                    .flatMap(\.keys)
+                    .map(\.cap)
+                #expect(
+                    caps.contains(.character(required)),
+                    "\(plane) with globe=\(globe) lost its \(required)"
+                )
+                #expect(caps.contains(.delete))
+                #expect(caps.contains(.character("0")))
+                #expect(caps.contains(.globe) == globe)
+            }
+        }
     }
 
     @Test func aDecimalPadSpendsTheCornerOnItsSeparator() {
@@ -229,17 +249,20 @@ struct KeypadLayoutTests {
         #expect(rows[3].keys.map(\.cap) == [.character("+"), .character("0"), .delete])
     }
 
-    /// Three columns in every row, the last one included. A bottom row of four
-    /// keys under three is a grid that has come apart.
-    @Test func everyKeypadRowIsThreeColumnsWide() {
+    /// Three columns in every row, and four only where a globe and a required
+    /// separator both have to fit. The digits are always a regular block.
+    @Test func theDigitsAreAlwaysARegularBlock() {
         for plane in [KeyPlane.numberPad, .phonePad, .decimalPad] {
             for globe in [true, false] {
                 let rows = KeyLayout.keypadRows(for: plane, includesGlobe: globe)
+                #expect(rows.count == 4)
                 #expect(
-                    rows.allSatisfy { $0.keys.count == 3 },
-                    "\(plane) with globe=\(globe) is not a regular block"
+                    rows.prefix(3).allSatisfy { $0.keys.count == 3 },
+                    "\(plane) with globe=\(globe) has ragged digits"
                 )
                 #expect(rows.allSatisfy { $0.alignment == .centered })
+                let needsFour = globe && plane != .numberPad
+                #expect(rows[3].keys.count == (needsFour ? 4 : 3))
             }
         }
     }
