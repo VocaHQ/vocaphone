@@ -1329,6 +1329,11 @@ final class RecordingCoordinator {
         }
     }
 
+    /// How far a renewing window's deadline has to move before the observable
+    /// copy is updated. Well under the lease, so the published value is always
+    /// minutes ahead of now.
+    private static let standbyDeadlinePublishInterval: TimeInterval = 60
+
     private func beginQuickDictationWatcher(
         _ availability: QuickDictationAvailability,
         duration: QuickDictationDuration
@@ -1347,11 +1352,20 @@ final class RecordingCoordinator {
                     return
                 }
                 refreshedAvailability = refreshedAvailability.renewingLease(duration)
-                // Only a renewing window has a deadline that moves. Writing the
-                // same date back every two seconds would invalidate the home
-                // card on every heartbeat for nothing.
+                // Only a renewing window has a deadline that moves, and it moves
+                // every two seconds. Publishing each one would re-render the
+                // home card at that rate for the whole life of an all-day
+                // standby — for a card that shows this window no clock time at
+                // all. Publish rarely enough to keep the deadline comfortably
+                // in the future, which is all `isQuickDictationReady` asks, and
+                // no more. `renewStandby` throttles itself the same way.
                 if duration.renewsLease {
-                    self.quickDictationExpiresAt = refreshedAvailability.expiresAt
+                    let published = self.quickDictationExpiresAt ?? .distantPast
+                    if refreshedAvailability.expiresAt.timeIntervalSince(published)
+                        >= Self.standbyDeadlinePublishInterval
+                    {
+                        self.quickDictationExpiresAt = refreshedAvailability.expiresAt
+                    }
                     self.liveActivity.renewStandby(expiresAt: refreshedAvailability.expiresAt)
                 }
                 do {
