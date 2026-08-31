@@ -205,6 +205,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // UIKit can finalize a changed Full Access setting after the earlier
+        // appearance callbacks. This is the last lifecycle point before guided
+        // setup expects the extension to prove its state.
+        publishKeyboardStatus()
+        KeyboardHaptics.shared.attach(to: view, hasFullAccess: hasFullAccess)
         // A session found before the keyboard is on screen is work already in
         // flight being restored, not something that just happened to the user,
         // and it must not arrive as a buzz in their hand.
