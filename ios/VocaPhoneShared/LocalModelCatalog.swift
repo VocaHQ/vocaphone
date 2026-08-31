@@ -13,6 +13,10 @@ enum SherpaFamily: String, Codable, Sendable {
     case canary
     case nemoCtc
     case paraformer
+    /// Moonshine v2: two `.ort` graphs instead of v1's four `.onnx` files.
+    /// A separate case rather than a flag, because the file names and the
+    /// sherpa-onnx config fields both differ and every switch has to answer.
+    case moonshineV2
 
     /// Whether this family can safely use `modified_beam_search`.
     ///
@@ -253,9 +257,14 @@ struct LocalModelDescriptor: Identifiable, Codable, Sendable, Equatable {
     /// target is English. Everything else transcribes the language it heard, so
     /// an empty set here is the ordinary answer. Mirrors
     /// `LocalModelCatalog.kt`; see `ModelTranslationSupport`.
+    /// The `distil` special case is gone with the models it was written for.
+    /// Distil-Whisper is an English-only distillation that this catalog listed
+    /// as "100 languages", so its rows needed excluding by id from a rule that
+    /// reads `englishOnly`; nothing in the catalog is mislabelled that way any
+    /// more, and a check with no subject reads as a rule that still applies.
     var translationTargets: Set<String> {
         if sherpaFamily == .canary { return languageCodes }
-        if englishOnly || id.contains("distil") { return [] }
+        if englishOnly { return [] }
         return engine == .whisperKit ? ["en"] : []
     }
 
@@ -348,36 +357,6 @@ enum LocalModelLanguages {
 enum LocalModelCatalog {
     static let all: [LocalModelDescriptor] = [
         .init(
-            id: "openai_whisper-tiny.en",
-            displayName: "Whisper Tiny · English",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-tiny.en",
-            sizeBytes: 76623141,
-            minimumRamGB: 3,
-            languages: "English",
-            englishOnly: true
-        ),
-        .init(
-            id: "openai_whisper-tiny",
-            displayName: "Whisper Tiny",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-tiny",
-            sizeBytes: 76635397,
-            minimumRamGB: 3,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-base.en",
-            displayName: "Whisper Base · English",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-base.en",
-            sizeBytes: 146707731,
-            minimumRamGB: 3,
-            languages: "English",
-            englishOnly: true
-        ),
-        .init(
             id: "openai_whisper-base",
             displayName: "Whisper Base",
             engine: .whisperKit,
@@ -398,66 +377,6 @@ enum LocalModelCatalog {
             englishOnly: false
         ),
         .init(
-            id: "openai_whisper-small.en_217MB",
-            displayName: "Whisper Small · English · 217 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-small.en",
-            sizeBytes: 217878408,
-            minimumRamGB: 3,
-            languages: "English",
-            englishOnly: true
-        ),
-        .init(
-            id: "openai_whisper-small",
-            displayName: "Whisper Small",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-small",
-            sizeBytes: 486487465,
-            minimumRamGB: 4,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-small.en",
-            displayName: "Whisper Small · English",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-small.en",
-            sizeBytes: 486510962,
-            minimumRamGB: 4,
-            languages: "English",
-            englishOnly: true
-        ),
-        .init(
-            id: "openai_whisper-large-v3-v20240930_547MB",
-            displayName: "Whisper Large v3 Turbo · 547 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 549554198,
-            minimumRamGB: 4,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "distil-whisper_distil-large-v3_594MB",
-            displayName: "Distil Whisper Large v3 · 594 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 594534261,
-            minimumRamGB: 4,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "distil-whisper_distil-large-v3_turbo_600MB",
-            displayName: "Distil Whisper Large v3 · Turbo pipeline · 600 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 607114331,
-            minimumRamGB: 4,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
             id: "openai_whisper-large-v3-v20240930_626MB",
             displayName: "Whisper Large v3 Turbo · 626 MB build",
             engine: .whisperKit,
@@ -468,136 +387,39 @@ enum LocalModelCatalog {
             englishOnly: false
         ),
         .init(
-            id: "openai_whisper-large-v3-v20240930_turbo_632MB",
-            displayName: "Whisper Large v3 Turbo · Turbo pipeline · 632 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 645668913,
-            minimumRamGB: 4,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-large-v3_947MB",
-            displayName: "Whisper Large v3 · 947 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 948108786,
-            minimumRamGB: 6,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-large-v2_949MB",
-            displayName: "Whisper Large v2 · 949 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v2",
-            sizeBytes: 952159413,
-            minimumRamGB: 6,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-large-v3_turbo_954MB",
-            displayName: "Whisper Large v3 · Turbo pipeline · 954 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 1052848880,
-            minimumRamGB: 6,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-large-v2_turbo_955MB",
-            displayName: "Whisper Large v2 · Turbo pipeline · 955 MB build",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v2",
-            sizeBytes: 1053135264,
-            minimumRamGB: 6,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "distil-whisper_distil-large-v3",
-            displayName: "Distil Whisper Large v3",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 1514534700,
-            minimumRamGB: 8,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "distil-whisper_distil-large-v3_turbo",
-            displayName: "Distil Whisper Large v3 · Turbo pipeline",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 1527111141,
-            minimumRamGB: 8,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-medium",
-            displayName: "Whisper Medium",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-medium",
-            sizeBytes: 1529654233,
-            minimumRamGB: 8,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-medium.en",
-            displayName: "Whisper Medium · English",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-medium.en",
-            sizeBytes: 1529674079,
-            minimumRamGB: 8,
-            languages: "English",
-            englishOnly: true
-        ),
-        .init(
-            id: "openai_whisper-large-v3-v20240930",
-            displayName: "Whisper Large v3 Turbo",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 1619531263,
-            minimumRamGB: 8,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "openai_whisper-large-v3-v20240930_turbo",
-            displayName: "Whisper Large v3 Turbo · Turbo pipeline",
-            engine: .whisperKit,
-            tokenizerRepository: "openai/whisper-large-v3",
-            sizeBytes: 1638464446,
-            minimumRamGB: 8,
-            languages: "100 languages",
-            englishOnly: false
-        ),
-        .init(
-            id: "moonshine-tiny-en",
-            displayName: "Moonshine Tiny English",
+            id: "moonshine-v2-tiny-en",
+            displayName: "Moonshine v2 Tiny English",
             engine: .sherpaOnnx,
-            repository: "csukuangfj/sherpa-onnx-moonshine-tiny-en-int8",
-            revision: "bf2b762c076d8ea61e2af0b3851c9564fb77552e",
-            sherpaFamily: .moonshine,
-            sizeBytes: 123_967_539,
+            // v2 replaces v1 on every axis at once: 44 MB against 124 MB,
+            // 12.01 average WER against 12.66, and faster. Measured on arm64 at
+            // two threads, median of five, same audio -- v1 then v2:
+            //   2.0s  23.2 -> 20.9 ms   4.0s  48.3 -> 44.1   6.6s  86.9 -> 79.2
+            repository: "csukuangfj2/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27",
+            revision: "d1e6c30921780b8508d04b492dfb3ce8a51605d4",
+            sherpaFamily: .moonshineV2,
+            sizeBytes: 44_243_206,
             minimumRamGB: 2,
             languages: "English",
             englishOnly: true
         ),
         .init(
-            id: "moonshine-base-en",
-            displayName: "Moonshine Base English",
+            id: "moonshine-v2-base-en",
+            displayName: "Moonshine v2 Base English",
             engine: .sherpaOnnx,
-            repository: "csukuangfj/sherpa-onnx-moonshine-base-en-int8",
-            revision: "052b0798ad1bf046a140fdd4efcd9426530fa3f5",
-            sherpaFamily: .moonshine,
-            sizeBytes: 286_929_760,
-            minimumRamGB: 3,
+            // The largest single gain in the catalog. v2 is half the size of
+            // v1 (141 MB against 287 MB), 2.2 WER points better (7.84 against
+            // 10.07), and faster. Measured on arm64 at two threads, median of
+            // five, same audio -- v1 then v2:
+            //   2.0s  43.7 -> 34.8 ms   4.0s  91.8 -> 74.4   6.6s 157.4 -> 129.7
+            //
+            // For context, Canary 180M scores 7.12 on the same suite but takes
+            // 122/236/399 ms for those clips: three times the latency for
+            // 0.7 WER points, which is the wrong trade for a keyboard.
+            repository: "csukuangfj2/sherpa-onnx-moonshine-base-en-quantized-2026-02-27",
+            revision: "8f4d6c58c03d40bcea40043bb7120a878f2bbef6",
+            sherpaFamily: .moonshineV2,
+            sizeBytes: 141_300_566,
+            minimumRamGB: 2,
             languages: "English",
             englishOnly: true
         ),
@@ -631,30 +453,36 @@ enum LocalModelCatalog {
             id: "sense-voice",
             displayName: "SenseVoice Small",
             engine: .sherpaOnnx,
-            repository: "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09",
-            revision: "355f4d4884d8afd08aef04b9007a8556d7b463b2",
+            // Pinned to the 2024-07-17 export. The newer 2025-09-09 build
+            // decodes badly against both runtimes this repository ships, and it
+            // was the one in the catalog. Measured on macOS arm64 with the same
+            // sherpa-onnx versions -- v1.12.34 (iOS) and v1.13.6 (Android) --
+            // against the model's own `test_wavs`:
+            //
+            //   ja  2025-09-09  "家中学便当制持合五十円学校贩売交"
+            //       2024-07-17  "うちの中学は弁当制で持っていけない場合は..."
+            //   ko  2025-09-09  "如万性 하면서面 훨씬过呀"
+            //       2024-07-17  "조금만 생각을 하면서 살면 훨씬 편할 거야"
+            //   en  2025-09-09  "THE TRIVAL CHIEFTHIN CALLED FOR THE BOY..."
+            //       2024-07-17  "the tribal chieftain called for the boy..."
+            //   zh  2025-09-09  "开放时间早上九点至下午五点"
+            //       2024-07-17  "开饭时间早上九点至下午五点"
+            //
+            // Japanese and Korean come back as Chinese characters, English
+            // loses its casing and its words, and Chinese picks the wrong one.
+            // Cantonese is identical on both, so nothing is lost by the older
+            // export. Both runtimes fail the same way, so this is the export
+            // and not a version range: re-measure before moving the pin.
+            repository: "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
+            revision: "2365baeacb507f821a0c8120fcee3d484dba7a07",
             sherpaFamily: .senseVoice,
-            sizeBytes: 237_431_441,
+            sizeBytes: 239_549_735,
             minimumRamGB: 2,
             languages: "Mandarin · Cantonese · English · Japanese · Korean",
             englishOnly: false,
             // sherpa-onnx exposes a language on the SenseVoice config, so a pick
             // here pins the decoder rather than only the punctuation.
             languageCodesOverride: LocalModelLanguages.senseVoice
-        ),
-        .init(
-            id: "dolphin-base-ctc",
-            displayName: "Dolphin Base",
-            engine: .sherpaOnnx,
-            repository: "csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02",
-            revision: "1f3a53d0ecf658f8b0974e2cfde368eee40732fa",
-            sherpaFamily: .dolphinCtc,
-            sizeBytes: 104_234_464,
-            minimumRamGB: 2,
-            languages: "40 East Asian languages",
-            englishOnly: false,
-            languageCodesOverride: LocalModelLanguages.dolphin,
-            detectsLanguageAutomatically: true
         ),
         .init(
             id: "dolphin-small-ctc",
@@ -684,26 +512,29 @@ enum LocalModelCatalog {
             languageCodesOverride: ["en", "de", "es", "fr"]
         ),
         .init(
-            id: "fast-conformer-ctc-4-lang",
-            displayName: "Fast Conformer CTC",
+            id: "giga-am-v3-ru",
+            displayName: "GigaAM v3 Russian",
             engine: .sherpaOnnx,
-            repository: "csukuangfj/sherpa-onnx-nemo-fast-conformer-ctc-en-de-es-fr-14288",
-            revision: "a472770bdbc5861d7e671dcdc349edaedf144cd0",
-            sherpaFamily: .nemoCtc,
-            sizeBytes: 461_337_434,
-            minimumRamGB: 3,
-            languages: "English · German · Spanish · French",
-            englishOnly: false,
-            languageCodesOverride: ["en", "de", "es", "fr"]
-        ),
-        .init(
-            id: "giga-am-ctc-ru",
-            displayName: "GigaAM CTC Russian",
-            engine: .sherpaOnnx,
-            repository: "csukuangfj/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19",
-            revision: "f5555086f28ef11d600e30d76b61d75fd9685196",
-            sherpaFamily: .nemoCtc,
-            sizeBytes: 236_458_173,
+            // The RNN-T export, not the CTC one. GigaAM publishes both and its
+            // own evaluation puts the transducer ahead on every set it reports
+            // -- 8.4 average WER against the CTC's 9.2, and Whisper's 25.1 --
+            // for 7 MB more download and no measurable latency cost (362 ms
+            // against 367 ms on an 11 s clip, arm64, two threads). The
+            // difference shows up as punctuation on the sample: the CTC drops
+            // the comma in "может быть, украдкой" and invents one after
+            // "Ничьих".
+            //
+            // `punct` rather than the plain export for the same reason it was
+            // chosen for the CTC: a bare Russian model emits an unpunctuated
+            // stream, which is the one thing dictation cannot paper over.
+            //
+            // The decoder and joiner are full precision while the encoder is
+            // int8 -- that is how upstream ships it, and `quantizedOrPlain` in
+            // the recognizers resolves each graph independently because of it.
+            repository: "csukuangfj/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16",
+            revision: "a6039be7cee829a9044a69ac0ebaf1c191217c97",
+            sherpaFamily: .nemoTransducer,
+            sizeBytes: 231_897_202,
             minimumRamGB: 2,
             languages: "Russian",
             englishOnly: false,
@@ -878,12 +709,19 @@ enum LocalModelCatalog {
     }
 
     /// English models best first. Parakeet leads wherever the memory allows it.
+    ///
+    /// Both Moonshine builds stay ahead of Canary even though Canary is smaller
+    /// and scores better on the Open ASR English suite, because this list
+    /// decides what a keyboard reaches for and Moonshine decodes the same audio
+    /// 2.4-2.5x faster on arm64. See the note on `moonshine-v2-base-en` above.
+    ///
+    /// The `.en` WhisperKit builds are gone from the catalog, so the multilingual
+    /// Base build is the whisper fallback for English too.
     private static let englishPreference = [
         "parakeet-tdt-0.6b-v2-en",
-        "moonshine-base-en",
-        "moonshine-tiny-en",
-        "openai_whisper-base.en",
-        "openai_whisper-tiny.en"
+        "moonshine-v2-base-en",
+        "moonshine-v2-tiny-en",
+        "openai_whisper-base"
     ]
 
     /// Multilingual models by breadth of coverage, widest first.
@@ -892,24 +730,37 @@ enum LocalModelCatalog {
         "canary-180m-flash",
         "dolphin-small-ctc",
         "sense-voice",
-        "dolphin-base-ctc",
-        "openai_whisper-base",
-        "openai_whisper-tiny"
+        "openai_whisper-base"
     ]
 
     /// The compact specialist each language gets at first run, where one exists.
+    ///
+    /// This is the first transcription most people ever see, so "compact" is a
+    /// tie-breaker here and never the whole argument. Two entries used to be
+    /// chosen on size alone and have moved:
+    ///
+    /// - The Dolphin starters pointed at `dolphin-base-ctc`, which the Dolphin
+    ///   paper measures at 33.3% average WER against `dolphin-small-ctc`'s
+    ///   25.2%. Handing a Hindi or Bengali speaker the least accurate model in
+    ///   the catalog on first launch cost far more than the 146 MB it saved,
+    ///   and base is no longer in the catalog at all.
+    /// - Mandarin pointed at `paraformer-zh-small`, an 82 MB 2024 build, when
+    ///   SenseVoice is stronger on both Mandarin and Cantonese. Paraformer
+    ///   stays as the smallest download that covers Chinese -- that is the one
+    ///   role it wins -- but it is not what first run leads with.
+    ///
+    /// Mirrors `starterForLanguage` in `LocalModelCatalog.kt`.
     private static let starterIDs: [String: String] = [
         "de": "canary-180m-flash", "es": "canary-180m-flash", "fr": "canary-180m-flash",
-        "zh": "paraformer-zh-small",
         // SenseVoice rather than Paraformer for Cantonese: Paraformer is
         // Mandarin and English only, and now that Cantonese is a row in the
         // picker, leading with a model that cannot transcribe it is worse than
         // having offered nothing.
-        "yue": "sense-voice", "ja": "sense-voice", "ko": "sense-voice",
-        "ru": "giga-am-ctc-ru"
+        "zh": "sense-voice", "yue": "sense-voice", "ja": "sense-voice", "ko": "sense-voice",
+        "ru": "giga-am-v3-ru"
     ].merging(
         Dictionary(
-            uniqueKeysWithValues: LocalModelLanguages.dolphinStarters.map { ($0, "dolphin-base-ctc") }
+            uniqueKeysWithValues: LocalModelLanguages.dolphinStarters.map { ($0, "dolphin-small-ctc") }
         ),
         uniquingKeysWith: { existing, _ in existing }
     )
