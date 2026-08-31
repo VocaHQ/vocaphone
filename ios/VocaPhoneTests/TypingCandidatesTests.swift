@@ -24,7 +24,10 @@ struct TypingCandidatesTests {
         suggestions: Bool = true,
         autocorrect: Bool = true,
         prediction: Bool = true,
-        allowed: Bool = true
+        allowed: Bool = true,
+        followers: [String] = [],
+        expansion: String? = nil,
+        isMidWord: Bool = false
     ) -> TypingCandidates.Context {
         var context = TypingCandidates.Context()
         context.composition = composition
@@ -44,7 +47,137 @@ struct TypingCandidatesTests {
         context.autocorrectEnabled = autocorrect
         context.predictionEnabled = prediction
         context.allowsTypingIntelligence = allowed
+        context.contextualFollowers = followers
+        context.lexiconExpansion = expansion
+        context.isMidWord = isMidWord
         return context
+    }
+
+    // MARK: - The touch model
+
+    /// The corrections a spell checker will never make, because nothing is
+    /// misspelled. Every one of these is blocked by a rule that is individually
+    /// right — too short, already a word, case-only — and every one of them is
+    /// something the system keyboard fixes.
+    @Test func theCuratedShortWordsAreCorrected() {
+        let expected = [
+            "i": "I",
+            "im": "I'm",
+            "ive": "I've",
+            "dont": "don't",
+            "cant": "can't",
+            "youre": "you're",
+            "thats": "that's",
+        ]
+        for (typed, replacement) in expected {
+            #expect(
+                TypingCandidates.autocorrection(
+                    Self.context(composition: typed, isKnownToChecker: true, isInWordList: true)
+                ) == replacement,
+                "\(typed) should become \(replacement)"
+            )
+        }
+    }
+
+    /// The words deliberately left out, because only grammar could tell them
+    /// apart and a keyboard has none.
+    @Test func ambiguousContractionsAreLeftAlone() {
+        for token in ["its", "were", "well", "hell", "shell", "wed"] {
+            #expect(
+                TypingCandidates.autocorrection(
+                    Self.context(composition: token, isKnownToChecker: true)
+                ) == nil,
+                "\(token) should stand"
+            )
+        }
+    }
+
+    /// The user's own assertion outranks the table. Someone who put "im" back
+    /// once has answered the question.
+    @Test func anAssertedShortWordIsNotCorrected() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(composition: "im", asserted: ["im"])
+            ) == nil
+        )
+    }
+
+    /// A text replacement is an instruction, not a guess: the user told Settings
+    /// what "omw" means. It used to reach the strip as a chip and stop there, so
+    /// the expansion only happened if they noticed and tapped it.
+    @Test func aTextReplacementExpandsOnItsOwn() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(
+                    composition: "omw",
+                    isKnownToChecker: true,
+                    expansion: "On my way!"
+                )
+            ) == "On my way!"
+        )
+    }
+
+    /// A replacement carrying its own capitalization is a substitution, not a
+    /// spelling of the typed word. Caps lock must not shout it.
+    @Test func anExpansionKeepsItsOwnCapitalization() {
+        #expect(
+            TypingCandidates.matchingCase(of: "OMW", applyingTo: "On my way!") == "On my way!"
+        )
+        #expect(TypingCandidates.matchingCase(of: "i", applyingTo: "I") == "I")
+        // An ordinary correction still follows the typed word's case.
+        #expect(TypingCandidates.matchingCase(of: "Teh", applyingTo: "the") == "The")
+    }
+
+    /// Nothing may be replaced when the cursor is inside a longer word: the
+    /// composition is a prefix of something the keyboard can only see half of,
+    /// and rewriting it corrupts a word the user never finished.
+    @Test func nothingIsCorrectedInTheMiddleOfAWord() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(composition: "teh", guesses: ["the"], isMidWord: true)
+            ) == nil
+        )
+    }
+
+    /// The preceding word is evidence the checker never had. Two guesses the
+    /// same distance away, and the bigram says which one the sentence wants.
+    @Test func contextBreaksATieTheCheckerCannot() {
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(
+                    composition: "hend",
+                    guesses: ["hand", "bend"],
+                    preceding: "please",
+                    followers: ["hand"]
+                )
+            ) == "hand"
+        )
+    }
+
+    /// Proximity settles a contest the dictionary rates equally; it never
+    /// manufactures a winner where there genuinely is not one.
+    @Test func proximityBreaksTiesWithoutCreatingThem() {
+        // Adjacent keys cost less than a letter from the other side of the
+        // keyboard: "w" is beside "e", "p" is not.
+        #expect(KeyProximity.areAdjacent("w", "e"))
+        #expect(!KeyProximity.areAdjacent("q", "p"))
+        #expect(
+            KeyProximity.substitutionCost(typed: "w", intended: "e")
+                < KeyProximity.substitutionCost(typed: "q", intended: "p")
+        )
+        // Still no correction when both readings are one plain edit away.
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(composition: "hend", guesses: ["hand", "bend"])
+            ) == nil
+        )
+        // But a runner-up needing strictly more edits still loses, which is the
+        // rule proximity weighting must not have taken away.
+        #expect(
+            TypingCandidates.autocorrection(
+                Self.context(composition: "hend", guesses: ["hand", "blend"])
+            ) == "hand"
+        )
     }
 
     // MARK: - Autocorrect rules
