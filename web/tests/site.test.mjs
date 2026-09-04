@@ -132,7 +132,7 @@ test("production metadata is complete", () => {
     /property="og:image:alt"\s+content="VocaPhone on Android and iPhone, on-device first with an optional self-hosted gateway"/,
     /property="og:description"\s+content="Join the public TestFlight, or build from source, then install the keyboard and run speech-to-text on your iPhone\."/,
     /name="twitter:title" content="Install VocaPhone on iPhone"/,
-    /name="twitter:description"\s+content="Join the public TestFlight, or build from source, then install the private keyboard and run speech-to-text on your iPhone\."/,
+    /name="twitter:description"\s+content="Join the public TestFlight, or build from source, then install the keyboard and run speech-to-text on your iPhone\."/,
     /name="twitter:image" content="https:\/\/vocaphone\.vocahq\.com\/assets\/og-image\.png"/,
     /name="twitter:image:alt"\s+content="VocaPhone on Android and iPhone, on-device first with an optional self-hosted gateway"/,
   ]) {
