@@ -198,10 +198,10 @@ final class DictationBarView: UIView, TypingStripViewDelegate {
         return true
     }
 
-    /// The most recent microphone level. Kept separate from `apply` because it
-    /// changes on every tick while the model does not.
-    func push(meterLevel: Float) {
-        waveform.push(level: meterLevel)
+    /// The levels measured since the last tick. Kept separate from `apply`
+    /// because they change on every tick while the model does not.
+    func push(meterLevels: [Float]) {
+        waveform.push(levels: meterLevels)
     }
 
     func setElapsed(_ interval: TimeInterval?) {

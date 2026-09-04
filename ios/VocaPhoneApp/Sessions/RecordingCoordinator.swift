@@ -16,6 +16,9 @@ final class RecordingCoordinator {
     /// Kept separate from `activeRecord` so a level update several times a
     /// second invalidates only the views that draw the meter.
     private(set) var meterLevel: Float = 0
+    /// Levels produced in the current recording, counted so the keyboard can
+    /// tell new audio from a re-read of the same file.
+    private var meterSequence = 0
     /// Guided setup reads system state that emits no change notifications —
     /// keyboard installation, a permission flipped in iOS Settings — so it is
     /// snapshotted here and refreshed deliberately rather than polled.
@@ -298,7 +301,8 @@ final class RecordingCoordinator {
         // marker behind. The new app process is not warm until it arms audio.
         try? store.clearQuickDictationAvailability()
         recorder.microphonePreference = KeyboardPreferences.microphonePreference
-        recorder.onMeter = { [weak self] level in self?.persistMeter(level) }
+        meterSequence = 0
+        recorder.onMeter = { [weak self] levels in self?.persistMeter(levels) }
         recorder.onMaximumDuration = { [weak self] in self?.requestFinish() }
         recorder.onInputRouteChanged = { [weak self] inputName in
             guard let self else { return }
@@ -1281,16 +1285,23 @@ final class RecordingCoordinator {
             : "Transcript ready. Return to the keyboard to insert it."
     }
 
-    private func persistMeter(_ level: Float) {
+    private func persistMeter(_ levels: [Float]) {
         guard let record = activeRecord, record.state == .recording else { return }
-        let clamped = min(max(level, 0), 1)
+        guard let last = levels.last else { return }
         // Only the level changes here. Leaving `activeRecord` untouched keeps
         // this from invalidating every view observing the session.
-        meterLevel = clamped
+        meterLevel = min(max(last, 0), 1)
+        // The whole run goes across, not just the newest level: the keyboard
+        // draws one bar per level, and the levels it never saw are the motion
+        // it used to invent.
+        meterSequence += levels.count
         // Meter updates are intentionally stored separately from the session
         // record. Otherwise a stale meter write from the app can overwrite a
         // finalizing/canceled state written by the keyboard extension.
-        try? store.saveMeter(clamped, for: record.sessionID)
+        try? store.saveMeter(
+            MeterSample(sequence: meterSequence, levels: levels),
+            for: record.sessionID
+        )
     }
 
     private func shouldKeepQuickDictationReady(after record: SessionRecord) -> Bool {
@@ -1319,6 +1330,20 @@ final class RecordingCoordinator {
             quickDictationExpiresAt = availability.expiresAt
             beginQuickDictationWatcher(availability, duration: duration)
             liveActivity.startStandby(expiresAt: availability.expiresAt)
+            // No speech model is warmed here, and that is a measured choice.
+            //
+            // The first dictation of a session spends 1.8-2.7 s building the
+            // engine while the microphone is already recording; every one after
+            // it spends 9 ms. Warming it at this point fixes that and breaks
+            // something worse: arming happens after every session, so the model
+            // then stays resident for the whole standby window, and the app went
+            // from never being memory-killed to hitting its three-gigabyte
+            // per-process limit within the hour. Killing the containing app
+            // takes the standby, the Live Activity and any unsaved session with
+            // it — a worse failure than a slow first dictation.
+            //
+            // Whatever fixes the latency has to bound how long the model stays
+            // in memory, not just when it is loaded.
             DiagnosticLog.record(.quickDictationArmed)
             debugQuickDictation("armed until \(availability.expiresAt)")
         } catch {

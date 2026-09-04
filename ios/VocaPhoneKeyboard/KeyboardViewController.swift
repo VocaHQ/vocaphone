@@ -1161,7 +1161,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         }
         updateElapsedTime(for: state)
         if state == .recording {
-            dictationBar.push(meterLevel: record?.meterLevel ?? 0)
+            // One level per poll, which is what the record carries. The run
+            // the pipeline now measures reaches the bar with the surface that
+            // draws it.
+            dictationBar.push(meterLevels: [record?.meterLevel ?? 0])
         }
         dictationBar.apply(model, animated: hasRendered)
         announceStateChange(to: state, saying: model.announcement)
