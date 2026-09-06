@@ -25,6 +25,24 @@ enum KeyPlane: Equatable {
     }
 }
 
+/// The space around the keys that belongs to the keyboard rather than to any
+/// key, in points.
+///
+/// Three views have to agree about these two numbers, and they used to hold
+/// five copies between two files, tied together by a comment. The stack lays
+/// the gap out, the grid claims it — a stack's spacing belongs to no subview,
+/// so a touch landing there is delivered to nobody — and the stack's own hit
+/// test forwards from both. Changing one copy and not the others is silent:
+/// the stack simply starts claiming a strip the grid does not answer for.
+enum KeyboardChrome {
+    /// Between the dictation bar and the top row.
+    static let gapAboveKeys: CGFloat = 12
+    /// Beyond the grid's left and right edges, out into the keyboard's own
+    /// margin — wider than that margin, so a thumb landing on the bezel side
+    /// of `a` or `l` is not thrown away.
+    static let sideMargin: CGFloat = 8
+}
+
 enum KeyCap: Equatable {
     /// Stores the unshifted form. Letters resolve through the current shift
     /// state; digits and punctuation ignore it.
@@ -50,6 +68,14 @@ enum KeyCap: Equatable {
     /// Whether this key can be pressed at all. A blank is laid out and drawn as
     /// nothing, and must never take a touch from the keys either side of it.
     var isInteractive: Bool { self != .blank }
+
+    /// A name for this key in a touch trace. Not user-facing.
+    var traceName: String {
+        switch self {
+        case let .character(base): base
+        default: String(describing: self).prefix(12).description
+        }
+    }
 
     func resolvedText(shift: ShiftState) -> String? {
         guard case let .character(value) = self else { return nil }
