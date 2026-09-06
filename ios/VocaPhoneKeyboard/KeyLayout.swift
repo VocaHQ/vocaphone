@@ -654,17 +654,19 @@ private extension UIColor {
     /// would have let the key background show through a key that is meant to
     /// stay solid.
     func blended(with other: UIColor, amount: CGFloat) -> UIColor {
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        var otherRed: CGFloat = 0
-        var otherGreen: CGFloat = 0
-        var otherBlue: CGFloat = 0
-        var otherAlpha: CGFloat = 0
-        guard getRed(&red, green: &green, blue: &blue, alpha: &alpha),
-              other.getRed(&otherRed, green: &otherGreen, blue: &otherBlue, alpha: &otherAlpha)
+        // Through `ContrastMath.rgba`, which falls back to `getWhite`.
+        //
+        // `getRed` answers nothing for a monochrome colour, and the two this is
+        // always mixed with — `.white` and `.black` — are exactly that. The
+        // guard then returned the colour unchanged, so on any build where that
+        // happens a pressed key kept its resting fill: the press had no visible
+        // effect at all. This is the same trap the luminance maths was just
+        // taken out of, one file away.
+        guard let base = ContrastMath.rgba(self),
+              let mixer = ContrastMath.rgba(other)
         else { return self }
+        let (red, green, blue, alpha) = base
+        let (otherRed, otherGreen, otherBlue, otherAlpha) = mixer
         let mix = min(max(amount, 0), 1)
         return UIColor(
             red: red + (otherRed - red) * mix,
