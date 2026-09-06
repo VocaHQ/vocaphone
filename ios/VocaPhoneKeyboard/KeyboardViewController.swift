@@ -17,6 +17,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// the app, which is not what the user is watching tick up.
     private var recordingStartedAt: Date?
     /// How much of the recording's measured audio the meter has already drawn.
+    /// The session the meter on screen belongs to.
+    private var meteredSessionID: UUID?
     private var drawnMeterSequence = 0
     private var lastRenderedState: SessionState?
     private var hasRendered = false
@@ -1176,7 +1178,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             pushMeter(for: sessionID)
         } else {
             drawnMeterSequence = 0
-            dictationSurfaceState.meterLevels = []
+            dictationSurfaceState.holdMeterLevels()
         }
 
         dictationSurfaceState.state = state
@@ -1248,11 +1250,26 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// exactly the new audio, counted once.
     private func pushMeter(for sessionID: UUID) {
         guard let sample = store.meterSample(for: sessionID) else { return }
+        // A recording that has just begun starts from an empty meter. The bars
+        // hold their shape when one *ends*, and without this the next session
+        // opened on the last one's waveform — somebody else's voice drawn for
+        // the first three quarters of a second.
+        if sessionID != meteredSessionID {
+            meteredSessionID = sessionID
+            drawnMeterSequence = 0
+            dictationSurfaceState.clearMeterLevels()
+            dictationBar.push(meterLevels: [])
+        }
         let unseen = sample.sequence - drawnMeterSequence
         guard unseen > 0 else { return }
         drawnMeterSequence = sample.sequence
-        dictationBar.push(meterLevels: Array(sample.levels.suffix(unseen)))
-        dictationSurfaceState.meterLevels = sample.levels
+        // Appended, not assigned. One write carries the three to five levels of
+        // a single tick and the meter draws fifteen bars, so replacing the list
+        // left two thirds of them with nothing to show — a moving waveform
+        // turned back into five twitching bars.
+        let fresh = Array(sample.levels.suffix(unseen))
+        dictationBar.push(meterLevels: fresh)
+        dictationSurfaceState.appendMeterLevels(fresh)
     }
 
     private func updateElapsedTime(for state: SessionState) {

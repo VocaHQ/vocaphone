@@ -9,7 +9,11 @@ final class DictationSurfaceState: ObservableObject {
         get { storedState }
         set { change(&storedState, to: newValue) }
     }
-    @Published var meterLevels: [Float] = []
+    /// The meter's own state. Levels arrive several times a second, and
+    /// published here they invalidated the whole surface each time — glass,
+    /// menus, centre text and all — in a process with fifty megabytes to its
+    /// name. The row of bars is the only thing that has to redraw.
+    let meter = MeterState()
     private var storedLanguage: TranscriptionLanguage = KeyboardPreferences.effectiveTranscriptionLanguage
     var language: TranscriptionLanguage {
         get { storedLanguage }
@@ -38,7 +42,11 @@ final class DictationSurfaceState: ObservableObject {
     /// Whether there is anything to suggest. Separate from the list because the
     /// surface's own layout only cares about empty or not, and that answer
     /// changes once a word rather than once a letter.
-    @Published private(set) var hasCandidates = false
+    private var storedHasCandidates = false
+    private(set) var hasCandidates: Bool {
+        get { storedHasCandidates }
+        set { change(&storedHasCandidates, to: newValue) }
+    }
 
     var candidates: [TypingCandidate] {
         get { typing.candidates }
@@ -67,6 +75,15 @@ final class DictationSurfaceState: ObservableObject {
     var primaryIsEnabled: Bool {
         get { storedPrimaryIsEnabled }
         set { change(&storedPrimaryIsEnabled, to: newValue) }
+    }
+    /// What the trailing button does right now, in words: Finish, Insert,
+    /// Retry, Dictate. VoiceOver reads this, and "Start dictation" spoken over
+    /// a button that inserts a finished transcript is worse than silence — it
+    /// tells somebody their words are gone.
+    private var storedPrimaryLabel: String = "Start dictation"
+    var primaryLabel: String {
+        get { storedPrimaryLabel }
+        set { change(&storedPrimaryLabel, to: newValue) }
     }
     /// The spring every phase change of this surface uses.
     ///
@@ -104,20 +121,29 @@ final class DictationSurfaceState: ObservableObject {
     /// Settings, rather than a second switch of its own. Two switches for one
     /// sensation is how somebody turns haptics off and still feels the
     /// keyboard buzz.
-    func tap(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        guard KeyboardPreferences.typingHapticsEnabled else { return }
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
+    ///
+    /// Through `KeyboardHaptics` rather than a generator built here. One made
+    /// fresh for each tap is a generator the Taptic Engine has not been warned
+    /// about, so the first buzz after it arrives late or not at all — and it
+    /// bypasses the Full Access check, without which there is no engine to reach
+    /// at all.
+    @MainActor
+    func tap() {
+        KeyboardHaptics.shared.textCommitted()
     }
 
     /// Announces a change only when there is one.
     ///
-    /// `@Published` announces on every assignment, changed or not — and the
-    /// render below assigns nine of these in a row, on a path it takes twice a
-    /// word: once when the suggestions go on a space, and once when they come
-    /// back on the next letter. Each announcement rebuilds this whole surface,
-    /// glass and menus and waveform included. Measured on device: 39 rebuilds
-    /// of everything per 95 keystrokes, at 7.5 ms apiece against a 16.6 ms
-    /// frame, in a process with fifty megabytes to its name.
+    /// `@Published` announces on every assignment, changed or not — and `render`
+    /// assigns nine of these in a row, on a path it takes twice a word: once
+    /// when the suggestions go on a space, and once when they come back on the
+    /// next letter. Each announcement rebuilds this whole surface, glass and
+    /// menus and waveform included. Measured on device: 39 rebuilds of
+    /// everything per 95 keystrokes, at 7.5 ms apiece against a 16.6 ms frame.
+    ///
+    /// Two of the nine — `language` and `style` — were already guarded at their
+    /// call site. Guarding them here instead means the other seven cannot be
+    /// forgotten, and nor can the next one somebody adds.
     private func change<T: Equatable>(_ storage: inout T, to value: T) {
         guard storage != value else { return }
         objectWillChange.send()
@@ -138,6 +164,13 @@ final class DictationSurfaceState: ObservableObject {
     var onPrimary: (() -> Void)?
 
     init() {}
+
+    func appendMeterLevels(_ levels: [Float]) { meter.append(levels) }
+
+    /// Ends the reading without ending the picture. See ``MeterState/hold()``.
+    func holdMeterLevels() { meter.hold() }
+
+    func clearMeterLevels() { meter.clear() }
 
     /// Re-reads both preferences.
     ///
@@ -201,17 +234,68 @@ final class DictationSurfaceState: ObservableObject {
     }
 }
 
+/// The bars' own state, so a microphone level does not redraw a keyboard.
+final class MeterState: ObservableObject {
+    /// The last few seconds of measured levels, oldest first.
+    @Published private(set) var levels: [Float] = []
+
+    /// Enough for the bars on screen and a little history: a keyboard that has
+    /// been recording for a minute must not be carrying a minute of numbers.
+    private static let capacity = 60
+
+    func append(_ newLevels: [Float]) {
+        guard !newLevels.isEmpty else { return }
+        var next = levels + newLevels
+        if next.count > Self.capacity { next.removeFirst(next.count - Self.capacity) }
+        levels = next
+    }
+
+    /// Stops reading, and keeps what was read.
+    ///
+    /// Called the moment a recording ends, which is also the moment the bars are
+    /// meant to hold the shape the voice left them in. Emptying the array made
+    /// them collapse to a flat line instead — the opposite of holding a shape,
+    /// and the thing anybody watching would notice first.
+    func hold() {}
+
+    /// Starts again from nothing. Only a new session does this.
+    func clear() {
+        guard !levels.isEmpty else { return }
+        levels = []
+    }
+}
+
 /// The suggestion row's own state, so a keystroke does not redraw a keyboard.
 final class TypingRowState: ObservableObject {
-    @Published var candidates: [TypingCandidate] = []
-    @Published var isDark = false
+    private var storedCandidates: [TypingCandidate] = []
+    var candidates: [TypingCandidate] {
+        get { storedCandidates }
+        set { change(&storedCandidates, to: newValue) }
+    }
+    /// The theme, assigned on every render whether or not it moved.
+    private var storedIsDark = false
+    var isDark: Bool {
+        get { storedIsDark }
+        set { change(&storedIsDark, to: newValue) }
+    }
+
+    /// Announces a change only when there is one. See the same method on
+    /// ``DictationSurfaceState`` for what this costs when it is missing.
+    private func change<T: Equatable>(_ storage: inout T, to value: T) {
+        guard storage != value else { return }
+        objectWillChange.send()
+        storage = value
+    }
     var onCandidate: ((TypingCandidate) -> Void)?
     var hapticsEnabled = true
 
+    /// Choosing a suggestion is the one thing on this surface that buzzes: the
+    /// word simply appears in somebody else's text field, with nothing else to
+    /// confirm it. Through ``KeyboardHaptics`` so the engine is prepared and
+    /// Full Access is honoured — see the note on the surface's own `tap()`.
+    @MainActor
     func tap() {
-        guard KeyboardPreferences.typingHapticsEnabled else { return }
-        UIImpactFeedbackGenerator(style: KeyboardPreferences.typingHapticStyle.feedbackStyle)
-            .impactOccurred(intensity: KeyboardPreferences.typingHapticIntensity)
+        KeyboardHaptics.shared.textCommitted()
     }
 }
 
@@ -299,6 +383,10 @@ struct DictationSurfaceView: View {
     }
 
     var body: some View {
+        // Counts what SwiftUI actually rebuilt. A keystroke changes three
+        // chips; if the whole surface re-evaluates with them, the cost is the
+        // surface, not the row, and no amount of trimming the row will move it.
+        let _ = TouchTrace.note("      body surface")
         VStack(spacing: 0) {
             // Top Controls Bar (Top row of both Idle and Recording)
             HStack(spacing: 8) {
@@ -347,7 +435,8 @@ struct DictationSurfaceView: View {
                         // held, because there is no audio any more and bars
                         // that kept moving would say the microphone is open.
                         LiveWaveformBars(
-                            levels: isWorking ? [] : state.meterLevels,
+                            state: state.meter,
+                            isHeld: isWorking,
                             tint: isWorking
                                 ? Self.brandGreen.opacity(0.35)
                                 : Self.brandGreen
@@ -388,6 +477,7 @@ struct DictationSurfaceView: View {
                                 .frame(width: 44, height: 44)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Next keyboard")
                         Spacer()
                     }
                     .transition(.opacity)
@@ -442,46 +532,7 @@ struct DictationSurfaceView: View {
         }
         .buttonStyle(.plain)
         .modifier(GlassButtonModifier(id: "leadGlass", namespace: animationNamespace))
-    }
-
-    /// The two menus, collapsed into one while the row is carrying suggestions.
-    /// Same glass, same place, same `glassEffectID` — so it is the two buttons
-    /// merging rather than three buttons swapping.
-    @ViewBuilder
-    private var menusGlassButton: some View {
-        Menu {
-            Menu("Language") {
-                ForEach(state.languageShortcuts, id: \.self) { lang in
-                    languageButton(lang)
-                }
-                Menu("More languages") {
-                    ForEach(state.remainingLanguages, id: \.self) { lang in
-                        languageButton(lang)
-                    }
-                }
-            }
-            Menu("Style") {
-                ForEach(WritingStyle.allCases, id: \.self) { item in
-                    Button {
-                        state.select(style: item)
-                    } label: {
-                        HStack {
-                            Text(item.displayName)
-                            if item == state.style {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: Self.glyphSize, weight: .semibold))
-                .foregroundStyle(state.isDark ? Color.white : Color.black)
-                .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                .contentShape(Circle())
-        }
-        .modifier(GlassButtonModifier(id: "leadGlass", namespace: animationNamespace))
+        .accessibilityLabel("Cancel dictation")
     }
 
     @ViewBuilder
@@ -503,6 +554,7 @@ struct DictationSurfaceView: View {
                 .contentShape(Circle())
         }
         .modifier(GlassButtonModifier(id: "leadGlass", namespace: animationNamespace))
+        .accessibilityLabel("Cancel dictation")
     }
 
     @ViewBuilder
@@ -612,7 +664,7 @@ struct DictationSurfaceView: View {
         // Tapping through a transcription would start a second recording over
         // the top of the first. Cancel stays live; this does not.
         .disabled(isWorking || !state.primaryIsEnabled)
-        .accessibilityLabel(isWorking ? "Transcribing" : (isRecording ? "Finish" : "Start dictation"))
+        .accessibilityLabel(isWorking ? "Transcribing" : state.primaryLabel)
         .matchedGeometryEffect(id: "trailingActionCircle", in: animationNamespace)
     }
 }
@@ -629,9 +681,17 @@ private struct CandidateRow: View {
 
     var body: some View {
         // Scrolls rather than squeezes. Dividing the row equally meant every
-        // suggestion got the same width whatever it was, so a long word came
-        // out as "correspond…" while a two-letter one sat in a puddle of space.
-        // A word the reader cannot finish reading is not a suggestion.
+        // suggestion got the same width whatever it was, so a long word came out
+        // as "correspond…" while a two-letter one sat in a puddle of space — and
+        // a word the reader cannot finish reading is not a suggestion.
+        //
+        // This was taken out on the suspicion that its layout was what made the
+        // keyboard feel slow. Three runs on device with suggestions off, on, and
+        // switched off entirely said otherwise: the lag was unchanged, and it
+        // turned out to be the holds on the key's own highlight and balloon. So
+        // the scroll comes back. What does not come back is `ViewThatFits`,
+        // which was measured making it worse — it builds and measures every
+        // branch it might choose, mask and all.
         ScrollView(.horizontal) {
             row
         }
@@ -656,7 +716,11 @@ private struct CandidateRow: View {
 
     private var row: some View {
         HStack(spacing: 0) {
-            ForEach(Array(state.candidates.enumerated()), id: \.offset) { index, candidate in
+            // Identified by the word, not by the slot. On `\.offset` SwiftUI
+            // treats the candidate for a new prefix as the same chip with new
+            // text, and carries a press or a highlight over from the word
+            // before it.
+            ForEach(Array(state.candidates.enumerated()), id: \.element.identity) { index, candidate in
                 if index > 0 {
                     Divider()
                         .frame(height: 20)
@@ -674,7 +738,8 @@ private struct CandidateRow: View {
                         .foregroundStyle(state.isDark ? Color.white : Color.black)
                         .lineLimit(1)
                         // No truncation and no equal shares: each word takes
-                        // the width it needs and the row scrolls.
+                        // the width it needs, and the row scrolls. An ellipsis
+                        // in a suggestion is a word the reader has to guess at.
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 14)
                         .frame(minHeight: Self.rowHeight)
@@ -690,6 +755,7 @@ private struct CandidateRow: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(CandidateButtonStyle(isDark: state.isDark))
+                .accessibilityLabel(Self.accessibilityLabel(for: candidate))
             }
         }
     }
@@ -698,6 +764,16 @@ private struct CandidateRow: View {
     /// quotes a word it is about to take away or has just taken. The revert
     /// carries the undo arrow too: by the time it appears the replacement is
     /// already in the document, so the chip has to say "put it back".
+    /// The arrow and the quotation marks are there for the eye. "Left arrow
+    /// hook, quote, whats, quote" tells a VoiceOver user nothing at all.
+    private static func accessibilityLabel(for candidate: TypingCandidate) -> String {
+        switch candidate.kind {
+        case .literal: "Keep \(candidate.text)"
+        case .revert: "Put \(candidate.text) back"
+        default: candidate.text
+        }
+    }
+
     private static func title(for candidate: TypingCandidate) -> String {
         switch candidate.kind {
         case .literal: "\u{201C}\(candidate.text)\u{201D}"
@@ -771,7 +847,12 @@ private struct GlassButtonModifier: ViewModifier {
 /// envelope and this becomes a meter; keep it and it stays an ornament driven
 /// by real sound. Both are defensible. Silently drifting between them is not.
 struct LiveWaveformBars: View {
-    let levels: [Float]
+    @ObservedObject var state: MeterState
+    /// Recording is over: the bars keep their shape and stop reading levels.
+    /// Whether the recording is over. The bars stop moving with it, which they
+    /// do by themselves once no more levels arrive — this is what stops the
+    /// spring from animating the last arrival after the fact.
+    let isHeld: Bool
     let tint: Color
 
     private static let barCount = 15
@@ -781,20 +862,26 @@ struct LiveWaveformBars: View {
     private static let minHeight: CGFloat = 8
     private static let maxHeight: CGFloat = 46
 
-    init(levels: [Float], tint: Color) {
-        self.levels = levels
+    init(state: MeterState, isHeld: Bool, tint: Color) {
+        self.state = state
+        self.isHeld = isHeld
         self.tint = tint
     }
 
     var body: some View {
-        HStack(spacing: Self.barSpacing) {
-            ForEach(0..<Self.barCount, id: \.self) { index in
+        // Once, not once per bar. `derivedHeights` allocates, sines and powers
+        // its way along the whole row; asking each of the fifteen bars for its
+        // own height ran all of that fifteen times a frame, and once more for
+        // the animation to compare against.
+        let heights = derivedHeights
+        return HStack(spacing: Self.barSpacing) {
+            ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
                 RoundedRectangle(cornerRadius: Self.cornerRadius)
                     .fill(tint)
-                    .frame(width: Self.barWidth, height: height(for: index))
+                    .frame(width: Self.barWidth, height: height)
             }
         }
-        .animation(.spring(response: 0.18, dampingFraction: 0.75), value: derivedHeights)
+        .animation(isHeld ? nil : .spring(response: 0.18, dampingFraction: 0.75), value: heights)
     }
 
     private var derivedHeights: [CGFloat] {
@@ -805,7 +892,11 @@ struct LiveWaveformBars: View {
             let position = CGFloat(index) / CGFloat(max(Self.barCount - 1, 1))
             return 0.45 + 0.55 * sin(position * .pi)
         }
-        let recent = levels.suffix(Self.barCount)
+        // Held means the recording is over and the bars stop *reading* new
+        // levels — not that there are none. Handing this an empty array flattened
+        // the whole waveform to its minimum the instant somebody stopped
+        // speaking, which is the opposite of keeping the shape it ended on.
+        let recent = Array(state.levels.suffix(Self.barCount))
         let baseLevel: CGFloat = recent.isEmpty ? 0 : CGFloat(recent.reduce(0, +) / Float(recent.count))
 
         return (0..<Self.barCount).map { i in
@@ -820,9 +911,4 @@ struct LiveWaveformBars: View {
         }
     }
 
-    private func height(for index: Int) -> CGFloat {
-        let heights = derivedHeights
-        guard index < heights.count else { return Self.minHeight }
-        return heights[index]
-    }
 }

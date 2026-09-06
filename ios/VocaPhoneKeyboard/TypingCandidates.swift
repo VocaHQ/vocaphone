@@ -38,6 +38,13 @@ struct TypingCandidate: Equatable {
     /// emphasised chip that space does not apply is a lie the user only catches
     /// after losing a word.
     var isEmphasised = false
+
+    /// What makes this chip *this* chip on screen.
+    ///
+    /// The row is rebuilt on every keystroke, and identifying a chip by its
+    /// position means the suggestion for a new prefix inherits the identity —
+    /// and the running animation — of the word that stood there before it.
+    var identity: String { "\(kind)-\(text)" }
 }
 
 /// Everything the strip needs to draw itself for one keystroke.
