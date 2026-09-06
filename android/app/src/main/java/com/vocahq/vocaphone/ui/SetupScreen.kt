@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -162,7 +164,8 @@ fun SetupScreen(
                 .widthIn(max = AppContentMaxWidth)
                 .fillMaxWidth()
                 .verticalScroll(scrollState)
-                .padding(24.dp),
+                .padding(horizontal = 24.dp)
+                .padding(top = 24.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -287,14 +290,24 @@ fun SetupScreen(
             }
         }
 
-        Column(
-            modifier = Modifier
-                .widthIn(max = AppContentMaxWidth)
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        // A bar, not a continuation of the page. Without the divider and its own
+        // surface, the scroll view's clipped last line sat flush against this
+        // caption: on a short viewport the privacy paragraph was cut mid-word
+        // and the "0 of 4 requirements ready" line read as its final sentence.
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
         ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = AppContentMaxWidth)
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 16.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
             if (stage.isSatisfied(status) || stage == SetupPage.READY) {
                 PrimaryButton(
                     text = when {
@@ -317,6 +330,8 @@ fun SetupScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+                }
+            }
         }
     }
 
