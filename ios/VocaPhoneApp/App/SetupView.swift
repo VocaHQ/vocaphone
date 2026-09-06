@@ -17,6 +17,7 @@ struct SetupView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let mode: SetupViewMode
 
@@ -125,40 +126,78 @@ struct SetupView: View {
     // MARK: - First-run flow
 
     private var onboardingBody: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: VocaMetrics.grouping) {
-                if stage.showsProofProgress { progressHeader }
-
-                stageBody
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .id(stage)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                    ))
-
-                if stage != .complete {
-                    Label("Required once to use dictation", systemImage: "checkmark.shield")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("These setup steps are required once to use dictation.")
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: VocaMetrics.grouping) {
+                    Color.clear.frame(height: 0).id("pageTop")
+                    if stage.showsProofProgress { progressHeader }
+                    stageBody
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id(stage)
                 }
+                .padding(.horizontal, VocaMetrics.padding)
+                .padding(.vertical, VocaMetrics.grouping)
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, VocaMetrics.padding)
-            .padding(.vertical, VocaMetrics.grouping)
-            .frame(maxWidth: 620)
-            .frame(maxWidth: .infinity)
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: stage) { _, _ in proxy.scrollTo("pageTop", anchor: .top) }
         }
-        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let action = pageAction {
+                VStack(spacing: VocaMetrics.related) {
+                    VocaPrimaryButton(title: action.title, symbol: action.symbol, action: action.perform)
+                    if !dynamicTypeSize.isAccessibilitySize && (stage == .welcome || stage == .handoff) {
+                        Text("A few guided steps, then your first dictation.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(VocaMetrics.padding)
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
+                .background(Color.vocaCanvas)
+            }
+        }
+    }
+
+    /// Keep the next action in reach, including on small screens and at large text sizes.
+    private var pageAction: (title: String, symbol: String, perform: () -> Void)? {
+        switch stage {
+        case .welcome: ("Get started", "arrow.right", advance)
+        case .handoff: ("Set up dictation", "arrow.right", advance)
+        case .source where status.isSatisfied(.source): ("Continue", "arrow.right", advance)
+        case .microphone:
+            switch status.microphone {
+            case .granted: ("Continue", "arrow.right", advance)
+            case .undetermined: ("Allow microphone access", "mic.fill", coordinator.requestMicrophonePermission)
+            case .denied: ("Open vocaphone Settings", "gear", openSystemSettings)
+            }
+        case .keyboard where OnboardingPresentation.canAdvanceFromKeyboardEnablement(
+            status: status, returnedFromSettings: keyboardSettingsRoundTripStarted
+        ): ("Verify the keyboard", "arrow.right", advance)
+        case .keyboard: ("Open vocaphone Settings", "gear", openSystemSettings)
+        case .keyboardSwitch where status.isSatisfied(.keyboard): ("Try voice typing", "arrow.right", advance)
+        case .practice where hasCompletedKeyboardPractice: ("Continue", "arrow.right", advance)
+        case .complete where !status.isReadyToDictate:
+            ("Review setup", "arrow.right", {
+                stage = OnboardingPresentation.resumeStage(
+                    status: status, hasCompletedKeyboardPractice: hasCompletedKeyboardPractice
+                )
+            })
+        case .complete: ("Start using vocaphone", "arrow.right", finishSetup)
+        default: nil
+        }
     }
 
     private var progressHeader: some View {
         VStack(alignment: .leading, spacing: VocaMetrics.related) {
             HStack {
-                Label("Required setup", systemImage: "checkmark.shield")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Label(stage.progressTitle, systemImage: "checkmark.shield")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
                 Text("Step \(stage.requiredStepNumber ?? 1) of \(OnboardingStage.requiredStepCount)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -171,14 +210,6 @@ struct SetupView: View {
                 .accessibilityValue(
                     "Step \(stage.requiredStepNumber ?? 1) of \(OnboardingStage.requiredStepCount)"
                 )
-            HStack(spacing: 6) {
-                ForEach(1...OnboardingStage.requiredStepCount, id: \.self) { number in
-                    Capsule()
-                        .fill(number <= (stage.requiredStepNumber ?? 1) ? Color.brand : Color.vocaBorder)
-                        .frame(maxWidth: .infinity, minHeight: 5, maxHeight: 5)
-                }
-            }
-            .accessibilityHidden(true)
         }
         .padding(VocaMetrics.padding)
         .background(
@@ -208,27 +239,41 @@ struct SetupView: View {
         case .practice:
             practiceStage
         case .complete:
-            completionStage
+            if status.isReadyToDictate {
+                completionStage
+            } else {
+                OnboardingPage {
+                    Text("Let’s get you ready")
+                        .font(.title.weight(.bold))
+                    if let detail = status.attentionDetail {
+                        Text(detail)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("A setup requirement changed. Review it before you start dictating.")
+                        .font(.subheadline)
+                }
+            }
         }
     }
 
     private var welcomeStage: some View {
         OnboardingPage {
-            OnboardingWelcomeVisual(reduceMotion: reduceMotion)
-            Text("Dictate into any app")
+            if !dynamicTypeSize.isAccessibilitySize {
+                OnboardingWelcomeVisual(reduceMotion: reduceMotion)
+            }
+            Text("Your words.\nWithout the typing.")
                 .font(.largeTitle.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
             Text(
-                "Speak naturally, then place the finished text at your cursor with the vocaphone keyboard."
+                "Speak naturally. The vocaphone keyboard turns your voice into text, right where you’re typing."
             )
             .font(.body)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            OnboardingFactRow(symbol: "lock", text: "Choose on-device speech to text or your own gateway.")
+            OnboardingFactRow(symbol: "iphone", text: "Dictate offline after downloading a model.")
             OnboardingFactRow(symbol: "text.cursor", text: "Insert text directly where you are typing.")
-            OnboardingFactRow(symbol: "keyboard", text: "Keep a familiar keyboard for everyday typing.")
-
-            VocaPrimaryButton(title: "See how it works", symbol: "arrow.right", action: advance)
+            OnboardingFactRow(symbol: "lock", text: "On this iPhone, or on a gateway you run. You choose.")
         }
     }
 
@@ -253,8 +298,6 @@ struct SetupView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
-
-            VocaPrimaryButton(title: "Set up dictation", symbol: "arrow.right", action: advance)
         }
     }
 
@@ -266,7 +309,7 @@ struct SetupView: View {
                 .accessibilityHidden(true)
             Text("Choose where speech becomes text")
                 .font(.title.weight(.bold))
-            Text("Both routes are private by design. Choose the one you want to use first.")
+            Text("Use this iPhone for offline dictation, or connect a gateway you run. You can change this later in Settings.")
                 .font(.body)
                 .foregroundStyle(.secondary)
 
@@ -316,7 +359,6 @@ struct SetupView: View {
 
             if status.isSatisfied(.source) {
                 CompletionNotice("Speech-to-text is ready")
-                VocaPrimaryButton(title: "Continue", symbol: "arrow.right", action: advance)
             } else {
                 Text(status.detail(for: .source))
                     .font(.footnote)
@@ -332,10 +374,10 @@ struct SetupView: View {
                 .font(.system(size: 50, weight: .medium))
                 .foregroundStyle(status.microphone == .granted ? Color.brand : Color.vocaRecording)
                 .accessibilityHidden(true)
-            Text("Allow recording on this iPhone")
+            Text("Let vocaphone hear you")
                 .font(.title.weight(.bold))
             Text(
-                "vocaphone records in the app because iOS keyboards cannot access the microphone. Your selected route decides where the recording is processed."
+                "Allow microphone access to record your dictation. Recording happens in vocaphone, then your words return to the keyboard."
             )
             .font(.body)
             .foregroundStyle(.secondary)
@@ -344,13 +386,8 @@ struct SetupView: View {
             switch status.microphone {
             case .granted:
                 CompletionNotice("Microphone ready")
-                VocaPrimaryButton(title: "Continue", symbol: "arrow.right", action: advance)
             case .undetermined:
-                VocaPrimaryButton(
-                    title: "Allow microphone access",
-                    symbol: "mic.fill",
-                    action: coordinator.requestMicrophonePermission
-                )
+                OnboardingFactRow(symbol: "hand.raised", text: "You choose when to start, finish, or cancel a dictation.")
             case .denied:
                 VocaCard {
                     VStack(alignment: .leading, spacing: VocaMetrics.related) {
@@ -363,7 +400,6 @@ struct SetupView: View {
                         .foregroundStyle(.secondary)
                     }
                 }
-                VocaPrimaryButton(title: "Open vocaphone Settings", symbol: "gear", action: openSystemSettings)
             }
         }
     }
@@ -398,7 +434,22 @@ struct SetupView: View {
                 )
             }
 
-            VocaPrimaryButton(title: "Open vocaphone Settings", symbol: "gear", action: openSystemSettings)
+            DisclosureGroup("Why Full Access?") {
+                Text("Full Access lets the keyboard exchange dictation with vocaphone. The keyboard does not record audio or send your everyday typing to a server. On-device dictation stays on this iPhone; choosing your gateway sends recordings there.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, VocaMetrics.related)
+            }
+
+            if OnboardingPresentation.canAdvanceFromKeyboardEnablement(
+                status: status, returnedFromSettings: keyboardSettingsRoundTripStarted
+            ) {
+                Button("Open vocaphone Settings", action: openSystemSettings)
+                    .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
+                    .buttonStyle(.bordered)
+            }
+
             Button(action: copySettingsPath) {
                 Label(
                     hasCopiedSettingsPath ? "Settings path copied" : "Copy Settings path",
@@ -410,11 +461,6 @@ struct SetupView: View {
 
             if status.isSatisfied(.keyboard) {
                 CompletionNotice("Full Access is already verified")
-                VocaPrimaryButton(
-                    title: "Continue to keyboard switch",
-                    symbol: "arrow.right",
-                    action: advance
-                )
             } else if status.isKeyboardInstalled == true {
                 // Being in the keyboard list is observable; Full Access is not.
                 // Say only the part we actually checked — the next page is what
@@ -422,19 +468,13 @@ struct SetupView: View {
                 CompletionNotice("vocaphone is in your keyboard list")
                 VocaCard(padding: VocaMetrics.padding) {
                     Label(
-                        "Full Access cannot be checked from here. iOS confirms it only once vocaphone opens as the keyboard, which the next step walks you through.",
+                        "Next, open the keyboard here so vocaphone can verify Full Access.",
                         systemImage: "checkmark.shield"
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-
-                VocaPrimaryButton(
-                    title: "Continue to keyboard switch",
-                    symbol: "arrow.right",
-                    action: advance
-                )
             } else if status.isKeyboardInstalled == nil, keyboardSettingsRoundTripStarted {
                 // iOS did not publish the keyboard list, so there is nothing to
                 // check against. Blocking here would strand the user.
@@ -447,12 +487,6 @@ struct SetupView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-
-                VocaPrimaryButton(
-                    title: "Continue to keyboard switch",
-                    symbol: "arrow.right",
-                    action: advance
-                )
             } else {
                 Button(action: {}) {
                     Label("Add the keyboard to continue", systemImage: "lock.fill")
@@ -527,7 +561,6 @@ struct SetupView: View {
 
             if status.isSatisfied(.keyboard) {
                 CompletionNotice("vocaphone opened with Full Access")
-                VocaPrimaryButton(title: "Continue to test dictation", symbol: "arrow.right", action: advance)
             } else {
                 Label("Waiting for vocaphone to open", systemImage: "circle.dotted")
                     .font(.subheadline.weight(.semibold))
@@ -618,10 +651,6 @@ struct SetupView: View {
                 Color.vocaRecessedSurface,
                 in: RoundedRectangle(cornerRadius: VocaMetrics.cardRadius, style: .continuous)
             )
-
-            if hasCompletedKeyboardPractice {
-                VocaPrimaryButton(title: "Continue", symbol: "arrow.right", action: advance)
-            }
         }
     }
 
@@ -645,7 +674,7 @@ struct SetupView: View {
 
             VocaCard(padding: VocaMetrics.padding) {
                 VStack(alignment: .leading, spacing: VocaMetrics.related) {
-                    Text("In any app")
+                    Text("Where you type")
                         .font(.headline)
                     OnboardingFactRow(symbol: "globe", text: "Choose vocaphone with the globe key.")
                     OnboardingFactRow(symbol: "mic.fill", text: "Tap Dictate and speak.")
@@ -657,7 +686,6 @@ struct SetupView: View {
             }
 
             usageReportingSection
-            VocaPrimaryButton(title: "Start using vocaphone", symbol: "arrow.right", action: finishSetup)
         }
     }
 
@@ -798,7 +826,7 @@ struct SetupView: View {
         if stage == .keyboard {
             keyboardSettingsRoundTripStarted = false
         }
-        withAnimation(.snappy(duration: 0.32)) { stage = next }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { stage = next }
         UIAccessibility.post(notification: .screenChanged, argument: nil)
     }
 

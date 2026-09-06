@@ -33,6 +33,18 @@ enum OnboardingStage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var progressTitle: String {
+        switch self {
+        case .welcome, .handoff: "Getting started"
+        case .source: "Speech to text"
+        case .microphone: "Microphone"
+        case .keyboard: "Add your keyboard"
+        case .keyboardSwitch: "Verify your keyboard"
+        case .practice: "Try it out"
+        case .complete: "Ready to dictate"
+        }
+    }
+
     static let requiredStepCount = 5
 }
 
