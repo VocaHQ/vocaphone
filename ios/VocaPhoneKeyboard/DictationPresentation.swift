@@ -154,6 +154,37 @@ struct DictationContext: Equatable {
 }
 
 extension DictationBarModel {
+    /// The single line the dictation surface shows in the middle, or `nil` when
+    /// the state has nothing to explain.
+    ///
+    /// Deliberately shorter than the card's copy above, and deliberately not a
+    /// concatenation of it. The card is two lines inside an app; this is one
+    /// line over somebody else's text field, and the fix is already on the
+    /// button beside it — "retry after checking the selected model" is an
+    /// instruction for a screen the reader is not on.
+    ///
+    /// What survives the cut is the fact that changes what the person does
+    /// next: the recording is still there, so they can retry instead of saying
+    /// it all again.
+    static func surfaceLine(for state: SessionState) -> String? {
+        switch state {
+        case .serverUnavailable:
+            "Can't reach your gateway. Recording kept."
+        case .uploadFailedRecoverable:
+            "Upload failed. Recording kept."
+        case .transcriptionFailedRecoverable:
+            "Couldn't transcribe. Recording kept."
+        case .transcriptionFailedPermanent:
+            "Couldn't transcribe this recording."
+        case .permissionDenied:
+            "vocaphone needs microphone access."
+        case .targetContextChanged:
+            "Tap the field you were typing in."
+        default:
+            nil
+        }
+    }
+
     static func make(_ context: DictationContext) -> DictationBarModel {
         guard context.hasFullAccess else { return locked }
         switch context.state {
@@ -272,7 +303,7 @@ extension DictationBarModel {
         pulse: .listening,
         primary: DictationButton(
             title: "Finish",
-            symbol: "stop.fill",
+            symbol: "checkmark",
             action: .finish,
             hint: "Stops recording and starts transcription."
         ),

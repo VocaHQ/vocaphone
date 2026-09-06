@@ -84,14 +84,27 @@ enum WritingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
         TranscriptStyler.apply(Self.exampleSource, style: self)
     }
 
+    /// Everyday objects rather than typographic notation.
+    ///
+    /// The set this replaces described the *genre* of the text — a document, a
+    /// wand, two speech bubbles — while what actually separates these styles is
+    /// punctuation and capitalisation. Nobody tells `textformat` from
+    /// `textformat.abc` at 17 pt, and nobody should have to: an eraser, a
+    /// briefcase and sunglasses are read without being decoded.
     var symbolName: String {
         switch self {
-        case .raw: "doc.plaintext"
-        case .clean: "wand.and.stars"
-        case .formal: "textformat"
-        case .casual: "text.bubble"
-        case .veryCasual: "textformat.abc"
-        case .excited: "sparkles"
+        // What was said, unedited.
+        case .raw: "waveform"
+        // Tidied: spacing, a closing full stop, stray capitals rubbed out.
+        case .clean: "eraser"
+        // Sentence case and a full stop — the way work writing looks.
+        case .formal: "briefcase"
+        // A line in a conversation, which does not end in a full stop.
+        case .casual: "bubble.left"
+        // Lowercase throughout, clauses run together.
+        case .veryCasual: "sunglasses"
+        // Everything ends in an exclamation mark.
+        case .excited: "party.popper"
         }
     }
 }
@@ -574,6 +587,49 @@ enum KeyboardPreferences {
         set { defaults?.set(newValue, forKey: repairSpeechKey) }
     }
 
+    static let surfaceAnimationResponseKey = "surfaceAnimationResponse2"
+    static let surfaceAnimationDampingKey = "surfaceAnimationDamping2"
+
+    /// The spring the dictation surface changes phase with.
+    ///
+    /// Stored rather than hardcoded so the keyboard lab can tune it against a
+    /// thumb: the lab writes here, the extension reads here, and the value
+    /// survives leaving the screen. Nothing in a shipping build writes these —
+    /// the lab is the only writer and it is debug-only — so the defaults below
+    /// are what every user gets.
+    static var surfaceAnimationResponse: Double {
+        get {
+            let stored = defaults?.double(forKey: surfaceAnimationResponseKey) ?? 0
+            return stored > 0 ? stored : 0.15
+        }
+        set { defaults?.set(newValue, forKey: surfaceAnimationResponseKey) }
+    }
+
+    static var surfaceAnimationDamping: Double {
+        get {
+            let stored = defaults?.double(forKey: surfaceAnimationDampingKey) ?? 0
+            return stored > 0 ? stored : 1.0
+        }
+        set { defaults?.set(newValue, forKey: surfaceAnimationDampingKey) }
+    }
+
+    static let lastShownWritingStyleKey = "lastShownWritingStyle"
+
+    /// The style the dictation surface was showing when it last appeared.
+    ///
+    /// The one signal that iOS's cached picture of the keyboard is out of date:
+    /// the style changed while the keyboard was up, so the snapshot taken
+    /// before that change still carries the previous icon.
+    static var lastShownWritingStyle: WritingStyle? {
+        get {
+            guard let raw = defaults?.string(forKey: lastShownWritingStyleKey) else { return nil }
+            return WritingStyle(rawValue: raw)
+        }
+        set { defaults?.set(newValue?.rawValue, forKey: lastShownWritingStyleKey) }
+    }
+
+    static let keyPreviewAnimatesKey = "keyPreviewAnimates"
+
     /// Whether the magnified key above a press grows into place, or is simply
     /// there.
     ///
@@ -585,6 +641,8 @@ enum KeyboardPreferences {
         get { defaults?.object(forKey: keyPreviewAnimatesKey) as? Bool ?? false }
         set { defaults?.set(newValue, forKey: keyPreviewAnimatesKey) }
     }
+
+    static let keyReleaseFadeKey = "keyReleaseFade"
 
     /// Whether a character key fades back to its resting colour when the finger
     /// leaves, or snaps.
@@ -598,8 +656,8 @@ enum KeyboardPreferences {
         set { defaults?.set(newValue, forKey: keyReleaseFadeKey) }
     }
 
-    static let keyPreviewAnimatesKey = "keyPreviewAnimates"
-    static let keyReleaseFadeKey = "keyReleaseFade"
+    static let typingHapticStyleKey = "typingHapticStyle"
+    static let typingHapticIntensityKey = "typingHapticIntensity"
 
     /// How hard a key hits back.
     ///
@@ -624,9 +682,6 @@ enum KeyboardPreferences {
         }
         set { defaults?.set(min(max(newValue, 0), 1), forKey: typingHapticIntensityKey) }
     }
-
-    static let typingHapticStyleKey = "typingHapticStyle"
-    static let typingHapticIntensityKey = "typingHapticIntensity"
 
     static var writingStyle: WritingStyle {
         get {
