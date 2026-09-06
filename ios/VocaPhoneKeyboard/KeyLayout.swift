@@ -172,7 +172,7 @@ enum KeyLayout {
                 KeyRow(keys: [
                     KeySpec(cap: .plane(.symbols), width: .fill, style: .function)
                 ]
-                    + map(".,?!'")
+                    + fillMap(".,?!'")
                     + [KeySpec(cap: .delete, width: .fill, style: .function)]),
                 bottomRow(
                     planeSwitch: .letters,
@@ -188,7 +188,7 @@ enum KeyLayout {
                 KeyRow(keys: [
                     KeySpec(cap: .plane(.numbers), width: .fill, style: .function)
                 ]
-                    + map(".,?!'")
+                    + fillMap(".,?!'")
                     + [KeySpec(cap: .delete, width: .fill, style: .function)]),
                 bottomRow(
                     planeSwitch: .letters,
@@ -379,6 +379,19 @@ enum KeyLayout {
         characters.map { KeySpec.letter(String($0)) }
     }
 
+    /// Character keys that share the row's slack instead of standing at one
+    /// letter column each.
+    ///
+    /// The punctuation row of the numbers and symbols planes has seven keys
+    /// against the ten columns above it. Leaving the five characters at a
+    /// column apiece handed all three spare columns to `#+=` and Delete, which
+    /// came out at two and a half columns each — two slabs on either side of
+    /// five narrow punctuation keys. The system divides that row evenly, and
+    /// the keys people actually reach for there are the punctuation.
+    private static func fillMap(_ characters: String) -> [KeySpec] {
+        characters.map { KeySpec(cap: .character(String($0)), width: .fill) }
+    }
+
     /// Title shown on the plane-switch key, mirroring the system keyboard.
     static func planeTitle(_ plane: KeyPlane) -> String {
         switch plane {
@@ -412,6 +425,14 @@ struct KeyboardMetrics: Equatable {
     /// Regular-width iPads and landscape phones are resolved from their traits
     /// instead: a regular/regular canvas has room the preference was never
     /// scaled for, and a compact-height phone has none to give.
+    /// The glyph sizes and radii are read off the system keyboard rather than
+    /// derived: a letter is roughly 0.58 of the key's height and the corner is
+    /// roughly 0.23 of it. The keyboard this replaced sat at 0.51 and 0.14,
+    /// which is what "small letters on square keys" measures out to.
+    ///
+    /// Note that the system does *not* scale its key glyphs with Dynamic Type.
+    /// ``KeyFont/scaled(_:maximum:weight:)`` still does, within a bound, which
+    /// is a deliberate difference and the reason the maximum exists.
     static func resolved(
         for traits: UITraitCollection,
         preference: KeyboardHeightPreference = KeyboardPreferences.keyboardHeight
@@ -422,9 +443,9 @@ struct KeyboardMetrics: Equatable {
                 rowGap: 12,
                 columnGap: 11,
                 sideInset: 8,
-                letterFontSize: 24,
-                functionFontSize: 17,
-                cornerRadius: 7
+                letterFontSize: 25,
+                functionFontSize: 18,
+                cornerRadius: 10
             )
         }
         if traits.verticalSizeClass == .compact {
@@ -435,9 +456,9 @@ struct KeyboardMetrics: Equatable {
                 rowGap: 6,
                 columnGap: 5,
                 sideInset: 3,
-                letterFontSize: 17,
-                functionFontSize: 13,
-                cornerRadius: 5
+                letterFontSize: 18,
+                functionFontSize: 14,
+                cornerRadius: 7
             )
         }
         switch preference {
@@ -447,9 +468,9 @@ struct KeyboardMetrics: Equatable {
                 rowGap: 9,
                 columnGap: 6,
                 sideInset: 2 / 3,
-                letterFontSize: 21,
-                functionFontSize: 15,
-                cornerRadius: 6
+                letterFontSize: 23,
+                functionFontSize: 16,
+                cornerRadius: 9
             )
         case .standard:
             return KeyboardMetrics(
@@ -457,9 +478,9 @@ struct KeyboardMetrics: Equatable {
                 rowGap: 11,
                 columnGap: 6,
                 sideInset: 2 / 3,
-                letterFontSize: 22,
-                functionFontSize: 16,
-                cornerRadius: 6
+                letterFontSize: 24,
+                functionFontSize: 17,
+                cornerRadius: 10
             )
         case .tall:
             return KeyboardMetrics(
@@ -467,9 +488,13 @@ struct KeyboardMetrics: Equatable {
                 rowGap: 12,
                 columnGap: 6,
                 sideInset: 2 / 3,
-                letterFontSize: 23,
-                functionFontSize: 16,
-                cornerRadius: 7
+                // 0.55 of the key, like the other two heights. It was 0.51
+                // here — the tall keyboard kept the old proportion when the
+                // others were corrected, which is the sort of thing nobody
+                // notices until the ratio is written down as a test.
+                letterFontSize: 27,
+                functionFontSize: 17,
+                cornerRadius: 11
             )
         }
     }
@@ -492,6 +517,19 @@ struct KeyboardPalette: Equatable {
         return false
     }
 
+    /// Whether the extension may leave the surface behind the keys unpainted
+    /// and let `UIInputView`'s keyboard style draw it.
+    ///
+    /// ``background`` below is this project's guess at the colour iOS puts
+    /// behind a keyboard, and a guess is exactly what makes a keyboard read as
+    /// somebody else's product: it is one grey nothing else on the phone uses.
+    /// The input view the extension is handed already draws the real thing, in
+    /// every host, both appearances, and the next iOS as well.
+    ///
+    /// ``background`` stays for the surfaces that have no input view to borrow
+    /// it from — the settings preview and the SwiftUI canvases.
+    var usesSystemKeyboardBackdrop: Bool { usesUnifiedSystemKeyFill }
+
     /// Neutral charcoal in dark, neutral grey in light. Both were previously
     /// tinted toward blue, which is the drift the design standard names.
     var background: UIColor {
@@ -511,12 +549,38 @@ struct KeyboardPalette: Equatable {
 
     /// The brightest key in either appearance, because a character key is what
     /// the eye should land on first.
+    ///
+    /// In dark this is *translucent*, and that is the whole point. The 61/255
+    /// this replaces was read off a screenshot of the system keyboard sitting
+    /// on its own near-black backdrop — a true pixel, but a composite one. The
+    /// system draws a light film over whatever is behind the keyboard, so on
+    /// Spotlight or over a bright wallpaper its keys lift and stay legible,
+    /// while an opaque 61/255 stays flat black wherever it is put. That is the
+    /// difference between this keyboard and the system one on a home screen.
+    ///
+    /// The alpha is chosen to reproduce the measured pixel exactly against the
+    /// backdrop it was measured on: 23 + (255 − 23) × 0.164 ≈ 61.
     var standardKey: UIColor {
         if usesUnifiedSystemKeyFill {
-            return isDark ? UIColor(white: 61 / 255, alpha: 1) : .white
+            // Declared in RGB rather than `UIColor(white:alpha:)`: the
+            // contrast maths reads colours through `getRed`, which reports
+            // nothing for a translucent monochrome colour and silently scores
+            // it as black. Everything else in this palette is RGB for the same
+            // reason.
+            return isDark ? UIColor(red: 1, green: 1, blue: 1, alpha: 0.164) : .white
         }
         return isDark ? UIColor(white: 0.29, alpha: 1) : .white
     }
+
+    /// The fill for a surface that floats *above* the keys — the magnified
+    /// preview balloon and the accent popover.
+    ///
+    /// Flattened, not filmed. ``standardKey`` is translucent in dark so a key
+    /// can pick up whatever the keyboard is standing on, but a balloon lifted
+    /// over the row is standing on the keys themselves: left translucent, it
+    /// shows the letters it exists to cover, which is what a magnified preview
+    /// is for.
+    var raisedKey: UIColor { standardKey.compositedOver(background) }
 
     /// Visibly a step down from ``standardKey``, and neutral — a muddy or blue
     /// function key is what made the old palette read as someone else's product.
@@ -606,7 +670,12 @@ private extension UIColor {
             red: red + (otherRed - red) * mix,
             green: green + (otherGreen - green) * mix,
             blue: blue + (otherBlue - blue) * mix,
-            alpha: 1
+            // Alpha mixes with everything else. Pinning it to 1 was safe while
+            // every fill here was opaque; against the translucent dark key it
+            // turned a press into solid white — with white labels on it. The
+            // accent this was written for still comes out solid, because its
+            // own alpha is 1 and mixing 1 with 1 is 1.
+            alpha: alpha + (otherAlpha - alpha) * mix
         )
     }
 }

@@ -28,10 +28,60 @@ final class KeyView: UIView {
     /// layout because only the grid knows which keys sit against an edge.
     var hitRect: CGRect = .zero
 
+    /// How long a press stays visible even when the finger has already gone.
+    ///
+    /// A tap can be shorter than a frame. On a 60 Hz panel that is 16.6 ms, and
+    /// a keystroke that goes down and up inside one frame is composited exactly
+    /// once — with the key already back at rest. The letter is typed and the
+    /// key never looked pressed, which is what "some keys don't respond" turns
+    /// out to be: the input is fine and the feedback is missing.
+    ///
+    /// Four frames is enough to be seen and short enough to be gone before the
+    /// next letter needs the same key.
+    static let minimumHighlightSeconds: TimeInterval = 0.07
+
+    /// How long the release has to wait so the press was visible. Pure, so the
+    /// rule can be tested without a screen.
+    static func releaseDelay(shownFor seconds: TimeInterval) -> TimeInterval {
+        max(0, minimumHighlightSeconds - seconds)
+    }
+
+    private var highlightedAt: CFTimeInterval = 0
+    private var pendingRelease: DispatchWorkItem?
+
     var isHighlighted = false {
         didSet {
             guard isHighlighted != oldValue else { return }
-            applyColors(animated: !isHighlighted)
+            // A press that arrives during the hold cancels it: the key is being
+            // used again, and it must look pressed now rather than finish
+            // showing the last one.
+            pendingRelease?.cancel()
+            pendingRelease = nil
+            if isHighlighted {
+                highlightedAt = CACurrentMediaTime()
+                applyColors()
+                return
+            }
+            let delay = Self.releaseDelay(shownFor: CACurrentMediaTime() - highlightedAt)
+            if delay > 0 {
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self, !isHighlighted else { return }
+                    applyColors(animated: KeyboardPreferences.keyReleaseFade)
+                }
+                pendingRelease = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+                return
+            }
+            // Only a character key settles back. Delete, Shift and the plane
+            // keys drop their highlight the instant the finger leaves, which is
+            // what the system does: a held Delete lifts to a key that is
+            // already grey again, where a fade of even a tenth of a second
+            // reads as the key sticking to the thumb.
+            applyColors(
+                animated: !isHighlighted
+                    && spec.cap.isCharacter
+                    && KeyboardPreferences.keyReleaseFade
+            )
         }
     }
 
@@ -62,10 +112,7 @@ final class KeyView: UIView {
         super.init(frame: .zero)
 
         layer.cornerCurve = .continuous
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.16
-        layer.shadowRadius = 0.75
-        layer.shadowOffset = CGSize(width: 0, height: 1.25)
+        applyShadow()
 
         titleLabel.textAlignment = .center
         titleLabel.adjustsFontSizeToFitWidth = true
@@ -82,9 +129,6 @@ final class KeyView: UIView {
         // must not be somewhere VoiceOver can land either.
         isAccessibilityElement = spec.cap.isInteractive
         accessibilityTraits = .keyboardKey
-        if !spec.cap.isInteractive {
-            layer.shadowOpacity = 0
-        }
         refresh()
     }
 
@@ -100,6 +144,8 @@ final class KeyView: UIView {
         layer.cornerRadius = metrics.cornerRadius
         // Without an explicit path every key forces an offscreen pass to derive
         // its shadow, which is expensive when thirty of them redraw at once.
+        // Nothing to derive when nothing is drawn.
+        guard layer.shadowOpacity > 0 else { return }
         layer.shadowPath = UIBezierPath(
             roundedRect: bounds,
             cornerRadius: metrics.cornerRadius
@@ -278,6 +324,24 @@ final class KeyView: UIView {
         return .standard
     }
 
+    /// The drop shadow under a key.
+    ///
+    /// 16% black at a 0.75pt radius, one point down, is a hard dark line under
+    /// every key — the contact shadow of a keyboard nobody has drawn this way
+    /// in years, thirty of them at once. Where the keys carry the system's own
+    /// fill against the system's own backdrop, that separation is already
+    /// there, and this draws nothing.
+    private func applyShadow() {
+        guard !palette.usesSystemKeyboardBackdrop, spec.cap.isInteractive else {
+            layer.shadowOpacity = 0
+            return
+        }
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.16
+        layer.shadowRadius = 0.75
+        layer.shadowOffset = CGSize(width: 0, height: 1.25)
+    }
+
     private func applyColors(animated: Bool = false) {
         let style = renderedStyle
         let background = isHighlighted
@@ -334,7 +398,7 @@ final class KeyPreviewView: UIView {
         // The shape carries the fill and the shadow; the view itself must not
         // paint a rectangle behind it.
         backgroundColor = .clear
-        shape.fillColor = palette.standardKey.cgColor
+        shape.fillColor = palette.raisedKey.cgColor
         shape.shadowColor = UIColor.black.cgColor
         shape.shadowOpacity = 0.22
         shape.shadowRadius = 5

@@ -600,6 +600,22 @@ final class KeyGridView: UIView {
         }
     }
 
+    /// Does nothing, and must exist.
+    ///
+    /// UIKit declines to recognise a touch that lands on a fully transparent
+    /// pixel — not merely declines to route it, but never reports it at all: no
+    /// hit test, no event, no gesture. Letting the system draw the backdrop, as
+    /// this commit does, is what makes that reachable here: the keys are
+    /// painted and the gutters between them are not, so a finger landing in a
+    /// gutter simply vanished. Typed fast, roughly one keystroke in twenty went
+    /// missing with no trace of a touch anywhere in the process.
+    ///
+    /// Implementing `draw(_:)` — even emptily — opts the view out of that
+    /// optimisation. The trick is not mine: it is in `ForwardingView.swift` of
+    /// Archagon's open reimplementation of the system keyboard, carrying the
+    /// same explanation, and it has been there for a decade.
+    override func draw(_ rect: CGRect) {}
+
     // MARK: - Touch tracking
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -609,7 +625,9 @@ final class KeyGridView: UIView {
         for touch in touches.sorted(by: { $0.timestamp < $1.timestamp }) {
             let point = touch.location(in: self)
             guard let index = keyIndex(at: point, characterOnly: false)
-            else { continue }
+            else {
+                continue
+            }
             let key = keyViews[index]
             // A dimmed Return takes no touch at all — not the highlight and not
             // the click, both of which would promise something it will not do.
@@ -1205,6 +1223,23 @@ final class KeyGridView: UIView {
         key.isHighlighted = false
     }
 
+#if DEBUG
+    /// Shows a key's preview with no touch behind it, so the balloon can be
+    /// rendered and looked at without installing the keyboard on a device.
+    ///
+    /// The throwaway `TrackedTouch` is deliberately not added to `tracked`: it
+    /// carries no real `UITouch`, and live touch tracking must never see one.
+    /// `showPreview` only reads the item, and the balloon it dequeues is a
+    /// subview of the grid, so it survives for the render either way. Its
+    /// `keyIndex` is deliberately out of range for the same reason: nothing
+    /// will ever ask the hit map to re-target it.
+    func previewKeyForRendering(_ key: KeyView) {
+        showPreview(
+            for: TrackedTouch(touch: UITouch(), key: key, keyIndex: -1, initialPoint: .zero)
+        )
+    }
+#endif
+
     // MARK: - Timers
 
     /// One-shot timer on the *common* run loop modes.
@@ -1339,25 +1374,8 @@ final class KeyGridView: UIView {
         // Only the first appearance grows. Sliding from one key to the next
         // moves the same balloon, and re-animating it there would be the glyph
         // pulsing under a finger that is simply correcting its aim.
-        if isNew { preview.appear(animated: true) }
+        if isNew { preview.appear(animated: KeyboardPreferences.keyPreviewAnimates) }
     }
-
-#if DEBUG
-    /// Shows a key's preview with no touch behind it, so the balloon can be
-    /// rendered and looked at without installing the keyboard on a device.
-    ///
-    /// The throwaway `TrackedTouch` is deliberately not added to `tracked`: it
-    /// carries no real `UITouch`, and live touch tracking must never see one.
-    /// `showPreview` only reads the item, and the balloon it dequeues is a
-    /// subview of the grid, so it survives for the render either way. Its
-    /// `keyIndex` is deliberately out of range for the same reason: nothing
-    /// will ever ask the hit map to re-target it.
-    func previewKeyForRendering(_ key: KeyView) {
-        showPreview(
-            for: TrackedTouch(touch: UITouch(), key: key, keyIndex: -1, initialPoint: .zero)
-        )
-    }
-#endif
 
     /// Reused rather than allocated per touch; a fast typist would otherwise
     /// create and discard a view for every keystroke.
@@ -1380,7 +1398,9 @@ final class KeyGridView: UIView {
     /// the line.
     private func recycle(_ preview: KeyPreviewView?) {
         guard let preview else { return }
-        preview.disappear(animated: metrics.showsPreview) { [weak self, weak preview] in
+        preview.disappear(
+            animated: metrics.showsPreview && KeyboardPreferences.keyPreviewAnimates
+        ) { [weak self, weak preview] in
             guard let self, let preview else { return }
             // Two covers two-thumb typing; holding more would just retain views.
             guard previewPool.count < 2, preview.superview === self else {

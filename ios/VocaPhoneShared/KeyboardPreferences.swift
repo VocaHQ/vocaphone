@@ -540,6 +540,33 @@ enum KeyboardPreferences {
         set { defaults?.set(newValue, forKey: repairSpeechKey) }
     }
 
+    /// Whether the magnified key above a press grows into place, or is simply
+    /// there.
+    ///
+    /// The balloon scales up over about a tenth of a second and back down on
+    /// release. That is the animation a fast typist has several of in flight at
+    /// once, and it is the one thing on the press path that is not instant:
+    /// the touch handler itself measures under a millisecond.
+    static var keyPreviewAnimates: Bool {
+        get { defaults?.object(forKey: keyPreviewAnimatesKey) as? Bool ?? false }
+        set { defaults?.set(newValue, forKey: keyPreviewAnimatesKey) }
+    }
+
+    /// Whether a character key fades back to its resting colour when the finger
+    /// leaves, or snaps.
+    ///
+    /// A switch rather than a constant because it is a suspect: every release
+    /// starts a tenth-of-a-second animation, and a fast typist has several of
+    /// them in flight at once. Whether that is what makes speed feel heavy is a
+    /// question for a thumb, not for an argument.
+    static var keyReleaseFade: Bool {
+        get { defaults?.object(forKey: keyReleaseFadeKey) as? Bool ?? false }
+        set { defaults?.set(newValue, forKey: keyReleaseFadeKey) }
+    }
+
+    static let keyPreviewAnimatesKey = "keyPreviewAnimates"
+    static let keyReleaseFadeKey = "keyReleaseFade"
+
     static var writingStyle: WritingStyle {
         get {
             guard let rawValue = defaults?.string(forKey: writingStyleKey),
