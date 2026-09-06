@@ -12,9 +12,7 @@ protocol KeyboardFeedbackProviding: AnyObject {
     func swipeCommitted()
 }
 
-/// The semantic feedback a keyboard interaction may produce. Keeping this as
-/// data lets tests prove that a cancelled touch cannot buzz or click, without
-/// pretending the simulator has a Taptic Engine.
+/// The `UIKit` tap each named style plays.
 extension TypingHapticStyle {
     /// Kept here rather than beside the enum: `VocaPhoneShared` is compiled
     /// into the Live Activity too, and that target has no UIKit.
@@ -29,6 +27,9 @@ extension TypingHapticStyle {
     }
 }
 
+/// The semantic feedback a keyboard interaction may produce. Keeping this as
+/// data lets tests prove that a cancelled touch cannot buzz or click, without
+/// pretending the simulator has a Taptic Engine.
 enum KeyboardFeedbackEvent: Equatable {
     case inputClick
     case typingHaptic
@@ -97,10 +98,8 @@ enum KeyboardFeedbackPolicy {
 /// is not a haptic, must not be disabled by VocaPhone's optional tactile
 /// preference, and is played on touch-down because that is when the system
 /// keyboard plays it. Custom haptics are deliberately opt-in and wait for the
-/// interaction to commit. Typing is played at full strength on the crispest
-/// style, because a key is a hard, short click and anything softer reads as
-/// weaker than every other keyboard on the phone. The rarer events vary against
-/// that reference rather than sitting below it.
+/// interaction to commit. The rarer events vary against typing's tap rather
+/// than sitting below it.
 @MainActor
 final class KeyboardHaptics: KeyboardFeedbackProviding {
     static let shared = KeyboardHaptics()
@@ -121,7 +120,7 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
     /// right display, which an extension cannot be assumed to infer on its own.
     private weak var host: UIView?
     private var keyTapGenerator: UIImpactFeedbackGenerator?
-    private var keyTapStyle: UIImpactFeedbackGenerator.FeedbackStyle = .rigid
+    private var keyTapStyle: UIImpactFeedbackGenerator.FeedbackStyle = .soft
     private var actionGenerator: UIImpactFeedbackGenerator?
     private var selectionGenerator: UISelectionFeedbackGenerator?
 
@@ -240,12 +239,17 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
             case .inputClick:
                 UIDevice.current.playInputClick()
             case .typingHaptic:
-                // `.rigid` rather than `.light`: a key is a hard, short click,
-                // and `.light` is the softest and most diffuse of the styles —
-                // it reads as a nudge where the system keyboard reads as a
-                // press. Full intensity because a third of the engine's power
-                // is exactly what made this feel weaker than every other
-                // keyboard on the phone.
+                // `.soft` at 0.72, settled by feel on a device rather than by
+                // argument. The reasoning that used to sit here — that a key is
+                // a hard click, so only `.rigid` at full power could avoid
+                // reading as weaker than every other keyboard on the phone —
+                // turned out to be wrong in the hand: at full power the tap
+                // buzzes rather than clicks, and stops being a keystroke.
+                //
+                // Style and strength are both preferences, so this is a default
+                // and not a verdict. The keyboard lab drives them from two
+                // sliders precisely because how a tap feels is not a number
+                // anybody picks correctly by reasoning about it.
                 let generator = keyTapImpact()
                 generator.impactOccurred(intensity: KeyboardPreferences.typingHapticIntensity)
                 generator.prepare()

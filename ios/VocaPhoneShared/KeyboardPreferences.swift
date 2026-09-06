@@ -1,8 +1,5 @@
 import Foundation
 
-/// Presentation only. No style adds, removes or substitutes a word, and
-/// numbers, times, addresses and contractions are always left as the model
-/// transcribed them.
 /// The five taps `UIImpactFeedbackGenerator` can play, named for the hand
 /// rather than for the API: they differ in how hard and how sharp they are.
 enum TypingHapticStyle: String, CaseIterable, Identifiable, Sendable {
@@ -37,6 +34,9 @@ enum TypingHapticStyle: String, CaseIterable, Identifiable, Sendable {
 
 }
 
+/// Presentation only. No style adds, removes or substitutes a word, and
+/// numbers, times, addresses and contractions are always left as the model
+/// transcribed them.
 enum WritingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     case raw
     case clean
@@ -678,7 +678,7 @@ enum KeyboardPreferences {
     static var typingHapticIntensity: Double {
         get {
             let stored = defaults?.double(forKey: typingHapticIntensityKey) ?? 0
-            return stored > 0 ? min(stored, 1) : 0.68
+            return stored > 0 ? min(stored, 1) : 0.72
         }
         set { defaults?.set(min(max(newValue, 0), 1), forKey: typingHapticIntensityKey) }
     }
