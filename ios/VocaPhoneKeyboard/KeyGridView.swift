@@ -13,6 +13,17 @@ enum KeyboardOutput {
     /// move by *characters*: how many characters a line is worth is a question
     /// about the document, and only the controller can see it.
     case moveCursorLine(Int)
+    /// The space bar has become a trackpad, and has stopped being one.
+    ///
+    /// Split out because the expensive part of a cursor step was never the
+    /// step. It was the two hops into the host process for the document, and
+    /// the pass over the dictionary, that used to follow every one of them —
+    /// at up to a hundred and twenty steps a second. Nothing but this keyboard
+    /// is moving the cursor while the finger is down, so the controller reads
+    /// the document once here, counts against its own tally, and reconciles
+    /// when the finger lifts.
+    case beginCursorDrag
+    case endCursorDrag
     /// A traced word and the alternates that lost to it, for the strip.
     case swipeWord(String, alternates: [String])
     /// Hold the plane key to reach the emoji panel.
@@ -25,10 +36,39 @@ enum KeyboardOutput {
     case emojiPanel
     /// Carries the globe key itself so the keyboard picker can anchor to it.
     case nextInputMode(UIView, UIEvent?)
+    /// Step to the next enabled layout, forwards or back. The grid knows which
+    /// layout it is drawing but not which ones exist, so the controller
+    /// resolves it and hands the answer back.
+    case nextLayout(forward: Bool)
 }
 
+/// The space bar's cursor trackpad, as a rate rather than a ruler.
+///
+/// This used to quantise the *absolute* translation: one character per 10pt
+/// from wherever the finger landed. That reads well and behaves badly, in
+/// three separate ways. A fixed rate puts the far end of a seventy-character
+/// line off the glass, so reaching it costs a lift and another third of a
+/// second of holding. A boundary at exactly 10.0pt flips back and forth under
+/// a finger that is merely resting, because a resting finger still moves, and
+/// the cursor jitters while nobody is asking it to. And an origin fixed at
+/// touch-down cannot be corrected once the gesture is already under way.
+///
+/// So: take each frame's *increment*, convert it to a fraction of a character
+/// at a rate set by how fast the finger is going, and emit whole characters as
+/// they accumulate. Tremor below one character's worth never emits anything,
+/// which is the hysteresis; a flick crosses a line while a crawl still places
+/// the cursor between two specific letters.
 enum CursorTrackpad {
-    static let pointsPerCharacter: CGFloat = 10
+    /// Travel per character when the finger is barely moving.
+    static let slowPointsPerCharacter: CGFloat = 14
+    /// ...and when it is thrown across the line. Much below this the cursor
+    /// outruns the eye and lands by luck rather than by aim.
+    static let fastPointsPerCharacter: CGFloat = 4
+    /// The finger speeds those two rates belong to, in points per second.
+    /// Between them the rate is interpolated; outside, it is clamped.
+    static let slowSpeed: CGFloat = 90
+    static let fastSpeed: CGFloat = 1400
+
     /// How far the finger travels for one line.
     ///
     /// Deliberately more than twice the horizontal step. The gesture is mostly
@@ -37,12 +77,13 @@ enum CursorTrackpad {
     /// line — which loses the user the place they were trying to reach.
     static let pointsPerLine: CGFloat = 26
 
-    static func step(forHorizontalTranslation translation: CGFloat) -> Int {
-        Int(translation / pointsPerCharacter)
-    }
-
-    static func line(forVerticalTranslation translation: CGFloat) -> Int {
-        Int(translation / pointsPerLine)
+    /// What one character of travel is worth at this finger speed.
+    static func pointsPerCharacter(atSpeed speed: CGFloat) -> CGFloat {
+        guard speed > slowSpeed else { return slowPointsPerCharacter }
+        guard speed < fastSpeed else { return fastPointsPerCharacter }
+        let progress = (speed - slowSpeed) / (fastSpeed - slowSpeed)
+        return slowPointsPerCharacter
+            + progress * (fastPointsPerCharacter - slowPointsPerCharacter)
     }
 }
 
@@ -74,6 +115,36 @@ final class KeyGridView: UIView {
     var plane: KeyPlane = .letters {
         didSet { if plane != oldValue { activatePlane() } }
     }
+
+    /// Which letters are under the fingers. Changing it swaps the three letter
+    /// rows and leaves every other plane alone — the numbers and the symbols
+    /// are the same in both.
+    var layout: TypingLayout = .fallback {
+        didSet { if layout != oldValue { activatePlane() } }
+    }
+
+    /// Whether there is a second layout to reach at all. Everything the switch
+    /// costs the keyboard — a key on the bottom row, a label on the spacebar,
+    /// a gesture taken off it — is spent only when it buys something.
+    var showsLayoutSwitchKey = false {
+        didSet { if showsLayoutSwitchKey != oldValue { rebuild() } }
+    }
+
+    /// The name shown on the spacebar, chevrons included. `nil` blanks it.
+    ///
+    /// Blank is the resting state, as it is on the system keyboard. The name
+    /// is shown by ``flashSpaceTitle(_:)`` when it is worth reading and taken
+    /// away again — a caption that never leaves is a caption nobody sees.
+    var spaceTitle: String? {
+        didSet { if spaceTitle != oldValue { applySpaceTitle() } }
+    }
+
+    /// The two letters on the language key.
+    var layoutTitle: String? {
+        didSet { if layoutTitle != oldValue { applyLayoutTitle() } }
+    }
+
+    private var spaceTitleTimer: Timer?
 
     var showsGlobeKey = true {
         didSet { if showsGlobeKey != oldValue { rebuild() } }
@@ -142,7 +213,15 @@ final class KeyGridView: UIView {
     /// Switching to digits and back is frequent, and rebuilding thirty-odd key
     /// views each time means re-resolving fonts and symbol images. Built planes
     /// are kept and simply hidden; only a metrics or palette change discards them.
-    private var planeCache: [KeyPlane: (rows: [KeyRow], views: [KeyView])] = [:]
+    /// Built rows and their views, kept per plane *and* per layout: switching
+    /// between two layouts is a gesture people repeat, and rebuilding thirty
+    /// key views each time is work the finger would feel.
+    private struct PlaneKey: Hashable {
+        let plane: KeyPlane
+        let layout: TypingLayout
+    }
+
+    private var planeCache: [PlaneKey: (rows: [KeyRow], views: [KeyView])] = [:]
     private var previewPool: [KeyPreviewView] = []
     /// The fading stroke drawn under the finger while a swipe is in flight.
     /// Created once and kept above the keys; it never takes a touch.
@@ -177,6 +256,9 @@ final class KeyGridView: UIView {
     private var planeHoldPoint: CGPoint?
     private var deleteTimer: Timer?
     private var spaceTrackpadTimer: Timer?
+    /// Whether the keys are currently showing nothing, because a finger is
+    /// driving the cursor. See ``refreshCapsVisibility()``.
+    private var capsAreHidden = false
     private var deleteRepeatCount = 0
     private var lastShiftTapAt: Date?
     /// When the run of fast typing this keyboard is in last produced a letter,
@@ -223,9 +305,24 @@ final class KeyGridView: UIView {
         private let startedOnShift: Bool
         var preview: KeyPreviewView?
         let initialPoint: CGPoint
-        var lastCursorStep = 0
-        var lastCursorLine = 0
-        var isCursorTracking = false
+        /// Where the finger was at the last cursor sample, and when — `nil`
+        /// until the trackpad takes over.
+        ///
+        /// Deliberately not `initialPoint`. The trackpad arms a third of a
+        /// second after the finger lands and tolerates 14pt of drift in the
+        /// meantime, so measuring from where the finger *landed* handed the
+        /// gesture a head start nobody asked for: the cursor jumped a
+        /// character at the instant the mode engaged.
+        var cursorPoint: CGPoint?
+        var cursorTime: TimeInterval = 0
+        /// Characters and lines owed to the finger but not yet whole. Kept as
+        /// a fraction so that tremor never adds up to a move.
+        var cursorCarry: CGFloat = 0
+        var cursorLineCarry: CGFloat = 0
+        var isCursorTracking: Bool { cursorPoint != nil }
+        /// Set once this finger has changed the layout, so the lift that ends
+        /// the swipe does not also type the space it started on.
+        var didSwitchLayout = false
         /// Fires the accent popover if the finger is still on the key. Cancelled
         /// by movement, by lifting, and by anything that tears the grid down.
         var longPressTimer: Timer?
@@ -290,8 +387,12 @@ final class KeyGridView: UIView {
         swipeTrail.frame = bounds
         let available = bounds.width - 2 * metrics.sideInset
         // Every row resolves against the width of one letter column from the
-        // ten-key reference row, which is what keeps columns aligned vertically.
-        let unit = (available - 9 * metrics.columnGap) / 10
+        // widest reference row, which is what keeps columns aligned vertically.
+        let letterColumns = Self.referenceColumns(for: rows)
+        func unitWidth(columns: CGFloat) -> CGFloat {
+            (available - (columns - 1) * metrics.columnGap) / columns
+        }
+        let unit = unitWidth(columns: letterColumns)
         guard unit > 0 else {
             hitMap = KeyHitMap(targets: [])
             TouchTrace.note("layout ABANDONED, no width")
@@ -308,7 +409,12 @@ final class KeyGridView: UIView {
         targets.reserveCapacity(keyViews.count)
         var y: CGFloat = 0
         for (rowIndex, row) in rows.enumerated() {
-            let widths = resolvedWidths(for: row, unit: unit, available: available)
+            // A row that pins its own reference is measured against that and
+            // not against the alphabet: the bottom row must not shrink when a
+            // wider alphabet arrives, or the whole bottom of the keyboard
+            // moves under the thumb every time the language changes.
+            let rowUnit = row.columnReference.map(unitWidth(columns:)) ?? unit
+            let widths = resolvedWidths(for: row, unit: rowUnit, available: available)
             let span = widths.reduce(0, +)
                 + CGFloat(max(widths.count - 1, 0)) * metrics.columnGap
             var x = row.alignment == .centered
@@ -432,6 +538,26 @@ final class KeyGridView: UIView {
         return widths
     }
 
+    /// How many letter columns the current rows are measured against.
+    ///
+    /// This was the constant ten, which is QWERTY's top row and happened to be
+    /// true of every plane the keyboard had. ЙЦУКЕН puts eleven keys in a row,
+    /// and eleven keys a tenth of the width apiece run off the end of the
+    /// keyboard. So the reference is read off the rows themselves: the longest
+    /// run of single-column keys in any of them.
+    ///
+    /// Never fewer than ten, because a plane can be narrower than the letters —
+    /// the numeric keypads are three columns of `.multiple` keys and no
+    /// single-column keys at all — and letting those set the unit would blow
+    /// every key up to a third of the keyboard.
+    static func referenceColumns(for rows: [KeyRow]) -> CGFloat {
+        let widest = rows
+            .filter { $0.columnReference == nil }
+            .map { row in row.keys.filter { $0.width == .unit }.count }
+            .max() ?? 0
+        return CGFloat(max(widest, 10))
+    }
+
     /// How far above its own bounds the top row claims, so a finger reaching
     /// high for `q` through `p` still types. The touch arrives with its real
     /// location, which is outside the grid, and the hit map is what has to
@@ -552,6 +678,37 @@ final class KeyGridView: UIView {
         activatePlane()
     }
 
+    /// Puts the language name on whichever key is currently the spacebar.
+    ///
+    /// Per plane rather than once: every plane builds its own bottom row, and
+    /// the numbers plane's spacebar is a different view than the letters one.
+    private func applySpaceTitle() {
+        for key in keyViews where key.spec.cap == .space {
+            key.spaceTitle = spaceTitle
+        }
+    }
+
+    private func applyLayoutTitle() {
+        for key in keyViews where key.spec.cap == .layoutSwitch {
+            key.layoutTitle = layoutTitle
+        }
+    }
+
+    /// Shows the language on the spacebar, then takes it away.
+    ///
+    /// The moment somebody changes language is the one moment the caption is
+    /// worth the room — it confirms what just happened, and the chevrons round
+    /// it say that the bar itself is the other way to do it. A second later
+    /// that is all been read, and a permanent label is just something printed
+    /// on a key nobody is looking at.
+    func flashSpaceTitle(_ text: String) {
+        spaceTitleTimer?.invalidate()
+        spaceTitle = text
+        spaceTitleTimer = Self.scheduleTimer(after: 1.4) { [weak self] in
+            self?.spaceTitle = nil
+        }
+    }
+
     private func activatePlane() {
         measured("activatePlane") { activatePlaneBody() }
     }
@@ -565,12 +722,15 @@ final class KeyGridView: UIView {
         keyViews.forEach { $0.isHidden = true }
 
         let entry: (rows: [KeyRow], views: [KeyView])
-        if let cached = planeCache[plane] {
+        let cacheKey = PlaneKey(plane: plane, layout: layout)
+        if let cached = planeCache[cacheKey] {
             entry = cached
         } else {
             let built = KeyLayout.rows(
                 for: plane,
+                layout: layout,
                 includesGlobe: showsGlobeKey,
+                includesLayoutSwitch: showsLayoutSwitchKey,
                 returnIsProminent: returnKeyIsProminent,
                 punctuation: punctuation
             )
@@ -586,12 +746,14 @@ final class KeyGridView: UIView {
                 }
             }
             entry = (built, views)
-            planeCache[plane] = entry
+            planeCache[cacheKey] = entry
         }
 
         rows = entry.rows
         keyViews = entry.views
         keyViews.forEach { $0.isHidden = false }
+        applySpaceTitle()
+        applyLayoutTitle()
         // Re-added rather than merely kept: `addSubview` moves it back above the
         // keys this plane has just installed. Previews and the accent popover
         // still come out on top, because both bring themselves to the front.
@@ -644,6 +806,7 @@ final class KeyGridView: UIView {
             item.isSwiping = false
             item.swipePath = []
             item.isPinned = true
+            endCursorDrag(for: item)
             item.key.isHighlighted = false
             recycle(item.preview)
             item.preview = nil
@@ -659,6 +822,7 @@ final class KeyGridView: UIView {
         for item in tracked {
             item.longPressTimer?.invalidate()
             item.longPressTimer = nil
+            endCursorDrag(for: item)
             item.key.isHighlighted = false
             recycle(item.preview)
             item.preview = nil
@@ -926,7 +1090,10 @@ final class KeyGridView: UIView {
             }
             item.longPressTimer?.invalidate()
             item.longPressTimer = nil
-            var shouldCommit = commit && item.isEngaged && !item.isCursorTracking
+            var shouldCommit =
+                commit && item.isEngaged && !item.isCursorTracking && !item.didSwitchLayout
+            endCursorDrag(for: item)
+            refreshCapsVisibility()
             // A slide that began on Shift or the plane key tracks characters
             // only, so sliding back onto the modifier leaves `item.key` on the
             // letter it passed over. Lifting there must type nothing.
@@ -1024,6 +1191,8 @@ final class KeyGridView: UIView {
             plane = next
         case .globe:
             delegate?.keyGrid(self, didProduce: .nextInputMode(key, event))
+        case .layoutSwitch:
+            delegate?.keyGrid(self, didProduce: .nextLayout(forward: true))
         default:
             break
         }
@@ -1031,6 +1200,7 @@ final class KeyGridView: UIView {
 
     private func scheduleSpaceTrackpad(for item: TrackedTouch) {
         guard !UIAccessibility.isVoiceOverRunning else { return }
+        guard cursorTrackpadIsAvailable else { return }
         spaceTrackpadTimer?.invalidate()
         spaceTrackpadTimer = Self.scheduleTimer(after: 0.32) { [weak self, weak item] in
             guard let self,
@@ -1038,20 +1208,67 @@ final class KeyGridView: UIView {
                   self.tracked.contains(where: { $0 === item }),
                   item.isEngaged
             else { return }
-            item.isCursorTracking = true
-            item.lastCursorStep = 0
-            item.lastCursorLine = 0
+            item.cursorPoint = item.touch.location(in: self)
+            item.cursorTime = item.touch.timestamp
+            item.cursorCarry = 0
+            item.cursorLineCarry = 0
+            self.refreshCapsVisibility()
+            self.delegate?.keyGrid(self, didProduce: .beginCursorDrag)
             self.feedback.selectionChanged()
             UIAccessibility.post(notification: .announcement, argument: "Cursor control")
         }
     }
 
+    /// Whether the spacebar becomes a trackpad on this layout.
+    ///
+    /// Off on Cyrillic by request. The two gestures do not in fact collide —
+    /// the trackpad arms on a *still* finger and a moving one cancels it, which
+    /// is how every keyboard that has both keeps them apart — but the layout
+    /// that has just gained a swipe is not the one to prove that on.
+    private var cursorTrackpadIsAvailable: Bool {
+        layout.offersCursorTrackpad
+    }
+
+    /// How far a finger crosses the spacebar before it means the layout rather
+    /// than the cursor.
+    ///
+    /// A third of the bar, so it scales with the keyboard instead of being a
+    /// number that is right on one device. Well past the 14pt that disarms the
+    /// trackpad, because disarming is cheap and switching is not: a layout
+    /// changed by accident costs the sentence being typed.
+    private func layoutSwipeDistance(for item: TrackedTouch) -> CGFloat {
+        min(max(item.key.frame.width / 4, 28), 44)
+    }
+
     private func handleSpaceMovement(_ item: TrackedTouch, point: CGPoint) {
-        guard item.isCursorTracking else {
-            let distance = hypot(point.x - item.initialPoint.x, point.y - item.initialPoint.y)
+        guard let previous = item.cursorPoint else {
+            let travel = point.x - item.initialPoint.x
+            let rise = abs(point.y - item.initialPoint.y)
+            let distance = hypot(travel, point.y - item.initialPoint.y)
             if distance > 14 {
                 spaceTrackpadTimer?.invalidate()
                 spaceTrackpadTimer = nil
+            }
+            // Sideways, decisively, and only once per finger.
+            //
+            // The vertical test was `travel > rise * 2` and it is why the
+            // gesture worked some of the time: a thumb does not cross a
+            // spacebar along a ruler, it swings from a knuckle, and the arc
+            // that comes out of that spends most of a key's height on the way.
+            // Demanding twice the rise threw away exactly the swipes a thumb
+            // makes and kept the ones an index finger makes. Equal is enough
+            // to separate a sideways sweep from the roll up towards `b`, which
+            // is the movement this is actually guarding against.
+            if showsLayoutSwitchKey,
+               !item.didSwitchLayout,
+               abs(travel) > layoutSwipeDistance(for: item),
+               abs(travel) > rise
+            {
+                item.didSwitchLayout = true
+                setHighlight(false, on: item.key)
+                feedback.keyActionCommitted()
+                delegate?.keyGrid(self, didProduce: .nextLayout(forward: travel > 0))
+                return
             }
             item.isEngaged = stillHolds(item.key, at: point)
             setHighlight(item.isEngaged, on: item.key)
@@ -1061,26 +1278,55 @@ final class KeyGridView: UIView {
         item.isEngaged = true
         setHighlight(true, on: item.key)
 
+        let now = item.touch.timestamp
+        let elapsed = now - item.cursorTime
+        item.cursorPoint = point
+        item.cursorTime = now
+
         // Lines first. A drag that has crossed into another line is a drag about
         // *which* line, and applying the horizontal component in the same turn
         // would land the cursor a few characters away from the column the finger
         // is actually over.
-        let line = CursorTrackpad.line(
-            forVerticalTranslation: point.y - item.initialPoint.y
-        )
-        let lineDelta = line - item.lastCursorLine
-        if lineDelta != 0 {
-            item.lastCursorLine = line
-            delegate?.keyGrid(self, didProduce: .moveCursorLine(lineDelta))
+        item.cursorLineCarry += (point.y - previous.y) / CursorTrackpad.pointsPerLine
+        let lines = Int(item.cursorLineCarry.rounded(.towardZero))
+        if lines != 0 {
+            item.cursorLineCarry -= CGFloat(lines)
+            // The column the cursor keeps is the one it had before this frame,
+            // so whatever horizontal travel came with the same movement has
+            // already been spent on choosing the line.
+            item.cursorCarry = 0
+            delegate?.keyGrid(self, didProduce: .moveCursorLine(lines))
+            return
         }
 
-        let step = CursorTrackpad.step(
-            forHorizontalTranslation: point.x - item.initialPoint.x
-        )
-        let delta = step - item.lastCursorStep
-        guard delta != 0 else { return }
-        item.lastCursorStep = step
-        delegate?.keyGrid(self, didProduce: .moveCursor(delta))
+        let travel = point.x - previous.x
+        let speed = elapsed > 0 ? abs(travel) / CGFloat(elapsed) : 0
+        item.cursorCarry += travel / CursorTrackpad.pointsPerCharacter(atSpeed: speed)
+        let steps = Int(item.cursorCarry.rounded(.towardZero))
+        guard steps != 0 else { return }
+        item.cursorCarry -= CGFloat(steps)
+        delegate?.keyGrid(self, didProduce: .moveCursor(steps))
+    }
+
+    /// Hands the controller back the document it stopped reading while the
+    /// finger was travelling.
+    private func endCursorDrag(for item: TrackedTouch) {
+        guard item.isCursorTracking else { return }
+        item.cursorPoint = nil
+        delegate?.keyGrid(self, didProduce: .endCursorDrag)
+    }
+
+    /// The trackpad blanks the keys, as the system keyboard does.
+    ///
+    /// Without it the mode is invisible: a finger dragging across something
+    /// that still looks like a keyboard reads as a gesture that is not
+    /// working, and the usual response is to press harder and lift — which is
+    /// the one thing that ends it.
+    private func refreshCapsVisibility() {
+        let hidden = tracked.contains { $0.isCursorTracking }
+        guard hidden != capsAreHidden else { return }
+        capsAreHidden = hidden
+        for key in keyViews { key.capsAreHidden = hidden }
     }
 
     // MARK: - Fast typing
@@ -1598,7 +1844,7 @@ private extension KeyCap {
     /// lift so a slide can still correct the target.
     var actsOnTouchDown: Bool {
         switch self {
-        case .delete, .shift, .plane, .globe: true
+        case .delete, .shift, .plane, .globe, .layoutSwitch: true
         // A blank never reaches here — it owns no hit target — but saying so
         // explicitly is what stops the next cap added to the enum from
         // defaulting into firing on touch-down.

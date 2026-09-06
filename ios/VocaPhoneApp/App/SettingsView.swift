@@ -186,6 +186,15 @@ struct KeyboardSettingsView: View {
         store: KeyboardPreferences.defaults
     ) private var swipeTypingEnabled = false
 
+    /// Held rather than read straight from ``KeyboardPreferences`` on every
+    /// redraw: the list has to keep its order, and the order is the order the
+    /// language key walks through, so it is a value the view owns and writes
+    /// back rather than a set it recomputes.
+    @State private var enabledLayoutIDs: [String] = KeyboardPreferences
+        .enabledTypingLayouts
+        .map(\.id)
+    @State private var isChoosingLanguages = false
+
     @State private var learnedStore = LearnedWordStore()
     @State private var learnedCount = 0
     @State private var isConfirmingLearnedReset = false
@@ -197,6 +206,7 @@ struct KeyboardSettingsView: View {
     var body: some View {
         List {
             previewSection
+            languagesSection
             heightSection
             suggestionsSection
             learningSection
@@ -211,6 +221,14 @@ struct KeyboardSettingsView: View {
         }
         .navigationTitle("Keyboard")
         .navigationBarTitleDisplayMode(.inline)
+        // On the List, not on the section that owns the row. Attached to the
+        // section, the first tap opened the sheet and shut it again: tapping
+        // changes nothing, but presenting re-renders the list, the section is
+        // rebuilt, and the sheet goes down with the modifier it was attached
+        // to. The second tap worked because by then the list had settled.
+        .sheet(isPresented: $isChoosingLanguages) {
+            KeyboardLanguagesSheet(enabledLayoutIDs: $enabledLayoutIDs)
+        }
         .task { learnedCount = learnedStore.snapshot().count }
         .confirmationDialog(
             "Forget \(learnedCount) learned word\(learnedCount == 1 ? "" : "s")?",
@@ -249,6 +267,51 @@ struct KeyboardSettingsView: View {
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
         }
+    }
+
+    private var languagesSection: some View {
+        Section {
+            Button {
+                isChoosingLanguages = true
+            } label: {
+                HStack {
+                    // "Keyboard" rather than "Languages": the header above has
+                    // just said that word, and saying it twice was the first
+                    // thing wrong with this screen.
+                    Text("Keyboard")
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: VocaMetrics.related)
+                    Text(enabledSummary)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        } header: {
+            Text("Languages")
+        } footer: {
+            Text(
+                enabledLayoutIDs.count > 1
+                    ? "Switch with the key beside 123, or swipe across the space bar."
+                    : "Add another to switch from the keyboard itself — a key beside "
+                        + "123, or a swipe across the space bar."
+            )
+        }
+    }
+
+    /// What the row shows on its right: the language, or the first of them and
+    /// how many more. Naming them all turns the row into a paragraph at three,
+    /// and the sheet is one tap away for the rest.
+    private var enabledSummary: String {
+        let names = TypingLayout.catalogue
+            .filter { enabledLayoutIDs.contains($0.id) }
+            .map(\.displayName)
+        guard let first = names.first else { return "" }
+        return names.count > 1 ? "\(first) +\(names.count - 1)" : first
     }
 
     private var heightSection: some View {
@@ -1679,3 +1742,93 @@ private struct SnippetEditorView: View {
     }
 }
 #endif
+
+/// The language picker, as a sheet rather than a pushed screen.
+///
+/// A list of seven with a search field is something somebody opens, changes and
+/// dismisses, and a sheet says exactly that: it comes up over the settings it
+/// belongs to and goes away again, with them still visible behind it. A push
+/// would file it in the navigation stack as though it were somewhere you go.
+struct KeyboardLanguagesSheet: View {
+    @Binding var enabledLayoutIDs: [String]
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+
+    private var matches: [TypingLayout] {
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return TypingLayout.catalogue }
+        // Matched on the id as well as the written name, because somebody
+        // looking for Russian may well type "ru" — and somebody whose keyboard
+        // is currently Cyrillic cannot type "Русский" to find it.
+        return TypingLayout.catalogue.filter {
+            $0.displayName.lowercased().contains(query) || $0.id.contains(query)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(matches) { layout in
+                    Button {
+                        toggle(layout)
+                    } label: {
+                        row(for: layout)
+                    }
+                    .buttonStyle(.plain)
+                    // The last one on cannot be turned off: a keyboard with no
+                    // letters is not a narrower keyboard, it is a broken one.
+                    .disabled(enabledLayoutIDs == [layout.id])
+                }
+            }
+            // Inset grouped is the settings-sheet default. `.plain` draws a
+            // full-width hairline above the first row, under the search field
+            // — a separator with nothing above it, which reads as a fault.
+            .listStyle(.insetGrouped)
+            .searchable(text: $search, prompt: "Search")
+            .navigationTitle("Languages")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+        }
+        .presentationDetents([.large, .medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func row(for layout: TypingLayout) -> some View {
+        let isOn = enabledLayoutIDs.contains(layout.id)
+        return HStack(spacing: VocaMetrics.related) {
+            Text(layout.flag)
+                .font(.title2)
+            Text(layout.displayName)
+                .foregroundStyle(.primary)
+            Spacer(minLength: VocaMetrics.related)
+            Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                .font(.title2)
+                .foregroundStyle(isOn ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+        }
+        .frame(minHeight: VocaMetrics.minimumTarget)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Writes straight through to the shared defaults the extension reads.
+    ///
+    /// The order is rebuilt from the catalogue rather than appended to, so
+    /// switching a language off and back on returns it to its place instead of
+    /// to the end of the cycle the language key walks.
+    private func toggle(_ layout: TypingLayout) {
+        var wanted = Set(enabledLayoutIDs)
+        if wanted.contains(layout.id) { wanted.remove(layout.id) } else { wanted.insert(layout.id) }
+        let resolved = TypingLayout.catalogue.filter { wanted.contains($0.id) }
+        guard !resolved.isEmpty else { return }
+        KeyboardPreferences.enabledTypingLayouts = resolved
+        enabledLayoutIDs = resolved.map(\.id)
+    }
+}

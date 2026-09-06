@@ -533,18 +533,38 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             lastSpaceInsertedAt = nil
             releaseUndoIfDetached()
             updateAutomaticShift()
+        case .beginCursorDrag:
+            let snapshot = refreshDocument()
+            cursorDrag = CursorDrag(document: snapshot)
+        case .endCursorDrag:
+            cursorDrag = nil
+            settleCursor()
         case let .moveCursor(offset):
-            textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
-            lastSpaceInsertedAt = nil
-            // The cursor is somewhere else now, so whatever was being composed
-            // belongs to a different part of the document.
-            typing.reconcile(document: refreshDocument())
-            releaseUndoIfDetached()
+            moveCursor(by: offset)
         case let .moveCursorLine(lines):
             moveCursorByLines(lines)
             lastSpaceInsertedAt = nil
+            // A line move works out its offset from the document itself, so
+            // whatever the drag had counted no longer describes where the
+            // cursor is. Re-reading here is affordable: a line costs 26pt of
+            // travel, against 4 to 14 for a character.
+            let snapshot = refreshDocument()
+            if cursorDrag != nil {
+                cursorDrag = CursorDrag(document: snapshot)
+            } else {
+                typing.reconcile(document: snapshot)
+                releaseUndoIfDetached()
+            }
+        case let .nextLayout(forward):
+            guard let next = TypingLayout.next(
+                after: KeyboardPreferences.typingLayout,
+                in: KeyboardPreferences.enabledTypingLayouts,
+                forward: forward
+            ) else { break }
+            KeyboardPreferences.typingLayout = next
+            applyTypingLayout(next, announce: true)
+            // The composition belonged to the alphabet that has just left.
             typing.reconcile(document: refreshDocument())
-            releaseUndoIfDetached()
         case let .nextInputMode(anchor, event):
             // `handleInputModeList` also drives the long-press keyboard picker,
             // which `advanceToNextInputMode` alone cannot offer.
@@ -827,6 +847,65 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// Clamped to the ends. Off the top or bottom of the visible context the
     /// cursor goes to the start or end of it rather than nowhere, which is what
     /// the user is reaching for anyway.
+    /// What the trackpad knows about the document while a finger is on it.
+    ///
+    /// A cursor step used to cost what a keystroke costs: `adjustTextPosition`,
+    /// then two properties read across into the host process, then a pass over
+    /// the dictionary — per step, at up to 120 steps a second, against a frame
+    /// budget of 8.3ms that a single one of those reads has already been
+    /// measured eating (see ``cachedSmartPunctuation``). Nothing else is moving
+    /// this cursor, so the document is read once when the finger arrives and
+    /// the drag counts for itself until it leaves.
+    private struct CursorDrag {
+        /// Characters either side of the cursor, in the UTF-16 units that
+        /// `adjustTextPosition(byCharacterOffset:)` actually steps in.
+        ///
+        /// A floor rather than the truth: iOS hands a keyboard a window onto
+        /// the document, not the document. It is the case at the edges that
+        /// has to be right, and there the window is not lying — an empty
+        /// `after` means there is genuinely nothing ahead.
+        var behind: Int
+        var ahead: Int
+
+        init(document: DocumentSnapshot) {
+            behind = (document.before ?? "").utf16.count
+            ahead = (document.after ?? "").utf16.count
+        }
+    }
+
+    private var cursorDrag: CursorDrag?
+
+    /// Moves the cursor, clamped to what the document has left.
+    ///
+    /// Without the clamp a finger that runs past the end of the field banks
+    /// every point of that overshoot, and the same travel has to be unwound
+    /// before the cursor moves back at all — which is what "the cursor sticks
+    /// at the end of the box" is.
+    private func moveCursor(by offset: Int) {
+        var applied = offset
+        if var drag = cursorDrag {
+            applied = offset > 0 ? min(offset, drag.ahead) : max(offset, -drag.behind)
+            drag.ahead -= applied
+            drag.behind += applied
+            cursorDrag = drag
+        }
+        guard applied != 0 else { return }
+        textDocumentProxy.adjustTextPosition(byCharacterOffset: applied)
+        lastSpaceInsertedAt = nil
+        // Mid-drag the document is deliberately not re-read; the finger lifting
+        // is what settles it. See ``CursorDrag``.
+        guard cursorDrag == nil else { return }
+        settleCursor()
+    }
+
+    /// The cursor is somewhere else now, so whatever was being composed belongs
+    /// to a different part of the document.
+    private func settleCursor() {
+        lastSpaceInsertedAt = nil
+        typing.reconcile(document: refreshDocument())
+        releaseUndoIfDetached()
+    }
+
     private func moveCursorByLines(_ lines: Int) {
         guard lines != 0 else { return }
         let snapshot = document
@@ -1784,6 +1863,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // the character. Not in a field that has asked for no intelligence.
         keyGrid.traceNamesKeys = policy.allowsTypingIntelligence
         keyGrid.showsGlobeKey = needsInputModeSwitchKey
+        applyTypingLayout(KeyboardPreferences.typingLayout)
         let returnKeyType = proxy.returnKeyType ?? .default
         keyGrid.returnKeyTitle = Self.returnKeyTitle(for: returnKeyType)
         keyGrid.returnKeyIsProminent = returnKeyType != .default
@@ -1799,6 +1879,27 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // A returning keyboard may already be at the end of "happy". Restore
         // its suggestions immediately instead of waiting for another key.
         if isKeyboardVisible { typing.reconcile(document: document) }
+    }
+
+    /// Puts a layout under the fingers, and tells everything that cares.
+    ///
+    /// Three things care and they are easy to leave behind one another: the
+    /// grid draws different letters, the spacebar carries the name that makes
+    /// the swipe findable, and typing intelligence corrects against a different
+    /// dictionary. A layout changed in only two of the three is a keyboard that
+    /// autocorrects Russian into English.
+    private func applyTypingLayout(_ layout: TypingLayout, announce: Bool = false) {
+        let switchable = KeyboardPreferences.enabledTypingLayouts.count > 1
+        keyGrid.layout = layout
+        keyGrid.showsLayoutSwitchKey = switchable
+        keyGrid.layoutTitle = switchable ? layout.shortName : nil
+        typing.layout = layout
+        // Only when the language actually just changed. This method also runs
+        // every time the keyboard arrives in a new field, and a caption that
+        // announced itself on every field would be an advertisement.
+        if announce, switchable {
+            keyGrid.flashSpaceTitle("‹ \(layout.displayName) ›")
+        }
     }
 
     /// Dims Return in the fields that asked for it.
