@@ -192,6 +192,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // The preference behind this lives in the shared defaults and is
         // changed in the app, which the user reaches by leaving the keyboard.
         // Coming back is the moment it can have changed under us.
+        cachedSmartPunctuation = nil
 #if DEBUG
         // Armed for the whole of a debug build: the fault it is here to catch
         // only happens at full typing speed, which is not a thing anyone can
@@ -659,13 +660,24 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         return snapshot
     }
 
-    /// Re-read per keystroke rather than cached: the field can change its own
-    /// traits, and the cost is two property reads.
+    /// The field's smart-punctuation traits, held for as long as the field is.
+    ///
+    /// This used to be re-read per keystroke, on the grounds that the cost was
+    /// two property reads. It is three, each one a hop into the host process,
+    /// and on device they were part of the 9.4 ms a single letter spent on the
+    /// main thread against a frame budget of 8.3. Traits belong to the field,
+    /// and ``applyDocumentTraits`` — which the keyboard already trusts to know
+    /// when the field has changed — is what drops this.
+    private var cachedSmartPunctuation: SmartPunctuation.Traits?
+
     private var smartPunctuation: SmartPunctuation.Traits {
-        SmartPunctuation.Traits.resolve(
+        if let cachedSmartPunctuation { return cachedSmartPunctuation }
+        let resolved = SmartPunctuation.Traits.resolve(
             for: textDocumentProxy,
             enabled: KeyboardPreferences.smartPunctuationEnabled
         )
+        cachedSmartPunctuation = resolved
+        return resolved
     }
 
     /// The characters that end a word and are therefore the moment an
@@ -1721,6 +1733,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// keyboard capitalizes usernames, labels every action "return", and renders
     /// a light theme inside a dark-appearance field.
     private func applyDocumentTraits() {
+        cachedSmartPunctuation = nil
         let proxy = textDocumentProxy
         // Passwords, one-time codes and PINs switch the whole subsystem off —
         // not just the strip. A hidden strip over a live spell checker would
