@@ -699,7 +699,14 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         if !typed.isEmpty,
            !isPerformingInsertion,
            typing.composer.isAutocorrectable,
-           let correction = typing.strip.autocorrection
+           let correction = typing.strip.autocorrection,
+           // The offer has to be about the word in hand. The strip is not
+           // cleared while the checker is being consulted, so a space arriving
+           // before its answer finds the correction worked out for the word as
+           // it stood a keystroke ago — and applying that rewrites "howit" with
+           // a correction meant for "howi". No answer yet is not an emergency:
+           // the word stands, which is what it would have done anyway.
+           typing.strip.autocorrectionTarget?.lowercased() == typed.lowercased()
         {
             let replacement = TypingCandidates.matchingCase(
                 of: typed,

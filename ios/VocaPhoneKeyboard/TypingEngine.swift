@@ -560,6 +560,25 @@ final class TypingEngine {
             checked?.similar ?? []
         )
         context.listCompletions = wordList.completions(for: composition, limit: 3)
+        // One dictionary lookup per guess, half a dozen of them. What it buys is
+        // the difference between "both" and "coth" — see `correctionCost`.
+        var listRanks: [String: Int] = [:]
+        for guess in context.systemGuesses {
+            let guessed = guess.lowercased()
+            if let rank = wordList.rank(of: guessed) { listRanks[guessed] = rank }
+        }
+        // And every way the word could be cut in two, for the split that puts a
+        // missed space back. Dictionary lookups, one per cut, on a word.
+        if lowered.count >= 4, lowered.allSatisfy({ $0.isLetter }) {
+            let characters = Array(lowered)
+            for cut in 2...(characters.count - 2) {
+                for half in [String(characters[..<cut]), String(characters[cut...])]
+                where listRanks[half] == nil {
+                    if let rank = wordList.rank(of: half) { listRanks[half] = rank }
+                }
+            }
+        }
+        context.listRanks = listRanks
         context.predictions = preceding.map { wordList.nextWords(after: $0, limit: 3) } ?? []
         // The same bigrams, but as evidence about the word being typed rather
         // than a guess about the next one. A wider window than the strip shows,
@@ -568,6 +587,7 @@ final class TypingEngine {
             wordList.nextWords(after: $0, limit: 12)
         } ?? []
         context.isMidWord = isMidWord
+        context.hasCheckerAnswer = checked != nil
         context.isKnownToChecker = checked?.isKnown ?? false
         context.isInWordList = wordList.contains(composition)
         context.assertedWords = assertedWords
@@ -637,6 +657,10 @@ final class TypingEngine {
     /// same whether the rule found it already correct, found two equally good
     /// readings, or was switched off, and those are three different bugs.
     private func publishStrip(for context: TypingCandidates.Context) {
+        TouchTrace.note(
+            "compose \"\(context.composition)\" "
+                + TypingCandidates.autocorrectDecision(context).outcomeDescription
+        )
         let strip = measured("candidates.strip") { TypingCandidates.strip(context) }
         measured("publish") { publish(strip) }
     }
