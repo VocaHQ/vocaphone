@@ -3,6 +3,40 @@ import Foundation
 /// Presentation only. No style adds, removes or substitutes a word, and
 /// numbers, times, addresses and contractions are always left as the model
 /// transcribed them.
+/// The five taps `UIImpactFeedbackGenerator` can play, named for the hand
+/// rather than for the API: they differ in how hard and how sharp they are.
+enum TypingHapticStyle: String, CaseIterable, Identifiable, Sendable {
+    case light
+    case soft
+    case medium
+    case heavy
+    case rigid
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .light: "Light"
+        case .soft: "Soft"
+        case .medium: "Medium"
+        case .heavy: "Heavy"
+        case .rigid: "Rigid"
+        }
+    }
+
+    /// What each one feels like, so the picker is not five words in a row.
+    var detail: String {
+        switch self {
+        case .light: "A nudge. The softest and most diffuse."
+        case .soft: "Rounded and slow — a cushion rather than a click."
+        case .medium: "The middle of the range."
+        case .heavy: "The hardest hit the engine has."
+        case .rigid: "Short and sharp. What the system keyboard uses."
+        }
+    }
+
+}
+
 enum WritingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     case raw
     case clean
@@ -566,6 +600,33 @@ enum KeyboardPreferences {
 
     static let keyPreviewAnimatesKey = "keyPreviewAnimates"
     static let keyReleaseFadeKey = "keyReleaseFade"
+
+    /// How hard a key hits back.
+    ///
+    /// Stored because "strong enough" is a matter of hands and cases, not of
+    /// argument: the same generator that reads as a crisp press through a bare
+    /// phone is a rumour through a thick case.
+    static var typingHapticStyle: TypingHapticStyle {
+        get {
+            guard let raw = defaults?.string(forKey: typingHapticStyleKey),
+                  let style = TypingHapticStyle(rawValue: raw)
+            else { return .soft }
+            return style
+        }
+        set { defaults?.set(newValue.rawValue, forKey: typingHapticStyleKey) }
+    }
+
+    /// 0 to 1, where 1 is the whole engine.
+    static var typingHapticIntensity: Double {
+        get {
+            let stored = defaults?.double(forKey: typingHapticIntensityKey) ?? 0
+            return stored > 0 ? min(stored, 1) : 0.68
+        }
+        set { defaults?.set(min(max(newValue, 0), 1), forKey: typingHapticIntensityKey) }
+    }
+
+    static let typingHapticStyleKey = "typingHapticStyle"
+    static let typingHapticIntensityKey = "typingHapticIntensity"
 
     static var writingStyle: WritingStyle {
         get {

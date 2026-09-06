@@ -15,6 +15,20 @@ protocol KeyboardFeedbackProviding: AnyObject {
 /// The semantic feedback a keyboard interaction may produce. Keeping this as
 /// data lets tests prove that a cancelled touch cannot buzz or click, without
 /// pretending the simulator has a Taptic Engine.
+extension TypingHapticStyle {
+    /// Kept here rather than beside the enum: `VocaPhoneShared` is compiled
+    /// into the Live Activity too, and that target has no UIKit.
+    var feedbackStyle: UIImpactFeedbackGenerator.FeedbackStyle {
+        switch self {
+        case .light: .light
+        case .soft: .soft
+        case .medium: .medium
+        case .heavy: .heavy
+        case .rigid: .rigid
+        }
+    }
+}
+
 enum KeyboardFeedbackEvent: Equatable {
     case inputClick
     case typingHaptic
@@ -59,10 +73,12 @@ enum KeyboardFeedbackPolicy {
             // already clicked.
             return allowsHaptics ? [.typingHaptic] : []
         case .deleteRepeated:
-            // A held Delete is a stream of separate deletions, and the system
-            // keyboard sounds each one. Silence here makes a hold feel like it
-            // has stopped working.
-            return [.inputClick] + (allowsHaptics ? [.typingHaptic] : [])
+            // The click stays — the system keyboard sounds every deletion, and
+            // silence makes a hold feel like it has stopped working — but the
+            // haptic does not. A hold runs at about ten deletions a second, and
+            // ten taps a second is not ten taps: it is a buzz, which is what a
+            // phone does to say something is wrong.
+            return [.inputClick]
         case .selectionChanged:
             return allowsHaptics ? [.selectionHaptic] : []
         case .dictationAction:
@@ -105,6 +121,7 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
     /// right display, which an extension cannot be assumed to infer on its own.
     private weak var host: UIView?
     private var keyTapGenerator: UIImpactFeedbackGenerator?
+    private var keyTapStyle: UIImpactFeedbackGenerator.FeedbackStyle = .rigid
     private var actionGenerator: UIImpactFeedbackGenerator?
     private var selectionGenerator: UISelectionFeedbackGenerator?
 
@@ -230,7 +247,7 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
                 // is exactly what made this feel weaker than every other
                 // keyboard on the phone.
                 let generator = keyTapImpact()
-                generator.impactOccurred(intensity: 1)
+                generator.impactOccurred(intensity: KeyboardPreferences.typingHapticIntensity)
                 generator.prepare()
             case .selectionHaptic:
                 let generator = selection()
@@ -264,7 +281,14 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
     /// generator would have been silently ignored, leaving the keyboard playing
     /// whichever texture happened to be requested first.
     private func keyTapImpact() -> UIImpactFeedbackGenerator {
-        cached(&keyTapGenerator, style: .rigid)
+        // The style is stored, so it has to be able to change under a running
+        // keyboard: a generator is built for one style and cannot be retuned.
+        let wanted = KeyboardPreferences.typingHapticStyle.feedbackStyle
+        if keyTapStyle != wanted {
+            keyTapStyle = wanted
+            keyTapGenerator = nil
+        }
+        return cached(&keyTapGenerator, style: wanted)
     }
 
     /// The generator for rare, weightier events: softer and more diffuse.

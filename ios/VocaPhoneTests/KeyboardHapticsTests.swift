@@ -64,21 +64,21 @@ struct KeyboardHapticsTests {
 
     /// A held Delete is a stream of separate deletions, and each one sounds —
     /// otherwise a hold reads as a keyboard that has stopped responding.
-    @Test func eachDeleteRepeatSoundsLikeItsOwnKeystroke() {
-        #expect(
-            KeyboardFeedbackPolicy.events(
-                for: .deleteRepeated,
-                typingHapticsEnabled: false,
-                hasFullAccess: true
-            ) == [.inputClick]
-        )
-        #expect(
-            KeyboardFeedbackPolicy.events(
-                for: .deleteRepeated,
-                typingHapticsEnabled: true,
-                hasFullAccess: true
-            ) == [.inputClick, .typingHaptic]
-        )
+    ///
+    /// It does not buzz, though, and that is the point of the second case here:
+    /// a hold runs at about ten deletions a second, and ten taps a second stops
+    /// being ten taps. It becomes one continuous vibration — which on a phone
+    /// is the signal for something being wrong, not for something working.
+    @Test func aHeldDeleteClicksEveryTimeAndBuzzesNever() {
+        for hapticsEnabled in [true, false] {
+            #expect(
+                KeyboardFeedbackPolicy.events(
+                    for: .deleteRepeated,
+                    typingHapticsEnabled: hapticsEnabled,
+                    hasFullAccess: true
+                ) == [.inputClick]
+            )
+        }
     }
 
     @Test func optionalHapticsAreSilentWithoutBothPermissions() {
