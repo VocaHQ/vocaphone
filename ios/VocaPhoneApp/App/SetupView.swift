@@ -46,7 +46,10 @@ struct SetupView: View {
     @FocusState private var keyboardProbeFocused: Bool
     @FocusState private var practiceFocused: Bool
     @State private var hasAskedAboutReporting = UserDefaultsTelemetryPreferences().hasBeenAsked
-    @State private var hasCopiedSettingsPath = false
+    /// How long the verification page has been waiting without any report from
+    /// the keyboard. Only ever chooses the wording of "nothing yet" — see
+    /// `OnboardingPresentation.keyboardVerification`.
+    @State private var keyboardWaitSeconds: TimeInterval = 0
     @AppStorage(
         KeyboardPreferences.keyboardSettingsRoundTripKey,
         store: KeyboardPreferences.defaults
@@ -177,7 +180,16 @@ struct SetupView: View {
             status: status, returnedFromSettings: keyboardSettingsRoundTripStarted
         ): ("Verify the keyboard", "arrow.right", advance)
         case .keyboard: ("Open vocaphone Settings", "gear", openSystemSettings)
-        case .keyboardSwitch where status.isSatisfied(.keyboard): ("Try voice typing", "arrow.right", advance)
+        case .keyboardSwitch:
+            // This page used to have no primary button at all while it waited,
+            // which left the bottom of the screen empty at the exact moment the
+            // user needed telling what to do next.
+            switch keyboardVerification {
+            case .verified: ("Try voice typing", "arrow.right", advance)
+            case .fullAccessOff: ("Turn on Full Access", "gear", openSystemSettings)
+            case .waiting, .stalled:
+                ("Open the keyboard", "keyboard", { keyboardProbeFocused = true })
+            }
         case .practice where hasCompletedKeyboardPractice: ("Continue", "arrow.right", advance)
         case .complete where !status.isReadyToDictate:
             ("Review setup", "arrow.right", {
@@ -410,162 +422,155 @@ struct SetupView: View {
                 .font(.system(size: 48, weight: .medium))
                 .foregroundStyle(Color.brand)
                 .accessibilityHidden(true)
-            Text("Enable the vocaphone keyboard")
+            Text("Add the keyboard")
                 .font(.title.weight(.bold))
-            Text(
-                "Add vocaphone, then turn on Full Access. The next screen will show you how to switch to it."
-            )
-            .font(.body)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+            Text("Two switches in iOS Settings — vocaphone checks them for you.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
+            // The two requirements, each carrying its own state. An earlier
+            // version listed that state again underneath, in a third card: the
+            // page then had six blocks to read and no obvious next move, which
+            // is a worse failure than the one it was fixing.
             VStack(spacing: VocaMetrics.related) {
                 SettingsReferenceCard(
                     number: 1,
-                    title: "Add the keyboard",
-                    detail: "Settings → General → Keyboard → Keyboards → Add New Keyboard → vocaphone",
-                    symbol: "keyboard"
+                    title: "Add vocaphone",
+                    detail: "General → Keyboard → Keyboards → Add New Keyboard",
+                    symbol: "keyboard",
+                    state: keyboardListRequirement
                 )
                 SettingsReferenceCard(
                     number: 2,
                     title: "Allow Full Access",
-                    detail: "Tap vocaphone in the Keyboards list, then turn on Allow Full Access.",
-                    symbol: "checkmark.shield"
+                    detail: "Tap vocaphone in that list, then turn the switch on.",
+                    symbol: "checkmark.shield",
+                    state: fullAccessRequirement
                 )
             }
 
-            DisclosureGroup("Why Full Access?") {
-                Text("Full Access lets the keyboard exchange dictation with vocaphone. The keyboard does not record audio or send your everyday typing to a server. On-device dictation stays on this iPhone; choosing your gateway sends recordings there.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, VocaMetrics.related)
-            }
+            Text("Full Access is how the keyboard reaches vocaphone. Your typing is never sent anywhere.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             if OnboardingPresentation.canAdvanceFromKeyboardEnablement(
                 status: status, returnedFromSettings: keyboardSettingsRoundTripStarted
             ) {
-                Button("Open vocaphone Settings", action: openSystemSettings)
-                    .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
-                    .buttonStyle(.bordered)
-            }
-
-            Button(action: copySettingsPath) {
-                Label(
-                    hasCopiedSettingsPath ? "Settings path copied" : "Copy Settings path",
-                    systemImage: hasCopiedSettingsPath ? "checkmark" : "doc.on.doc"
-                )
-            }
-            .font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
-
-            if status.isSatisfied(.keyboard) {
-                CompletionNotice("Full Access is already verified")
-            } else if status.isKeyboardInstalled == true {
-                // Being in the keyboard list is observable; Full Access is not.
-                // Say only the part we actually checked — the next page is what
-                // proves the rest.
-                CompletionNotice("vocaphone is in your keyboard list")
-                VocaCard(padding: VocaMetrics.padding) {
-                    Label(
-                        "Next, open the keyboard here so vocaphone can verify Full Access.",
-                        systemImage: "checkmark.shield"
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            } else if status.isKeyboardInstalled == nil, keyboardSettingsRoundTripStarted {
-                // iOS did not publish the keyboard list, so there is nothing to
-                // check against. Blocking here would strand the user.
-                VocaCard(padding: VocaMetrics.padding) {
-                    Label(
-                        "iOS did not report your keyboard list, so this cannot be confirmed here. The next step verifies Full Access for real.",
-                        systemImage: "questionmark.circle"
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                Button(action: {}) {
-                    Label("Add the keyboard to continue", systemImage: "lock.fill")
-                        .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(true)
-
-                if keyboardSettingsRoundTripStarted {
-                    Text("vocaphone is not in your keyboard list yet. In Settings, use Add New Keyboard to add it, then turn on Allow Full Access.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    // iOS can publish the keyboard list a moment behind the
-                    // change. Without this the page would look like a dead end
-                    // to someone who has in fact just added the keyboard.
-                    Button("Check again") {
-                        Task { await refreshAfterForegroundReturn() }
-                    }
+                // The bottom button has moved on to verification by now, so
+                // this is the only way back to Settings for someone who added
+                // the keyboard and left Full Access off.
+                Button("Open Settings again", action: openSystemSettings)
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
+            } else if keyboardSettingsRoundTripStarted {
+                // iOS can publish the keyboard list a moment behind the change.
+                // Without this the page would look like a dead end to someone
+                // who has in fact just added the keyboard.
+                Button("Check again") {
+                    Task { await refreshAfterForegroundReturn() }
                 }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
             }
         }
     }
 
-    private var keyboardSwitchStage: some View {
+    /// Two pages behind one stage, because the two situations need opposite
+    /// things said. Once the keyboard has reported Full Access off, "switch to
+    /// vocaphone" is advice the user has already taken, and repeating it under
+    /// a globe animation buries the one thing they still have to do.
+    @ViewBuilder private var keyboardSwitchStage: some View {
+        if keyboardVerification == .fullAccessOff {
+            fullAccessRepairPage
+        } else {
+            keyboardSwitchPage
+        }
+    }
+
+    private var fullAccessRepairPage: some View {
+        OnboardingPage {
+            Image(systemName: "exclamationmark.shield")
+                .font(.system(size: 48, weight: .medium))
+                .foregroundStyle(Color.vocaWarning)
+                .accessibilityHidden(true)
+            Text("Turn on Full Access")
+                .font(.title.weight(.bold))
+            Text("The keyboard opened, but it cannot reach the app until this switch is on.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SettingsReferenceCard(
+                number: 1,
+                title: "Allow Full Access",
+                detail: "General → Keyboard → Keyboards → vocaphone",
+                symbol: "checkmark.shield",
+                state: .failed("Currently off")
+            )
+
+            Text("It only lets the keyboard reach vocaphone. Your typing is never sent anywhere.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // The bottom button already names the problem, so this one names
+            // the destination instead of repeating it.
+            Button("Review the keyboard steps") {
+                keyboardSettingsRoundTripStarted = false
+                stage = .keyboard
+            }
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
+        }
+    }
+
+    private var keyboardSwitchPage: some View {
         OnboardingPage {
             Text("Switch to vocaphone")
                 .font(.title.weight(.bold))
-            Text("Tap the field, hold the globe, then choose vocaphone. This confirms Full Access automatically.")
+            Text("Hold the globe key and choose vocaphone. That is all this screen needs.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             KeyboardSwitchCoach(reduceMotion: reduceMotion)
 
-            VStack(alignment: .leading, spacing: VocaMetrics.related) {
-                Label("Try it now", systemImage: "hand.tap")
-                    .font(.headline)
+            // The field and the bottom button are the same action, so the card
+            // that used to wrap them — heading, field, and its own large button
+            // — has lost everything but the field.
+            TextField("Tap here to show the keyboard", text: $keyboardProbeText, axis: .vertical)
+                .textInputAutocapitalization(.never)
+                .textFieldStyle(.plain)
+                .padding(VocaMetrics.padding)
+                .background(
+                    Color.vocaSurface,
+                    in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
+                        .strokeBorder(keyboardProbeFocused ? Color.brand : Color.vocaBorder, lineWidth: 2)
+                )
+                .focused($keyboardProbeFocused)
 
-                TextField("Tap here to show the keyboard", text: $keyboardProbeText, axis: .vertical)
-                    .textInputAutocapitalization(.never)
-                    .textFieldStyle(.plain)
-                    .padding(VocaMetrics.padding)
-                    .background(
-                        Color.vocaSurface,
-                        in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
-                            .strokeBorder(keyboardProbeFocused ? Color.brand : Color.vocaBorder, lineWidth: 2)
-                    )
-                    .focused($keyboardProbeFocused)
-
-                Button {
-                    keyboardProbeFocused = true
-                } label: {
-                    Label("Open the keyboard", systemImage: "keyboard")
-                        .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-            }
-            .padding(VocaMetrics.padding)
-            .background(
-                Color.vocaRecessedSurface,
-                in: RoundedRectangle(cornerRadius: VocaMetrics.cardRadius, style: .continuous)
-            )
-
-            if status.isSatisfied(.keyboard) {
-                CompletionNotice("vocaphone opened with Full Access")
+            let verification = keyboardVerification
+            if verification == .verified {
+                CompletionNotice(verification.title)
             } else {
-                Label("Waiting for vocaphone to open", systemImage: "circle.dotted")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(verification.title, systemImage: verification.symbolName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if let detail = verification.detail {
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
 
                 // Always offer the way back. This page waits on the extension
                 // running, and a keyboard that was never added — or was removed
@@ -783,6 +788,35 @@ struct SetupView: View {
         "\(isShowingFlow)-\(stage.rawValue)-\(status.isSatisfied(.keyboard))"
     }
 
+    private var keyboardListRequirement: KeyboardRequirementState {
+        switch status.isKeyboardInstalled {
+        case true: .met
+        // The step above already says to add it, so an unfinished step needs no
+        // words. Only iOS declining to answer is worth a line.
+        case false: .pending(nil)
+        default: .pending("vocaphone could not read your keyboard list")
+        }
+    }
+
+    private var fullAccessRequirement: KeyboardRequirementState {
+        switch status.keyboard {
+        case .ready, .silent: .met
+        case .seenWithoutFullAccess: .failed("Currently off")
+        case .notAdded, .addedButNeverRun:
+            // Not merely unfinished — unknowable: iOS exposes no API for this
+            // switch, so only the keyboard running can answer it. Saying so is
+            // what stops moving on from reading as having passed it.
+            .pending("Checked on the next screen")
+        }
+    }
+
+    private var keyboardVerification: KeyboardVerification {
+        OnboardingPresentation.keyboardVerification(
+            status: status,
+            waitedFor: keyboardWaitSeconds
+        )
+    }
+
     private var requiresMandatorySetup: Bool {
         OnboardingPresentation.requiresFirstRunCover(
             setupCompleted: setupCompleted,
@@ -860,9 +894,13 @@ struct SetupView: View {
     }
 
     private func watchForTheKeyboard() async {
+        keyboardWaitSeconds = 0
         guard isShowingFlow, stage == .keyboardSwitch, !status.isSatisfied(.keyboard) else { return }
+        let interval: TimeInterval = 0.4
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            keyboardWaitSeconds += interval
             coordinator.refreshSetupStatus()
         }
     }
@@ -873,11 +911,6 @@ struct SetupView: View {
             keyboardSettingsRoundTripStarted = true
         }
         UIApplication.shared.open(url)
-    }
-
-    private func copySettingsPath() {
-        UIPasteboard.general.string = AppConfiguration.fullAccessSettingsPath
-        hasCopiedSettingsPath = true
     }
 
     private func isCompleteForReview(_ step: SetupStep) -> Bool {
@@ -970,6 +1003,28 @@ private struct CompletionNotice: View {
     }
 }
 
+/// One half of the keyboard requirement, and how sure vocaphone is about it.
+///
+/// `pending` covers both "not done yet" and "iOS exposes no way to check this",
+/// which are the same thing to the reader: nothing to celebrate, nothing wrong.
+/// A checklist that rendered "we cannot check this" as a red cross would be
+/// lying about the most common case.
+enum KeyboardRequirementState: Equatable {
+    case met
+    case pending(String?)
+    case failed(String)
+
+    /// At most one short line. The step itself already says what to do; this
+    /// only says where the user stands in it.
+    var note: String? {
+        switch self {
+        case .met: nil
+        case let .pending(note): note
+        case let .failed(note): note
+        }
+    }
+}
+
 private struct SourceChoiceCard: View {
     let title: String
     let detail: String
@@ -1019,14 +1074,36 @@ private struct SettingsReferenceCard: View {
     let title: String
     let detail: String
     let symbol: String
+    var state: KeyboardRequirementState = .pending(nil)
 
-    var body: some View {
-        HStack(alignment: .top, spacing: VocaMetrics.padding) {
+    /// The badge carries the state, so a finished step costs no extra line.
+    @ViewBuilder private var badge: some View {
+        switch state {
+        case .met:
+            Image(systemName: "checkmark")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Color.onBrand)
+                .frame(width: 28, height: 28)
+                .background(Color.brand, in: Circle())
+        case .failed:
+            Image(systemName: "exclamationmark")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Color.onBrand)
+                .frame(width: 28, height: 28)
+                .background(Color.vocaWarning, in: Circle())
+        case .pending:
             Text("\(number)")
                 .font(.headline.monospacedDigit())
                 .foregroundStyle(Color.onBrand)
                 .frame(width: 28, height: 28)
                 .background(Color.brand, in: Circle())
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: VocaMetrics.padding) {
+            badge
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Label(title, systemImage: symbol)
                     .font(.headline)
@@ -1034,6 +1111,14 @@ private struct SettingsReferenceCard: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let note = state.note {
+                    Text(note)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(
+                            state == .failed(note) ? Color.vocaWarning : .secondary
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(VocaMetrics.padding)
