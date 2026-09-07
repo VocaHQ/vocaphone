@@ -316,14 +316,27 @@ internal fun VocaPhoneKeyboard(
     }
     val clipboardChip = clipboard.takeIf { settings.clipboardChipEnabled && !editor.sensitive }
     val startedTyping = KeyboardChrome.startedTyping(keyboardState.composing, editorText.before)
-    val stripClipboard = KeyboardChrome.clipboardForStrip(clipboardChip, startedTyping)
     val swipeArmed = KeyboardChrome.swipeWordArmed(swipeWord, editorText.before, editorText.after)
-    val stripSuggestions = if (swipeArmed && swipeChoices.isNotEmpty()) {
-        swipeChoices.map { SuggestionItem(it) }
+    val swipeChoicesActive = KeyboardChrome.swipeChoicesActive(
+        hasChoices = swipeChoices.isNotEmpty(),
+        swipeArmed = swipeArmed,
+        startedTyping = startedTyping,
+        composing = keyboardState.composing,
+    )
+    val stripClipboard = KeyboardChrome.clipboardForStrip(
+        clipboardChip,
+        startedTyping,
+        swipeChoicesActive = swipeChoicesActive,
+    )
+    val stripSuggestions = if (swipeChoicesActive) {
+        buildList(swipeChoices.size + 1) {
+            swipeWord?.let { add(SuggestionItem(it)) }
+            addAll(swipeChoices.map { SuggestionItem(it) })
+        }
     } else {
         KeyboardChrome.suggestionsForStrip(suggestionStrip.items, startedTyping)
     }
-    val swipeReplacesWord = swipeArmed && swipeChoices.isNotEmpty()
+    val swipeReplacesWord = swipeChoicesActive
 
     fun clearSwipe() {
         swipeChoices = emptyList()
@@ -1032,6 +1045,10 @@ private fun DictationBar(
                     onSelect = onEmojiCategory,
                     modifier = Modifier.weight(1f),
                 )
+                suggestions.isNotEmpty() -> SuggestionStripRow(
+                    suggestions = suggestions,
+                    onSuggestion = onSuggestion,
+                )
                 clipboard != null -> {
                     Box(
                         modifier = Modifier
@@ -1047,10 +1064,6 @@ private fun DictationBar(
                         )
                     }
                 }
-                suggestions.isNotEmpty() -> SuggestionStripRow(
-                    suggestions = suggestions,
-                    onSuggestion = onSuggestion,
-                )
                 else -> Spacer(Modifier.weight(1f))
             }
         }
