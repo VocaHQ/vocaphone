@@ -530,7 +530,7 @@ internal fun VocaPhoneKeyboard(
         }
     }
 
-    VocaPhoneTheme {
+    VocaPhoneTheme(dynamicColor = settings.dynamicColorEnabled) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerLowest,
             contentColor = MaterialTheme.colorScheme.onSurface,
