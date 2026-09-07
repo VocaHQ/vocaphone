@@ -668,7 +668,7 @@ enum KeyboardPreferences {
         get {
             guard let raw = defaults?.string(forKey: typingHapticStyleKey),
                   let style = TypingHapticStyle(rawValue: raw)
-            else { return .soft }
+            else { return .rigid }
             return style
         }
         set { defaults?.set(newValue.rawValue, forKey: typingHapticStyleKey) }
@@ -677,8 +677,10 @@ enum KeyboardPreferences {
     /// 0 to 1, where 1 is the whole engine.
     static var typingHapticIntensity: Double {
         get {
-            let stored = defaults?.double(forKey: typingHapticIntensityKey) ?? 0
-            return stored > 0 ? min(stored, 1) : 0.72
+            guard let stored = defaults?.object(forKey: typingHapticIntensityKey) as? Double,
+                  stored.isFinite
+            else { return 1 }
+            return min(max(stored, 0), 1)
         }
         set { defaults?.set(min(max(newValue, 0), 1), forKey: typingHapticIntensityKey) }
     }

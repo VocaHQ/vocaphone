@@ -835,7 +835,42 @@ struct AppliedCorrectionArmingTests {
 
 /// A field switch must drop work that still belongs to the previous document.
 @MainActor
+@Suite(.serialized)
 struct TypingEngineDocumentChangeTests {
+    @Test func swipingRetiresThePreviousTypedWordsCheck() async throws {
+        let suggestions = KeyboardPreferences.typingSuggestionsEnabled
+        defer { KeyboardPreferences.typingSuggestionsEnabled = suggestions }
+        KeyboardPreferences.typingSuggestionsEnabled = true
+        let checker = RecordingSpellChecker()
+        let engine = TypingEngine(
+            checker: checker,
+            learned: LearnedWordStore(containerURL: nil),
+            wordList: .empty
+        )
+        engine.insert("hel", document: DocumentSnapshot(before: "hel"))
+        engine.noteSwipeWord("world", alternates: ["world", "word"])
+        let alternates = engine.strip
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(checker.prefixesAsked.isEmpty)
+        #expect(engine.strip == alternates)
+    }
+    @Test func disablingSuggestionsRetiresThePendingChecker() async throws {
+        let suggestions = KeyboardPreferences.typingSuggestionsEnabled
+        defer { KeyboardPreferences.typingSuggestionsEnabled = suggestions }
+        KeyboardPreferences.typingSuggestionsEnabled = true
+        let checker = RecordingSpellChecker()
+        let engine = TypingEngine(
+            checker: checker,
+            learned: LearnedWordStore(containerURL: nil),
+            wordList: .empty
+        )
+        engine.insert("hel", document: DocumentSnapshot(before: "hel"))
+        KeyboardPreferences.typingSuggestionsEnabled = false
+        engine.reconcile(document: DocumentSnapshot(before: "hel"))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(checker.prefixesAsked.isEmpty)
+        #expect(engine.strip.isEmpty)
+    }
     /// Distinctive so a leaked publication cannot be mistaken for a word-list hit.
     private static let staleCompletion = "hellofromoldfield"
 

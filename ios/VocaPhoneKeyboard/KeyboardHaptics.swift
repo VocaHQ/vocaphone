@@ -120,7 +120,7 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
     /// right display, which an extension cannot be assumed to infer on its own.
     private weak var host: UIView?
     private var keyTapGenerator: UIImpactFeedbackGenerator?
-    private var keyTapStyle: UIImpactFeedbackGenerator.FeedbackStyle = .soft
+    private var keyTapStyle: UIImpactFeedbackGenerator.FeedbackStyle = .rigid
     private var actionGenerator: UIImpactFeedbackGenerator?
     private var selectionGenerator: UISelectionFeedbackGenerator?
 
@@ -239,17 +239,8 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
             case .inputClick:
                 UIDevice.current.playInputClick()
             case .typingHaptic:
-                // `.soft` at 0.72, settled by feel on a device rather than by
-                // argument. The reasoning that used to sit here — that a key is
-                // a hard click, so only `.rigid` at full power could avoid
-                // reading as weaker than every other keyboard on the phone —
-                // turned out to be wrong in the hand: at full power the tap
-                // buzzes rather than clicks, and stops being a keystroke.
-                //
-                // Style and strength are both preferences, so this is a default
-                // and not a verdict. The keyboard lab drives them from two
-                // sliders precisely because how a tap feels is not a number
-                // anybody picks correctly by reasoning about it.
+                // Match main's rigid, full-strength tap by default while
+                // respecting explicit adjustments made in the keyboard lab.
                 let generator = keyTapImpact()
                 generator.impactOccurred(intensity: KeyboardPreferences.typingHapticIntensity)
                 generator.prepare()

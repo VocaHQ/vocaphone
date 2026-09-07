@@ -6,6 +6,25 @@ import UIKit
 /// explicit VocaPhone preference and Full Access.
 @MainActor
 struct KeyboardHapticsTests {
+    @Test func defaultFeedbackMatchesMainAndZeroIntensityIsPreserved() {
+        let defaults = KeyboardPreferences.defaults
+        let styleKey = KeyboardPreferences.typingHapticStyleKey
+        let intensityKey = KeyboardPreferences.typingHapticIntensityKey
+        let savedStyle = defaults?.object(forKey: styleKey)
+        let savedIntensity = defaults?.object(forKey: intensityKey)
+        defer {
+            defaults?.set(savedStyle, forKey: styleKey)
+            defaults?.set(savedIntensity, forKey: intensityKey)
+        }
+        defaults?.removeObject(forKey: styleKey)
+        defaults?.removeObject(forKey: intensityKey)
+        #expect(KeyboardPreferences.typingHapticStyle == .rigid)
+        #expect(KeyboardPreferences.typingHapticIntensity == 1)
+        KeyboardPreferences.typingHapticIntensity = 0
+        #expect(KeyboardPreferences.typingHapticIntensity == 0)
+        KeyboardPreferences.typingHapticIntensity = 0.4
+        #expect(KeyboardPreferences.typingHapticIntensity == 0.4)
+    }
     @Test func hapticsNeedBothThePreferenceAndFullAccess() {
         #expect(KeyboardHaptics.allowsHaptics(preferenceEnabled: true, hasFullAccess: true))
         #expect(!KeyboardHaptics.allowsHaptics(preferenceEnabled: false, hasFullAccess: true))

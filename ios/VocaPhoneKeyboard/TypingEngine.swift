@@ -304,6 +304,9 @@ final class TypingEngine {
     /// is therefore never autocorrected: the recogniser already picked from the
     /// dictionary, and correcting its answer would be two guesses stacked.
     func noteSwipeWord(_ word: String, alternates: [String]) {
+        pendingCheck?.cancel()
+        pendingCheck = nil
+        generation += 1
         composer.adopt(word, origin: .swipe)
         // Kept beside the composer rather than inside it. The document reads
         // "word " and the composer describes the word the cursor is inside, so
@@ -407,6 +410,10 @@ final class TypingEngine {
     // MARK: - Computation
 
     private func refresh(document: DocumentSnapshot) {
+        // Retire the previous composition even when this refresh exits early.
+        pendingCheck?.cancel()
+        pendingCheck = nil
+        generation += 1
         measured("nextCharacters") { publishNextCharacters() }
         guard KeyboardPreferences.typingSuggestionsEnabled, policy.allowsTypingIntelligence
         else {
@@ -433,7 +440,6 @@ final class TypingEngine {
             return
         }
 
-        generation += 1
         let generation = generation
         let composition = composer.text
         if !composition.isEmpty { measured("ensureLoaded") { ensureLoaded() } }
