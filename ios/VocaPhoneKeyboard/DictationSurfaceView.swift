@@ -552,9 +552,13 @@ struct DictationSurfaceView: View {
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
+                .background(.ultraThinMaterial, in: Circle())
         }
-        .modifier(GlassButtonModifier(id: "leadGlass", namespace: animationNamespace))
-        .accessibilityLabel("Cancel dictation")
+        // Keep decoration inside the label. Interactive glass around a Menu
+        // participates in its presentation snapshot and can leave the source
+        // button hidden or enlarged after dismissal in the keyboard extension.
+        .buttonStyle(.plain)
+        .accessibilityLabel("Transcription language")
     }
 
     @ViewBuilder
@@ -590,8 +594,9 @@ struct DictationSurfaceView: View {
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
+                .background(.ultraThinMaterial, in: Circle())
         }
-        .modifier(GlassButtonModifier(id: "styleGlass", namespace: animationNamespace))
+        .buttonStyle(.plain)
         .accessibilityLabel("Writing style")
         .accessibilityValue(state.style.displayName)
     }
