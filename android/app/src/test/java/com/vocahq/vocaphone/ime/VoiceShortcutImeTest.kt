@@ -61,6 +61,59 @@ class VoiceShortcutImeTest {
                 alreadyRequested = true,
             ),
         )
+        assertFalse(
+            VoiceShortcutIme.shouldAutoStart(
+                isVoiceShortcut = true,
+                dictationAllowed = true,
+                isBusy = false,
+                alreadyRequested = false,
+                inputViewShown = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `auto-start waits while the IME window is not yet visible`() {
+        assertTrue(
+            VoiceShortcutIme.shouldWaitForInputView(
+                isVoiceShortcut = true,
+                alreadyRequested = false,
+                inputViewShown = false,
+                waitAttempts = 0,
+            ),
+        )
+        assertFalse(
+            VoiceShortcutIme.shouldWaitForInputView(
+                isVoiceShortcut = true,
+                alreadyRequested = false,
+                inputViewShown = true,
+                waitAttempts = 0,
+            ),
+        )
+        assertFalse(
+            VoiceShortcutIme.shouldWaitForInputView(
+                isVoiceShortcut = true,
+                alreadyRequested = true,
+                inputViewShown = false,
+                waitAttempts = 0,
+            ),
+        )
+        assertFalse(
+            VoiceShortcutIme.shouldWaitForInputView(
+                isVoiceShortcut = false,
+                alreadyRequested = false,
+                inputViewShown = false,
+                waitAttempts = 0,
+            ),
+        )
+        assertFalse(
+            VoiceShortcutIme.shouldWaitForInputView(
+                isVoiceShortcut = true,
+                alreadyRequested = false,
+                inputViewShown = false,
+                waitAttempts = VoiceShortcutIme.MAX_WINDOW_WAITS,
+            ),
+        )
     }
 
     @Test
@@ -230,7 +283,50 @@ class VoiceShortcutImeTest {
     }
 
     @Test
+    fun `a hide during auto-start does not bounce back to the typing keyboard`() {
+        assertTrue(
+            VoiceShortcutIme.shouldKeepShortcutSession(
+                isVoiceShortcut = true,
+                startRequested = true,
+                sessionLeftIdle = false,
+            ),
+        )
+        assertFalse(
+            VoiceShortcutIme.shouldKeepShortcutSession(
+                isVoiceShortcut = true,
+                startRequested = true,
+                sessionLeftIdle = true,
+            ),
+        )
+        assertFalse(
+            VoiceShortcutIme.shouldKeepShortcutSession(
+                isVoiceShortcut = true,
+                startRequested = false,
+                sessionLeftIdle = false,
+            ),
+        )
+        assertFalse(
+            VoiceShortcutIme.shouldKeepShortcutSession(
+                isVoiceShortcut = false,
+                startRequested = true,
+                sessionLeftIdle = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `the voice shortcut does not take a microphone foreground service`() {
+        assertFalse(VoiceShortcutIme.usesMicrophoneForegroundService(isVoiceShortcut = true))
+        assertTrue(VoiceShortcutIme.usesMicrophoneForegroundService(isVoiceShortcut = false))
+    }
+
+    @Test
     fun `voice mode string matches method xml`() {
         assertEquals("voice", VoiceShortcutIme.MODE_VOICE)
+    }
+
+    @Test
+    fun `publishing subtypes is a no-op without a manager or info`() {
+        VoiceShortcutIme.publishEnabledSubtypes(null, "com.vocahq.vocaphone/.ime.VocaPhoneInputMethodService", null)
     }
 }

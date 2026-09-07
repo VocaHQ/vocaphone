@@ -1115,7 +1115,9 @@ internal fun VoiceShortcutListeningChrome(
     isPreferenceWritePending: Boolean,
     onMicTap: () -> Unit,
     onMicLongPress: () -> Unit,
+    onReadyToListen: () -> Unit = {},
 ) {
+    LaunchedEffect(Unit) { onReadyToListen() }
     VocaPhoneTheme(dynamicColor = settings.dynamicColorEnabled) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerLowest,

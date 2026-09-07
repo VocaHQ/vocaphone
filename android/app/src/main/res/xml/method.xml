@@ -9,8 +9,14 @@
         android:imeSubtypeMode="keyboard"
         android:isAsciiCapable="true"
         android:overridesImplicitlyEnabledSubtype="true" />
+    <!-- Auxiliary so it is a one-shot voice shortcut, not a picker language.
+         overridesImplicitlyEnabledSubtype so the system includes it in
+         getShortcutInputMethodsAndSubtypes() without a subtype-enabler tap.
+         Google Voice Typing uses the same two flags; without the override,
+         HeliBoard sees an empty shortcut list and greys out its mic. -->
     <subtype
         android:label="@string/voice_input_label"
         android:imeSubtypeMode="voice"
-        android:isAuxiliary="true" />
+        android:isAuxiliary="true"
+        android:overridesImplicitlyEnabledSubtype="true" />
 </input-method>

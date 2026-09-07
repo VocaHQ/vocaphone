@@ -91,6 +91,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var voiceShortcutStartRequested = false
     private var voiceShortcutLeftIdle = false
     private var voiceShortcutReturned = false
+    private var voiceShortcutWindowWaits = 0
+    private val startVoiceShortcutDictation = Runnable { maybeStartVoiceShortcutDictation() }
     private var ignoredClipboardText: String? = null
     private var lastRecordedClip: String? = null
     private var lastImageSource: String? = null
@@ -110,6 +112,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     override fun onCreate() {
         super.onCreate()
+        publishVoiceShortcutSubtypes()
         container.dictation.imeInserter = this
         scope.launch {
             container.dictation.state.collect { state ->
@@ -153,6 +156,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 isPreferenceWritePending = isPreferenceWritePending,
                 onMicTap = ::toggleDictation,
                 onMicLongPress = ::cancelDictationFromMic,
+                onReadyToListen = ::scheduleVoiceShortcutDictation,
             )
         } else {
             val clipboard by visibleClipboard.collectAsState()
@@ -236,11 +240,23 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             startClipboardWatch()
             refreshEditorText()
         }
-        maybeStartVoiceShortcutDictation()
+        // Auto-start waits for VoiceShortcutListeningChrome's first frame.
+        // A microphone FGS is not eligible on this handoff (targetSdk 36).
         maybeHandBackVoiceShortcut()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        if (VoiceShortcutIme.shouldKeepShortcutSession(
+                voiceShortcutActive,
+                voiceShortcutStartRequested,
+                voiceShortcutLeftIdle,
+            )
+        ) {
+            super.onFinishInputView(finishingInput)
+            return
+        }
+        mainHandler.removeCallbacks(startVoiceShortcutDictation)
+        voiceShortcutWindowWaits = 0
         if (voiceShortcutActive) {
             cancelOwnedDictation("voice_shortcut_hidden")
             if (VoiceShortcutIme.shouldReturnWhenViewFinishes(
@@ -261,7 +277,6 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val wasActive = voiceShortcutActive
         applyVoiceShortcutSubtype(newSubtype)
         if (voiceShortcutActive && !wasActive) {
-            maybeStartVoiceShortcutDictation()
             maybeHandBackVoiceShortcut()
         }
     }
@@ -332,6 +347,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     override fun onFinishInput() {
+        mainHandler.removeCallbacks(startVoiceShortcutDictation)
+        voiceShortcutWindowWaits = 0
         cancelOwnedDictation("editor_finished")
         if (VoiceShortcutIme.shouldReturnWhenViewFinishes(
                 voiceShortcutActive,
@@ -364,6 +381,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(startVoiceShortcutDictation)
+        voiceShortcutWindowWaits = 0
         stopClipboardWatch()
         cancelOwnedDictation("keyboard_destroyed")
         if (container.dictation.imeInserter === this) {
@@ -878,11 +897,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             else -> when (MicDictationControl.tap(lastState.phase)) {
                 MicDictationAction.FINISH -> {
                     container.diagnostics.recordAction("finish", DictationSource.IME.name)
-                    DictationService.send(this, DictationService.ACTION_FINISH)
+                    finishImeDictation()
                 }
                 MicDictationAction.CANCEL -> {
                     container.diagnostics.recordAction("cancel", DictationSource.IME.name)
-                    DictationService.send(this, DictationService.ACTION_CANCEL)
+                    cancelImeDictation()
                 }
                 MicDictationAction.OPEN_APP -> openCompanion()
                 MicDictationAction.START -> startImeDictation()
@@ -893,7 +912,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private fun cancelDictationFromMic() {
         if (MicDictationControl.longPress(lastState.phase) != MicDictationAction.CANCEL) return
         container.diagnostics.recordAction("cancel", DictationSource.IME.name)
-        DictationService.send(this, DictationService.ACTION_CANCEL)
+        cancelImeDictation()
     }
 
     private fun setLanguage(language: TranscriptionLanguage) {
@@ -914,7 +933,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     private fun cancelOwnedDictation(reason: String) {
-        if (!startedImeDictation || !lastState.phase.isBusy) return
+        if (!startedImeDictation) return
         container.diagnostics.recordAction(reason, DictationSource.IME.name)
         startedImeDictation = false
         // An editor connection is unsafe after this callback, so do not let a
@@ -934,11 +953,40 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             voiceShortcutOwnedSession = true
             voiceShortcutStartRequested = true
         }
-        DictationService.start(this, DictationSource.IME)
+        if (VoiceShortcutIme.usesMicrophoneForegroundService(voiceShortcutActive)) {
+            DictationService.start(this, DictationSource.IME)
+        } else {
+            container.dictation.start(DictationSource.IME)
+        }
+    }
+
+    private fun finishImeDictation() {
+        if (VoiceShortcutIme.usesMicrophoneForegroundService(voiceShortcutActive)) {
+            DictationService.send(this, DictationService.ACTION_FINISH)
+        } else {
+            container.dictation.finish()
+        }
+    }
+
+    private fun cancelImeDictation() {
+        if (VoiceShortcutIme.usesMicrophoneForegroundService(voiceShortcutActive)) {
+            DictationService.send(this, DictationService.ACTION_CANCEL)
+        } else {
+            container.dictation.cancel()
+        }
     }
 
     private fun currentSubtype(): InputMethodSubtype? =
         getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
+
+    private fun publishVoiceShortcutSubtypes() {
+        val imm = getSystemService(InputMethodManager::class.java) ?: return
+        val imi = imm.inputMethodList.firstOrNull {
+            it.packageName == packageName &&
+                it.serviceName.endsWith("VocaPhoneInputMethodService")
+        } ?: return
+        VoiceShortcutIme.publishEnabledSubtypes(imm, imi.id, imi)
+    }
 
     private fun applyVoiceShortcutSubtype(subtype: InputMethodSubtype?) {
         val active = VoiceShortcutIme.isVoiceShortcutSubtype(
@@ -951,19 +999,38 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         voiceShortcutStartRequested = false
         voiceShortcutLeftIdle = false
         voiceShortcutReturned = false
+        voiceShortcutWindowWaits = 0
+    }
+
+    private fun scheduleVoiceShortcutDictation() {
+        if (!voiceShortcutActive) return
+        mainHandler.removeCallbacks(startVoiceShortcutDictation)
+        voiceShortcutWindowWaits = 0
+        mainHandler.post(startVoiceShortcutDictation)
     }
 
     private fun maybeStartVoiceShortcutDictation() {
-        if (!VoiceShortcutIme.shouldAutoStart(
+        if (VoiceShortcutIme.shouldAutoStart(
                 isVoiceShortcut = voiceShortcutActive,
                 dictationAllowed = editorConfig.dictationAllowed,
                 isBusy = lastState.phase.isBusy,
                 alreadyRequested = voiceShortcutStartRequested,
+                inputViewShown = isInputViewShown,
             )
         ) {
+            startImeDictation()
             return
         }
-        startImeDictation()
+        if (VoiceShortcutIme.shouldWaitForInputView(
+                isVoiceShortcut = voiceShortcutActive,
+                alreadyRequested = voiceShortcutStartRequested,
+                inputViewShown = isInputViewShown,
+                waitAttempts = voiceShortcutWindowWaits,
+            )
+        ) {
+            voiceShortcutWindowWaits++
+            mainHandler.postDelayed(startVoiceShortcutDictation, VoiceShortcutIme.WINDOW_WAIT_DELAY_MS)
+        }
     }
 
     private fun maybeHandBackVoiceShortcut() {
