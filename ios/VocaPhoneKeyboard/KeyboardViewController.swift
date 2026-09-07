@@ -418,11 +418,16 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         guard let url = URL(
             string: "\(AppConfiguration.urlScheme)://retry?session=\(record.sessionID.uuidString)"
         ) else { return }
+        let sessionID = record.sessionID
         openURLFromKeyboard(url) { [weak self] opened in
             DispatchQueue.main.async {
-                if !opened {
-                    self?.dictationBar.flash("Open vocaphone to retry the preserved recording.")
-                }
+                guard let self, !opened,
+                      self.activeSessionID == sessionID,
+                      self.lastRecord?.state == .uploading
+                else { return }
+                self.dictationSurfaceState.showRecoveryMessage(
+                    "Open vocaphone to retry the preserved recording."
+                )
             }
         }
     }
@@ -1028,13 +1033,16 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         openURLFromKeyboard(url) { [weak self] opened in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if opened { return }
+                guard !opened, self.activeSessionID == sessionID,
+                      let current = try? self.store.load(sessionID),
+                      current.state == .launchingApp || current.state == .awaitingReturn
+                else { return }
                 if var waiting = try? self.store.load(sessionID),
                    waiting.state == .launchingApp
                 {
                     self.transition(&waiting, to: .awaitingReturn)
                 }
-                self.dictationBar.flash(
+                self.dictationSurfaceState.showRecoveryMessage(
                     "Open vocaphone manually; the recording request is waiting."
                 )
             }
@@ -1289,6 +1297,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             dictationSurfaceState.holdMeterLevels()
         }
 
+        dictationSurfaceState.sessionID = record?.sessionID
         dictationSurfaceState.state = state
         dictationSurfaceState.isDark = prefersDarkAppearance
         dictationSurfaceState.typing.isDark = prefersDarkAppearance

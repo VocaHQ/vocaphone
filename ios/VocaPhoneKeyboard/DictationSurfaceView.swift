@@ -7,7 +7,10 @@ final class DictationSurfaceState: ObservableObject {
     private var storedState: SessionState = .idle
     var state: SessionState {
         get { storedState }
-        set { change(&storedState, to: newValue) }
+        set {
+            if storedState != newValue { recoveryMessage = nil }
+            change(&storedState, to: newValue)
+        }
     }
     /// The meter's own state. Levels arrive several times a second, and
     /// published here they invalidated the whole surface each time — glass,
@@ -62,9 +65,22 @@ final class DictationSurfaceState: ObservableObject {
     /// copy, and the surface has no business inventing a second wording.
     private var storedCenterMessage: String? = nil
     var centerMessage: String? {
-        get { storedCenterMessage }
+        get { recoveryMessage ?? storedCenterMessage }
         set { change(&storedCenterMessage, to: newValue) }
     }
+    /// Recovery guidance survives polling until the session makes progress.
+    /// Keep it separate from the model message that render refreshes each time.
+    @Published private(set) var recoveryMessage: String?
+    var sessionID: UUID? {
+        didSet {
+            if sessionID != oldValue { recoveryMessage = nil }
+        }
+    }
+
+    func showRecoveryMessage(_ message: String) {
+        recoveryMessage = message
+    }
+
     /// The trailing button in this state: Finish, Insert, Retry, Start.
     private var storedPrimarySymbol: String = "mic.fill"
     var primarySymbol: String {

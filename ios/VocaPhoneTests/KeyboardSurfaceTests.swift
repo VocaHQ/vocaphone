@@ -10,6 +10,31 @@ import UIKit
 /// attached to the value.
 @MainActor
 struct KeyboardSurfaceTests {
+    @Test func recoveryGuidanceSurvivesPollingUntilTheStateChanges() {
+        let surface = DictationSurfaceState()
+        surface.state = .awaitingReturn
+        surface.showRecoveryMessage("Open vocaphone manually")
+        surface.state = .awaitingReturn
+        surface.centerMessage = nil
+        #expect(surface.centerMessage == "Open vocaphone manually")
+
+        surface.state = .recording
+        #expect(surface.centerMessage == nil)
+    }
+
+    @Test func retryGuidanceDoesNotLeakIntoAnotherSession() {
+        let surface = DictationSurfaceState()
+        surface.sessionID = UUID()
+        surface.state = .uploading
+        surface.showRecoveryMessage("Open vocaphone to retry")
+        surface.centerMessage = "Uploading"
+        #expect(surface.centerMessage == "Open vocaphone to retry")
+
+        surface.sessionID = UUID()
+        #expect(surface.centerMessage == "Uploading")
+        #expect(surface.recoveryMessage == nil)
+    }
+
     private static var portrait: UITraitCollection {
         UITraitCollection { traits in
             traits.horizontalSizeClass = .compact
