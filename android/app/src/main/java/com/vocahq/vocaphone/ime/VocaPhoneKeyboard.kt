@@ -1081,13 +1081,14 @@ private fun DictationBar(
         if (panelTitle != null) {
             ToolbarCloseButton(onClick = onClosePanel)
         }
-        if (state.phase.isBusy) {
+        if (MicDictationControl.showsSeparateCancel(state.phase)) {
             DictationCancelButton(onClick = onMicLongPress)
         }
         MicButton(
             state = state,
             enabled = editor.dictationAllowed && !isPreferenceWritePending,
             onClick = onMicTap,
+            onLongPress = onMicLongPress,
         )
     }
 }
@@ -1635,6 +1636,7 @@ private fun MicButton(
     state: DictationState,
     enabled: Boolean,
     onClick: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
     val view = LocalView.current
     val processing = state.phase in setOf(
@@ -1646,7 +1648,7 @@ private fun MicButton(
     val recording = state.phase == DictationPhase.LISTENING
     val description = when {
         !enabled -> "Dictation unavailable"
-        recording -> "Finish dictation"
+        recording -> "Finish dictation. Long-press to discard without inserting"
         processing -> "Dictation in progress"
         state.phase == DictationPhase.PERMISSION_REPAIR -> "Open VocaPhone"
         else -> "Start dictation"
@@ -1678,6 +1680,10 @@ private fun MicButton(
                     onTap = {
                         view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                         onClick()
+                    },
+                    onLongPress = { _ ->
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        onLongPress()
                     },
                 )
             },
