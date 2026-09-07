@@ -650,7 +650,7 @@ struct DictationSurfaceView: View {
                     .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                     .shadow(color: Self.brandGreen.opacity(0.35), radius: 4, x: 0, y: 2)
 
-                if isWorking {
+                if isWorking && !state.primaryIsEnabled {
                     // The same circle, still there, no longer an action: the
                     // work it started is what it is now reporting.
                     ProgressView()
@@ -666,10 +666,9 @@ struct DictationSurfaceView: View {
             }
         }
         .buttonStyle(.plain)
-        // Tapping through a transcription would start a second recording over
-        // the top of the first. Cancel stays live; this does not.
-        .disabled(isWorking || !state.primaryIsEnabled)
-        .accessibilityLabel(isWorking ? "Transcribing" : state.primaryLabel)
+        // The model disables processing but keeps handoff recovery available.
+        .disabled(!state.primaryIsEnabled)
+        .accessibilityLabel(state.primaryLabel)
         .matchedGeometryEffect(id: "trailingActionCircle", in: animationNamespace)
     }
 }

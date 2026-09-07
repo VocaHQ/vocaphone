@@ -3,6 +3,37 @@ import UIKit
 
 @MainActor
 struct DictationPresentationTests {
+    @Test func readySurfaceRetainsTranscriptAndCancel() {
+        let ready = Self.model(.readyToInsert, transcript: "A preview to check.")
+        let message = ready.surfaceMessage(for: .readyToInsert)
+        #expect(message?.contains("A preview to check.") == true)
+        #expect(ready.secondaries.contains(.cancel))
+        #expect(ready.primary.action == .insert)
+        #expect(ready.primary.isEnabled)
+        let empty = Self.model(.readyToInsert)
+        #expect(empty.surfaceMessage(for: .readyToInsert) != nil)
+    }
+
+    @Test func changedFieldSurfaceRetainsTranscriptAndGuidance() {
+        let ready = Self.model(.targetContextChanged, transcript: "Waiting text.")
+        let message = ready.surfaceMessage(for: .targetContextChanged)
+        #expect(message?.contains("Waiting text.") == true)
+        #expect(message?.contains("different text field") == true)
+        #expect(ready.primary.action == .insertHere)
+    }
+
+    @Test func handoffRecoveryRemainsEnabledWhileProcessingIsDisabled() {
+        for state in [SessionState.launchingApp, .awaitingReturn] {
+            let presentation = Self.model(state)
+            #expect(presentation.primary.isEnabled)
+            #expect(presentation.primary.action == .openApp)
+            #expect(presentation.primary.title == "Open app")
+        }
+        for state in [SessionState.finalizing, .uploading, .transcribing] {
+            #expect(!Self.model(state).primary.isEnabled)
+        }
+    }
+
     private static func model(
         _ state: SessionState,
         transcript: String? = nil,

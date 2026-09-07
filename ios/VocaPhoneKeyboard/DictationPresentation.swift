@@ -154,6 +154,15 @@ struct DictationContext: Equatable {
 }
 
 extension DictationBarModel {
+    /// Preserve the transcript and field guidance from the shared presentation.
+    func surfaceMessage(for state: SessionState) -> String? {
+        if state == .readyToInsert || state == .targetContextChanged,
+           case let .message(message) = body {
+            return message
+        }
+        return Self.surfaceLine(for: state)
+    }
+
     /// The single line the dictation surface shows in the middle, or `nil` when
     /// the state has nothing to explain.
     ///

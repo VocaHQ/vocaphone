@@ -210,7 +210,7 @@ struct KeyboardLabView: View {
         )
         surface.primarySymbol = model.primary.symbol
         surface.primaryIsEnabled = model.primary.isEnabled
-        surface.centerMessage = DictationBarModel.surfaceLine(for: state)
+        surface.centerMessage = model.surfaceMessage(for: state)
         // The lab stands in for the session the extension would be driving.
         // Without these the buttons are a picture of buttons: they call a
         // closure nobody set, and nothing happens when you press them.

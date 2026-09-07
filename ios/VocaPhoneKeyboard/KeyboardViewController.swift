@@ -1312,7 +1312,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // The state's own copy and its own action, taken from the model the old
         // bar was already built from. Two wordings for one failure is how a
         // product ends up telling a person two different things about it.
-        dictationSurfaceState.centerMessage = DictationBarModel.surfaceLine(for: state)
+        dictationSurfaceState.centerMessage = model.surfaceMessage(for: state)
         dictationSurfaceState.primarySymbol = model.primary.symbol
         dictationSurfaceState.primaryLabel = model.primary.title
         dictationSurfaceState.primaryIsEnabled = model.primary.isEnabled
