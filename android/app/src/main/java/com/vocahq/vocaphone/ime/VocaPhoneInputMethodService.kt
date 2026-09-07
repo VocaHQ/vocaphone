@@ -11,6 +11,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
+import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.InputMethodSubtype
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,6 +86,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var lastState = DictationState()
     private var currentInputType: Int = 0
     private var startedImeDictation = false
+    private var voiceShortcutActive by mutableStateOf(false)
+    private var voiceShortcutOwnedSession = false
+    private var voiceShortcutStartRequested = false
+    private var voiceShortcutLeftIdle = false
+    private var voiceShortcutReturned = false
     private var ignoredClipboardText: String? = null
     private var lastRecordedClip: String? = null
     private var lastImageSource: String? = null
@@ -109,6 +116,10 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 lastState = state
                 visibleDictationState.value = state
                 if (!state.phase.isBusy) startedImeDictation = false
+                if (voiceShortcutOwnedSession && state.phase != DictationPhase.IDLE) {
+                    voiceShortcutLeftIdle = true
+                }
+                maybeReturnToPreviousIme()
             }
         }
         scope.launch {
@@ -134,39 +145,51 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val dictationState by visibleDictationState.collectAsState()
         val settings by visibleSettings.collectAsState()
         val isPreferenceWritePending by preferenceWrites.pending.collectAsState()
-        val clipboard by visibleClipboard.collectAsState()
-        val editorText by visibleEditorText.collectAsState()
-        val dictionary by suggestionDictionary.collectAsState()
-        val emojis by emojiCatalog.collectAsState()
-        VocaPhoneKeyboard(
-            dictationState = dictationState,
-            editor = editorConfig,
-            settings = settings,
-            isPreferenceWritePending = isPreferenceWritePending,
-            clipboard = clipboard,
-            editorText = editorText,
-            suggestions = dictionary,
-            emojiCatalog = emojis,
-            onCommand = ::handleCommand,
-            onMicTap = ::toggleDictation,
-            onMicLongPress = ::cancelDictationFromMic,
-            onOpenSettings = ::openCompanion,
-            onLanguageSelected = ::setLanguage,
-            onStyleSelected = ::setStyle,
-            onSuggestionPicked = ::commitSuggestion,
-            onSaveToDictionary = ::addPersonalWord,
-            onEmojiSuggestion = ::commitEmojiSuggestion,
-            onPasteClipboard = { pasteClipboard(it) },
-            onDismissClipboard = ::dismissClipboard,
-            onRemoveClipboardHistory = ::removeClipboardHistory,
-            onClearClipboardHistory = ::clearClipboardHistory,
-            onEmojiUsed = ::recordEmojiRecent,
-        )
+        if (voiceShortcutActive) {
+            VoiceShortcutListeningChrome(
+                dictationState = dictationState,
+                editor = editorConfig,
+                settings = settings,
+                isPreferenceWritePending = isPreferenceWritePending,
+                onMicTap = ::toggleDictation,
+                onMicLongPress = ::cancelDictationFromMic,
+            )
+        } else {
+            val clipboard by visibleClipboard.collectAsState()
+            val editorText by visibleEditorText.collectAsState()
+            val dictionary by suggestionDictionary.collectAsState()
+            val emojis by emojiCatalog.collectAsState()
+            VocaPhoneKeyboard(
+                dictationState = dictationState,
+                editor = editorConfig,
+                settings = settings,
+                isPreferenceWritePending = isPreferenceWritePending,
+                clipboard = clipboard,
+                editorText = editorText,
+                suggestions = dictionary,
+                emojiCatalog = emojis,
+                onCommand = ::handleCommand,
+                onMicTap = ::toggleDictation,
+                onMicLongPress = ::cancelDictationFromMic,
+                onOpenSettings = ::openCompanion,
+                onLanguageSelected = ::setLanguage,
+                onStyleSelected = ::setStyle,
+                onSuggestionPicked = ::commitSuggestion,
+                onSaveToDictionary = ::addPersonalWord,
+                onEmojiSuggestion = ::commitEmojiSuggestion,
+                onPasteClipboard = { pasteClipboard(it) },
+                onDismissClipboard = ::dismissClipboard,
+                onRemoveClipboardHistory = ::removeClipboardHistory,
+                onClearClipboardHistory = ::clearClipboardHistory,
+                onEmojiUsed = ::recordEmojiRecent,
+            )
+        }
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         currentInputType = attribute?.inputType ?: 0
+        applyVoiceShortcutSubtype(currentSubtype())
         val identity = EditorIdentity.of(attribute)
         val sameEditor = EditorRestart.keepsSession(editorIdentity, identity)
         editorIdentity = identity
@@ -176,9 +199,13 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         lastSelStart = attribute?.initialSelStart ?: -1
         lastSelEnd = attribute?.initialSelEnd ?: -1
         composingRegionActive = false
-        val cursorCapsMode = runCatching {
-            currentInputConnection?.getCursorCapsMode(currentInputType) ?: 0
-        }.getOrDefault(0)
+        val cursorCapsMode = if (voiceShortcutActive) {
+            0
+        } else {
+            runCatching {
+                currentInputConnection?.getCursorCapsMode(currentInputType) ?: 0
+            }.getOrDefault(0)
+        }
         val started = KeyboardEditorConfig.from(attribute, editorSession).let { config ->
             if (config.initialLayer == KeyboardLayer.LETTERS) {
                 config.copy(initialShift = KeyboardEditorConfig.shiftFromCapsMode(cursorCapsMode))
@@ -199,19 +226,44 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         } else {
             started
         }
-        refreshEditorText()
+        if (!voiceShortcutActive) refreshEditorText()
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        startClipboardWatch()
-        refreshEditorText()
+        applyVoiceShortcutSubtype(currentSubtype())
+        if (!voiceShortcutActive) {
+            startClipboardWatch()
+            refreshEditorText()
+        }
+        maybeStartVoiceShortcutDictation()
+        maybeHandBackVoiceShortcut()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        if (voiceShortcutActive) {
+            cancelOwnedDictation("voice_shortcut_hidden")
+            if (VoiceShortcutIme.shouldReturnWhenViewFinishes(
+                    voiceShortcutActive,
+                    voiceShortcutReturned,
+                )
+            ) {
+                returnToPreviousIme()
+            }
+        }
         stopClipboardWatch()
         visibleClipboard.value = null
         super.onFinishInputView(finishingInput)
+    }
+
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: InputMethodSubtype?) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        val wasActive = voiceShortcutActive
+        applyVoiceShortcutSubtype(newSubtype)
+        if (voiceShortcutActive && !wasActive) {
+            maybeStartVoiceShortcutDictation()
+            maybeHandBackVoiceShortcut()
+        }
     }
 
     override fun onUpdateSelection(
@@ -230,6 +282,13 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             candidatesStart,
             candidatesEnd,
         )
+        if (voiceShortcutActive) {
+            lastCandidatesStart = candidatesStart
+            lastCandidatesEnd = candidatesEnd
+            lastSelStart = newSelStart
+            lastSelEnd = newSelEnd
+            return
+        }
         val userMove = EditorCursorSync.isUserMove(
             oldSelStart,
             oldSelEnd,
@@ -274,6 +333,16 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     override fun onFinishInput() {
         cancelOwnedDictation("editor_finished")
+        if (VoiceShortcutIme.shouldReturnWhenViewFinishes(
+                voiceShortcutActive,
+                voiceShortcutReturned,
+            )
+        ) {
+            returnToPreviousIme()
+        }
+        voiceShortcutOwnedSession = false
+        voiceShortcutStartRequested = false
+        voiceShortcutLeftIdle = false
         currentInputType = 0
         editorIdentity = null
         editorSession += 1
@@ -816,16 +885,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                     DictationService.send(this, DictationService.ACTION_CANCEL)
                 }
                 MicDictationAction.OPEN_APP -> openCompanion()
-                MicDictationAction.START -> {
-                    if (lastState.phase == DictationPhase.FAILED ||
-                        lastState.phase == DictationPhase.READY_TO_INSERT ||
-                        lastState.phase == DictationPhase.INSERTED
-                    ) {
-                        container.dictation.clearTransient()
-                    }
-                    startedImeDictation = true
-                    DictationService.start(this, DictationSource.IME)
-                }
+                MicDictationAction.START -> startImeDictation()
             }
         }
     }
@@ -860,6 +920,85 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         // An editor connection is unsafe after this callback, so do not let a
         // late gateway response insert into whichever field receives focus next.
         container.dictation.cancel()
+    }
+
+    private fun startImeDictation() {
+        if (lastState.phase == DictationPhase.FAILED ||
+            lastState.phase == DictationPhase.READY_TO_INSERT ||
+            lastState.phase == DictationPhase.INSERTED
+        ) {
+            container.dictation.clearTransient()
+        }
+        startedImeDictation = true
+        if (voiceShortcutActive) {
+            voiceShortcutOwnedSession = true
+            voiceShortcutStartRequested = true
+        }
+        DictationService.start(this, DictationSource.IME)
+    }
+
+    private fun currentSubtype(): InputMethodSubtype? =
+        getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
+
+    private fun applyVoiceShortcutSubtype(subtype: InputMethodSubtype?) {
+        val active = VoiceShortcutIme.isVoiceShortcutSubtype(
+            mode = subtype?.mode,
+            auxiliary = subtype?.isAuxiliary == true,
+        )
+        if (active == voiceShortcutActive) return
+        voiceShortcutActive = active
+        voiceShortcutOwnedSession = false
+        voiceShortcutStartRequested = false
+        voiceShortcutLeftIdle = false
+        voiceShortcutReturned = false
+    }
+
+    private fun maybeStartVoiceShortcutDictation() {
+        if (!VoiceShortcutIme.shouldAutoStart(
+                isVoiceShortcut = voiceShortcutActive,
+                dictationAllowed = editorConfig.dictationAllowed,
+                isBusy = lastState.phase.isBusy,
+                alreadyRequested = voiceShortcutStartRequested,
+            )
+        ) {
+            return
+        }
+        startImeDictation()
+    }
+
+    private fun maybeHandBackVoiceShortcut() {
+        if (VoiceShortcutIme.shouldReturnWhenDictationRejected(
+                isVoiceShortcut = voiceShortcutActive,
+                dictationAllowed = editorConfig.dictationAllowed,
+            )
+        ) {
+            returnToPreviousIme()
+        } else {
+            maybeReturnToPreviousIme()
+        }
+    }
+
+    private fun maybeReturnToPreviousIme() {
+        if (voiceShortcutReturned) return
+        if (!VoiceShortcutIme.shouldReturnToPreviousIme(
+                isVoiceShortcut = voiceShortcutActive,
+                ownedSession = voiceShortcutOwnedSession,
+                sessionLeftIdle = voiceShortcutLeftIdle,
+                phase = lastState.phase,
+            )
+        ) {
+            return
+        }
+        returnToPreviousIme()
+    }
+
+    private fun returnToPreviousIme() {
+        if (voiceShortcutReturned) return
+        voiceShortcutReturned = true
+        voiceShortcutOwnedSession = false
+        if (!switchToPreviousInputMethod()) {
+            voiceShortcutReturned = false
+        }
     }
 
     private fun openCompanion(page: String? = null) {
