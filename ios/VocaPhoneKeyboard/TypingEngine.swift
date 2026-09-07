@@ -190,7 +190,16 @@ final class TypingEngine {
     /// Adopts the current field. Resets everything document-scoped: a new field
     /// is a new document, and carrying an assertion or a half-typed word across
     /// is how a keyboard corrects a password field's contents into a message.
+    ///
+    /// Also retires any deferred checker task. The quiet-period wait is 90 ms,
+    /// and without a cancel plus a generation bump a task born in the previous
+    /// field wakes, sees a matching generation, and publishes that field's
+    /// completions into this one.
     func documentChanged(policy newPolicy: TypingFieldPolicy) {
+        pendingCheck?.cancel()
+        pendingCheck = nil
+        generation += 1
+        pendingSwipe = nil
         policy = newPolicy
         composer.reset()
         assertedWords.removeAll()

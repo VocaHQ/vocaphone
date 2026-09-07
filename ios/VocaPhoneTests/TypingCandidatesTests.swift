@@ -832,3 +832,64 @@ struct AppliedCorrectionArmingTests {
     }
 
 }
+
+/// A field switch must drop work that still belongs to the previous document.
+@MainActor
+struct TypingEngineDocumentChangeTests {
+    /// Distinctive so a leaked publication cannot be mistaken for a word-list hit.
+    private static let staleCompletion = "hellofromoldfield"
+
+    @MainActor
+    private final class RecordingSpellChecker: SpellChecking {
+        var completionsByPrefix: [String: [String]] = [:]
+        private(set) var prefixesAsked: [String] = []
+
+        func completions(for prefix: String, language: String) -> [String] {
+            prefixesAsked.append(prefix)
+            return completionsByPrefix[prefix] ?? []
+        }
+
+        func guesses(for word: String, language: String) -> [String] { [] }
+        func isKnown(_ word: String, language: String) -> Bool { false }
+    }
+
+    /// The checker is asked only after the hand pauses. Switching fields in that
+    /// window used to let the previous composition's completions arrive in the
+    /// next field, because `documentChanged` reset the strip but left the
+    /// deferred task and its generation standing.
+    @Test func aFieldSwitchDropsAPendingCheck() async throws {
+        let suggestions = KeyboardPreferences.typingSuggestionsEnabled
+        defer { KeyboardPreferences.typingSuggestionsEnabled = suggestions }
+        KeyboardPreferences.typingSuggestionsEnabled = true
+
+        let checker = RecordingSpellChecker()
+        checker.completionsByPrefix = ["hel": [Self.staleCompletion]]
+        let engine = TypingEngine(
+            checker: checker,
+            learned: LearnedWordStore(containerURL: nil),
+            wordList: .empty
+        )
+        var published: [TypingStrip] = []
+        engine.onStrip = { published.append($0) }
+
+        engine.insert("hel", document: DocumentSnapshot(before: "hel"))
+        #expect(engine.composer.text == "hel")
+
+        engine.documentChanged(policy: .allowed)
+        #expect(engine.composer.isEmpty)
+        #expect(engine.strip.isEmpty)
+        #expect(engine.pendingSwipeWord == nil)
+        let publishedThroughChange = published.count
+
+        // Longer than `checkerQuietPeriod` (~90 ms), so a task that was not
+        // cancelled would have asked the checker and published by now.
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(checker.prefixesAsked.isEmpty)
+        #expect(engine.strip.isEmpty)
+        #expect(published.dropFirst(publishedThroughChange).isEmpty)
+        #expect(!published.contains { strip in
+            strip.candidates.contains { $0.text == Self.staleCompletion }
+        })
+    }
+}
