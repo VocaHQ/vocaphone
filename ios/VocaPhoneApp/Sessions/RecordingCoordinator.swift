@@ -1040,6 +1040,18 @@ final class RecordingCoordinator {
             message = "Uploading to your gateway…"
             liveActivity.update(status: "Sending to your gateway", canFinish: false)
 
+            // A reachable server can still have no usable model. Check before
+            // sending audio or entering the long-running transcription request.
+            guard try await client.health().engineReady else {
+                await fail(
+                    &record,
+                    state: .serverUnavailable,
+                    code: "engine_not_ready",
+                    message: "Your gateway's speech-to-text model is not ready. "
+                        + "Select and load a model in the gateway, then retry. Your recording is kept."
+                )
+                return
+            }
             let created = try await client.createSession(
                 id: record.sessionID,
                 language: record.language,
@@ -1112,7 +1124,9 @@ final class RecordingCoordinator {
                 &record,
                 state: state,
                 code: code,
-                message: "The recording is preserved. Return to the keyboard to retry."
+                message: error is URLError
+                    ? "Check that your gateway is running and connected, then retry. Your recording is kept."
+                    : "Check your gateway and its selected model, then retry. Your recording is kept."
             )
         }
     }

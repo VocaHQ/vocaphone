@@ -438,7 +438,7 @@ struct DictationSurfaceView: View {
 
                 // Center Waveform and Subtitle
                 VStack(spacing: 16) {
-                    if hasMessage, !isRecording {
+                    if hasMessage, !isRecording, !isWorking {
                         // Nothing to meter: the bars would be decoration on top
                         // of a sentence the reader needs to actually read.
                         EmptyView()
@@ -460,19 +460,23 @@ struct DictationSurfaceView: View {
                         .frame(height: 48)
                     }
 
-                    Text(centerText)
-                        .font(.system(size: 15, weight: .regular))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .padding(.horizontal, 24)
-                        .foregroundStyle(state.isDark ? Color(white: 0.65) : Color(white: 0.45))
-                        // A reserved line, so swapping one sentence for another
-                        // does not resize the block the waveform is sitting on.
-                        // "Automatic • Clean" and "Transcribing" are not the
-                        // same width, and without this the row re-centres
-                        // around the difference.
-                        .frame(minHeight: 20)
-                        .animation(nil, value: centerText)
+                    ScrollView {
+                        Text(centerText)
+                            .frame(maxWidth: .infinity)
+                            .font(.system(size: 15, weight: .regular))
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 24)
+                            .foregroundStyle(state.isDark ? Color(white: 0.65) : Color(white: 0.45))
+                            // A reserved line, so swapping one sentence for another
+                            // does not resize the block the waveform is sitting on.
+                            // "Automatic • Clean" and "Transcribing" are not the
+                            // same width, and without this the row re-centres
+                            // around the difference.
+                            .frame(minHeight: 20)
+                            .animation(nil, value: centerText)
+                    }
+                    .frame(maxHeight: hasMessage && !isWorking ? 140 : 40)
                 }
                 .transition(.asymmetric(
                     insertion: .scale(scale: 0.88).combined(with: .opacity),

@@ -154,11 +154,21 @@ struct DictationContext: Equatable {
 }
 
 extension DictationBarModel {
-    /// Preserve the transcript and field guidance from the shared presentation.
+    /// Use the same failure detail and recovery action as the original card.
     func surfaceMessage(for state: SessionState) -> String? {
-        if state == .readyToInsert || state == .targetContextChanged,
-           case let .message(message) = body {
-            return message
+        switch state {
+        case .serverUnavailable, .uploadFailedRecoverable,
+             .transcriptionFailedRecoverable, .transcriptionFailedPermanent,
+             .permissionDenied:
+            if case let .message(message) = body {
+                return "\(title). \(message) \(primary.title)."
+            }
+        case .readyToInsert, .targetContextChanged:
+            if case let .message(message) = body { return message }
+        case .finalizing, .uploading, .transcribing:
+            return title
+        default:
+            break
         }
         return Self.surfaceLine(for: state)
     }

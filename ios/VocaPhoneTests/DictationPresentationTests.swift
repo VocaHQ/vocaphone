@@ -3,6 +3,33 @@ import UIKit
 
 @MainActor
 struct DictationPresentationTests {
+    @Test func failuresKeepTheirDetailsAndRecoveryInstructions() {
+        for state in [SessionState.serverUnavailable, .uploadFailedRecoverable,
+                      .transcriptionFailedRecoverable, .transcriptionFailedPermanent] {
+            let model = Self.model(
+                state,
+                errorMessage: "Select and load a speech-to-text model in the gateway.",
+                canRetry: true
+            )
+            let message = model.surfaceMessage(for: state)
+            #expect(message?.contains("Select and load a speech-to-text model") == true)
+            #expect(message?.contains(model.title) == true)
+            #expect(message?.contains(model.primary.title) == true)
+            #expect(model.primary.isEnabled)
+        }
+        let permission = Self.model(.permissionDenied)
+        #expect(permission.surfaceMessage(for: .permissionDenied)?.contains("allow the microphone") == true)
+    }
+
+    @Test func preparationDoesNotClaimTranscriptionHasStarted() {
+        for location in [SessionProcessingLocation.gateway, .onDevice] {
+            let uploading = Self.model(.uploading, location: location)
+            #expect(uploading.surfaceMessage(for: .uploading) == uploading.title)
+            #expect(uploading.surfaceMessage(for: .uploading)?.contains("Transcribing") == false)
+        }
+        #expect(Self.model(.finalizing).surfaceMessage(for: .finalizing) == "Finishing recording")
+    }
+
     @Test func readySurfaceRetainsTranscriptAndCancel() {
         let ready = Self.model(.readyToInsert, transcript: "A preview to check.")
         let message = ready.surfaceMessage(for: .readyToInsert)
