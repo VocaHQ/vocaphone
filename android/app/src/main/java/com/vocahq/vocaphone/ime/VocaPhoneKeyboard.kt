@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1415,7 +1416,7 @@ private fun LanguageOptionRow(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .heightIn(min = 48.dp)
             .semantics { this.selected = selected },
         shape = RoundedCornerShape(8.dp),
         color = if (selected) {
@@ -1446,7 +1447,7 @@ private fun LanguageOptionRow(
                 !enabled -> Text(
                     text = "Unavailable",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelMedium,
                 )
             }
         }
@@ -1501,6 +1502,7 @@ private fun RowScope.StyleOptionCard(
         modifier = Modifier
             .weight(1f)
             .fillMaxHeight()
+            .heightIn(min = 48.dp)
             .semantics { this.selected = selected },
         shape = RoundedCornerShape(8.dp),
         color = if (selected) {
@@ -1523,7 +1525,7 @@ private fun RowScope.StyleOptionCard(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = style.displayName,
-                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1531,9 +1533,8 @@ private fun RowScope.StyleOptionCard(
                 Text(
                     text = style.keyboardDetail,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp,
-                    lineHeight = 10.sp,
-                    maxLines = 2,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -1594,12 +1595,12 @@ private fun ToolbarCloseButton(onClick: () -> Unit) {
 
 private val WritingStyle.keyboardDetail: String
     get() = when (this) {
-        WritingStyle.RAW -> "Unchanged model output"
-        WritingStyle.CLEAN -> "Tidy spacing + final period"
-        WritingStyle.FORMAL -> "Capitalization + final period"
-        WritingStyle.CASUAL -> "Natural, no final period"
+        WritingStyle.RAW -> "Unchanged output"
+        WritingStyle.CLEAN -> "Tidy spacing + period"
+        WritingStyle.FORMAL -> "Caps + final period"
+        WritingStyle.CASUAL -> "No final period"
         WritingStyle.VERY_CASUAL -> "Lowercase + commas"
-        WritingStyle.EXCITED -> "Statements end with !"
+        WritingStyle.EXCITED -> "Ends with !"
     }
 
 @Composable
