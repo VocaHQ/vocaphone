@@ -1108,6 +1108,127 @@ private fun DictationBar(
 }
 
 @Composable
+internal fun VoiceShortcutListeningChrome(
+    dictationState: DictationState,
+    editor: KeyboardEditorConfig,
+    settings: VocaPhoneSettings,
+    isPreferenceWritePending: Boolean,
+    onMicTap: () -> Unit,
+    onMicLongPress: () -> Unit,
+) {
+    VocaPhoneTheme(dynamicColor = settings.dynamicColorEnabled) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            VoiceShortcutListeningBar(
+                state = dictationState,
+                editor = editor,
+                barHeight = settings.keyboardHeight.dictationBarDp.dp,
+                isPreferenceWritePending = isPreferenceWritePending,
+                onMicTap = onMicTap,
+                onMicLongPress = onMicLongPress,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceShortcutListeningBar(
+    state: DictationState,
+    editor: KeyboardEditorConfig,
+    barHeight: Dp,
+    isPreferenceWritePending: Boolean,
+    onMicTap: () -> Unit,
+    onMicLongPress: () -> Unit,
+) {
+    val idle = state.phase == DictationPhase.IDLE
+    val status = when {
+        editor.sensitive -> "Private field"
+        !editor.dictationAllowed -> "Typing only"
+        idle -> "VocaPhone"
+        state.phase == DictationPhase.LISTENING -> "Listening · ${formatDuration(state.recordedMillis)}"
+        else -> state.statusText
+    }
+    val detail = when {
+        editor.sensitive -> "Dictation is off here"
+        !editor.dictationAllowed -> "Dictation is available in text fields"
+        idle -> "Voice input"
+        state.phase == DictationPhase.LISTENING && state.partialTranscript.isNotBlank() ->
+            state.partialTranscript.replace('\n', ' ').take(64)
+        state.phase == DictationPhase.LISTENING ->
+            state.inputRouteLabel ?: "Tap the red button to finish"
+        state.phase == DictationPhase.PERMISSION_REPAIR -> "Open VocaPhone to finish setup"
+        state.phase == DictationPhase.FAILED -> "Tap the mic to try again"
+        state.phase.isBusy -> ""
+        else -> "Ready"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 6.dp)
+            .height(barHeight)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .semantics { liveRegion = LiveRegionMode.Polite },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (state.isRecording) {
+                Waveform(
+                    level = state.level,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp),
+                    alpha = 0.34f,
+                    bars = 13,
+                )
+            }
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = status,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                if (detail.isNotEmpty()) {
+                    Text(
+                        text = detail,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+        if (MicDictationControl.showsSeparateCancel(state.phase)) {
+            DictationCancelButton(onClick = onMicLongPress)
+        }
+        MicButton(
+            state = state,
+            enabled = editor.dictationAllowed && !isPreferenceWritePending,
+            onClick = onMicTap,
+            onLongPress = onMicLongPress,
+        )
+    }
+}
+
+@Composable
 private fun ToolbarIconButton(
     contentDescription: String,
     onClick: () -> Unit,
