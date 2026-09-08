@@ -485,6 +485,17 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 )
             )
         }
+        // The compact row moves its action button aside as soon as somebody
+        // types, and "as soon as" is the keystroke — not the suggestions it
+        // eventually produces. Latching on the candidates meant waiting for the
+        // spell checker to answer, which is a visible beat after the letter is
+        // already on screen.
+        switch output {
+        case .text, .space, .newline, .deleteBackward, .deleteWord, .swipeWord:
+            dictationSurfaceState.hasTypedThisSession = true
+        default:
+            break
+        }
         switch output {
         case let .text(text):
             if let substitution = SmartPunctuation.substitution(

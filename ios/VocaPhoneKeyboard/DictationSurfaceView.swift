@@ -27,6 +27,30 @@ final class DictationSurfaceState: ObservableObject {
         get { storedStyle }
         set { change(&storedStyle, to: newValue) }
     }
+    /// Whether anything has been typed since this keyboard instance came up.
+    ///
+    /// Only the compact row cares: it puts the action button in the middle
+    /// until there is something to type beside it, and that has to be a latch
+    /// rather than a question about the current candidates. It is not reset on
+    /// every appearance — coming back from vocaphone is the same session, and
+    /// resetting here flew the microphone to the middle and back.
+    private var storedHasTypedThisSession: Bool = false
+    var hasTypedThisSession: Bool {
+        get { storedHasTypedThisSession }
+        set { change(&storedHasTypedThisSession, to: newValue) }
+    }
+    /// The compact arrangement, for looking at in the keyboard lab.
+    ///
+    /// Two glass circles on the left and a solid green one on the right is the
+    /// shipping row. This collapses the left pair behind one ellipsis menu and
+    /// turns the right circle into a fixed-width glass capsule — the same row
+    /// with less on it, which is the sort of thing that has to be seen beside
+    /// the original rather than argued about. Debug builds only.
+    private var storedUsesCompactControls: Bool = false
+    var usesCompactControls: Bool {
+        get { storedUsesCompactControls }
+        set { change(&storedUsesCompactControls, to: newValue) }
+    }
     private var storedShowsGlobeKey: Bool = false
     var showsGlobeKey: Bool {
         get { storedShowsGlobeKey }
@@ -198,6 +222,7 @@ final class DictationSurfaceState: ObservableObject {
     func refreshPreferences() {
         language = KeyboardPreferences.effectiveTranscriptionLanguage
         style = KeyboardPreferences.writingStyle
+        usesCompactControls = KeyboardPreferences.compactControlsEnabled
     }
 
     /// Persists the choice, exactly as the dictation bar's own menu does.
@@ -320,6 +345,10 @@ final class TypingRowState: ObservableObject {
 struct DictationSurfaceView: View {
     @ObservedObject var state: DictationSurfaceState
     @Namespace private var animationNamespace
+    /// Layout springs stay off until the first real frame has landed. The
+    /// keyboard restores a session in `viewDidLoad`; animating idle into
+    /// recording is the blink after swiping back from vocaphone.
+    @State private var layoutAnimationEnabled = false
 
     private static let brandGreen = Color(red: 13 / 255, green: 104 / 255, blue: 77 / 255)
     /// The diameter the rest of the product already uses for a round control:
@@ -341,6 +370,10 @@ struct DictationSurfaceView: View {
     private static let sideInset: CGFloat = 6
     /// Glyphs at the toolbar's own weight and size, for the same reason.
     private static let glyphSize: CGFloat = 17
+    /// The compact action button's width. Wider than the 44pt circle it
+    /// replaces so it reads as the row's one action, and fixed so it does not
+    /// move under the thumb when the state swaps its glyph.
+    private static let compactActionWidth: CGFloat = 116
 
     init(state: DictationSurfaceState) {
         self.state = state
@@ -405,27 +438,7 @@ struct DictationSurfaceView: View {
         let _ = TouchTrace.note("      body surface")
         VStack(spacing: 0) {
             // Top Controls Bar (Top row of both Idle and Recording)
-            HStack(spacing: 8) {
-                if #available(iOS 26, *) {
-                    GlassEffectContainer(spacing: 8) {
-                        HStack(spacing: 8) {
-                            leadingGlassGroup
-                        }
-                    }
-                } else {
-                    HStack(spacing: 8) {
-                        leadingGlassGroup
-                    }
-                }
-
-                if isSuggesting {
-                    CandidateRow(state: state.typing)
-                } else {
-                    Spacer()
-                }
-
-                trailingActionButton
-            }
+            controlsRow
             // No fixed height. `GlassEffectContainer` lays out taller than its
             // content — it reserves room for the glass to spill and merge — and
             // pinning the row to 44 pt made that surplus appear as space above
@@ -514,6 +527,7 @@ struct DictationSurfaceView: View {
         .padding(.horizontal, Self.sideInset)
         .onAppear {
             state.refreshPreferences()
+            DispatchQueue.main.async { layoutAnimationEnabled = true }
         }
         // Hung from the top. The controls are in the same place in every phase,
         // which is the point of keeping one surface: the finger that just
@@ -522,9 +536,77 @@ struct DictationSurfaceView: View {
         // Fast, and barely springy. A keyboard control answers the finger; a
         // settle of a third of a second reads as the keyboard thinking about
         // it. Tunable from the lab — see ``DictationSurfaceState/animationResponse``.
-        .animation(surfaceSpring, value: isOpen)
-        .animation(surfaceSpring, value: isWorking)
-        .animation(surfaceSpring, value: isSuggesting)
+        .animation(layoutAnimationEnabled ? surfaceSpring : nil, value: isOpen)
+        .animation(layoutAnimationEnabled ? surfaceSpring : nil, value: isWorking)
+        .animation(layoutAnimationEnabled ? surfaceSpring : nil, value: isSuggesting)
+    }
+
+    // MARK: - Controls Row
+
+    /// Whether the action button stands in the middle of the row.
+    ///
+    /// Only with nothing typed and no session running. Once there are
+    /// suggestions they take the middle, and once a session is open the row
+    /// has a cancel on one end and a finish on the other — a finish floating
+    /// in the centre above a waveform is not a row, it is a button that has
+    /// come loose.
+    private var centresAction: Bool {
+        state.usesCompactControls && !isOpen && !state.hasTypedThisSession
+    }
+
+    @ViewBuilder
+    private var controlsRow: some View {
+        // A `ZStack` rather than balanced spacers: with the ellipsis pinned
+        // left, spacers centre the button in what is *left over*, which lands
+        // it visibly right of centre. Here it is centred against the whole row
+        // and the ellipsis floats over it.
+        //
+        // Both arrangements draw the same button carrying the same
+        // `matchedGeometryEffect`, so the first keystroke slides it from the
+        // middle to the end instead of teleporting it there.
+        ZStack {
+            if centresAction {
+                trailingActionButton
+            }
+            HStack(spacing: 8) {
+                leadingGlassContainer
+
+                if isSuggesting {
+                    CandidateRow(state: state.typing)
+                } else {
+                    Spacer()
+                }
+
+                if !centresAction {
+                    trailingActionButton
+                }
+            }
+        }
+        .animation(layoutAnimationEnabled ? .snappy(duration: 0.24) : nil, value: centresAction)
+        // Latched here rather than derived, because `isSuggesting` is false
+        // between words: the candidates empty on a space and fill again on the
+        // next letter, and a position derived from them threw the microphone
+        // back to the middle and out again on every word. Once typing has
+        // started it has started, and the button stays where typing put it
+        // until the keyboard goes away.
+        .onChange(of: isSuggesting) { _, suggesting in
+            if suggesting { state.hasTypedThisSession = true }
+        }
+    }
+
+    @ViewBuilder
+    private var leadingGlassContainer: some View {
+        if #available(iOS 26, *) {
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    leadingGlassGroup
+                }
+            }
+        } else {
+            HStack(spacing: 8) {
+                leadingGlassGroup
+            }
+        }
     }
 
     // MARK: - Leading Glass Buttons
@@ -533,10 +615,48 @@ struct DictationSurfaceView: View {
     private var leadingGlassGroup: some View {
         if isOpen {
             cancelGlassButton
+        } else if state.usesCompactControls {
+            compactMenuButton
         } else {
             languageMenuButton
             styleMenuButton
         }
+    }
+
+    /// Both left menus behind one key.
+    ///
+    /// The ellipsis is what iOS uses for "the rest of it", and nesting the two
+    /// menus inside it keeps every destination the pair had — one more tap to
+    /// reach either, one less thing on the row.
+    @ViewBuilder
+    private var compactMenuButton: some View {
+        Menu {
+            Menu("Language") {
+                ForEach(state.languageShortcuts, id: \.self) { lang in
+                    languageButton(lang)
+                }
+                Menu("More languages") {
+                    ForEach(state.remainingLanguages, id: \.self) { lang in
+                        languageButton(lang)
+                    }
+                }
+            }
+            Menu("Style") {
+                ForEach(WritingStyle.allCases, id: \.self) { item in
+                    Toggle(isOn: styleBinding(for: item)) {
+                        Label(item.displayName, systemImage: item.symbolName)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: Self.glyphSize, weight: .semibold))
+                .foregroundStyle(state.isDark ? Color.white : Color.black)
+                .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
+                .contentShape(Circle())
+        }
+        .modifier(GlassButtonModifier(id: "leadGlass", namespace: animationNamespace))
+        .accessibilityLabel("Language and style")
     }
 
     @ViewBuilder
@@ -572,12 +692,9 @@ struct DictationSurfaceView: View {
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
-                .background(.ultraThinMaterial, in: Circle())
         }
-        // Keep decoration inside the label. Interactive glass around a Menu
-        // participates in its presentation snapshot and can leave the source
-        // button hidden or enlarged after dismissal in the keyboard extension.
         .buttonStyle(.plain)
+        .modifier(GlassButtonModifier(id: "languageGlass", namespace: animationNamespace))
         .accessibilityLabel("Transcription language")
     }
 
@@ -614,9 +731,9 @@ struct DictationSurfaceView: View {
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
-                .background(.ultraThinMaterial, in: Circle())
         }
         .buttonStyle(.plain)
+        .modifier(GlassButtonModifier(id: "styleGlass", namespace: animationNamespace))
         .accessibilityLabel("Writing style")
         .accessibilityValue(state.style.displayName)
     }
@@ -665,22 +782,51 @@ struct DictationSurfaceView: View {
             }
         } label: {
             ZStack {
-                Circle()
-                    .fill(Self.brandGreen)
-                    .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                    .shadow(color: Self.brandGreen.opacity(0.35), radius: 4, x: 0, y: 2)
+                // Glass rather than the brand circle, and a capsule rather than
+                // a circle: the extra width is what makes it read as the row's
+                // one action instead of a third icon. Fixed, because a button
+                // that grows with its glyph moves under the thumb every time
+                // the state changes the glyph.
+                if state.usesCompactControls {
+                    // Wide while it is the only thing on the row, round once
+                    // the suggestions have taken the middle: the same button
+                    // with the room it happens to have.
+                    Capsule()
+                        .fill(.clear)
+                        .frame(
+                            width: centresAction
+                                ? Self.compactActionWidth
+                                : Self.buttonDiameter,
+                            height: Self.buttonDiameter
+                        )
+                        .modifier(GlassCapsuleModifier())
+                } else {
+                    Circle()
+                        .fill(Self.brandGreen)
+                        .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
+                        .shadow(color: Self.brandGreen.opacity(0.35), radius: 4, x: 0, y: 2)
+                }
 
                 if isWorking && !state.primaryIsEnabled {
                     // The same circle, still there, no longer an action: the
                     // work it started is what it is now reporting.
                     ProgressView()
                         .progressViewStyle(.circular)
-                        .tint(.white)
+                        // The same colour as the glyph it replaces. White was
+                        // right on a green circle and invisible on glass, so
+                        // transcribing looked like a button that had gone
+                        // blank rather than one that was working.
+                        .tint(state.usesCompactControls ? Self.brandGreen : Color.white)
                         .transition(.scale.combined(with: .opacity))
                 } else {
                     Image(systemName: isRecording ? "checkmark" : state.primarySymbol)
                         .font(.system(size: Self.glyphSize, weight: .semibold))
-                        .foregroundStyle(.white)
+                        // Green on glass. The brand colour has moved off the
+                        // fill and onto the glyph, which is the only place left
+                        // for it once the button stops being a green circle.
+                        .foregroundStyle(
+                            state.usesCompactControls ? Self.brandGreen : Color.white
+                        )
                         .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -827,6 +973,17 @@ private struct CandidateButtonStyle: ButtonStyle {
 }
 
 // MARK: - Glass Button Modifier
+
+/// The same glass as the leading buttons, in a capsule.
+private struct GlassCapsuleModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content.background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+}
 
 private struct GlassButtonModifier: ViewModifier {
     let id: String

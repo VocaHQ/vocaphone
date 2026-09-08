@@ -484,6 +484,10 @@ enum KeyboardPreferences {
     static let touchTraceKey = "touchTraceEnabled"
     /// Holding or sliding the spacebar to move the cursor.
     static let spacebarCursorKey = "spacebarCursorEnabled"
+    /// The compact dictation row: both left menus behind one ellipsis, and the
+    /// action button a glass capsule that stands in the middle until there is
+    /// something to type beside it.
+    static let compactControlsKey = "lab.usesCompactControls"
     /// The layout currently under the fingers.
     static let typingLayoutKey = "typingLayout"
     /// Every layout the user has turned on, in the order the space bar and the
@@ -727,6 +731,18 @@ enum KeyboardPreferences {
     static var spacebarCursorEnabled: Bool {
         get { boolean(spacebarCursorKey, default: true) }
         set { defaults?.set(newValue, forKey: spacebarCursorKey) }
+    }
+
+    /// Read by the keyboard itself, not only by the lab.
+    ///
+    /// This is the bug the flag was born with: the lab set it straight onto its
+    /// own preview object, so the switch changed the picture on the settings
+    /// screen and nothing else. Tapping into a real field brought up the
+    /// extension, which had never heard of it, and drew the old row — which
+    /// looks exactly like a switch that does not work.
+    static var compactControlsEnabled: Bool {
+        get { boolean(compactControlsKey, default: false) }
+        set { defaults?.set(newValue, forKey: compactControlsKey) }
     }
 
     /// The layouts the user has turned on, in the order the key and the swipe
