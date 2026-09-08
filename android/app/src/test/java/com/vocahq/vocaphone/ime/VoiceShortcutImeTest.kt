@@ -172,6 +172,14 @@ class VoiceShortcutImeTest {
                 phase = DictationPhase.INSERTED,
             ),
         )
+        assertFalse(
+            VoiceShortcutIme.shouldReturnToPreviousIme(
+                isVoiceShortcut = true,
+                ownedSession = true,
+                sessionLeftIdle = true,
+                phase = DictationPhase.READY_TO_INSERT,
+            ),
+        )
     }
 
     @Test

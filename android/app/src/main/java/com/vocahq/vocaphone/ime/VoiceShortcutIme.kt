@@ -56,6 +56,9 @@ internal object VoiceShortcutIme {
      * [ownedSession] is the voice-shortcut flag, not "VocaPhone is the normal
      * keyboard". IDLE is a return only after the session left idle — otherwise
      * auto-start would bounce back before listening began.
+     *
+     * READY_TO_INSERT is an IME insert that already failed. Stay on the
+     * shortcut chrome so retry and the transcript are still on screen.
      */
     fun shouldReturnToPreviousIme(
         isVoiceShortcut: Boolean,
@@ -67,7 +70,6 @@ internal object VoiceShortcutIme {
         return when (phase) {
             DictationPhase.INSERTED,
             DictationPhase.FAILED,
-            DictationPhase.READY_TO_INSERT,
             -> true
             DictationPhase.IDLE -> sessionLeftIdle
             else -> false
