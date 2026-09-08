@@ -162,6 +162,13 @@ supported one.
   keyboard haptics stop working, which is also stated there.
 - Type continuously for two minutes in a long document. The keyboard must not
   flicker, reset, or lose the composition — that is what a jetsam looks like.
+- After several hours away, open the keyboard in Notes and immediately type
+  and swipe. Repeat after switching from the Apple keyboard. Check first-key
+  responsiveness and that swipe becomes available without first typing a word.
+- Type part of a word, immediately switch keyboards or apps, and return to a
+  different field. Suggestions and touch prediction must describe the current
+  field. Repeat while a dictation finishes: hidden keyboards must not insert;
+  returning to vocaphone's keyboard should resume the pending session once.
 - Long-press `$`, `-`, `?` for symbol alternates, and `.` in a URL field for
   `.com`. Hold the `123` key to open the emoji panel; the keyboard's height must
   not change when it does.
