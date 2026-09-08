@@ -10,8 +10,8 @@ import Foundation
 /// empty result for a whole recording because of it (sherpa-onnx #2258).
 ///
 /// The Android client asks the runtime for this by setting
-    /// `FeatureConfig.dither`. The pinned iOS runtime (sherpa-onnx 1.13.7) has no
-    /// `dither` field on `SherpaOnnxFeatureConfig`, so there is nothing to set, and
+/// `FeatureConfig.dither`. The pinned iOS runtime (sherpa-onnx 1.13.7) has no
+/// `dither` field on `SherpaOnnxFeatureConfig`, so there is nothing to set, and
 /// the same Gaussian is applied to the samples one stage earlier instead.
 ///
 /// That is an approximation rather than the same computation. Kaldi dithers
