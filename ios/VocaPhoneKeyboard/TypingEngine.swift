@@ -622,6 +622,7 @@ final class TypingEngine {
         context.composition = composition
         context.origin = origin
         context.precedingWord = preceding
+        context.layoutRows = layout.rows
         let lowered = composition.lowercased()
         // One pass for both, over the folded copies: the prefix matches that
         // reach the strip, and the exact match that outranks it.

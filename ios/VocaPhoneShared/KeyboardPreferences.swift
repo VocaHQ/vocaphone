@@ -342,15 +342,6 @@ struct TypingLayout: Identifiable, Hashable, Sendable {
     /// that is neither on a key nor behind one is a layout that cannot type its
     /// own language, and that is a test rather than a code review.
     let alphabet: String
-    /// Whether holding the spacebar turns it into a cursor trackpad here.
-    ///
-    /// Off on Russian by request. The two spacebar gestures do not in fact
-    /// collide — the trackpad arms on a *still* finger and a moving one
-    /// disarms it, which is how every keyboard carrying both keeps them
-    /// apart — but a layout that has just gained a swipe is not the one to
-    /// prove that on. Per layout rather than global, so turning it back on is
-    /// an edit to one line here and not a hunt through the grid.
-    var offersCursorTrackpad = true
 
     /// The four arrangements almost every Latin layout in the catalogue is.
     ///
@@ -412,8 +403,7 @@ struct TypingLayout: Identifiable, Hashable, Sendable {
             // Thirty-three letters over thirty-one keys: ё and ъ live behind е
             // and ь, where iOS puts them and where ``KeyAlternatives`` has them.
             rows: ["йцукенгшщзх", "фывапролджэ", "ячсмитьбю"],
-            alphabet: "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
-            offersCursorTrackpad: false
+            alphabet: "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
         ),
         TypingLayout(
             id: "uk", shortName: "УК", displayName: "Українська", flag: "🇺🇦",
@@ -492,6 +482,8 @@ enum KeyboardPreferences {
     /// Debug-only touch and frame instrumentation. Kept off unless a developer
     /// explicitly arms it in the keyboard lab.
     static let touchTraceKey = "touchTraceEnabled"
+    /// Holding or sliding the spacebar to move the cursor.
+    static let spacebarCursorKey = "spacebarCursorEnabled"
     /// The layout currently under the fingers.
     static let typingLayoutKey = "typingLayout"
     /// Every layout the user has turned on, in the order the space bar and the
@@ -726,6 +718,15 @@ enum KeyboardPreferences {
     static var touchTraceEnabled: Bool {
         get { boolean(touchTraceKey, default: false) }
         set { defaults?.set(newValue, forKey: touchTraceKey) }
+    }
+
+    /// The spacebar's cursor trackpad. On by default: it is what the system
+    /// keyboard does, and somebody who has never heard of it loses nothing by
+    /// having it — the gesture that reaches it is one nobody performs by
+    /// accident.
+    static var spacebarCursorEnabled: Bool {
+        get { boolean(spacebarCursorKey, default: true) }
+        set { defaults?.set(newValue, forKey: spacebarCursorKey) }
     }
 
     /// The layouts the user has turned on, in the order the key and the swipe

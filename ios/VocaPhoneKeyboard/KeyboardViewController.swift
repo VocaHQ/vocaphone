@@ -541,20 +541,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             settleCursor()
         case let .moveCursor(offset):
             moveCursor(by: offset)
-        case let .moveCursorLine(lines):
-            moveCursorByLines(lines)
-            lastSpaceInsertedAt = nil
-            // A line move works out its offset from the document itself, so
-            // whatever the drag had counted no longer describes where the
-            // cursor is. Re-reading here is affordable: a line costs 26pt of
-            // travel, against 4 to 14 for a character.
-            let snapshot = refreshDocument()
-            if cursorDrag != nil {
-                cursorDrag = CursorDrag(document: snapshot)
-            } else {
-                typing.reconcile(document: snapshot)
-                releaseUndoIfDetached()
-            }
         case let .nextLayout(forward):
             guard let next = TypingLayout.next(
                 after: KeyboardPreferences.typingLayout,
@@ -904,52 +890,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         lastSpaceInsertedAt = nil
         typing.reconcile(document: refreshDocument())
         releaseUndoIfDetached()
-    }
-
-    private func moveCursorByLines(_ lines: Int) {
-        guard lines != 0 else { return }
-        let snapshot = document
-        let beforeLines = (snapshot.before ?? "").components(separatedBy: "\n")
-        let afterLines = (snapshot.after ?? "").components(separatedBy: "\n")
-        // How far into its own line the cursor sits. The last element of the
-        // leading context is the part of the current line behind the cursor.
-        let column = beforeLines.last?.count ?? 0
-        let proxy = textDocumentProxy
-
-        if lines < 0 {
-            // Nothing above in the visible context: the start of this line is
-            // the nearest thing to what was asked for, and it is where a finger
-            // dragged off the top is reaching anyway.
-            guard beforeLines.count > 1 else {
-                if column > 0 { proxy.adjustTextPosition(byCharacterOffset: -column) }
-                return
-            }
-            let steps = min(-lines, beforeLines.count - 1)
-            let target = beforeLines.count - 1 - steps
-            // Back to the start of the current line, then over each line
-            // skipped along with the break that ended it.
-            var offset = -column
-            for index in stride(from: beforeLines.count - 2, through: target, by: -1) {
-                offset -= 1 + beforeLines[index].count
-            }
-            // Forward into the target line, clamped to its end so a short line
-            // keeps the cursor on it rather than past it.
-            offset += min(column, beforeLines[target].count)
-            proxy.adjustTextPosition(byCharacterOffset: offset)
-        } else {
-            guard afterLines.count > 1 else {
-                let tail = afterLines.first?.count ?? 0
-                if tail > 0 { proxy.adjustTextPosition(byCharacterOffset: tail) }
-                return
-            }
-            let steps = min(lines, afterLines.count - 1)
-            var offset = afterLines[0].count
-            for index in 1..<steps {
-                offset += 1 + afterLines[index].count
-            }
-            offset += 1 + min(column, afterLines[steps].count)
-            proxy.adjustTextPosition(byCharacterOffset: offset)
-        }
     }
 
     private func deleteWordBackward() {
@@ -1893,6 +1833,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         keyGrid.layout = layout
         keyGrid.showsLayoutSwitchKey = switchable
         keyGrid.layoutTitle = switchable ? layout.shortName : nil
+        keyGrid.offersCursorTrackpad = KeyboardPreferences.spacebarCursorEnabled
         typing.layout = layout
         // Only when the language actually just changed. This method also runs
         // every time the keyboard arrives in a new field, and a caption that

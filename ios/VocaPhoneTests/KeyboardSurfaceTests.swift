@@ -284,15 +284,6 @@ struct KeyboardSurfaceTests {
         #expect(TypingLayout.next(after: stray, in: [first, all[2]]) == nil)
     }
 
-    /// Russian gives the spacebar to the swipe; everything else keeps its
-    /// trackpad. Asserted because it is a choice, not a fact — and a choice
-    /// that silently spread to every layout would be hard to notice.
-    @Test func onlyRussianGivesUpTheCursorTrackpad() {
-        for layout in TypingLayout.catalogue {
-            #expect(layout.offersCursorTrackpad == (layout.id != "ru"), "\(layout.id)")
-        }
-    }
-
     // MARK: - The press nobody could see
 
     /// A press is held long enough to be composited once, and no longer.
@@ -480,6 +471,28 @@ struct KeyboardSurfaceTests {
 
         // A one-character prefix is answered from its own bucket.
         #expect(list.completions(for: "q", limit: 2) == ["quixotic"])
+    }
+
+    // MARK: - Spacebar lift
+
+    /// A swipe that changed the layout, or a hold that became the cursor, has
+    /// already done its job. The lift must not type a space on top.
+    @Test func liftingTheSpacebarDoesNotTypeAfterAGesture() {
+        #expect(
+            KeyGridView.shouldCommitSpace(
+                isEngaged: true, isCursorTracking: false, didSwitchLayout: false, commit: true
+            )
+        )
+        #expect(
+            !KeyGridView.shouldCommitSpace(
+                isEngaged: true, isCursorTracking: true, didSwitchLayout: false, commit: true
+            )
+        )
+        #expect(
+            !KeyGridView.shouldCommitSpace(
+                isEngaged: true, isCursorTracking: false, didSwitchLayout: true, commit: true
+            )
+        )
     }
 }
 

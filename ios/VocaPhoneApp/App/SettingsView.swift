@@ -185,6 +185,10 @@ struct KeyboardSettingsView: View {
         KeyboardPreferences.swipeTypingKey,
         store: KeyboardPreferences.defaults
     ) private var swipeTypingEnabled = false
+    @AppStorage(
+        KeyboardPreferences.spacebarCursorKey,
+        store: KeyboardPreferences.defaults
+    ) private var spacebarCursorEnabled = true
 
     /// Held rather than read straight from ``KeyboardPreferences`` on every
     /// redraw: the list has to keep its order, and the order is the order the
@@ -399,6 +403,7 @@ struct KeyboardSettingsView: View {
             Toggle("Emoji suggestions", isOn: $emojiSuggestionsEnabled)
             Toggle("Typing haptics", isOn: $typingHapticsEnabled)
             Toggle("Swipe to type", isOn: $swipeTypingEnabled)
+            Toggle("Space bar cursor", isOn: $spacebarCursorEnabled)
         } footer: {
             VStack(alignment: .leading, spacing: VocaMetrics.related) {
                 Text(
@@ -432,6 +437,13 @@ struct KeyboardSettingsView: View {
                     "Swipe to type is new and off by default. Slide from letter to "
                         + "letter without lifting; alternatives appear in the "
                         + "suggestion row."
+                )
+                // The hold is the whole rule, and it is what makes the two
+                // gestures on this one key tell themselves apart: a swipe never
+                // waits, a cursor drag always does.
+                Text(
+                    "Hold the space bar, then slide to move the cursor. Swipe "
+                        + "across it to switch language."
                 )
             }
         }
