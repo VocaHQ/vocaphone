@@ -47,7 +47,6 @@ internal object SetupCopy {
     val LOGO = R.drawable.ic_vocaphone_logo
     const val TITLE = "Set up VocaPhone"
     const val INTRO = "Turn on the keyboard, allow the microphone, then download a model."
-    const val START = "Start dictating"
     const val DOWNLOAD = "Download"
     const val DOWNLOAD_AND_CONTINUE = "Download and continue"
     const val HELP_ME_CHOOSE = "Help me choose"
@@ -126,6 +125,16 @@ fun SetupScreen(
     var askingUsageReporting by remember { mutableStateOf(false) }
     val recentlyReady = rememberRecentlyReadySteps(status)
 
+    // Once the last step is satisfied, leave onboarding on its own — no button
+    // press required. A brief delay lets the user see the final row flip to
+    // "ready" before the screen collapses out from under them.
+    LaunchedEffect(status.isReadyToDictate) {
+        if (status.isReadyToDictate) {
+            delay(600)
+            if (askUsageReporting) askingUsageReporting = true else onFinish()
+        }
+    }
+
     Column(
         modifier = modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -199,24 +208,6 @@ fun SetupScreen(
                     )
                 }
             }
-        }
-
-        Column(
-            modifier = Modifier
-                .widthIn(max = AppContentMaxWidth)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PrimaryButton(
-                text = SetupCopy.START,
-                onClick = {
-                    if (askUsageReporting) askingUsageReporting = true else onFinish()
-                },
-                enabled = status.isReadyToDictate,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 

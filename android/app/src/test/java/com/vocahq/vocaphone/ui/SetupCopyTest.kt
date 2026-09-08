@@ -27,7 +27,6 @@ class SetupCopyTest {
         val copy = listOf(
             SetupCopy.TITLE,
             SetupCopy.INTRO,
-            SetupCopy.START,
             SetupCopy.DOWNLOAD,
             SetupCopy.DOWNLOAD_AND_CONTINUE,
             SetupCopy.HELP_ME_CHOOSE,
