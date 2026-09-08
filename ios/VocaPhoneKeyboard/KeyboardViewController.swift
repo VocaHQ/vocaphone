@@ -834,16 +834,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         releaseUndoIfDetached()
     }
 
-    /// Moves the cursor a whole line up or down, keeping its column.
-    ///
-    /// A keyboard extension can only `adjustTextPosition(byCharacterOffset:)`,
-    /// so "one line" has to be counted out in characters from the document
-    /// context — which is why this lives here rather than in the grid: the grid
-    /// knows the finger moved, and only the controller can see the text.
-    ///
-    /// Clamped to the ends. Off the top or bottom of the visible context the
-    /// cursor goes to the start or end of it rather than nowhere, which is what
-    /// the user is reaching for anyway.
     /// What the trackpad knows about the document while a finger is on it.
     ///
     /// A cursor step used to cost what a keystroke costs: `adjustTextPosition`,
@@ -857,12 +847,14 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         /// Characters either side of the cursor, in the UTF-16 units that
         /// `adjustTextPosition(byCharacterOffset:)` actually steps in.
         ///
-        /// A floor rather than the truth: iOS hands a keyboard a window onto
-        /// the document, not the document. It is the case at the edges that
-        /// has to be right, and there the window is not lying — an empty
-        /// `after` means there is genuinely nothing ahead.
-        var behind: Int
-        var ahead: Int
+        /// A floor rather than a ceiling. iOS hands a keyboard a window onto
+        /// the document, not the document — often the rest of the current
+        /// paragraph. `0` means that side of the window was empty, which is a
+        /// real end, so the cursor stops. `nil` means the finger has walked
+        /// off the window we were given, so the window is no longer a limit:
+        /// keep going, because the rest of the document is past it.
+        var behind: Int?
+        var ahead: Int?
 
         init(document: DocumentSnapshot) {
             behind = (document.before ?? "").utf16.count
@@ -872,18 +864,39 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     private var cursorDrag: CursorDrag?
 
-    /// Moves the cursor, clamped to what the document has left.
+    /// Moves the cursor, stopping only at a known empty side of the document.
     ///
-    /// Without the clamp a finger that runs past the end of the field banks
+    /// Without any clamp a finger that runs past the end of the field banks
     /// every point of that overshoot, and the same travel has to be unwound
     /// before the cursor moves back at all — which is what "the cursor sticks
-    /// at the end of the box" is.
+    /// at the end of the box" is. The window iOS hands us is not the document,
+    /// though, so treating its length as a hard stop parks the cursor at a
+    /// paragraph boundary with text still ahead. Empty is the only case the
+    /// window is not lying about.
     private func moveCursor(by offset: Int) {
         var applied = offset
         if var drag = cursorDrag {
-            applied = offset > 0 ? min(offset, drag.ahead) : max(offset, -drag.behind)
-            drag.ahead -= applied
-            drag.behind += applied
+            if offset > 0 {
+                if drag.ahead == 0 {
+                    applied = 0
+                } else if let ahead = drag.ahead {
+                    let remaining = ahead - offset
+                    drag.ahead = remaining > 0 ? remaining : nil
+                    drag.behind = (drag.behind ?? 0) + offset
+                } else {
+                    drag.behind = (drag.behind ?? 0) + offset
+                }
+            } else {
+                if drag.behind == 0 {
+                    applied = 0
+                } else if let behind = drag.behind {
+                    let remaining = behind + offset
+                    drag.behind = remaining > 0 ? remaining : nil
+                    drag.ahead = (drag.ahead ?? 0) - offset
+                } else {
+                    drag.ahead = (drag.ahead ?? 0) - offset
+                }
+            }
             cursorDrag = drag
         }
         guard applied != 0 else { return }
@@ -1814,6 +1827,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // the character. Not in a field that has asked for no intelligence.
         keyGrid.traceNamesKeys = policy.allowsTypingIntelligence
         keyGrid.showsGlobeKey = needsInputModeSwitchKey
+        keyGrid.offersCursorTrackpad = KeyboardPreferences.spacebarCursorEnabled
         applyTypingLayout(KeyboardPreferences.typingLayout)
         let returnKeyType = proxy.returnKeyType ?? .default
         keyGrid.returnKeyTitle = Self.returnKeyTitle(for: returnKeyType)
@@ -1844,7 +1858,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         keyGrid.layout = layout
         keyGrid.showsLayoutSwitchKey = switchable
         keyGrid.layoutTitle = switchable ? layout.shortName : nil
-        keyGrid.offersCursorTrackpad = KeyboardPreferences.spacebarCursorEnabled
         typing.layout = layout
         // Only when the language actually just changed. This method also runs
         // every time the keyboard arrives in a new field, and a caption that

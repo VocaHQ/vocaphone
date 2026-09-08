@@ -70,7 +70,10 @@ final class RecordingCoordinator {
     private let liveActivity = LiveActivityManager.shared
     private let streamingBridge = StreamingAudioBridge()
     private let soundFeedback = RecordingSoundFeedback()
-    private var localSherpaSession: SherpaIncrementalSession?
+    /// Held as the work rather than the result: the ONNX graph takes 1.8-2.7 s
+    /// to build the first time in a process, and nothing before the transcript
+    /// needs it. Awaited once, at finish.
+    private var localSherpaSession: Task<SherpaIncrementalSession?, Never>?
     let localModels: LocalModelManager
 
     var isRecording: Bool {
@@ -329,7 +332,20 @@ final class RecordingCoordinator {
         installDarwinObservers()
         loadGatewaySettings()
         refreshSetupStatus()
+        adoptPendingHandoff()
         DiagnosticLog.record(.appStarted)
+    }
+
+    /// A hand-off is the only reason this app is opened by something other than
+    /// the user, and the record that says so is already on disk. Read here
+    /// rather than in the first `task`, which runs after the first frame: the
+    /// home screen would paint, and then be covered — and a flash of somewhere
+    /// else, after a microphone was tapped, reads as the request being lost.
+    private func adoptPendingHandoff() {
+        guard let record = try? store.mostRecent(),
+              KeyboardHandoffPresentation.shouldPresent(record)
+        else { return }
+        activeRecord = record
     }
 
 #if DEBUG
@@ -652,8 +668,7 @@ final class RecordingCoordinator {
         pipelineSessionID = nil
         cancellationMonitorTask?.cancel()
         Task { await streamingBridge.cancel() }
-        localSherpaSession?.cancel()
-        localSherpaSession = nil
+        discardIncrementalSession()
         guard var record = activeRecord else { return }
         let shouldRemainReady = shouldKeepQuickDictationReady(after: record)
         recorder.cancelSession(keepAudioSessionActive: shouldRemainReady)
@@ -818,19 +833,20 @@ final class RecordingCoordinator {
                 includeLocalModelChunks: shouldUseSherpaIncremental
             )
             if shouldUseSherpaIncremental, let chunks = recorder.localPcmChunks {
-                do {
-                    // Awaited rather than built inline: the ONNX graph now loads
-                    // off the main actor, so the capture that has already
-                    // started is not competing with a synchronous disk read.
-                    localSherpaSession = try await localModels.startSherpaIncrementalSession(
+                // Started, not awaited. Capture is already running and the
+                // chunks queue while the graph builds, so waiting here bought
+                // nothing and cost everything downstream of it: the recording
+                // state, the Live Activity, and the Finish button the user
+                // reaches for the moment they have swiped back.
+                //
+                // A failure keeps the intact WAV fallback — the finish path
+                // retries the same model in batch mode.
+                let language = record.language
+                localSherpaSession = Task { [localModels] in
+                    try? await localModels.startSherpaIncrementalSession(
                         chunks: chunks,
-                        language: record.language
+                        language: language
                     )
-                } catch {
-                    // Keep the intact WAV fallback. The normal finish path will
-                    // retry the same selected model in batch mode if preparing
-                    // the incremental engine fails.
-                    localSherpaSession = nil
                 }
             }
             if let client = gatewayClient, let chunks = recorder.pcmChunks {
@@ -1160,7 +1176,9 @@ final class RecordingCoordinator {
             try store.save(record)
             activeRecord = record
 
-            let incremental = localSherpaSession
+            // The only place the graph is waited for. By now the user has
+            // spoken, which is usually longer than it took to build.
+            let incremental = await localSherpaSession?.value
             localSherpaSession = nil
             // A chunk the queue refused never reached the decoder, so the
             // session cannot know it is short. Only the recorder can say.
@@ -1313,6 +1331,14 @@ final class RecordingCoordinator {
         message = record.sourceDocumentID == "in-app-test"
             ? "Transcript ready. Your gateway is working end to end."
             : "Transcript ready. Return to the keyboard to insert it."
+    }
+
+    /// Drops the incremental engine whether it finished building or not.
+    private func discardIncrementalSession() {
+        guard let building = localSherpaSession else { return }
+        localSherpaSession = nil
+        building.cancel()
+        Task { await building.value?.cancel() }
     }
 
     private func persistMeter(_ levels: [Float]) {
@@ -1540,8 +1566,7 @@ final class RecordingCoordinator {
             pipelineTask = nil
             pipelineSessionID = nil
             await streamingBridge.cancel()
-            localSherpaSession?.cancel()
-            localSherpaSession = nil
+            discardIncrementalSession()
             let shouldRemainReady = shouldKeepQuickDictationReady(after: shared)
             recorder.cancelSession(keepAudioSessionActive: shouldRemainReady)
             let headline = shared.state == .expired

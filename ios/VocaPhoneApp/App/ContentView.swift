@@ -100,10 +100,8 @@ struct ContentView: View {
                let presentation = KeyboardHandoffPresentation.make(record)
             {
                 KeyboardHandoffView(record: record, presentation: presentation)
-                .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: keyboardHandoffRecord?.state)
     }
 
     // MARK: - Attention

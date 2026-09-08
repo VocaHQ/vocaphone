@@ -124,6 +124,7 @@ struct KeyboardLabView: View {
             }
             transitionSection
             hapticsSection
+            handoffSection
         }
         .navigationTitle("Keyboard lab")
         .navigationBarTitleDisplayMode(.inline)
@@ -140,6 +141,22 @@ struct KeyboardLabView: View {
         .onReceive(meterTick) { _ in
             guard usesSurface, state == .recording, isSpeaking else { return }
             surface.appendMeterLevels(Self.nextLevels())
+        }
+    }
+
+    /// The screen the app shows when the keyboard had to open it. It is the
+    /// one surface nobody can reach on purpose from the app: it needs a real
+    /// dictation, started from the keyboard, in some other app.
+    private var handoffSection: some View {
+        Section {
+            NavigationLink("Swipe back screen") { SwipeBackLabScreen() }
+        } header: {
+            Text("Handoff")
+        } footer: {
+            Text(
+                "The loop runs on its own. The toggle inside parks it on the "
+                    + "last frame, which is what Reduce Motion shows."
+            )
         }
     }
 
@@ -259,6 +276,26 @@ struct KeyboardLabView: View {
             let breath = 0.45 + 0.45 * abs(sin(meterPhase * 0.21))
             return Float(min(max(syllable * breath, 0.05), 1))
         }
+    }
+}
+
+/// The handoff screen at full size, with the motion switch the lab exists for:
+/// the system setting needs a trip to Settings and a relaunch to compare.
+private struct SwipeBackLabScreen: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var parksTheAnimation = false
+
+    var body: some View {
+        SwipeBackScreen(reduceMotion: reduceMotion || parksTheAnimation)
+            .navigationTitle("Swipe back")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                Toggle("Park the animation", isOn: $parksTheAnimation)
+                    .font(.subheadline)
+                    .padding(.horizontal, VocaMetrics.grouping)
+                    .padding(.vertical, VocaMetrics.related)
+                    .background(.bar)
+            }
     }
 }
 
