@@ -268,7 +268,18 @@ fun SetupScreen(
                     if (status.isReadyToDictate) {
                         Notice {
                             Text("Try your keyboard", style = MaterialTheme.typography.titleMedium)
-                            Text("Tap the field below, then tap the microphone on VocaPhone. Say a short sentence and finish recording to see your words here.")
+                            Text("Tap the field below to bring up VocaPhone, then tap the microphone and speak. Finish recording and your words appear in the field.")
+                            // A sentence to read out, because "say a short
+                            // sentence" leaves the user composing one on the
+                            // spot at the first moment they use the product,
+                            // and this step is already labelled optional twice.
+                            // It is a suggestion, not a target: nothing here
+                            // compares what came back against it, so an engine
+                            // that writes "2 p.m." has not failed anything.
+                            Text(
+                                "Not sure what to say? Try \u201CLet\u2019s meet tomorrow at 2PM\u201D.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         }
                         // Deliberately not saved: this field may contain a private transcript.
                         var practiceText by remember { mutableStateOf("") }
