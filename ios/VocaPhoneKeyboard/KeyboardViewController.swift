@@ -1790,6 +1790,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         keyGrid.plane = Self.initialPlane(for: keyboardType)
         updateReturnKeyEnablement()
         applyTheme()
+        // A returning keyboard may already be at the end of "happy". Restore
+        // its suggestions immediately instead of waiting for another key.
+        if isKeyboardVisible { typing.reconcile(document: document) }
     }
 
     /// Dims Return in the fields that asked for it.

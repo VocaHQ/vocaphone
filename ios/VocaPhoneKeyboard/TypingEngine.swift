@@ -131,7 +131,9 @@ final class TypingEngine {
     private var language = TypingLanguage.fallback
     private var hasResolvedLanguage = false
     private let availableLanguages: @MainActor () -> [String]
-    private var emojiTableReady = false
+    private var emojiTriggers: [String: String] = [:]
+    private var precedingWord: String?
+    private var hasDocumentContext = false
     private var customWords: [String] = []
     /// `customWords` folded once. See ``LexiconEntry/lowered``.
     private var loweredCustomWords: [String] = []
@@ -170,13 +172,33 @@ final class TypingEngine {
             // strip is no longer its only reader, so this warms what dictation
             // needs from it as well.
             EmojiTable.warmUp()
+            let emojiTriggers = EmojiTable.triggers
             await MainActor.run { [weak self] in
-                self?.wordList = loaded
-                self?.emojiTableReady = true
-                self?.onWordListLoaded?(loaded)
-                self?.publishNextCharacters()
+                self?.installResources(wordList: loaded, emojiTriggers: emojiTriggers)
             }
         }
+    }
+
+    /// Resource delivery is another reason to update the row, even if the user
+    /// has stopped typing. Rebuild from the current field, never from the word
+    /// that happened to start the background load.
+    func installResources(wordList: TypingWordList, emojiTriggers: [String: String]) {
+        self.wordList = wordList
+        self.emojiTriggers = emojiTriggers
+        onWordListLoaded?(wordList)
+        publishNextCharacters()
+        guard hasDocumentContext,
+              policy.allowsTypingIntelligence,
+              KeyboardPreferences.typingSuggestionsEnabled,
+              pendingSwipe == nil, pendingRevert == nil
+        else { return }
+        let key = SuggestionCache.Key(prefix: composer.text.lowercased(), language: language)
+        publishStrip(for: context(
+            composition: composer.text,
+            origin: composer.origin,
+            preceding: precedingWord,
+            checked: cache.value(for: key)
+        ))
     }
 
     var isPersistentLearningAvailable: Bool { learned.isPersistent }
@@ -200,6 +222,8 @@ final class TypingEngine {
         pendingSwipe = nil
         policy = newPolicy
         composer.reset()
+        precedingWord = nil
+        hasDocumentContext = false
         assertedWords.removeAll()
         pendingRevert = nil
         cache.removeAll()
@@ -451,6 +475,8 @@ final class TypingEngine {
         let preceding = measured("precedingWord") {
             PrecedingWord.lastWord(in: document.before)
         }
+        precedingWord = preceding
+        hasDocumentContext = true
 
         // Nothing being composed: prediction needs no checker, so it renders on
         // this turn rather than costing a hop.
@@ -620,10 +646,9 @@ final class TypingEngine {
         context.assertedWords = assertedWords
         // Exact word only, so nothing appears while the user is partway into a
         // different one.
-        // A lazy static lookup can block behind its background initializer.
-        // Do not touch the table until that initializer has finished.
-        context.emojiSuggestion = emojiTableReady
-            ? EmojiSuggestions.glyph(for: composition) : nil
+        // This snapshot arrives from the background loader, so the keystroke
+        // never waits on a lazy static initializer.
+        context.emojiSuggestion = emojiTriggers[composition.lowercased()]
         context.emojiEnabled = KeyboardPreferences.emojiSuggestionsEnabled
         context.suggestionsEnabled = KeyboardPreferences.typingSuggestionsEnabled
         context.autocorrectEnabled = KeyboardPreferences.autocorrectIsActive
