@@ -36,15 +36,31 @@ dependencyResolutionManagement {
         // git; app/build.gradle.kts checks its SHA-256 before unpacking it.
         //
         // An ivy repository with an explicit layout is how Gradle addresses a
-        // plain file behind a URL. The content filter keeps it from being
-        // consulted for anything else, so it can never shadow Maven Central.
-        ivy("https://github.com/csukuangfj/onnxruntime-libs/releases/download") {
-            name = "onnxruntime-libs"
-            patternLayout { artifact("v[revision]/[artifact]-android-[revision].[ext]") }
-            // A GitHub release is not a Maven repository: there is no POM or
-            // ivy.xml next to the asset, so the artifact itself is the metadata.
-            metadataSources { artifact() }
-            content { includeModule("com.github.csukuangfj", "onnxruntime") }
+        // plain file behind a URL.
+        //
+        // exclusiveContent rather than a plain content filter, because the two
+        // directions are different guarantees. A filter would stop this
+        // repository being consulted for anything else; exclusiveContent also
+        // stops anything else being consulted for this module. Without it
+        // google() and mavenCentral() are asked for it first -- two 404s on
+        // every cold resolve, and whoever registered the coordinate on Maven
+        // Central would win over the pin. The SHA-256 check downstream would
+        // turn that into a build failure rather than a bad APK, but it should
+        // not get that far.
+        exclusiveContent {
+            forRepository {
+                ivy("https://github.com/csukuangfj/onnxruntime-libs/releases/download") {
+                    name = "onnxruntime-libs"
+                    patternLayout {
+                        artifact("v[revision]/[artifact]-android-[revision].[ext]")
+                    }
+                    // A GitHub release is not a Maven repository: there is no
+                    // POM or ivy.xml beside the asset, so the artifact itself
+                    // is the metadata.
+                    metadataSources { artifact() }
+                }
+            }
+            filter { includeModule("com.github.csukuangfj", "onnxruntime") }
         }
     }
 }

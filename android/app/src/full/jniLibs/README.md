@@ -20,8 +20,15 @@ the `full` variants' JNI libraries. Nothing downloads for an `fdroid` build.
 
 The two libraries can still only be replaced as a pair: `libsherpa-onnx-jni.so`
 imports exactly one symbol from ONNX Runtime, `OrtGetApiBase`, and it is version
-tagged (`@VERS_1.28.0`). Raising the version in the catalog without rebuilding
-the JNI library here fails at `dlopen`, on the phone, not in the build.
+tagged (`@VERS_1.28.0`). Every ONNX Runtime release retags it — 1.28.2 exports
+`@VERS_1.28.2`, 1.29.0 exports `@VERS_1.29.0` — so *no* version bump is a
+catalog edit on its own, not even a patch one.
+
+Two of the three ways to get that wrong fail in the build: raising the version
+alone trips the SHA-256 check, and so does raising the hash alone. Raising both
+and leaving this library untouched is the one that builds cleanly and then fails
+at `dlopen` on the phone, with sherpa models silently unavailable. Rebuild the
+JNI library in the same change.
 
 ## Why the JNI library is built here rather than downloaded
 

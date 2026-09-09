@@ -222,9 +222,18 @@ android {
 // that asks for it.
 
 // Gradle caches a downloaded artifact but does not check its integrity unless
-// the whole project opts into dependency verification. This archive decides
+// the whole project opts into dependency verification, and this archive decides
 // whether dictation works, dies on SIGILL, or silently returns wrong text on a
-// whole class of device, so the task hashes it on every run instead.
+// whole class of device. So the task hashes it before unpacking.
+//
+// "Before unpacking", not "on every build": once the task is up to date Gradle
+// treats files under caches/modules-2 as immutable and does not re-read them,
+// so corrupting the cached zip afterwards is not detected. What the check
+// guarantees is that nothing reaches the APK without having been verified on
+// the way in -- which is the property that matters, since the unpacked output
+// is what gets packaged.
+//
+// Bumping the version in gradle/libs.versions.toml means changing this too.
 val onnxRuntimeSha256 = "7fb1d81f1fbb3e660e34baf20d8edbe5aebaa0df2793ae27d24aeade39290d1f"
 
 // sherpa-onnx ships its JNI library for these two ABIs only, so the x86 and
@@ -249,6 +258,7 @@ androidComponents {
         ) {
             description = "Verifies and unpacks the pinned ONNX Runtime libraries."
             archive.from(onnxRuntimeArchiveFiles)
+            version.set(libs.versions.onnxruntime)
             sha256.set(onnxRuntimeSha256)
             abis.set(onnxRuntimeAbis)
         }
@@ -272,6 +282,9 @@ abstract class UnpackOnnxRuntime : DefaultTask() {
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val archive: ConfigurableFileCollection
+
+    @get:Input
+    abstract val version: Property<String>
 
     @get:Input
     abstract val sha256: Property<String>
@@ -298,13 +311,16 @@ abstract class UnpackOnnxRuntime : DefaultTask() {
         if (actual != sha256.get()) {
             throw GradleException(
                 """
-                ONNX Runtime archive does not match its pinned SHA-256.
+                ONNX Runtime ${version.get()} does not match its pinned SHA-256.
                   file     $zip
                   expected ${sha256.get()}
                   actual   $actual
-                Delete it and build again. If the hash is still wrong the
-                release asset itself changed, and nothing should ship against
-                it until that is explained.
+                If the version in gradle/libs.versions.toml was just raised,
+                onnxRuntimeSha256 in app/build.gradle.kts has to move with it --
+                that is this failure, and re-downloading will not change it.
+                Otherwise delete the file and build again; a hash that is still
+                wrong means the release asset itself changed, and nothing should
+                ship against it until that is explained.
                 """.trimIndent(),
             )
         }
