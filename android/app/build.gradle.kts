@@ -5,7 +5,9 @@ plugins {
     alias(libs.plugins.room)
 }
 
+import java.security.MessageDigest
 import java.util.Properties
+import java.util.zip.ZipFile
 
 android {
     namespace = "com.vocahq.vocaphone"
@@ -199,6 +201,130 @@ android {
     }
 }
 
+// ONNX Runtime for the `full` flavor's sherpa-onnx engine.
+//
+// `libsherpa-onnx-jni.so` stays committed in app/src/full/jniLibs and has to:
+// it is rebuilt against ONNX Runtime 1.28.0 because sherpa-onnx's published
+// Android build pins 1.27.1, which miscomputes zipformer encoders on SM8850, so
+// ours matches no released artifact. `libonnxruntime.so` is the opposite --
+// byte for byte the file inside the archive below -- so 37 MB of it sat in git
+// for no reason. Gradle fetches it from the ivy repository declared in
+// settings.gradle.kts instead, which caches and shares it like any other
+// dependency and honours `--offline`.
+//
+// The two libraries are replaceable only as a pair: the JNI library imports
+// exactly one symbol from the runtime, `OrtGetApiBase`, and it is version
+// tagged `@VERS_1.28.0`. Raising the version here means rebuilding the JNI
+// library against it -- app/src/full/jniLibs/README.md has the recipe.
+//
+// Only `full` variants wire the task in, so an F-Droid build resolves nothing
+// and reaches no network: it neither ships sherpa-onnx nor configures a variant
+// that asks for it.
+
+// Gradle caches a downloaded artifact but does not check its integrity unless
+// the whole project opts into dependency verification. This archive decides
+// whether dictation works, dies on SIGILL, or silently returns wrong text on a
+// whole class of device, so the task hashes it on every run instead.
+val onnxRuntimeSha256 = "7fb1d81f1fbb3e660e34baf20d8edbe5aebaa0df2793ae27d24aeade39290d1f"
+
+// sherpa-onnx ships its JNI library for these two ABIs only, so the x86 and
+// x86_64 runtimes in the archive -- 52 MB of them -- would be weight in the APK
+// that nothing can call. x86_64 is in abiFilters for the emulator, where
+// whisper.cpp is the engine.
+val onnxRuntimeAbis = setOf("arm64-v8a", "armeabi-v7a")
+
+// Gradle 9 splits the two halves of what used to be one configuration: the
+// dependency-scope one is what `dependencies` may declare against, and the
+// resolvable one is what a task may read files from.
+val onnxRuntimeArchive = configurations.dependencyScope("onnxRuntimeArchive")
+val onnxRuntimeArchiveFiles = configurations.resolvable("onnxRuntimeArchiveFiles") {
+    extendsFrom(onnxRuntimeArchive.get())
+    isTransitive = false
+}
+
+androidComponents {
+    onVariants(selector().withFlavor("distribution", "full")) { variant ->
+        val unpack = tasks.register<UnpackOnnxRuntime>(
+            "unpack${variant.name.replaceFirstChar(Char::titlecase)}OnnxRuntime",
+        ) {
+            description = "Verifies and unpacks the pinned ONNX Runtime libraries."
+            archive.from(onnxRuntimeArchiveFiles)
+            sha256.set(onnxRuntimeSha256)
+            abis.set(onnxRuntimeAbis)
+        }
+        // AGP picks the output directory and wires the task dependency, which
+        // is why this is registered per variant rather than shared: two
+        // variants cannot be handed the same generated directory.
+        //
+        // checkNotNull rather than `?.`: a `full` variant with no jniLibs source
+        // container would drop the runtime out of the APK, and the failure would
+        // land at `dlopen` on a user's phone rather than here.
+        checkNotNull(variant.sources.jniLibs) {
+            "${variant.name} has no jniLibs sources to add the ONNX Runtime to"
+        }.addGeneratedSourceDirectory(unpack, UnpackOnnxRuntime::outputDir)
+    }
+}
+
+abstract class UnpackOnnxRuntime : DefaultTask() {
+    // NONE: the archive is identified by the content hash checked below, and
+    // its path inside the Gradle cache is not something a build should be
+    // sensitive to.
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val archive: ConfigurableFileCollection
+
+    @get:Input
+    abstract val sha256: Property<String>
+
+    @get:Input
+    abstract val abis: SetProperty<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun unpack() {
+        val zip = archive.singleFile
+        val digest = MessageDigest.getInstance("SHA-256")
+        zip.inputStream().use { stream ->
+            val buffer = ByteArray(1 shl 16)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        if (actual != sha256.get()) {
+            throw GradleException(
+                """
+                ONNX Runtime archive does not match its pinned SHA-256.
+                  file     $zip
+                  expected ${sha256.get()}
+                  actual   $actual
+                Delete it and build again. If the hash is still wrong the
+                release asset itself changed, and nothing should ship against
+                it until that is explained.
+                """.trimIndent(),
+            )
+        }
+
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        ZipFile(zip).use { opened ->
+            for (abi in abis.get()) {
+                val path = "jni/$abi/libonnxruntime.so"
+                val entry = opened.getEntry(path)
+                    ?: throw GradleException("$zip does not contain $path")
+                val target = out.resolve(abi).apply { mkdirs() }.resolve("libonnxruntime.so")
+                opened.getInputStream(entry).use { input ->
+                    target.outputStream().use(input::copyTo)
+                }
+            }
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
         // Kept at 17 on purpose, matching compileOptions above; see the comment
@@ -238,6 +364,11 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.zxing.core)
+
+    // Artifact-only notation: a GitHub release asset has no metadata
+    // module beside it, so the extension is what names the file. The
+    // `full` flavor unpacks two libraries out of it; see UnpackOnnxRuntime.
+    add(onnxRuntimeArchive.name, "com.github.csukuangfj:onnxruntime:${libs.versions.onnxruntime.get()}@zip")
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
