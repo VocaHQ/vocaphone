@@ -15,11 +15,59 @@ struct StatsPresentationTests {
         )
     }
 
+    private func xPostLength(_ message: String) -> Int {
+        let withoutURL = message.replacingOccurrences(of: StatsShareComposer.site, with: "")
+        let weighted = withoutURL.unicodeScalars.reduce(0) { total, scalar in
+            switch scalar.value {
+            case 0...4351, 8192...8205, 8208...8223, 8242...8247:
+                return total + 1
+            default:
+                return total + 2
+            }
+        }
+        return weighted + 23
+    }
+
     @Test func shareCopyNamesBothPrivateProcessingRoutes() {
-        let message = StatsShareComposer.message(stats, now: now)
-        #expect(message.contains("on my iPhone or through my own gateway"))
-        #expect(!message.contains("Runs on my phone"))
+        let message = StatsShareComposer.message(stats, now: now, destination: .x)
+        #expect(message.contains("I’ve spoken 12,500 words with VocaPhone"))
+        #expect(message.contains("1 hour of talking"))
+        #expect(message.contains("my phone or my own self-hosted gateway"))
+        #expect(message.contains("My audio stays mine"))
+        #expect(message.contains("@vocahq"))
         #expect(message.contains(StatsShareComposer.site))
+    }
+
+    @Test func linkedinCopyOmitsTheXHandle() {
+        let message = StatsShareComposer.message(stats, now: now, destination: .linkedIn)
+        #expect(!message.contains("@vocahq"))
+        #expect(message.hasSuffix(StatsShareComposer.site))
+    }
+
+    @Test func shareCopyFitsWithinTheXPostLimit() {
+        let large = UsageStats(
+            totalWords: 987_654_321,
+            totalDictations: 123_456,
+            totalSeconds: 9_000_000,
+            lastDayKey: UsageStats.dayKey(now),
+            currentStreak: 4_321,
+            bestStreak: 5_000
+        )
+        let message = StatsShareComposer.message(large, now: now, destination: .x)
+        #expect(xPostLength(message) <= 280)
+    }
+
+    @Test func shareCopyOmitsUnavailableDetailsAndShortDurations() {
+        let empty = UsageStats(totalWords: 1, totalDictations: 0, totalSeconds: 0)
+        let message = StatsShareComposer.message(empty, now: now, destination: .x)
+        #expect(message.contains("1 word"))
+        #expect(!message.contains("session"))
+        #expect(!message.contains("talking"))
+        #expect(!message.contains("WPM"))
+        #expect(!message.contains("streak"))
+        #expect(!message.contains("\n\n\n"))
+        #expect(StatsShareComposer.spokenDuration(59) == nil)
+        #expect(StatsShareComposer.spokenDuration(5_460) == "1 hour, 31 minutes")
     }
 
     @Test(arguments: StatsShareDestination.allCases)
@@ -84,7 +132,7 @@ struct StatsPresentationTests {
             currentStreak: 1,
             bestStreak: 1
         )
-        let message = StatsShareComposer.message(one, now: now)
+        let message = StatsShareComposer.message(one, now: now, destination: .x)
         #expect(message.contains("1 word"))
         #expect(message.contains("1 session"))
         #expect(!message.contains("1 sessions"))

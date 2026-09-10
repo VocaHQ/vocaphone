@@ -100,6 +100,8 @@ enum StatsShareDestination: CaseIterable, Equatable, Sendable {
     case linkedIn
 
     var label: String { self == .x ? "X" : "LinkedIn" }
+
+    var handle: String? { self == .x ? "@vocahq" : nil }
 }
 
 enum StatsShareTarget: Equatable, Sendable {
@@ -115,19 +117,51 @@ struct StatsShareRoute: Equatable, Sendable {
 enum StatsShareComposer {
     static let site = "https://vocaphone.vocahq.com"
 
-    static func message(_ stats: UsageStats, now: Date) -> String {
-        var details = "📊 \(StatsFormat.sessions(stats.totalDictations))"
+    static func message(
+        _ stats: UsageStats,
+        now: Date,
+        destination: StatsShareDestination
+    ) -> String {
+        var details: [String] = []
+        if stats.totalDictations > 0 {
+            details.append("📊 \(pluralized(stats.totalDictations, "session"))")
+        }
+        if let duration = spokenDuration(stats.totalSeconds) {
+            details.append("⏱️ \(duration) of talking")
+        }
         if stats.averageWordsPerMinute > 0 {
-            details += " · ⚡️ \(Int(stats.averageWordsPerMinute.rounded())) WPM"
+            details.append("⚡️ \(Int(stats.averageWordsPerMinute.rounded())) WPM")
         }
         let streak = stats.currentStreak(at: now)
-        if streak > 0 { details += " · 🔥 \(streak)-day streak" }
-        return [
-            "🎤 I've dictated \(StatsFormat.words(stats.totalWords)) with VocaPhone.",
-            details,
-            "Private voice typing — on my iPhone or through my own gateway. 🔒",
-            site,
-        ].joined(separator: "\n\n")
+        if streak > 0 { details.append("🔥 \(streak)-day streak") }
+
+        var lines = [
+            "🎤 I’ve spoken \(pluralized(stats.totalWords, "word")) with VocaPhone.",
+            details.joined(separator: " · "),
+            "Private voice typing on my phone or my own self-hosted gateway. My audio stays mine. 🔒",
+            [destination.handle, site].compactMap { $0 }.joined(separator: " · "),
+        ]
+        lines.removeAll(where: \.isEmpty)
+        return lines.joined(separator: "\n\n")
+    }
+
+    static func pluralized(_ count: Int, _ noun: String) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "en_US")
+        let value = formatter.string(from: NSNumber(value: count)) ?? "\(count)"
+        return "\(value) \(count == 1 ? noun : noun + "s")"
+    }
+
+    static func spokenDuration(_ seconds: Double) -> String? {
+        let totalMinutes = max(0, Int(seconds) / 60)
+        guard totalMinutes > 0 else { return nil }
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        var parts: [String] = []
+        if hours > 0 { parts.append("\(hours) \(hours == 1 ? "hour" : "hours")") }
+        if minutes > 0 { parts.append("\(minutes) \(minutes == 1 ? "minute" : "minutes")") }
+        return parts.joined(separator: ", ")
     }
 
     static func composerURL(_ destination: StatsShareDestination, message: String) -> URL? {

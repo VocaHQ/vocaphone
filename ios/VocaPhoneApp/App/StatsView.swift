@@ -409,7 +409,7 @@ struct StatsView: View {
     }
 
     private func share(to destination: StatsShareDestination) {
-        let message = StatsShareComposer.message(stats, now: now)
+        let message = StatsShareComposer.message(stats, now: now, destination: destination)
         guard let route = StatsShareComposer.preferredRoute(
             destination,
             message: message,
