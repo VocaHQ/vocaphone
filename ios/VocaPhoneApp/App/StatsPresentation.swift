@@ -165,17 +165,23 @@ enum StatsShareComposer {
     }
 
     static func composerURL(_ destination: StatsShareDestination, message: String) -> URL? {
-        let base = destination == .x
-            ? "https://x.com/intent/post"
-            : "https://www.linkedin.com/feed/"
-        guard var components = URLComponents(string: base) else { return nil }
-        components.queryItems = destination == .x
-            ? [URLQueryItem(name: "text", value: message)]
-            : [
-                URLQueryItem(name: "shareActive", value: "true"),
-                URLQueryItem(name: "text", value: message),
-            ]
-        return components.url
+        switch destination {
+        case .x:
+            guard var components = URLComponents(string: "https://x.com/intent/post") else {
+                return nil
+            }
+            components.queryItems = [URLQueryItem(name: "text", value: message)]
+            return components.url
+        case .linkedIn:
+            // LinkedIn's feed URL ignores the old shareActive/text query and
+            // can land on the ordinary feed. Its public web share dialog only
+            // accepts a URL, so the post text and card stay on the pasteboard.
+            guard var components = URLComponents(
+                string: "https://www.linkedin.com/sharing/share-offsite/"
+            ) else { return nil }
+            components.queryItems = [URLQueryItem(name: "url", value: site)]
+            return components.url
+        }
     }
 
     static func nativeURL(_ destination: StatsShareDestination, message: String) -> URL? {

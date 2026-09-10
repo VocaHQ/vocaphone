@@ -464,7 +464,14 @@ struct StatsView: View {
         cardCopied: Bool,
         textCopied: Bool
     ) -> (text: String, symbol: String, isError: Bool) {
-        let place = target == .installedApp ? "\(destination.label) app" : "web composer"
+        let place: String
+        if target == .installedApp {
+            place = "\(destination.label) app"
+        } else if destination == .linkedIn {
+            place = "LinkedIn share dialog"
+        } else {
+            place = "web composer"
+        }
         switch (cardCopied, textCopied) {
         case (true, true):
             return ("Opened the \(place). Card and post text copied for pasting.", "checkmark.circle.fill", false)

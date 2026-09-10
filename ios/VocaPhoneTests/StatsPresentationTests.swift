@@ -70,10 +70,9 @@ struct StatsPresentationTests {
         #expect(StatsShareComposer.spokenDuration(5_460) == "1 hour, 31 minutes")
     }
 
-    @Test(arguments: StatsShareDestination.allCases)
-    func composerURLsRoundTripTheEntireMessage(_ destination: StatsShareDestination) throws {
+    @Test func xComposerURLRoundTripsTheEntireMessage() throws {
         let message = "words & sessions + streak; हिन्दी 🔒"
-        let url = try #require(StatsShareComposer.composerURL(destination, message: message))
+        let url = try #require(StatsShareComposer.composerURL(.x, message: message))
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
         let items = try #require(components.queryItems)
         #expect(items.first(where: { $0.name == "text" })?.value == message)
@@ -115,12 +114,13 @@ struct StatsPresentationTests {
         #expect(route.url.scheme == "https")
     }
 
-    @Test func linkedinUsesTheFeedComposerContract() throws {
+    @Test func linkedinUsesThePublicShareDialogContract() throws {
         let url = try #require(StatsShareComposer.composerURL(.linkedIn, message: "hello"))
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
         #expect(components.host == "www.linkedin.com")
-        #expect(components.path == "/feed/")
-        #expect(components.queryItems?.contains(URLQueryItem(name: "shareActive", value: "true")) == true)
+        #expect(components.path == "/sharing/share-offsite/")
+        #expect(components.queryItems == [URLQueryItem(name: "url", value: StatsShareComposer.site)])
+        #expect(components.queryItems?.contains(where: { $0.name == "text" }) == false)
     }
 
     @Test func singularPublicCopyIsGrammatical() {
