@@ -10,11 +10,19 @@ import org.junit.Test
 class MicDictationControlTest {
 
     @Test
-    fun `tap starts, finishes, does nothing while busy, or cancels by phase`() {
+    fun `tap starts, finishes, accepts the partial, or cancels by phase`() {
         assertEquals(MicDictationAction.START, MicDictationControl.tap(DictationPhase.IDLE))
         assertEquals(MicDictationAction.FINISH, MicDictationControl.tap(DictationPhase.LISTENING))
-        assertEquals(MicDictationAction.NONE, MicDictationControl.tap(DictationPhase.TRANSCRIBING))
-        assertEquals(MicDictationAction.NONE, MicDictationControl.tap(DictationPhase.FINALIZING))
+        assertEquals(
+            MicDictationAction.ACCEPT_PARTIAL,
+            MicDictationControl.tap(DictationPhase.TRANSCRIBING),
+        )
+        assertEquals(
+            MicDictationAction.ACCEPT_PARTIAL,
+            MicDictationControl.tap(DictationPhase.FINALIZING),
+        )
+        // INSERTING is already committing text; accepting the partial there
+        // would risk a double insertion, so it stays a no-op.
         assertEquals(MicDictationAction.NONE, MicDictationControl.tap(DictationPhase.INSERTING))
         assertEquals(
             MicDictationAction.OPEN_APP,

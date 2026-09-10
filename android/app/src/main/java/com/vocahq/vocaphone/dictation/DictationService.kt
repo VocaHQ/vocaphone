@@ -70,6 +70,13 @@ class DictationService : Service() {
                 stopUnlessHoldingMicrophone()
             }
 
+            ACTION_ACCEPT_PARTIAL -> {
+                mainHandler.removeCallbacks(promoteRetry)
+                pendingSource = null
+                controller.acceptPartial(DictationSource.IME)
+                stopUnlessHoldingMicrophone()
+            }
+
             ACTION_CANCEL -> {
                 mainHandler.removeCallbacks(promoteRetry)
                 pendingSource = null
@@ -248,6 +255,7 @@ class DictationService : Service() {
     companion object {
         const val ACTION_START = "com.vocahq.vocaphone.START"
         const val ACTION_FINISH = "com.vocahq.vocaphone.FINISH"
+        const val ACTION_ACCEPT_PARTIAL = "com.vocahq.vocaphone.ACCEPT_PARTIAL"
         const val ACTION_CANCEL = "com.vocahq.vocaphone.CANCEL"
         const val EXTRA_SOURCE = "source"
         private const val CHANNEL_ID = "vocaphone.recording"

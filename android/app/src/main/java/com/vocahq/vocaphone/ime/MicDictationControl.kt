@@ -7,6 +7,7 @@ internal enum class MicDictationAction {
     START,
     FINISH,
     NONE,
+    ACCEPT_PARTIAL,
     CANCEL,
     OPEN_APP,
 }
@@ -14,10 +15,13 @@ internal enum class MicDictationAction {
 internal object MicDictationControl {
     fun tap(phase: DictationPhase): MicDictationAction = when {
         phase == DictationPhase.LISTENING -> MicDictationAction.FINISH
-        // Only long-press is destructive while busy: a tap here used to
-        // cancel, indistinguishable from long-press. Doing nothing keeps a
-        // stray/repeated tap on the now-consolidated Stop button safe.
-        phase.isBusy -> MicDictationAction.NONE
+        // INSERTING is already committing text via a largely synchronous
+        // editor call; there's no safe partial to insert on top of an
+        // insertion already in flight, so it stays a no-op.
+        phase == DictationPhase.INSERTING -> MicDictationAction.NONE
+        // Every other busy phase can offer up whatever partial transcript
+        // is already on hand instead of doing nothing.
+        phase.isBusy -> MicDictationAction.ACCEPT_PARTIAL
         phase == DictationPhase.PERMISSION_REPAIR -> MicDictationAction.OPEN_APP
         else -> MicDictationAction.START
     }

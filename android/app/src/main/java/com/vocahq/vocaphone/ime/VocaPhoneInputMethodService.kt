@@ -903,6 +903,10 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                     container.diagnostics.recordAction("cancel", DictationSource.IME.name)
                     cancelImeDictation()
                 }
+                MicDictationAction.ACCEPT_PARTIAL -> {
+                    container.diagnostics.recordAction("accept_partial", DictationSource.IME.name)
+                    acceptPartialImeDictation()
+                }
                 MicDictationAction.NONE -> Unit
                 MicDictationAction.OPEN_APP -> openCompanion()
                 MicDictationAction.START -> startImeDictation()
@@ -966,6 +970,14 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             DictationService.send(this, DictationService.ACTION_FINISH)
         } else {
             container.dictation.finish()
+        }
+    }
+
+    private fun acceptPartialImeDictation() {
+        if (VoiceShortcutIme.usesMicrophoneForegroundService(voiceShortcutActive)) {
+            DictationService.send(this, DictationService.ACTION_ACCEPT_PARTIAL)
+        } else {
+            container.dictation.acceptPartial(DictationSource.IME)
         }
     }
 
