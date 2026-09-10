@@ -114,22 +114,14 @@ struct StatsPresentationTests {
         #expect(route.url.scheme == "https")
     }
 
-    @Test func linkedinUsesThePublicShareDialogContract() throws {
-        let url = try #require(StatsShareComposer.composerURL(.linkedIn, message: "hello"))
+    @Test func linkedinFeedComposerReceivesTheEntireMessage() throws {
+        let message = "words & sessions + streak; हिन्दी 🔒"
+        let url = try #require(StatsShareComposer.composerURL(.linkedIn, message: message))
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
         #expect(components.host == "www.linkedin.com")
-        #expect(components.path == "/sharing/share-offsite/")
-        #expect(components.queryItems == [URLQueryItem(name: "url", value: StatsShareComposer.site)])
-        #expect(components.queryItems?.contains(where: { $0.name == "text" }) == false)
-    }
-
-    @Test func linkedinWebPasteCopyDoesNotDuplicateTheSharedURL() {
-        let message = StatsShareComposer.message(stats, now: now, destination: .linkedIn)
-        let pasteMessage = StatsShareComposer.linkedInWebPasteMessage(message)
-        #expect(pasteMessage.contains("I’ve spoken 12,500 words with VocaPhone"))
-        #expect(pasteMessage.contains("My audio stays mine"))
-        #expect(!pasteMessage.contains(StatsShareComposer.site))
-        #expect(StatsShareComposer.linkedInWebPasteMessage("custom copy") == "custom copy")
+        #expect(components.path == "/feed/")
+        #expect(components.queryItems?.first(where: { $0.name == "shareActive" })?.value == "true")
+        #expect(components.queryItems?.first(where: { $0.name == "text" })?.value == message)
     }
 
     @Test func singularPublicCopyIsGrammatical() {

@@ -120,14 +120,4 @@ enum StatsShareExporter {
             textCopied: UIPasteboard.general.hasStrings
         )
     }
-
-    /// Keep text as the only pasteboard item for browser text fields. If an
-    /// image item comes first, mobile Safari can offer the wrong paste value.
-    static func copyText(_ message: String) -> PayloadResult {
-        UIPasteboard.general.setItems(
-            [[UTType.utf8PlainText.identifier: message]],
-            options: [.localOnly: true]
-        )
-        return PayloadResult(cardCopied: false, textCopied: UIPasteboard.general.hasStrings)
-    }
 }

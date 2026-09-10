@@ -8,7 +8,7 @@ enum StatsCopy {
     static let speedCaption = "Average speaking speed"
     static let shareTitle = "Share your progress"
     static let shareSubtitle = "A private summary you choose where to post"
-    static let shareFootnote = "Installed apps open first. We’ll copy anything the destination can’t receive automatically."
+    static let shareFootnote = "Installed apps open first. The card and post text are copied so you can paste them if needed."
 
     static func menuDetail(_ stats: UsageStats, now: Date) -> String {
         guard stats.hasAny else { return "Words, speaking speed and streaks" }
@@ -173,23 +173,17 @@ enum StatsShareComposer {
             components.queryItems = [URLQueryItem(name: "text", value: message)]
             return components.url
         case .linkedIn:
-            // LinkedIn's feed URL ignores the old shareActive/text query and
-            // can land on the ordinary feed. Its public web share dialog only
-            // accepts a URL, so the post text and card stay on the pasteboard.
-            guard var components = URLComponents(
-                string: "https://www.linkedin.com/sharing/share-offsite/"
-            ) else { return nil }
-            components.queryItems = [URLQueryItem(name: "url", value: site)]
+            // Match VocaMac's feed composer: share-offsite accepts only a URL,
+            // while this route carries the complete post body.
+            guard var components = URLComponents(string: "https://www.linkedin.com/feed/") else {
+                return nil
+            }
+            components.queryItems = [
+                URLQueryItem(name: "shareActive", value: "true"),
+                URLQueryItem(name: "text", value: message),
+            ]
             return components.url
         }
-    }
-
-    /// LinkedIn's public web dialog adds the shared URL itself and does not
-    /// accept post text. Copy the rest of the message for one clean paste.
-    static func linkedInWebPasteMessage(_ message: String) -> String {
-        let siteSuffix = "\n\n\(site)"
-        guard message.hasSuffix(siteSuffix) else { return message }
-        return String(message.dropLast(siteSuffix.count))
     }
 
     static func nativeURL(_ destination: StatsShareDestination, message: String) -> URL? {
@@ -205,7 +199,7 @@ enum StatsShareComposer {
         case .linkedIn:
             // LinkedIn exposes no supported deep link for a prefilled post.
             // Open the installed app and put both the card and text on the
-            // pasteboard; its browser fallback requires a guided text paste.
+            // pasteboard; the browser fallback receives the full post body.
             return URL(string: "linkedin://")
         }
     }
