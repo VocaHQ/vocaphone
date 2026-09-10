@@ -6,6 +6,7 @@ import com.vocahq.vocaphone.core.DictationPhase
 internal enum class MicDictationAction {
     START,
     FINISH,
+    NONE,
     CANCEL,
     OPEN_APP,
 }
@@ -13,7 +14,10 @@ internal enum class MicDictationAction {
 internal object MicDictationControl {
     fun tap(phase: DictationPhase): MicDictationAction = when {
         phase == DictationPhase.LISTENING -> MicDictationAction.FINISH
-        phase.isBusy -> MicDictationAction.CANCEL
+        // Only long-press is destructive while busy: a tap here used to
+        // cancel, indistinguishable from long-press. Doing nothing keeps a
+        // stray/repeated tap on the now-consolidated Stop button safe.
+        phase.isBusy -> MicDictationAction.NONE
         phase == DictationPhase.PERMISSION_REPAIR -> MicDictationAction.OPEN_APP
         else -> MicDictationAction.START
     }

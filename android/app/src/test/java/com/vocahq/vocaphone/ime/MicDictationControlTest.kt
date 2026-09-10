@@ -10,11 +10,12 @@ import org.junit.Test
 class MicDictationControlTest {
 
     @Test
-    fun `tap starts, finishes, or cancels by phase`() {
+    fun `tap starts, finishes, does nothing while busy, or cancels by phase`() {
         assertEquals(MicDictationAction.START, MicDictationControl.tap(DictationPhase.IDLE))
         assertEquals(MicDictationAction.FINISH, MicDictationControl.tap(DictationPhase.LISTENING))
-        assertEquals(MicDictationAction.CANCEL, MicDictationControl.tap(DictationPhase.TRANSCRIBING))
-        assertEquals(MicDictationAction.CANCEL, MicDictationControl.tap(DictationPhase.FINALIZING))
+        assertEquals(MicDictationAction.NONE, MicDictationControl.tap(DictationPhase.TRANSCRIBING))
+        assertEquals(MicDictationAction.NONE, MicDictationControl.tap(DictationPhase.FINALIZING))
+        assertEquals(MicDictationAction.NONE, MicDictationControl.tap(DictationPhase.INSERTING))
         assertEquals(
             MicDictationAction.OPEN_APP,
             MicDictationControl.tap(DictationPhase.PERMISSION_REPAIR),

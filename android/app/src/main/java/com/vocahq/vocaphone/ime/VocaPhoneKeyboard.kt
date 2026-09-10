@@ -1755,7 +1755,7 @@ private fun MicButton(
     val description = when {
         !enabled -> "Dictation unavailable"
         recording -> "Finish dictation. Long-press to discard without inserting"
-        processing -> "Cancel transcription"
+        processing -> "Transcribing. Long-press to discard without inserting"
         state.phase == DictationPhase.PERMISSION_REPAIR -> "Open VocaPhone"
         else -> "Start dictation"
     }

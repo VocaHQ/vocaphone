@@ -903,6 +903,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                     container.diagnostics.recordAction("cancel", DictationSource.IME.name)
                     cancelImeDictation()
                 }
+                MicDictationAction.NONE -> Unit
                 MicDictationAction.OPEN_APP -> openCompanion()
                 MicDictationAction.START -> startImeDictation()
             }
