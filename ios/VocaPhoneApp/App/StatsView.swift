@@ -6,7 +6,6 @@ struct StatsView: View {
     @State private var confirmingReset = false
     @State private var shareState = ShareState.idle
     @State private var shareStateToken = 0
-    @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let store = UsageStatsStore.shared
@@ -14,7 +13,12 @@ struct StatsView: View {
     private enum ShareState: Equatable {
         case idle
         case copied
-        case opened(StatsShareDestination)
+        case opened(
+            StatsShareDestination,
+            target: StatsShareTarget,
+            cardCopied: Bool,
+            textCopied: Bool
+        )
         case failed(String)
     }
 
@@ -205,10 +209,24 @@ struct StatsView: View {
 
     private var recentActivityCard: some View {
         let days = stats.lastSevenDays(endingAt: now)
+        let weeklyWords = days.reduce(0) { $0 + $1.words }
+        let weeklySessions = days.reduce(0) { $0 + $1.dictations }
         return VStack(alignment: .leading, spacing: VocaMetrics.related) {
             VocaSectionHeader(title: "Last 7 days")
             VocaCard {
                 VStack(alignment: .leading, spacing: VocaMetrics.padding) {
+                    HStack(spacing: VocaMetrics.related) {
+                        StatChip(symbol: "chart.bar.fill", tint: .speed, size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(StatsFormat.words(weeklyWords))
+                                .font(.headline)
+                                .foregroundStyle(Color.vocaPrimaryText)
+                            Text(StatsFormat.sessions(weeklySessions))
+                                .font(.caption)
+                                .foregroundStyle(Color.vocaSecondaryText)
+                        }
+                        Spacer()
+                    }
                     activityChart(days)
                     if stats.hasAny {
                         Divider()
@@ -233,13 +251,15 @@ struct StatsView: View {
         return HStack(alignment: .bottom, spacing: VocaMetrics.related) {
             ForEach(days) { day in
                 VStack(spacing: 7) {
-                    Text(day.words == 0 ? "" : StatsFormat.count(day.words))
+                    Text(day.words == 0 ? "" : StatsFormat.compactCount(day.words))
                         .font(.caption2.weight(.semibold))
                         .monospacedDigit()
                         .foregroundStyle(Color.vocaSecondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
                         .frame(height: 16)
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(day.words == 0 ? Color.vocaRecessedSurface : Color.brand)
+                        .fill(activityBarColor(day))
                         .frame(height: activityBarHeight(day.words, maximum: maximum))
                     Text(StatsFormat.shortDayLabel(day.key))
                         .font(.caption2.weight(day.key == UsageStats.dayKey(now) ? .bold : .regular))
@@ -260,24 +280,34 @@ struct StatsView: View {
     }
 
     private func activityRow(_ day: DailyUsage) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(StatsFormat.dayLabel(day.key, now: now))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.vocaPrimaryText)
-            Spacer()
-            Text(
-                "\(StatsFormat.words(day.words)) · \(StatsFormat.sessions(day.dictations)) · "
-                    + StatsFormat.duration(day.seconds)
-            )
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(StatsFormat.dayLabel(day.key, now: now))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.vocaPrimaryText)
+                Spacer()
+                Text(StatsFormat.words(day.words))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.vocaPrimaryText)
+            }
+            HStack(spacing: VocaMetrics.padding) {
+                Label(StatsFormat.sessions(day.dictations), systemImage: "waveform")
+                Label(StatsFormat.duration(day.seconds), systemImage: "timer")
+            }
             .font(.caption)
             .foregroundStyle(Color.vocaSecondaryText)
-            .multilineTextAlignment(.trailing)
         }
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
     }
 
     private func activityBarHeight(_ words: Int, maximum: Int) -> CGFloat {
         words == 0 ? 8 : max(16, CGFloat(words) / CGFloat(maximum) * 94)
+    }
+
+    private func activityBarColor(_ day: DailyUsage) -> Color {
+        guard day.words > 0 else { return Color.vocaRecessedSurface }
+        return day.key == UsageStats.dayKey(now) ? Color.brand : Color.brand.opacity(0.58)
     }
 
     private var shareCard: some View {
@@ -295,24 +325,7 @@ struct StatsView: View {
                     }
                 }
 
-                HStack(spacing: VocaMetrics.related) {
-                    ShareButton(tint: Color.brand, label: "Copy", accessibilityLabel: "Copy stats card") {
-                        Image(systemName: shareState == .copied ? "checkmark" : "doc.on.clipboard")
-                    } action: { copyCard() }
-
-                    ShareButton(tint: Color.vocaPrimaryText, label: "X", accessibilityLabel: "Share stats on X") {
-                        Text("X").font(.headline.weight(.semibold))
-                    } action: { share(to: .x) }
-
-                    ShareButton(tint: Self.linkedInBlue, label: "LinkedIn", accessibilityLabel: "Share stats on LinkedIn") {
-                        Text("in")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Self.linkedInBlue, in: RoundedRectangle(cornerRadius: 3))
-                    } action: { share(to: .linkedIn) }
-                }
+                shareActions
 
                 if let note = shareNote {
                     Label(note.text, systemImage: note.symbol)
@@ -326,6 +339,34 @@ struct StatsView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.18), value: shareState)
+        }
+    }
+
+    private var shareActions: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: VocaMetrics.related))
+            : AnyLayout(HStackLayout(spacing: VocaMetrics.related))
+        return layout {
+            ShareButton(tint: Color.brand, label: "Copy", accessibilityLabel: "Copy stats card") {
+                Image(systemName: shareState == .copied ? "checkmark" : "doc.on.clipboard")
+            } action: { copyCard() }
+
+            ShareButton(tint: Color.vocaPrimaryText, label: "X", accessibilityLabel: "Share stats on X") {
+                Text("X").font(.headline.weight(.semibold))
+            } action: { share(to: .x) }
+
+            ShareButton(
+                tint: Self.linkedInBlue,
+                label: "LinkedIn",
+                accessibilityLabel: "Share stats on LinkedIn"
+            ) {
+                Text("in")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Self.linkedInBlue, in: RoundedRectangle(cornerRadius: 3))
+            } action: { share(to: .linkedIn) }
         }
     }
 
@@ -347,8 +388,13 @@ struct StatsView: View {
             nil
         case .copied:
             ("Card copied. Paste it wherever you’d like.", "checkmark.circle.fill", false)
-        case .opened(let destination):
-            ("Card copied. Paste it into your \(destination.label) post.", "doc.on.clipboard", false)
+        case .opened(let destination, let target, let cardCopied, let textCopied):
+            shareSuccessNote(
+                destination,
+                target: target,
+                cardCopied: cardCopied,
+                textCopied: textCopied
+            )
         case .failed(let message):
             (message, "exclamationmark.triangle.fill", true)
         }
@@ -363,23 +409,71 @@ struct StatsView: View {
     }
 
     private func share(to destination: StatsShareDestination) {
-        guard StatsShareExporter.copyCard(stats, now: now) else {
-            setShareState(.failed("Couldn’t copy the card image."), clearingAfter: 6)
-            return
-        }
         let message = StatsShareComposer.message(stats, now: now)
-        guard let url = StatsShareComposer.composerURL(destination, message: message) else {
+        guard let route = StatsShareComposer.preferredRoute(
+            destination,
+            message: message,
+            canOpen: UIApplication.shared.canOpenURL
+        ) else {
             setShareState(.failed("Couldn’t prepare the \(destination.label) post."), clearingAfter: 6)
             return
         }
-        openURL(url) { accepted in
+        let payload = StatsShareExporter.copySharePayload(
+            image: StatsShareExporter.renderCard(stats, now: now),
+            message: message
+        )
+        open(route, destination: destination, message: message, payload: payload)
+    }
+
+    private func open(
+        _ route: StatsShareRoute,
+        destination: StatsShareDestination,
+        message: String,
+        payload: StatsShareExporter.PayloadResult
+    ) {
+        UIApplication.shared.open(route.url) { accepted in
             Task { @MainActor in
                 if accepted {
-                    setShareState(.opened(destination), clearingAfter: 5)
+                    setShareState(
+                        .opened(
+                            destination,
+                            target: route.target,
+                            cardCopied: payload.cardCopied,
+                            textCopied: payload.textCopied
+                        ),
+                        clearingAfter: 6
+                    )
+                } else if route.target == .installedApp,
+                          let web = StatsShareComposer.composerURL(destination, message: message) {
+                    open(
+                        StatsShareRoute(url: web, target: .browser),
+                        destination: destination,
+                        message: message,
+                        payload: payload
+                    )
                 } else {
                     setShareState(.failed("Couldn’t open \(destination.label)."), clearingAfter: 6)
                 }
             }
+        }
+    }
+
+    private func shareSuccessNote(
+        _ destination: StatsShareDestination,
+        target: StatsShareTarget,
+        cardCopied: Bool,
+        textCopied: Bool
+    ) -> (text: String, symbol: String, isError: Bool) {
+        let place = target == .installedApp ? "\(destination.label) app" : "web composer"
+        switch (cardCopied, textCopied) {
+        case (true, true):
+            return ("Opened the \(place). Card and post text copied for pasting.", "checkmark.circle.fill", false)
+        case (false, true):
+            return ("Opened the \(place). Post text copied, but the card was unavailable.", "exclamationmark.triangle.fill", true)
+        case (true, false):
+            return ("Opened the \(place). Card copied, but the post text was unavailable.", "exclamationmark.triangle.fill", true)
+        case (false, false):
+            return ("Opened the \(place), but nothing could be copied.", "exclamationmark.triangle.fill", true)
         }
     }
 
@@ -436,13 +530,26 @@ struct ShareButton<Mark: View>: View {
     let accessibilityLabel: String
     @ViewBuilder var mark: Mark
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: VocaMetrics.tight) {
-                mark
-                Text(label)
-                    .font(.caption.weight(.medium))
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    HStack(spacing: VocaMetrics.related) {
+                        mark
+                        Text(label)
+                            .font(.body.weight(.semibold))
+                        Spacer()
+                    }
+                    .padding(.horizontal, VocaMetrics.padding)
+                } else {
+                    VStack(spacing: VocaMetrics.tight) {
+                        mark
+                        Text(label)
+                            .font(.caption.weight(.medium))
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: VocaMetrics.minimumTarget + 12)

@@ -31,6 +31,42 @@ struct StatsPresentationTests {
         #expect(items.first(where: { $0.name == "text" })?.value == message)
     }
 
+    @Test func xNativeComposerRoundTripsTheEntireMessage() throws {
+        let message = "words & sessions + streak; हिन्दी 🔒"
+        let url = try #require(StatsShareComposer.nativeURL(.x, message: message))
+        let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        #expect(components.scheme == "twitter")
+        #expect(components.host == "post")
+        #expect(components.queryItems?.first(where: { $0.name == "message" })?.value == message)
+    }
+
+    @Test func linkedinNativeRouteOpensTheInstalledApp() throws {
+        let url = try #require(StatsShareComposer.nativeURL(.linkedIn, message: "hello"))
+        #expect(url.scheme == "linkedin")
+    }
+
+    @Test(arguments: StatsShareDestination.allCases)
+    func anInstalledAppIsPreferredOverTheBrowser(_ destination: StatsShareDestination) throws {
+        let route = try #require(
+            StatsShareComposer.preferredRoute(destination, message: "hello") { url in
+                url.scheme != "https"
+            }
+        )
+        #expect(route.target == .installedApp)
+        #expect(route.url.scheme != "https")
+    }
+
+    @Test(arguments: StatsShareDestination.allCases)
+    func theBrowserIsTheFallbackWithoutAnInstalledApp(
+        _ destination: StatsShareDestination
+    ) throws {
+        let route = try #require(
+            StatsShareComposer.preferredRoute(destination, message: "hello") { _ in false }
+        )
+        #expect(route.target == .browser)
+        #expect(route.url.scheme == "https")
+    }
+
     @Test func linkedinUsesTheFeedComposerContract() throws {
         let url = try #require(StatsShareComposer.composerURL(.linkedIn, message: "hello"))
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
@@ -52,5 +88,28 @@ struct StatsPresentationTests {
         #expect(message.contains("1 word"))
         #expect(message.contains("1 session"))
         #expect(!message.contains("1 sessions"))
+    }
+
+    @Test func chartLabelsStayDistinctAndLargeCountsStayCompact() {
+        let utc = TimeZone(secondsFromGMT: 0) ?? .current
+        #expect(StatsFormat.shortDayLabel("2026-09-08", timeZone: utc) == "Tue")
+        #expect(StatsFormat.shortDayLabel("2026-09-10", timeZone: utc) == "Thu")
+        #expect(StatsFormat.compactCount(1_200) == "1.2K")
+        #expect(StatsFormat.compactCount(12_000) == "12K")
+    }
+
+    @Test func appInfoAllowsInstalledSocialAppDetection() throws {
+        let infoURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("VocaPhoneApp/Info.plist")
+        let plist = try #require(
+            PropertyListSerialization.propertyList(
+                from: Data(contentsOf: infoURL),
+                format: nil
+            ) as? [String: Any]
+        )
+        let schemes = try #require(plist["LSApplicationQueriesSchemes"] as? [String])
+        #expect(Set(schemes).isSuperset(of: ["twitter", "linkedin"]))
     }
 }

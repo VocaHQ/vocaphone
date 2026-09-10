@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct StatsShareCard: View {
     let stats: UsageStats
@@ -81,6 +82,11 @@ struct StatsShareCard: View {
 @MainActor
 enum StatsShareExporter {
 
+    struct PayloadResult: Equatable {
+        let cardCopied: Bool
+        let textCopied: Bool
+    }
+
     static func renderCard(_ stats: UsageStats, now: Date) -> UIImage? {
         let renderer = ImageRenderer(content: StatsShareCard(stats: stats, now: now))
         renderer.scale = 1
@@ -91,7 +97,27 @@ enum StatsShareExporter {
     @discardableResult
     static func copyCard(_ stats: UsageStats, now: Date) -> Bool {
         guard let image = renderCard(stats, now: now) else { return false }
+        return copyCard(image)
+    }
+
+    static func copyCard(_ image: UIImage) -> Bool {
         UIPasteboard.general.image = image
         return UIPasteboard.general.hasImages
+    }
+
+    /// Social deep links cannot carry an image attachment. Keep both pieces on
+    /// the local pasteboard so a native app can receive them with Paste, while
+    /// preventing private usage totals from syncing to another Apple device.
+    static func copySharePayload(image: UIImage?, message: String) -> PayloadResult {
+        var items: [[String: Any]] = []
+        if let image, let data = image.pngData() {
+            items.append([UTType.png.identifier: data])
+        }
+        items.append([UTType.utf8PlainText.identifier: message])
+        UIPasteboard.general.setItems(items, options: [.localOnly: true])
+        return PayloadResult(
+            cardCopied: image != nil && UIPasteboard.general.hasImages,
+            textCopied: UIPasteboard.general.hasStrings
+        )
     }
 }
