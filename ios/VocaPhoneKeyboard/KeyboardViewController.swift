@@ -1004,6 +1004,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             try store.save(record)
             textDocumentProxy.insertText(prepared)
             lastInsertedText = prepared
+            // The session ID makes this append idempotent if the extension is
+            // interrupted after insertion. Recording here means an insertion
+            // that happened cannot be lost merely because saving the terminal
+            // session state is the next operation to be interrupted.
+            _ = try? UsageStatsStore.shared.record(
+                transcript: transcript,
+                seconds: record.recordedSeconds,
+                id: record.sessionID
+            )
             // A transcript arrives as finished text. It never becomes a
             // composition and is never autocorrected: the model that produced it
             // already had its say.
@@ -1013,11 +1022,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             try record.transition(to: .completed)
             try store.save(record)
 
-            try? UsageStatsStore.shared.record(
-                transcript: transcript,
-                seconds: record.recordedSeconds
-            )
-            
             if record.startedInContainingApp == true, record.sourceDocumentID != "in-app-test" {
                 KeyboardPreferences.hasCompletedKeyboardPractice = true
             }

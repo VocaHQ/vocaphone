@@ -1,116 +1,97 @@
 import SwiftUI
 import UIKit
 
-enum StatsShareDestination: CaseIterable {
-    case x
-    case linkedIn
-
-    var label: String {
-        switch self {
-        case .x: "X"
-        case .linkedIn: "LinkedIn"
-        }
-    }
-}
-
-enum StatsShareComposer {
-    static let site = "https://vocaphone.vocahq.com"
-
-    static func message(_ stats: UsageStats, now: Date) -> String {
-        var lines = "🎤 I've dictated \(StatsFormat.count(stats.totalWords)) "
-        lines += stats.totalWords == 1 ? "word" : "words"
-        lines += " with VocaPhone.\n\n"
-        lines += "📊 \(StatsFormat.count(stats.totalDictations)) "
-        lines += stats.totalDictations == 1 ? "dictation" : "dictations"
-        if stats.averageWordsPerMinute > 0 {
-            lines += " · ⚡️ \(Int(stats.averageWordsPerMinute.rounded())) WPM"
-        }
-        let streak = stats.currentStreak(at: now)
-        if streak > 0 {
-            lines += " · 🔥 \(streak)-day streak"
-        }
-        lines += "\n\nRuns on my phone, privately. 🔒\n\(site)"
-        return lines
-    }
-
-    static func composerURL(_ destination: StatsShareDestination, message: String) -> URL? {
-        let encoded = message.addingPercentEncoding(
-            withAllowedCharacters: .alphanumerics
-        ) ?? ""
-        switch destination {
-        case .x:
-            return URL(string: "https://x.com/intent/post?text=\(encoded)")
-        case .linkedIn:
-            return URL(string: "https://www.linkedin.com/feed/?shareActive=true&text=\(encoded)")
-        }
-    }
-}
-
 struct StatsShareCard: View {
     let stats: UsageStats
     let now: Date
 
     static let size = CGSize(width: 1_080, height: 720)
+    private let background = Color(red: 0.07, green: 0.09, blue: 0.09)
+    private let surface = Color.white.opacity(0.07)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 36) {
-            Text("VOCAPHONE")
-                .font(.system(size: 30, weight: .semibold, design: .rounded))
-                .tracking(6)
-                .foregroundStyle(Color.brand)
+        VStack(alignment: .leading, spacing: 38) {
+            HStack(spacing: 20) {
+                BrandMark(size: 72)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("VocaPhone")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text("My voice, in numbers")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.58))
+                }
+                Spacer()
+                Text("PRIVATE BY DESIGN")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .tracking(1.8)
+                    .foregroundStyle(Color.brand)
+            }
 
-            Text(StatsFormat.count(stats.totalWords))
-                .font(.system(size: 190, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.vocaPrimaryText)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 3),
+                spacing: 18
+            ) {
+                cardStat("Words", StatsFormat.count(stats.totalWords), "text.word.spacing")
+                cardStat("Sessions", StatsFormat.count(stats.totalDictations), "waveform")
+                cardStat("Voice time", StatsFormat.duration(stats.totalSeconds), "timer")
+                cardStat("Speed", "\(Int(stats.averageWordsPerMinute.rounded())) WPM", "bolt.fill")
+                cardStat("Streak", "\(stats.currentStreak(at: now)) d", "flame.fill")
+                cardStat("Best", "\(stats.bestStreak) d", "trophy.fill")
+            }
 
-            Text(stats.totalWords == 1 ? "word dictated" : "words dictated")
-                .font(.system(size: 44, weight: .medium))
-                .foregroundStyle(Color.vocaSecondaryText)
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 56) {
-                cardStat(StatsFormat.count(stats.totalDictations), "dictations")
-                cardStat(StatsFormat.wordsPerMinute(stats.averageWordsPerMinute), "WPM")
-                cardStat(StatsFormat.count(stats.currentStreak(at: now)), "day streak")
+            HStack {
+                Capsule().fill(Color.brand).frame(width: 54, height: 7)
+                Text("Voice typing that stays yours.")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                Spacer()
+                Text("vocaphone.vocahq.com")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.55))
             }
         }
-        .padding(72)
-        .frame(width: Self.size.width, height: Self.size.height, alignment: .leading)
-        .background(Color.vocaCanvas)
+        .foregroundStyle(.white)
+        .padding(56)
+        .frame(width: Self.size.width, height: Self.size.height)
+        .background(background)
+        .environment(\.colorScheme, .dark)
     }
 
-    private func cardStat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func cardStat(_ title: String, _ value: String, _ symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 23, weight: .semibold))
+                .foregroundStyle(Color.brand)
             Text(value)
-                .font(.system(size: 58, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.vocaPrimaryText)
-            Text(label)
-                .font(.system(size: 30))
-                .foregroundStyle(Color.vocaSecondaryText)
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+            Text(title.uppercased())
+                .font(.system(size: 15, weight: .bold))
+                .tracking(1.4)
+                .foregroundStyle(.white.opacity(0.45))
         }
+        .frame(maxWidth: .infinity, minHeight: 138, alignment: .leading)
+        .padding(22)
+        .background(surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 
 @MainActor
 enum StatsShareExporter {
-    
-    static func renderCard(_ stats: UsageStats, now: Date, style: UIUserInterfaceStyle) -> UIImage? {
+
+    static func renderCard(_ stats: UsageStats, now: Date) -> UIImage? {
         let renderer = ImageRenderer(content: StatsShareCard(stats: stats, now: now))
         renderer.scale = 1
         renderer.proposedSize = ProposedViewSize(StatsShareCard.size)
-        
-        var image: UIImage?
-        UITraitCollection(userInterfaceStyle: style).performAsCurrent {
-            image = renderer.uiImage
-        }
-        return image
+        return renderer.uiImage
     }
 
     @discardableResult
-    static func copyCard(_ stats: UsageStats, now: Date, style: UIUserInterfaceStyle) -> Bool {
-        guard let image = renderCard(stats, now: now, style: style) else { return false }
+    static func copyCard(_ stats: UsageStats, now: Date) -> Bool {
+        guard let image = renderCard(stats, now: now) else { return false }
         UIPasteboard.general.image = image
-        return true
+        return UIPasteboard.general.hasImages
     }
 }

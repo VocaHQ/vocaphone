@@ -52,6 +52,18 @@ struct UsageStatsTests {
         #expect(stats.currentStreak == 1)
         #expect(stats.totalDictations == 2)
         #expect(stats.dailyWords["2026-09-10"] == 10)
+        #expect(stats.dailyDictations["2026-09-10"] == 2)
+        #expect(stats.dailySeconds["2026-09-10"] == 4)
+    }
+
+    @Test func sevenDayActivityIncludesQuietCalendarDays() {
+        let stats = UsageStats().recording(dayKey: "2026-09-10", words: 5, seconds: 3)
+        let days = stats.lastSevenDays(endingAt: at(2026, 9, 10), timeZone: utc)
+        #expect(days.count == 7)
+        #expect(days.last?.key == "2026-09-10")
+        #expect(days.last?.words == 5)
+        #expect(days.last?.dictations == 1)
+        #expect(days.dropLast().allSatisfy { $0.words == 0 && $0.dictations == 0 })
     }
 
     @Test func aStreakExpiresWhenReadRatherThanWhenWritten() {
@@ -183,5 +195,15 @@ struct UsageStatsTests {
         )
         let data = try JSONEncoder().encode(stats)
         #expect(try JSONDecoder().decode(UsageStats.self, from: data) == stats)
+    }
+
+    @Test func anOlderSummaryWithoutDailyDimensionsStillDecodes() throws {
+        let data = Data(
+            #"{"totalWords":3,"totalDictations":1,"dailyWords":{"2026-09-10":3}}"#.utf8
+        )
+        let stats = try JSONDecoder().decode(UsageStats.self, from: data)
+        #expect(stats.totalWords == 3)
+        #expect(stats.dailyDictations.isEmpty)
+        #expect(stats.dailySeconds.isEmpty)
     }
 }

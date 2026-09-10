@@ -1,87 +1,46 @@
 import SwiftUI
 
-enum StatsCopy {
-    static let empty = "Your dictation totals will appear here after your first dictation."
-    static let resetTitle = "Reset statistics?"
-    static let resetBody =
-        "This permanently deletes your usage totals. Your transcripts are not affected."
-    static let resetConfirm = "Reset"
-    static let speedCaption = "Speaking Speed"
-    static let shareTitle = "Share your progress"
-    static let shareSubtitle = "A polished card, ready to post"
-    static let shareFootnote = "The card is copied to your clipboard — paste it into your post."
-    static let shareCopied = "Card copied"
-
-    static func menuDetail(_ stats: UsageStats, now: Date) -> String {
-        guard stats.hasAny else { return "Words, speaking speed and streaks" }
-        let streak = stats.currentStreak(at: now)
-        return "\(StatsFormat.count(stats.totalWords)) words · \(StatsFormat.streak(streak)) streak"
-    }
-}
-
-enum StatsFormat {
-    static func count(_ value: Int) -> String {
-        value.formatted(.number.grouping(.automatic))
-    }
-
-    static func duration(_ seconds: Double) -> String {
-        let total = Int(seconds.rounded())
-        if total < 60 { return "\(total)s" }
-        if total < 3_600 { return "\(total / 60)m" }
-        let hours = total / 3_600
-        let minutes = (total % 3_600) / 60
-        return minutes == 0 ? "\(hours)h" : "\(hours)h \(minutes)m"
-    }
-
-    static func wordsPerMinute(_ value: Double) -> String {
-        String(format: "%.1f", value)
-    }
-
-    static func streak(_ days: Int) -> String {
-        "\(days) \(days == 1 ? "day" : "days")"
-    }
-
-    static func words(_ count: Int) -> String {
-        "\(Self.count(count)) \(count == 1 ? "word" : "words")"
-    }
-
-    static func dayLabel(_ key: String, now: Date, timeZone: TimeZone = .current) -> String {
-        let today = UsageStats.dayKey(now, timeZone: timeZone)
-        guard let elapsed = UsageStats.daysBetween(key, today) else { return key }
-        switch elapsed {
-        case 0: return "Today"
-        case 1: return "Yesterday"
-        default: return key
-        }
-    }
-}
-
 struct StatsView: View {
     @State private var stats = UsageStats()
     @State private var now = Date()
     @State private var confirmingReset = false
-    @State private var copiedCard = false
+    @State private var shareState = ShareState.idle
+    @State private var shareStateToken = 0
     @Environment(\.openURL) private var openURL
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let store = UsageStatsStore.shared
 
+    private enum ShareState: Equatable {
+        case idle
+        case copied
+        case opened(StatsShareDestination)
+        case failed(String)
+    }
+
     var body: some View {
         ScrollView {
-            if stats.hasAny {
-                content
-            } else {
-                Text(StatsCopy.empty)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(VocaMetrics.padding)
+            VStack(alignment: .leading, spacing: VocaMetrics.grouping) {
+                hero
+                statGrid
+                recentActivityCard
+                if stats.hasAny { shareCard }
+                privacyNote
+                if stats.hasAny {
+                    VocaDestructiveButton(title: "Reset statistics") {
+                        confirmingReset = true
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, VocaMetrics.related)
+                }
             }
+            .padding(.horizontal, VocaMetrics.padding)
+            .padding(.vertical, VocaMetrics.grouping)
         }
+        .background(Color.vocaCanvas)
         .navigationTitle("Stats")
         .navigationBarTitleDisplayMode(.inline)
         .task { refresh(folding: true) }
-
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             refresh(folding: false)
         }
@@ -102,55 +61,99 @@ struct StatsView: View {
         }
     }
 
-    private var content: some View {
-        VStack(alignment: .leading, spacing: VocaMetrics.padding) {
-            speedCard
-            statGrid
-            recentActivityCard
-            shareCard
+    private var hero: some View {
+        VocaCard(padding: VocaMetrics.grouping) {
+            VStack(alignment: .leading, spacing: VocaMetrics.padding) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: VocaMetrics.tight) {
+                        Text("YOUR VOICE, IN NUMBERS")
+                            .font(.caption.weight(.bold))
+                            .tracking(1.3)
+                            .foregroundStyle(Color.brand)
+                        Text(stats.hasAny ? "Keep the momentum" : "Start your story")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(Color.vocaPrimaryText)
+                    }
+                    Spacer()
+                    Image(systemName: stats.hasAny ? "waveform.circle.fill" : "sparkles")
+                        .font(.system(size: 38))
+                        .foregroundStyle(Color.brand)
+                        .accessibilityHidden(true)
+                }
 
-            VocaDestructiveButton(title: "Reset statistics") { confirmingReset = true }
-                .frame(maxWidth: .infinity)
-                .padding(.top, VocaMetrics.related)
-        }
-        .padding(VocaMetrics.padding)
-    }
-
-
-    private var speedCard: some View {
-        VocaCard {
-            VStack(alignment: .leading, spacing: VocaMetrics.related) {
-                StatChipLabel(symbol: "chart.line.uptrend.xyaxis", tint: .speed, title: "Speed")
-                HStack(alignment: .firstTextBaseline, spacing: VocaMetrics.tight) {
-                    Text(StatsFormat.wordsPerMinute(stats.averageWordsPerMinute))
-                        .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                        .foregroundStyle(Color.vocaPrimaryText)
-                    Text("WPM")
+                if stats.hasAny {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: VocaMetrics.related) {
+                            speedValue
+                            Spacer()
+                            streakPill
+                        }
+                        VStack(alignment: .leading, spacing: VocaMetrics.related) {
+                            speedValue
+                            streakPill
+                        }
+                    }
+                    Text(StatsCopy.speedCaption)
                         .font(.subheadline)
                         .foregroundStyle(Color.vocaSecondaryText)
+                } else {
+                    Text("Complete a dictation from the VocaPhone keyboard and your private progress will appear here.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.vocaSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Label("Only inserted dictations count", systemImage: "checkmark.seal.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.brand)
                 }
-                Text(StatsCopy.speedCaption)
-                    .font(.caption)
-                    .foregroundStyle(Color.vocaSecondaryText)
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(
-                "Speaking speed, \(StatsFormat.wordsPerMinute(stats.averageWordsPerMinute)) words per minute"
-            )
         }
+    }
+
+    private var speedValue: some View {
+        HStack(alignment: .firstTextBaseline, spacing: VocaMetrics.related) {
+            Text(StatsFormat.wordsPerMinute(stats.averageWordsPerMinute))
+                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.vocaPrimaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+            Text("WPM")
+                .font(.headline)
+                .foregroundStyle(Color.vocaSecondaryText)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Speaking speed, \(StatsFormat.wordsPerMinute(stats.averageWordsPerMinute)) words per minute"
+        )
+    }
+
+    private var streakPill: some View {
+        let streak = stats.currentStreak(at: now)
+        return Label(StatsFormat.streak(streak), systemImage: "flame.fill")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(streak > 0 ? Color.vocaStatSymbol(.streak) : Color.vocaSecondaryText)
+            .padding(.horizontal, 12)
+            .frame(minHeight: VocaMetrics.minimumTarget)
+            .background(Color.vocaRecessedSurface, in: Capsule())
+            .accessibilityLabel("Current streak, \(StatsFormat.streak(streak))")
     }
 
     private var statGrid: some View {
-        Grid(horizontalSpacing: VocaMetrics.padding, verticalSpacing: VocaMetrics.padding) {
-            GridRow {
+        VStack(alignment: .leading, spacing: VocaMetrics.related) {
+            VocaSectionHeader(title: "Lifetime")
+            LazyVGrid(columns: statColumns, spacing: VocaMetrics.related) {
                 statCard("text.alignleft", .words, StatsFormat.count(stats.totalWords), "Words")
-                statCard("mic.fill", .dictations, StatsFormat.count(stats.totalDictations), "Dictations")
-            }
-            GridRow {
-                statCard("clock", .time, StatsFormat.duration(stats.totalSeconds), "Time")
+                statCard("waveform", .dictations, StatsFormat.count(stats.totalDictations), "Sessions")
+                statCard("clock", .time, StatsFormat.duration(stats.totalSeconds), "Voice time")
                 streakCard
             }
         }
+    }
+
+    private var statColumns: [GridItem] {
+        dynamicTypeSize.isAccessibilitySize
+            ? [GridItem(.flexible())]
+            : [GridItem(.flexible(), spacing: VocaMetrics.related), GridItem(.flexible())]
     }
 
     private func statCard(
@@ -163,10 +166,13 @@ struct StatsView: View {
             VStack(alignment: .leading, spacing: VocaMetrics.related) {
                 StatChip(symbol: symbol, tint: tint)
                 Text(value)
-                    .font(.system(.title, design: .rounded).weight(.bold))
+                    .font(.system(.title2, design: .rounded).weight(.bold))
                     .foregroundStyle(Color.vocaPrimaryText)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
                 Text(label)
-                    .font(.caption)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.vocaSecondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -180,54 +186,98 @@ struct StatsView: View {
         return VocaCard {
             VStack(alignment: .leading, spacing: VocaMetrics.related) {
                 StatChip(symbol: "flame.fill", tint: .streak)
-                HStack(alignment: .firstTextBaseline, spacing: VocaMetrics.tight) {
-                    Text(StatsFormat.count(streak))
-                        .font(.system(.title, design: .rounded).weight(.bold))
-                        .foregroundStyle(Color.vocaPrimaryText)
-                    Text(streak == 1 ? "day" : "days")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.vocaSecondaryText)
-                }
-                Text("Streak · Best \(StatsFormat.streak(stats.bestStreak))")
-                    .font(.caption)
+                Text(StatsFormat.streak(streak))
+                    .font(.system(.title2, design: .rounded).weight(.bold))
+                    .foregroundStyle(Color.vocaPrimaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                Text("Best \(StatsFormat.streak(stats.bestStreak))")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.vocaSecondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
-                "Streak, \(StatsFormat.streak(streak)). Best \(StatsFormat.streak(stats.bestStreak))"
+                "Current streak, \(StatsFormat.streak(streak)). Best, \(StatsFormat.streak(stats.bestStreak))"
             )
         }
     }
 
     private var recentActivityCard: some View {
-        let days = stats.recentDays()
-        return Group {
-            if days.isEmpty {
-                EmptyView()
-            } else {
-                VocaCard {
-                    VStack(alignment: .leading, spacing: VocaMetrics.related) {
-                        StatChipLabel(
-                            symbol: "chart.line.uptrend.xyaxis",
-                            tint: .speed,
-                            title: "Recent activity"
-                        )
-                        ForEach(days, id: \.key) { day in
-                            LabeledContent {
-                                Text(StatsFormat.words(day.words))
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.vocaSecondaryText)
-                            } label: {
-                                Text(StatsFormat.dayLabel(day.key, now: now))
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(Color.vocaPrimaryText)
+        let days = stats.lastSevenDays(endingAt: now)
+        return VStack(alignment: .leading, spacing: VocaMetrics.related) {
+            VocaSectionHeader(title: "Last 7 days")
+            VocaCard {
+                VStack(alignment: .leading, spacing: VocaMetrics.padding) {
+                    activityChart(days)
+                    if stats.hasAny {
+                        Divider()
+                        VStack(spacing: VocaMetrics.related + 2) {
+                            ForEach(days.reversed().filter { $0.dictations > 0 }) { day in
+                                activityRow(day)
                             }
                         }
+                    } else {
+                        Text("Your daily words and sessions will build a seven-day view here.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.vocaSecondaryText)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
             }
         }
+    }
+
+    private func activityChart(_ days: [DailyUsage]) -> some View {
+        let maximum = max(days.map(\.words).max() ?? 0, 1)
+        return HStack(alignment: .bottom, spacing: VocaMetrics.related) {
+            ForEach(days) { day in
+                VStack(spacing: 7) {
+                    Text(day.words == 0 ? "" : StatsFormat.count(day.words))
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.vocaSecondaryText)
+                        .frame(height: 16)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(day.words == 0 ? Color.vocaRecessedSurface : Color.brand)
+                        .frame(height: activityBarHeight(day.words, maximum: maximum))
+                    Text(StatsFormat.shortDayLabel(day.key))
+                        .font(.caption2.weight(day.key == UsageStats.dayKey(now) ? .bold : .regular))
+                        .foregroundStyle(
+                            day.key == UsageStats.dayKey(now)
+                                ? Color.vocaPrimaryText
+                                : Color.vocaSecondaryText
+                        )
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    "\(StatsFormat.dayLabel(day.key, now: now)), \(StatsFormat.words(day.words)), \(StatsFormat.sessions(day.dictations))"
+                )
+            }
+        }
+        .frame(height: 154, alignment: .bottom)
+    }
+
+    private func activityRow(_ day: DailyUsage) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(StatsFormat.dayLabel(day.key, now: now))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.vocaPrimaryText)
+            Spacer()
+            Text(
+                "\(StatsFormat.words(day.words)) · \(StatsFormat.sessions(day.dictations)) · "
+                    + StatsFormat.duration(day.seconds)
+            )
+            .font(.caption)
+            .foregroundStyle(Color.vocaSecondaryText)
+            .multilineTextAlignment(.trailing)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func activityBarHeight(_ words: Int, maximum: Int) -> CGFloat {
+        words == 0 ? 8 : max(16, CGFloat(words) / CGFloat(maximum) * 94)
     }
 
     private var shareCard: some View {
@@ -246,56 +296,101 @@ struct StatsView: View {
                 }
 
                 HStack(spacing: VocaMetrics.related) {
-                    ShareButton(
-                        tint: Color.brand,
-                        label: copiedCard ? StatsCopy.shareCopied : "Copy"
-                    ) {
-                        Image(systemName: copiedCard ? "checkmark" : "doc.on.clipboard")
-                    } action: {
-                        copyCard()
-                    }
+                    ShareButton(tint: Color.brand, label: "Copy", accessibilityLabel: "Copy stats card") {
+                        Image(systemName: shareState == .copied ? "checkmark" : "doc.on.clipboard")
+                    } action: { copyCard() }
 
-                    ShareButton(tint: Color.vocaPrimaryText, label: "X") {
-                        Text("\u{1D54F}").font(.title3)
-                    } action: {
-                        share(to: .x)
-                    }
+                    ShareButton(tint: Color.vocaPrimaryText, label: "X", accessibilityLabel: "Share stats on X") {
+                        Text("X").font(.headline.weight(.semibold))
+                    } action: { share(to: .x) }
 
-                    ShareButton(tint: Self.linkedInBlue, label: "LinkedIn") {
+                    ShareButton(tint: Self.linkedInBlue, label: "LinkedIn", accessibilityLabel: "Share stats on LinkedIn") {
                         Text("in")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Self.linkedInBlue, in: RoundedRectangle(cornerRadius: 3))
-                    } action: {
-                        share(to: .linkedIn)
-                    }
+                    } action: { share(to: .linkedIn) }
                 }
 
-                Text(StatsCopy.shareFootnote)
-                    .font(.caption2)
-                    .foregroundStyle(Color.vocaSecondaryText)
+                if let note = shareNote {
+                    Label(note.text, systemImage: note.symbol)
+                        .font(.caption)
+                        .foregroundStyle(note.isError ? Color.vocaError : Color.vocaSecondaryText)
+                        .transition(.opacity)
+                } else {
+                    Text(StatsCopy.shareFootnote)
+                        .font(.caption2)
+                        .foregroundStyle(Color.vocaSecondaryText)
+                }
             }
+            .animation(.easeInOut(duration: 0.18), value: shareState)
         }
     }
 
     private static let linkedInBlue = Color(red: 0.04, green: 0.40, blue: 0.71)
 
+    private var privacyNote: some View {
+        Label(
+            "Counts stay on this iPhone. Nothing is posted until you finish the post yourself.",
+            systemImage: "lock.fill"
+        )
+        .font(.footnote)
+        .foregroundStyle(Color.vocaSecondaryText)
+        .padding(.horizontal, VocaMetrics.tight)
+    }
+
+    private var shareNote: (text: String, symbol: String, isError: Bool)? {
+        switch shareState {
+        case .idle:
+            nil
+        case .copied:
+            ("Card copied. Paste it wherever you’d like.", "checkmark.circle.fill", false)
+        case .opened(let destination):
+            ("Card copied. Paste it into your \(destination.label) post.", "doc.on.clipboard", false)
+        case .failed(let message):
+            (message, "exclamationmark.triangle.fill", true)
+        }
+    }
+
     private func copyCard() {
-        StatsShareExporter.copyCard(stats, now: now, style: interfaceStyle)
-        withAnimation { copiedCard = true }
+        guard StatsShareExporter.copyCard(stats, now: now) else {
+            setShareState(.failed("Couldn’t copy the card image."), clearingAfter: 6)
+            return
+        }
+        setShareState(.copied, clearingAfter: 3)
     }
 
     private func share(to destination: StatsShareDestination) {
-        StatsShareExporter.copyCard(stats, now: now, style: interfaceStyle)
+        guard StatsShareExporter.copyCard(stats, now: now) else {
+            setShareState(.failed("Couldn’t copy the card image."), clearingAfter: 6)
+            return
+        }
         let message = StatsShareComposer.message(stats, now: now)
-        guard let url = StatsShareComposer.composerURL(destination, message: message) else { return }
-        openURL(url)
+        guard let url = StatsShareComposer.composerURL(destination, message: message) else {
+            setShareState(.failed("Couldn’t prepare the \(destination.label) post."), clearingAfter: 6)
+            return
+        }
+        openURL(url) { accepted in
+            Task { @MainActor in
+                if accepted {
+                    setShareState(.opened(destination), clearingAfter: 5)
+                } else {
+                    setShareState(.failed("Couldn’t open \(destination.label)."), clearingAfter: 6)
+                }
+            }
+        }
     }
 
-    private var interfaceStyle: UIUserInterfaceStyle {
-        colorScheme == .dark ? .dark : .light
+    private func setShareState(_ state: ShareState, clearingAfter seconds: Double) {
+        shareStateToken += 1
+        let token = shareStateToken
+        shareState = state
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            if shareStateToken == token { shareState = .idle }
+        }
     }
 
     private func refresh(folding: Bool) {
@@ -308,8 +403,12 @@ struct StatsView: View {
     }
 
     private func reset() {
-        try? store.reset()
-        refresh(folding: false)
+        do {
+            try store.reset()
+            refresh(folding: false)
+        } catch {
+            setShareState(.failed("Couldn’t reset statistics."), clearingAfter: 6)
+        }
     }
 }
 
@@ -331,24 +430,10 @@ struct StatChip: View {
     }
 }
 
-struct StatChipLabel: View {
-    let symbol: String
-    let tint: SemanticPalette.StatTint
-    let title: String
-
-    var body: some View {
-        HStack(spacing: VocaMetrics.related) {
-            StatChip(symbol: symbol, tint: tint, size: 26)
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color.vocaSecondaryText)
-        }
-    }
-}
-
 struct ShareButton<Mark: View>: View {
     let tint: Color
     let label: String
+    let accessibilityLabel: String
     @ViewBuilder var mark: Mark
     let action: () -> Void
 
@@ -372,6 +457,6 @@ struct ShareButton<Mark: View>: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Share to \(label)")
+        .accessibilityLabel(accessibilityLabel)
     }
 }

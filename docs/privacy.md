@@ -317,8 +317,9 @@ Keychain and the Android Keystore.
 ## Usage statistics (iOS)
 
 Counters for the Stats screen in Settings: total words, total dictations, total
-recorded seconds, a current and best streak, and word totals for the last seven
-days.
+recorded seconds, a current and best streak, and words, sessions, and recorded
+time for each of the last seven active days. The screen fills quiet dates into
+its seven-calendar-day chart without storing additional events.
 
 - **Counts, not words.** No transcript text and no audio is stored. A dictation
   contributes a number, and the number cannot be turned back into what was said.

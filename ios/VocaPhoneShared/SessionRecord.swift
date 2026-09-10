@@ -174,6 +174,11 @@ struct SessionRecord: Codable, Equatable, Identifiable, Sendable {
         updatedAt = Self.normalizedTimestamp(now)
     }
 
+    mutating func recordCaptureDuration(startedAt: Date?, endedAt: Date = Date()) {
+        guard let startedAt else { return }
+        recordedSeconds = max(0, endedAt.timeIntervalSince(startedAt))
+    }
+
     private static let retryableFailures: Set<SessionState> = [
         .serverUnavailable, .uploadFailedRecoverable, .transcriptionFailedRecoverable,
     ]

@@ -8,6 +8,8 @@ struct UsageStats: Codable, Equatable, Sendable {
     var currentStreak: Int = 0
     var bestStreak: Int = 0
     var dailyWords: [String: Int] = [:]
+    var dailyDictations: [String: Int] = [:]
+    var dailySeconds: [String: Double] = [:]
 
     static let dailyLimit = 7
 
@@ -35,7 +37,14 @@ struct UsageStats: Codable, Equatable, Sendable {
         next.totalSeconds += max(seconds, 0)
         var daily = dailyWords
         daily[key, default: 0] += words
-        next.dailyWords = Self.pruneDaily(daily)
+        var dictations = dailyDictations
+        dictations[key, default: 0] += 1
+        var secondsByDay = dailySeconds
+        secondsByDay[key, default: 0] += max(seconds, 0)
+        let retained = Set(Self.rankedDayKeys(in: daily).prefix(Self.dailyLimit))
+        next.dailyWords = daily.filter { retained.contains($0.key) }
+        next.dailyDictations = dictations.filter { retained.contains($0.key) }
+        next.dailySeconds = secondsByDay.filter { retained.contains($0.key) }
         let streak = Self.advanceStreak(currentStreak, lastDayKey: lastDayKey, todayKey: key)
         next.currentStreak = streak
         next.bestStreak = max(bestStreak, streak)
@@ -106,21 +115,51 @@ struct UsageStats: Codable, Equatable, Sendable {
 
     static func pruneDaily(_ daily: [String: Int]) -> [String: Int] {
         guard daily.count > dailyLimit else { return daily }
-        let ranked = daily.keys.sorted { left, right in
+        let ranked = rankedDayKeys(in: daily)
+        return Dictionary(uniqueKeysWithValues: ranked.prefix(dailyLimit).map { ($0, daily[$0] ?? 0) })
+    }
+
+    private static func rankedDayKeys(in daily: [String: Int]) -> [String] {
+        daily.keys.sorted { left, right in
             let leftReadable = isDayKey(left)
             let rightReadable = isDayKey(right)
             if leftReadable != rightReadable { return leftReadable }
             return left > right
         }
-        return Dictionary(uniqueKeysWithValues: ranked.prefix(dailyLimit).map { ($0, daily[$0] ?? 0) })
     }
 
-    func recentDays(limit: Int = dailyLimit) -> [(key: String, words: Int)] {
+    func recentDays(limit: Int = dailyLimit) -> [DailyUsage] {
         dailyWords
             .filter { Self.isDayKey($0.key) }
             .sorted { $0.key > $1.key }
             .prefix(limit)
-            .map { (key: $0.key, words: $0.value) }
+            .map {
+                DailyUsage(
+                    key: $0.key,
+                    words: $0.value,
+                    dictations: dailyDictations[$0.key, default: 0],
+                    seconds: dailySeconds[$0.key, default: 0]
+                )
+            }
+    }
+
+    /// Seven consecutive calendar days, including quiet days, for a chart that
+    /// shows an actual trend rather than only the dates that have activity.
+    func lastSevenDays(endingAt now: Date, timeZone: TimeZone = .current) -> [DailyUsage] {
+        let calendar = Self.gregorian(timeZone)
+        let today = calendar.startOfDay(for: now)
+        return (0..<Self.dailyLimit).reversed().compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else {
+                return nil
+            }
+            let key = Self.dayKey(date, timeZone: timeZone)
+            return DailyUsage(
+                key: key,
+                words: dailyWords[key, default: 0],
+                dictations: dailyDictations[key, default: 0],
+                seconds: dailySeconds[key, default: 0]
+            )
+        }
     }
 
     static func wordCount(_ text: String) -> Int {
@@ -141,5 +180,36 @@ struct UsageStats: Codable, Equatable, Sendable {
             return date.addingTimeInterval(86_400)
         }
         return calendar.startOfDay(for: tomorrow)
+    }
+}
+
+struct DailyUsage: Equatable, Identifiable, Sendable {
+    var id: String { key }
+    let key: String
+    let words: Int
+    let dictations: Int
+    let seconds: Double
+}
+
+extension UsageStats {
+    /// New daily dimensions decode leniently so a build upgrade preserves a
+    /// summary written before sessions and voice time were tracked per day.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalWords = try container.decodeIfPresent(Int.self, forKey: .totalWords) ?? 0
+        totalDictations = try container.decodeIfPresent(Int.self, forKey: .totalDictations) ?? 0
+        totalSeconds = try container.decodeIfPresent(Double.self, forKey: .totalSeconds) ?? 0
+        lastDayKey = try container.decodeIfPresent(String.self, forKey: .lastDayKey) ?? ""
+        currentStreak = try container.decodeIfPresent(Int.self, forKey: .currentStreak) ?? 0
+        bestStreak = try container.decodeIfPresent(Int.self, forKey: .bestStreak) ?? 0
+        dailyWords = try container.decodeIfPresent([String: Int].self, forKey: .dailyWords) ?? [:]
+        dailyDictations = try container.decodeIfPresent(
+            [String: Int].self,
+            forKey: .dailyDictations
+        ) ?? [:]
+        dailySeconds = try container.decodeIfPresent(
+            [String: Double].self,
+            forKey: .dailySeconds
+        ) ?? [:]
     }
 }

@@ -59,6 +59,27 @@ struct UsageStatsStoreTests {
         #expect(store.current().totalWords == 3)
     }
 
+    @Test func recordingTheSameSessionTwiceIsIdempotent() throws {
+        let (store, _) = try makeStore()
+        let sessionID = UUID()
+        try store.record(
+            transcript: "one two three",
+            seconds: 6,
+            id: sessionID,
+            now: at(2026, 9, 10),
+            timeZone: utc
+        )
+        try store.record(
+            transcript: "one two three",
+            seconds: 6,
+            id: sessionID,
+            now: at(2026, 9, 10),
+            timeZone: utc
+        )
+        #expect(store.current().totalWords == 3)
+        #expect(store.current().totalDictations == 1)
+    }
+
     @Test func anInterruptedFoldDoesNotCountTwice() throws {
         let (store, root) = try makeStore()
         try store.record(transcript: "one two three", seconds: 6, now: at(2026, 9, 10), timeZone: utc)

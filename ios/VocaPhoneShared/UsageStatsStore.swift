@@ -34,13 +34,14 @@ final class UsageStatsStore: @unchecked Sendable {
     func record(
         transcript: String,
         seconds: Double?,
+        id: UUID = UUID(),
         now: Date = Date(),
         timeZone: TimeZone = .current
     ) throws -> UsageEvent? {
         let words = UsageStats.wordCount(transcript)
         guard words > 0 else { return nil }
         let event = UsageEvent(
-            id: UUID(),
+            id: id,
             dayKey: UsageStats.dayKey(now, timeZone: timeZone),
             words: words,
             seconds: max(seconds ?? 0, 0)
