@@ -4,6 +4,7 @@ struct StatsView: View {
     @State private var stats = UsageStats()
     @State private var now = Date()
     @State private var confirmingReset = false
+    @State private var pendingLinkedInWebShare: PendingLinkedInWebShare?
     @State private var shareState = ShareState.idle
     @State private var shareStateToken = 0
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -20,6 +21,12 @@ struct StatsView: View {
             textCopied: Bool
         )
         case failed(String)
+    }
+
+    private struct PendingLinkedInWebShare {
+        let route: StatsShareRoute
+        let message: String
+        let payload: StatsShareExporter.PayloadResult
     }
 
     var body: some View {
@@ -62,6 +69,22 @@ struct StatsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(StatsCopy.resetBody)
+        }
+        .alert(
+            "Your LinkedIn post is copied",
+            isPresented: Binding(
+                get: { pendingLinkedInWebShare != nil },
+                set: { if !$0 { pendingLinkedInWebShare = nil } }
+            )
+        ) {
+            Button("Open LinkedIn") { openPendingLinkedInWebShare() }
+            Button("Cancel", role: .cancel) { pendingLinkedInWebShare = nil }
+        } message: {
+            Text(
+                "LinkedIn’s browser only accepts the VocaPhone link automatically. "
+                    + "After the composer opens, tap the post field and choose Paste "
+                    + "to add your complete stats message."
+            )
         }
     }
 
@@ -418,6 +441,10 @@ struct StatsView: View {
             setShareState(.failed("Couldn’t prepare the \(destination.label) post."), clearingAfter: 6)
             return
         }
+        if destination == .linkedIn, route.target == .browser {
+            prepareLinkedInWebShare(route, message: message)
+            return
+        }
         let payload = StatsShareExporter.copySharePayload(
             image: StatsShareExporter.renderCard(stats, now: now),
             message: message
@@ -445,17 +472,47 @@ struct StatsView: View {
                     )
                 } else if route.target == .installedApp,
                           let web = StatsShareComposer.composerURL(destination, message: message) {
-                    open(
-                        StatsShareRoute(url: web, target: .browser),
-                        destination: destination,
-                        message: message,
-                        payload: payload
-                    )
+                    let webRoute = StatsShareRoute(url: web, target: .browser)
+                    if destination == .linkedIn {
+                        prepareLinkedInWebShare(webRoute, message: message)
+                    } else {
+                        open(
+                            webRoute,
+                            destination: destination,
+                            message: message,
+                            payload: payload
+                        )
+                    }
                 } else {
                     setShareState(.failed("Couldn’t open \(destination.label)."), clearingAfter: 6)
                 }
             }
         }
+    }
+
+    private func prepareLinkedInWebShare(_ route: StatsShareRoute, message: String) {
+        let pasteMessage = StatsShareComposer.linkedInWebPasteMessage(message)
+        let payload = StatsShareExporter.copyText(pasteMessage)
+        guard payload.textCopied else {
+            setShareState(.failed("Couldn’t copy the LinkedIn post text."), clearingAfter: 6)
+            return
+        }
+        pendingLinkedInWebShare = PendingLinkedInWebShare(
+            route: route,
+            message: message,
+            payload: payload
+        )
+    }
+
+    private func openPendingLinkedInWebShare() {
+        guard let pending = pendingLinkedInWebShare else { return }
+        pendingLinkedInWebShare = nil
+        open(
+            pending.route,
+            destination: .linkedIn,
+            message: pending.message,
+            payload: pending.payload
+        )
     }
 
     private func shareSuccessNote(
@@ -471,6 +528,13 @@ struct StatsView: View {
             place = "LinkedIn share dialog"
         } else {
             place = "web composer"
+        }
+        if destination == .linkedIn, target == .browser, textCopied {
+            return (
+                "Opened the LinkedIn share dialog. Tap the post field and choose Paste.",
+                "doc.on.clipboard.fill",
+                false
+            )
         }
         switch (cardCopied, textCopied) {
         case (true, true):

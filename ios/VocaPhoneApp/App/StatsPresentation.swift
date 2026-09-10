@@ -8,7 +8,7 @@ enum StatsCopy {
     static let speedCaption = "Average speaking speed"
     static let shareTitle = "Share your progress"
     static let shareSubtitle = "A private summary you choose where to post"
-    static let shareFootnote = "Installed apps open first. The card and post text are copied so you can paste them if needed."
+    static let shareFootnote = "Installed apps open first. We’ll copy anything the destination can’t receive automatically."
 
     static func menuDetail(_ stats: UsageStats, now: Date) -> String {
         guard stats.hasAny else { return "Words, speaking speed and streaks" }
@@ -184,6 +184,14 @@ enum StatsShareComposer {
         }
     }
 
+    /// LinkedIn's public web dialog adds the shared URL itself and does not
+    /// accept post text. Copy the rest of the message for one clean paste.
+    static func linkedInWebPasteMessage(_ message: String) -> String {
+        let siteSuffix = "\n\n\(site)"
+        guard message.hasSuffix(siteSuffix) else { return message }
+        return String(message.dropLast(siteSuffix.count))
+    }
+
     static func nativeURL(_ destination: StatsShareDestination, message: String) -> URL? {
         switch destination {
         case .x:
@@ -197,7 +205,7 @@ enum StatsShareComposer {
         case .linkedIn:
             // LinkedIn exposes no supported deep link for a prefilled post.
             // Open the installed app and put both the card and text on the
-            // pasteboard; the web fallback still receives prefilled text.
+            // pasteboard; its browser fallback requires a guided text paste.
             return URL(string: "linkedin://")
         }
     }

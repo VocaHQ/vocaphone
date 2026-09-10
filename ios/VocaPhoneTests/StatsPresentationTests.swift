@@ -123,6 +123,15 @@ struct StatsPresentationTests {
         #expect(components.queryItems?.contains(where: { $0.name == "text" }) == false)
     }
 
+    @Test func linkedinWebPasteCopyDoesNotDuplicateTheSharedURL() {
+        let message = StatsShareComposer.message(stats, now: now, destination: .linkedIn)
+        let pasteMessage = StatsShareComposer.linkedInWebPasteMessage(message)
+        #expect(pasteMessage.contains("I’ve spoken 12,500 words with VocaPhone"))
+        #expect(pasteMessage.contains("My audio stays mine"))
+        #expect(!pasteMessage.contains(StatsShareComposer.site))
+        #expect(StatsShareComposer.linkedInWebPasteMessage("custom copy") == "custom copy")
+    }
+
     @Test func singularPublicCopyIsGrammatical() {
         let one = UsageStats(
             totalWords: 1,
