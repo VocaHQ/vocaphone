@@ -986,6 +986,8 @@ final class RecordingCoordinator {
         // session claimed by an older build carries no route at all — either way
         // this is where the record stops being able to mislead.
         record.processingLocation = Self.selectedProcessingLocation()
+
+        record.recordedSeconds = lastRecordingDuration
         captureClaimedTranscriptionSettings()
         try? store.save(record)
 

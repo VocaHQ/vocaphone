@@ -1012,11 +1012,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             try store.save(record)
             try record.transition(to: .completed)
             try store.save(record)
-            // A keyboard-started dictation inside vocaphone's own field is the
-            // one onboarding exercise that proves the whole loop: Dictate,
-            // record, transcribe and direct insertion. Do not set this for
-            // keyboard sessions started in another app or for the app's
-            // diagnostic microphone test.
+
+            try? UsageStatsStore.shared.record(
+                transcript: transcript,
+                seconds: record.recordedSeconds
+            )
+            
             if record.startedInContainingApp == true, record.sourceDocumentID != "in-app-test" {
                 KeyboardPreferences.hasCompletedKeyboardPractice = true
             }

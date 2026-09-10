@@ -127,6 +127,8 @@ struct SessionRecord: Codable, Equatable, Identifiable, Sendable {
     /// ``SessionProcessingLocation``.
     var processingLocation: SessionProcessingLocation?
 
+    var recordedSeconds: Double?
+
     init(
         sessionID: UUID = UUID(),
         state: SessionState = .idle,
@@ -150,6 +152,7 @@ struct SessionRecord: Codable, Equatable, Identifiable, Sendable {
         prefersQuickDictation = nil
         claimedAt = nil
         processingLocation = nil
+        recordedSeconds = nil
     }
 
     mutating func transition(to next: SessionState, now: Date = Date()) throws {
