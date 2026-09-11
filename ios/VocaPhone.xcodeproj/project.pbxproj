@@ -124,6 +124,7 @@
 		482A8494DA8A03BDB5DF1B0E /* LocalTranscriptionPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13FF1A5ABC4220C886291309 /* LocalTranscriptionPreferences.swift */; };
 		49305C17EF54D17EE77251F0 /* SherpaEmptyChunkRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF256CF6ED209E00193BF135 /* SherpaEmptyChunkRecovery.swift */; };
 		4AC2A4D5727E00C1A4806F1F /* suggestions.tsv in Resources */ = {isa = PBXBuildFile; fileRef = 9532218075A83B4122807217 /* suggestions.tsv */; };
+		4BCAB0C25D5086B323F7D8B6 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 450936D7F2EA659254AA7B54 /* Settings.bundle */; };
 		4BF2126048D9E40C8999241D /* KeyboardHapticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97639A09609D9E6E76153CDB /* KeyboardHapticsTests.swift */; };
 		4C26EF1A498140E6AEE51D86 /* en-bigrams.txt in Resources */ = {isa = PBXBuildFile; fileRef = DC98427A2C06BE9FD63CACF1 /* en-bigrams.txt */; };
 		4C8B6E06406E63E122F9CBD1 /* KeyLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87128326897BFA30E7B2038 /* KeyLayout.swift */; };
@@ -522,6 +523,7 @@
 		4167FFF96F4349C76E9BA116 /* SwipeBackScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeBackScreen.swift; sourceTree = "<group>"; };
 		41C0A3D1DBF6BCF25C37CF24 /* EmojiSuggestionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSuggestionsTests.swift; sourceTree = "<group>"; };
 		4453D027A8B7CC1D29FF8285 /* LearnedWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedWords.swift; sourceTree = "<group>"; };
+		450936D7F2EA659254AA7B54 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = Settings.bundle; sourceTree = "<group>"; };
 		4529D7325A4F1D2340C306FD /* ProMotionOptInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProMotionOptInTests.swift; sourceTree = "<group>"; };
 		46CC84644E8CF9B1E83696D3 /* KeyPreviewRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyPreviewRenderTests.swift; sourceTree = "<group>"; };
 		46E8BCA13C319737A50B7CE9 /* KeyboardHandoffPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandoffPresentation.swift; sourceTree = "<group>"; };
@@ -707,6 +709,7 @@
 				3BA012C76E8C374857732F67 /* Assets.xcassets */,
 				4871EA8AAF829D7979EC9587 /* Info.plist */,
 				BD7C720E296C2265F0174573 /* PrivacyInfo.xcprivacy */,
+				450936D7F2EA659254AA7B54 /* Settings.bundle */,
 				CEA8F4B58D6EF52749026347 /* VocaPhoneApp.entitlements */,
 				AAF95B55221B170F0DA7CAE5 /* App */,
 				34DE966505F645843BA89C68 /* Audio */,
@@ -1215,6 +1218,7 @@
 			files = (
 				2D83B6984ABEA15D65169CEE /* Assets.xcassets in Resources */,
 				06DDF0287EE04B56BDA4C2B5 /* PrivacyInfo.xcprivacy in Resources */,
+				4BCAB0C25D5086B323F7D8B6 /* Settings.bundle in Resources */,
 				D8CF566D7DB99FE6DF979A09 /* SetupKeyboard.mp4 in Resources */,
 				78FFFEBE9A3319D8D888CBFA /* catalog.tsv in Resources */,
 				9849AD694BF003BF6760FE69 /* en-bigrams.txt in Resources */,
