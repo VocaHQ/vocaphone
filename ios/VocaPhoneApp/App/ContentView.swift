@@ -11,6 +11,7 @@ import UIKit
 struct ContentView: View {
     @Environment(RecordingCoordinator.self) private var coordinator
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(
         KeyboardPreferences.setupCompletedKey,
         store: KeyboardPreferences.defaults
@@ -38,9 +39,14 @@ struct ContentView: View {
     @State private var isShowingSourceDetail = false
     @FocusState private var diagFocused: Bool
     @Binding private var isShowingSettings: Bool
+    @Binding private var isShowingQuickDictationReturnGuide: Bool
 
-    init(isShowingSettings: Binding<Bool> = .constant(false)) {
+    init(
+        isShowingSettings: Binding<Bool> = .constant(false),
+        isShowingQuickDictationReturnGuide: Binding<Bool> = .constant(false)
+    ) {
         _isShowingSettings = isShowingSettings
+        _isShowingQuickDictationReturnGuide = isShowingQuickDictationReturnGuide
     }
 
     var body: some View {
@@ -90,6 +96,12 @@ struct ContentView: View {
                 await coordinator.refreshGatewayHealth()
             }
             .onChange(of: scenePhase) { previousPhase, currentPhase in
+                if currentPhase == .background {
+                    // The guide has done its job once the user swipes back. Do
+                    // not leave it covering Home on a later ordinary launch.
+                    isShowingQuickDictationReturnGuide = false
+                    return
+                }
                 guard previousPhase != .active, currentPhase == .active else { return }
                 coordinator.refreshSetupStatus()
                 Task { await coordinator.refreshGatewayHealth() }
@@ -112,6 +124,8 @@ struct ContentView: View {
                let presentation = KeyboardHandoffPresentation.make(record)
             {
                 KeyboardHandoffView(record: record, presentation: presentation)
+            } else if isShowingQuickDictationReturnGuide {
+                QuickDictationReturnGuide(reduceMotion: reduceMotion)
             }
         }
     }
@@ -464,6 +478,40 @@ struct ContentView: View {
               KeyboardHandoffPresentation.shouldPresent(record)
         else { return nil }
         return record
+    }
+}
+
+/// The keyboard may open the app from a cold start. Do not tell the user to
+/// return until the recorder has actually taken standby and published the
+/// availability lease the keyboard consumes.
+private struct QuickDictationReturnGuide: View {
+    @Environment(RecordingCoordinator.self) private var coordinator
+    let reduceMotion: Bool
+
+    var body: some View {
+        if coordinator.isQuickDictationReady {
+            SwipeBackScreen(
+                title: "Swipe back to your keyboard",
+                detail: "Quick Dictation is ready. Tap the microphone there.",
+                reduceMotion: reduceMotion
+            )
+        } else {
+            ZStack {
+                Color.vocaCanvas.ignoresSafeArea()
+                VStack(spacing: VocaMetrics.grouping) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(Color.brand)
+                    Text("Getting Quick Dictation ready")
+                        .font(.title2.weight(.bold))
+                    Text("Keep VocaPhone open for a moment.")
+                        .font(.body)
+                        .foregroundStyle(Color.vocaSecondaryText)
+                }
+                .multilineTextAlignment(.center)
+                .padding(VocaMetrics.grouping)
+            }
+        }
     }
 }
 

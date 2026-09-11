@@ -7,6 +7,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var activeSessionID: UUID?
     private var pollingTimer: Timer?
     private var pollingInterval: TimeInterval?
+    private var quickDictationReadinessTimer: Timer?
     private var darwinObservations: [VocaPhoneDarwinObservation] = []
     private var appLaunchFallbackTask: Task<Void, Never>?
     private var lastInsertedText: String?
@@ -18,6 +19,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var recordingStartedAt: Date?
     /// Whether the surface held the whole keyboard at the last layout pass.
     private var surfaceOwnedKeyboard = false
+    /// The compact dashboard owns the same full-height surface as a live
+    /// session. Keeping this at the controller level lets UIKit hide the grid
+    /// and hand its space to SwiftUI instead of clipping the dashboard into a
+    /// 54-point typing strip.
+    private var compactDashboardOwnsKeyboard = false
 
     /// How much of the recording's measured audio the meter has already drawn.
     /// The session the meter on screen belongs to.
@@ -212,6 +218,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // The app's settings screen writes the same two keys, and it may have
         // done so while another keyboard was on screen.
         dictationSurfaceState.refreshPreferences()
+        startQuickDictationReadinessPolling()
         // A new appearance is a new field as far as this keyboard can tell.
         //
         // The insertion target was previously kept for the life of the
@@ -285,6 +292,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         pollingTimer?.invalidate()
         pollingTimer = nil
         pollingInterval = nil
+        quickDictationReadinessTimer?.invalidate()
+        quickDictationReadinessTimer = nil
         darwinObservations.forEach { $0.invalidate() }
         darwinObservations.removeAll()
         appLaunchFallbackTask?.cancel()
@@ -334,6 +343,23 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             .keyboardShown,
             metadata: .fullAccess(hasFullAccess)
         )
+    }
+
+    /// The app's readiness lease expires when its heartbeat stops. An idle
+    /// keyboard has no session poll running, so without this lightweight check
+    /// force-quitting VocaPhone left the old ready badge on screen forever.
+    private func startQuickDictationReadinessPolling() {
+        quickDictationReadinessTimer?.invalidate()
+        quickDictationReadinessTimer = nil
+        guard dictationSurfaceState.usesCompactControls else { return }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isKeyboardVisible else { return }
+                self.dictationSurfaceState.refreshQuickDictationReadiness()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        quickDictationReadinessTimer = timer
     }
 
     override func textDidChange(_ textInput: (any UITextInput)?) {
@@ -1169,7 +1195,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         )
         darwinObservations.append(
             VocaPhoneDarwinCenter.observe(.quickDictationChanged) { [weak self] in
-                Task { @MainActor [weak self] in self?.refresh() }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.dictationSurfaceState.refreshPreferences()
+                    self.refresh()
+                }
             }
         )
     }
@@ -1388,8 +1418,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // session to another layout: it stays where it was tapped, the line
         // under the bars becomes "Transcribing", and the check itself turns
         // into the spinner. Cancel keeps working throughout.
-        let isRecording = Self.surfaceOwnsKeyboard(state, hasFullAccess: hasFullAccess)
-        if isRecording {
+        let sessionOwnsKeyboard = Self.surfaceOwnsKeyboard(state, hasFullAccess: hasFullAccess)
+        let surfaceFillsKeyboard = sessionOwnsKeyboard || compactDashboardOwnsKeyboard
+        if surfaceFillsKeyboard {
             keyGrid.endActiveInteractions()
             keyGrid.isHidden = true
             // The panel is a second full-height view in the same stack. Left
@@ -1424,11 +1455,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // the state before, which is a stack taller than the keyboard.
         if model.isExpanded != isBarExpanded
             || model.layout != barLayout
-            || isRecording != surfaceOwnedKeyboard
+            || surfaceFillsKeyboard != surfaceOwnedKeyboard
         {
             isBarExpanded = model.isExpanded
             barLayout = model.layout
-            surfaceOwnedKeyboard = isRecording
+            surfaceOwnedKeyboard = surfaceFillsKeyboard
             applyLayoutMetrics(animated: hasRendered)
         }
         dictationBar.apply(model, animated: hasRendered)
@@ -1516,11 +1547,22 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         dictationSurfaceState.onFinish = { [weak self] in self?.perform(.finish) }
         dictationSurfaceState.onCancel = { [weak self] in self?.perform(.cancel) }
         dictationSurfaceState.onGlobe = { [weak self] in self?.advanceToNextInputMode() }
-        dictationSurfaceState.onStartQuickDictation = { [weak self] in
-            self?.openContainingAppAction("ready")
-        }
         dictationSurfaceState.onOpenSettings = { [weak self] in
             self?.openContainingAppAction("settings")
+        }
+        dictationSurfaceState.onDashboardVisibilityChanged = { [weak self] presented in
+            guard let self else { return }
+            compactDashboardOwnsKeyboard = presented
+            render(lastRecord)
+        }
+        dictationSurfaceState.onQuickDictationChanged = { [weak self] enabled in
+            KeyboardPreferences.quickDictationEnabled = enabled
+            if enabled {
+                KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+                self?.openContainingAppAction("ready")
+            } else {
+                VocaPhoneDarwinCenter.post(.stopQuickDictationRequested)
+            }
         }
         dictationSurfaceState.onCandidate = { [weak self] candidate in
             guard let self, !isPerformingInsertion else { return }
@@ -1753,10 +1795,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         keyGrid.metrics = metrics
         dictationBar.metrics = barMetrics
 
-        let isRecording = Self.surfaceOwnsKeyboard(
+        let surfaceFillsKeyboard = Self.surfaceOwnsKeyboard(
             dictationSurfaceState.state,
             hasFullAccess: hasFullAccess
-        )
+        ) || compactDashboardOwnsKeyboard
         // Recording's own bar model is the *expanded status* layout — the tall
         // card the old bar used to draw — and asking it for a height is what
         // still made the keyboard grow, by about forty points, after the two
@@ -1764,8 +1806,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // all: it stands in the strip and then takes the keys' room from the
         // inside, so the height is the strip's, in every state.
         let barHeight = barMetrics.height(
-            for: isRecording ? .strip : barLayout,
-            expanded: isRecording ? false : isBarExpanded
+            for: surfaceFillsKeyboard ? .strip : barLayout,
+            expanded: surfaceFillsKeyboard ? false : isBarExpanded
         )
 
         // One height, and recording does not get a say in it: whatever the
@@ -1783,7 +1825,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             + KeyboardChrome.gapAboveKeys
             + metrics.gridHeight
 
-        let wantedBarHeight = isRecording
+        let wantedBarHeight = surfaceFillsKeyboard
             ? keyboardHeight - Self.chromeInset - Self.chromeBottomInset
             : barHeight
         // Nothing moved, so nothing is animated.

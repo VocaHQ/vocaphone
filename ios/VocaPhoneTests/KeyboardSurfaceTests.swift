@@ -22,11 +22,44 @@ struct KeyboardSurfaceTests {
         )
 
         #expect(CompactDashboardPage.allCases.count == 4)
-        #expect(CompactDashboardPage.words.value(for: stats, now: now) == "6,289 words")
-        #expect(CompactDashboardPage.sessions.value(for: stats, now: now) == "18 sessions")
-        #expect(CompactDashboardPage.streak.value(for: stats, now: now) == "1 day")
+        #expect(CompactDashboardPage.words.value(for: stats, now: now) == "6,289")
+        #expect(CompactDashboardPage.words.label(for: stats, now: now) == "Words dictated")
+        #expect(CompactDashboardPage.words.detail(for: stats) == "Across 18 completed dictations")
+        #expect(CompactDashboardPage.sessions.value(for: stats, now: now) == "18")
+        #expect(CompactDashboardPage.streak.value(for: stats, now: now) == "1")
+        #expect(
+            CompactDashboardPage.streak.label(for: stats, now: now)
+                == "Day in your current streak"
+        )
         #expect(CompactDashboardPage.streak.detail(for: stats) == "Best streak: 4 days")
-        #expect(CompactDashboardPage.speed.value(for: stats, now: now) == "89 WPM")
+        #expect(CompactDashboardPage.speed.value(for: stats, now: now) == "89")
+        #expect(CompactDashboardPage.speed.label(for: stats, now: now) == "Average WPM")
+    }
+
+    @Test func compactDashboardReportsOnlyRealVisibilityChanges() {
+        let surface = DictationSurfaceState()
+        var changes: [Bool] = []
+        surface.onDashboardVisibilityChanged = { changes.append($0) }
+
+        surface.setCompactDashboardPresented(true)
+        surface.setCompactDashboardPresented(true)
+        surface.setCompactDashboardPresented(false)
+
+        #expect(changes == [true, false])
+    }
+
+    @Test func quickDictationToggleUpdatesReadinessAndReportsChanges() {
+        let surface = DictationSurfaceState()
+        surface.quickDictationEnabled = true
+        surface.quickDictationReady = true
+        var changes: [Bool] = []
+        surface.onQuickDictationChanged = { changes.append($0) }
+
+        surface.setQuickDictationEnabled(false)
+        surface.setQuickDictationEnabled(false)
+
+        #expect(surface.quickDictationReady == false)
+        #expect(changes == [false])
     }
 
     @Test func recoveryGuidanceSurvivesPollingUntilTheStateChanges() {

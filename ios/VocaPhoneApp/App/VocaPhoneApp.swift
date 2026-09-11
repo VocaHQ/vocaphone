@@ -60,10 +60,14 @@ struct VocaPhoneApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var coordinator = RecordingCoordinator()
     @State private var isShowingSettings = false
+    @State private var isShowingQuickDictationReturnGuide = false
 
     var body: some Scene {
         WindowGroup {
-            ContentView(isShowingSettings: $isShowingSettings)
+            ContentView(
+                isShowingSettings: $isShowingSettings,
+                isShowingQuickDictationReturnGuide: $isShowingQuickDictationReturnGuide
+            )
                 .environment(coordinator)
                 .tint(.brand)
                 .onOpenURL { url in
@@ -73,9 +77,11 @@ struct VocaPhoneApp: App {
                     }
                     switch url.host {
                     case "settings":
+                        isShowingQuickDictationReturnGuide = false
                         isShowingSettings = true
                     case "ready":
                         isShowingSettings = false
+                        isShowingQuickDictationReturnGuide = true
                         // Foregrounding the app is the only supported way for
                         // its process to own the microphone. If permission has
                         // not been granted yet, this presents the real system
