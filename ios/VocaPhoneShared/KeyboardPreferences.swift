@@ -1086,9 +1086,54 @@ enum KeyboardPreferences {
     /// A successful keyboard insertion into vocaphone's own practice field.
     /// This powers the stronger onboarding confirmation without changing the
     /// existing first-transcript activation milestone.
+    ///
+    /// The containing app cannot trust App Group `UserDefaults` alone: another
+    /// process's write is often invisible until the suite is reread, and
+    /// `@AppStorage` will not notice it. A marker file in the group container
+    /// plus a Darwin ping is what guided setup actually waits on.
     static var hasCompletedKeyboardPractice: Bool {
-        get { defaults?.bool(forKey: keyboardPracticeKey) ?? false }
-        set { defaults?.set(newValue, forKey: keyboardPracticeKey) }
+        get {
+            if defaults?.bool(forKey: keyboardPracticeKey) == true { return true }
+            return keyboardPracticeProofExists
+        }
+        set {
+            defaults?.set(newValue, forKey: keyboardPracticeKey)
+            writeKeyboardPracticeProof(newValue)
+            if newValue {
+                VocaPhoneDarwinCenter.post(.keyboardPracticeCompleted)
+            }
+        }
+    }
+
+    /// Re-read after a Darwin ping. Forces the suite to notice another
+    /// process's write, then falls back to the marker file.
+    static func refreshKeyboardPracticeProof() -> Bool {
+        defaults?.synchronize()
+        let completed = hasCompletedKeyboardPractice
+        if completed, defaults?.bool(forKey: keyboardPracticeKey) != true {
+            defaults?.set(true, forKey: keyboardPracticeKey)
+        }
+        return completed
+    }
+
+    private static var keyboardPracticeProofURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: AppConfiguration.appGroupIdentifier)?
+            .appendingPathComponent("hasCompletedKeyboardPractice")
+    }
+
+    private static var keyboardPracticeProofExists: Bool {
+        guard let url = keyboardPracticeProofURL else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private static func writeKeyboardPracticeProof(_ completed: Bool) {
+        guard let url = keyboardPracticeProofURL else { return }
+        if completed {
+            FileManager.default.createFile(atPath: url.path, contents: Data(), attributes: nil)
+        } else {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     /// Existing users already proved a working transcript before the guided
