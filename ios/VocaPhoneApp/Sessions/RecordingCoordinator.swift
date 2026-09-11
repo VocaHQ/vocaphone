@@ -1,4 +1,5 @@
 import Foundation
+import os
 import SwiftUI
 import UIKit
 
@@ -58,6 +59,10 @@ final class RecordingCoordinator {
     private let store = SharedStore.shared
     private var pollingTask: Task<Void, Never>?
     private var pipelineTask: Task<Void, Never>?
+    /// Releases the loaded speech model once a window has gone quiet. See
+    /// ``LocalModelManager/releaseLoadedEngines()``.
+    private var localEngineReleaseTask: Task<Void, Never>?
+    private var memoryWarningObservation: (any NSObjectProtocol)?
     private var pipelineSessionID: UUID?
     private var cancellationMonitorTask: Task<Void, Never>?
     private var quickDictationWatcherTask: Task<Void, Never>?
@@ -780,6 +785,9 @@ final class RecordingCoordinator {
     private func startSession(id: UUID) async {
         guard startingSessionID == nil || startingSessionID == id else { return }
         guard startingSessionID != id else { return }
+        // A dictation is starting; the model it may need must not be dropped
+        // out from under it by a release scheduled after the last one.
+        localEngineReleaseTask?.cancel()
         startingSessionID = id
         defer { startingSessionID = nil }
 
@@ -935,13 +943,48 @@ final class RecordingCoordinator {
     private func startPipeline(_ record: SessionRecord) {
         guard pipelineSessionID != record.sessionID else { return }
         pipelineTask?.cancel()
+        localEngineReleaseTask?.cancel()
         pipelineSessionID = record.sessionID
         pipelineTask = Task { [weak self] in
             await self?.finalizeAndTranscribe(record)
             guard let self, self.pipelineSessionID == record.sessionID else { return }
             self.pipelineSessionID = nil
             self.pipelineTask = nil
+            self.scheduleLocalEngineRelease()
         }
+    }
+
+    /// How long a loaded model outlives the dictation that built it.
+    ///
+    /// Long enough that a second thought — the reply after the reply — still
+    /// starts instantly, and far short of the ten-minute window it used to sit
+    /// through. What that residency costs is not paid by this app: iOS answers
+    /// memory pressure by shrinking what an extension may have, and the
+    /// keyboard is then killed as it comes back, which iOS answers by switching
+    /// the user to another keyboard.
+    private static let localEngineIdleRelease: Duration = .seconds(30)
+
+    private func scheduleLocalEngineRelease() {
+        localEngineReleaseTask?.cancel()
+        localEngineReleaseTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.localEngineIdleRelease)
+            guard !Task.isCancelled else { return }
+            self?.releaseLocalEnginesIfIdle()
+        }
+    }
+
+    /// Never mid-dictation: a recording in flight is about to need the model,
+    /// and a transcription in flight is holding it.
+    private func releaseLocalEnginesIfIdle() {
+        guard !isInert, pipelineTask == nil, !recorder.isRecording, startingSessionID == nil
+        else { return }
+        localModels.releaseLoadedEngines()
+        // The number this exists to move, recorded where the keyboard's own
+        // headroom is recorded, so the two can be read against each other.
+        DiagnosticLog.record(
+            .localEngineReleased,
+            metadata: .megabytesAvailable(Int(os_proc_available_memory() / (1024 * 1024)))
+        )
     }
 
     private func beginPolling() {
@@ -1547,6 +1590,16 @@ final class RecordingCoordinator {
                 }
             }
         )
+        // The one warning iOS gives before it starts killing things. The
+        // keyboard cannot hear it — it is a different process, and the one
+        // whose allowance shrinks first — so the app answers on its behalf.
+        memoryWarningObservation = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.releaseLocalEnginesIfIdle() }
+        }
         darwinObservations.append(
             VocaPhoneDarwinCenter.observe(.closeVocaPhoneRequested) { [weak self] in
                 Task { @MainActor [weak self] in

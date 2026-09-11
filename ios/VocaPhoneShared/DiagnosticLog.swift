@@ -26,6 +26,8 @@ enum DiagnosticEvent: String, Codable, Sendable {
     case quickDictationArmed
     case quickDictationStopped
     case quickDictationStale
+    /// The loaded speech model was dropped, with how much room that left.
+    case localEngineReleased
     case stopQuickDictationRequested
     case audioInterruptionBegan
     case audioInterruptionEnded
