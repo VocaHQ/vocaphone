@@ -55,11 +55,17 @@ final class DictationSurfaceState: ObservableObject {
         get { storedUsageStats }
         set { change(&storedUsageStats, to: newValue) }
     }
-    private var storedCompactDashboardPresented = false
-    private(set) var compactDashboardPresented: Bool {
-        get { storedCompactDashboardPresented }
-        set { change(&storedCompactDashboardPresented, to: newValue) }
+    /// The full-height panel open over the keys, if any. The stats dashboard
+    /// and the two pickers take the keyboard's room the same way a recording
+    /// does, and never alongside one.
+    private var storedPresentedPanel: SurfacePanel?
+    private(set) var presentedPanel: SurfacePanel? {
+        get { storedPresentedPanel }
+        set { change(&storedPresentedPanel, to: newValue) }
     }
+    /// Where closing a picker goes back to: the dashboard, when that is where
+    /// it was opened from.
+    private var panelToReturnTo: SurfacePanel?
     private var storedShowsGlobeKey: Bool = false
     var showsGlobeKey: Bool {
         get { storedShowsGlobeKey }
@@ -206,7 +212,7 @@ final class DictationSurfaceState: ObservableObject {
     var onStyleChanged: ((WritingStyle) -> Void)?
     var onGlobe: (() -> Void)?
     var onOpenSettings: (() -> Void)?
-    var onDashboardVisibilityChanged: ((Bool) -> Void)?
+    var onPanelVisibilityChanged: ((Bool) -> Void)?
     var onVocaPhoneRunningChanged: ((Bool) -> Void)?
     var onCandidate: ((TypingCandidate) -> Void)? {
         get { typing.onCandidate }
@@ -248,11 +254,27 @@ final class DictationSurfaceState: ObservableObject {
         usageStats = UsageStatsStore.shared.current()
     }
 
-    func setCompactDashboardPresented(_ presented: Bool) {
-        guard compactDashboardPresented != presented else { return }
-        compactDashboardPresented = presented
-        onDashboardVisibilityChanged?(presented)
+    /// Opens a panel over the keys, or closes whichever is open with `nil`.
+    ///
+    /// The controller only hears when the keys are covered or uncovered, not
+    /// when one panel replaces another: going from the dashboard to the
+    /// language picker must not flash the keys in between.
+    func present(_ panel: SurfacePanel?, returningTo previous: SurfacePanel? = nil) {
+        panelToReturnTo = panel == nil ? nil : previous
+        guard presentedPanel != panel else { return }
+        let wasCovering = presentedPanel != nil
+        presentedPanel = panel
+        if wasCovering != (panel != nil) {
+            onPanelVisibilityChanged?(panel != nil)
+        }
     }
+
+    /// Leaves a picker: back to the panel it came from, or to the keys.
+    func dismissPanel() {
+        present(panelToReturnTo)
+    }
+
+    var panelReturnsToPrevious: Bool { panelToReturnTo != nil }
 
     /// The dashboard's VocaPhone switch: on opens VocaPhone, off closes it the
     /// way the app switcher does. It says whether VocaPhone is running, not
@@ -266,7 +288,7 @@ final class DictationSurfaceState: ObservableObject {
             // standby is off, the dashboard has no follow-up action to offer.
             // Close it in the same tap so the typing keys and Start control are
             // immediately visible again.
-            setCompactDashboardPresented(false)
+            present(nil)
         }
         onVocaPhoneRunningChanged?(running)
     }
@@ -319,6 +341,18 @@ final class DictationSurfaceState: ObservableObject {
             modelLanguages: KeyboardPreferences.activeModelLanguages
         )
     }
+}
+
+/// What can stand over the keys in place of a recording.
+enum SurfacePanel: Equatable, Sendable {
+    /// Local usage stats, from the compact row's disclosure button.
+    case dashboard
+    /// Writing styles. In the keyboard rather than in a system menu: a menu
+    /// inside a keyboard extension is squeezed into the keyboard's frame and
+    /// animates on the host app's render server, and it felt like it.
+    case style
+    /// Dictation languages, for the same reason.
+    case language
 }
 
 /// The honest, local-only numbers the compact keyboard dashboard can show.
@@ -513,9 +547,10 @@ struct DictationSurfaceView: View {
     /// Whether a dictation session owns the full keyboard surface.
     private var sessionIsOpen: Bool { isRecording || isWorking || hasMessage }
 
-    /// The dashboard is another deliberate expansion of the same surface, but
-    /// never competes with a live session or a recovery message.
-    private var isOpen: Bool { sessionIsOpen || state.compactDashboardPresented }
+    /// A panel — the dashboard or a picker — is another deliberate expansion of
+    /// the same surface, but never competes with a live session or a recovery
+    /// message.
+    private var isOpen: Bool { sessionIsOpen || state.presentedPanel != nil }
 
     /// Typing, with something to offer. The two menu buttons collapse into one
     /// so the row they were using becomes the suggestions — which is what the
@@ -541,8 +576,8 @@ struct DictationSurfaceView: View {
             // The row is the first thing in the stack; that is what puts it at
             // the top, not a height.
 
-            if state.compactDashboardPresented, !sessionIsOpen {
-                compactDashboard
+            if let panel = state.presentedPanel, !sessionIsOpen {
+                panelContent(panel)
             } else if sessionIsOpen {
                 Spacer(minLength: 0)
 
@@ -638,10 +673,10 @@ struct DictationSurfaceView: View {
         .animation(layoutAnimationEnabled ? surfaceSpring : nil, value: isSuggesting)
         .animation(
             layoutAnimationEnabled ? surfaceSpring : nil,
-            value: state.compactDashboardPresented
+            value: state.presentedPanel
         )
         .onChange(of: sessionIsOpen) { _, open in
-            if open { state.setCompactDashboardPresented(false) }
+            if open { state.present(nil) }
         }
     }
 
@@ -650,8 +685,12 @@ struct DictationSurfaceView: View {
     @ViewBuilder
     private var controlsRow: some View {
         Group {
-            if state.compactDashboardPresented, !sessionIsOpen {
-                dashboardControlsRow
+            if let panel = state.presentedPanel, !sessionIsOpen {
+                switch panel {
+                case .dashboard: dashboardControlsRow
+                case .style: pickerControlsRow(title: "Writing style")
+                case .language: pickerControlsRow(title: "Dictation language")
+                }
             } else if state.usesCompactControls, !sessionIsOpen {
                 compactControlsRow
             } else {
@@ -692,7 +731,7 @@ struct DictationSurfaceView: View {
     private var dashboardControlsRow: some View {
         HStack(spacing: 8) {
             Button {
-                state.setCompactDashboardPresented(false)
+                state.present(nil)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: Self.glyphSize, weight: .semibold))
@@ -775,24 +814,10 @@ struct DictationSurfaceView: View {
             .animation(.easeOut(duration: 0.15), value: selectedDashboardPage)
             .accessibilityHidden(true)
 
-            if state.showsGlobeKey {
-                HStack {
-                    Button {
-                        state.onGlobe?()
-                    } label: {
-                        Image(systemName: "globe")
-                            .font(.system(size: 20))
-                            .foregroundStyle(controlForeground)
-                            .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Next keyboard")
-                    Spacer()
-                }
-            }
+            panelGlobeRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        .transition(Self.panelTransition)
     }
 
     private var controlForeground: Color {
@@ -836,7 +861,7 @@ struct DictationSurfaceView: View {
         Button {
             state.refreshDashboard()
             selectedDashboardPage = .words
-            state.setCompactDashboardPresented(true)
+            state.present(.dashboard)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: Self.glyphSize, weight: .bold))
@@ -850,12 +875,8 @@ struct DictationSurfaceView: View {
     }
 
     private var compactStyleButton: some View {
-        Menu {
-            ForEach(WritingStyle.allCases, id: \.self) { item in
-                Toggle(isOn: styleBinding(for: item)) {
-                    Label(item.displayName, systemImage: item.symbolName)
-                }
-            }
+        Button {
+            state.present(.style)
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: state.style.symbolName)
@@ -867,24 +888,16 @@ struct DictationSurfaceView: View {
             .padding(.horizontal, 16)
             .frame(minWidth: 116, minHeight: Self.buttonDiameter)
             .contentShape(Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
         }
-        // Inside the label for the same reason as the shipping menus.
         .buttonStyle(.plain)
+        .modifier(GlassCapsuleModifier())
         .accessibilityLabel("Writing style")
         .accessibilityValue(state.style.displayName)
     }
 
     private var compactLanguageButton: some View {
-        Menu {
-            ForEach(state.languageShortcuts, id: \.self) { lang in
-                languageButton(lang)
-            }
-            Menu("More languages") {
-                ForEach(state.remainingLanguages, id: \.self) { lang in
-                    languageButton(lang)
-                }
-            }
+        Button {
+            state.present(.language, returningTo: .dashboard)
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "globe")
@@ -895,10 +908,9 @@ struct DictationSurfaceView: View {
             .padding(.horizontal, 12)
             .frame(minHeight: Self.buttonDiameter)
             .contentShape(Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
         }
-        // Inside the label for the same reason as the shipping menus.
         .buttonStyle(.plain)
+        .modifier(GlassCapsuleModifier())
         .accessibilityLabel("Transcription language")
         .accessibilityValue(state.language.displayName)
     }
@@ -919,101 +931,279 @@ struct DictationSurfaceView: View {
         .accessibilityLabel("Cancel dictation")
     }
 
-    @ViewBuilder
     private var languageMenuButton: some View {
-        Menu {
-            ForEach(state.languageShortcuts, id: \.self) { lang in
-                languageButton(lang)
-            }
-            Menu("More languages") {
-                ForEach(state.remainingLanguages, id: \.self) { lang in
-                    languageButton(lang)
-                }
-            }
+        Button {
+            state.present(.language)
         } label: {
             Image(systemName: "globe")
                 .font(.system(size: Self.glyphSize, weight: .semibold))
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
-                .background(.ultraThinMaterial, in: Circle())
         }
-        // Keep decoration inside the label. Interactive glass around a Menu
-        // participates in its presentation snapshot and can leave the source
-        // button hidden or enlarged after dismissal in the keyboard extension.
         .buttonStyle(.plain)
+        .modifier(GlassButtonModifier(id: "languageGlass", namespace: animationNamespace))
         .accessibilityLabel("Transcription language")
+        .accessibilityValue(state.language.displayName)
     }
 
-    @ViewBuilder
     private var styleMenuButton: some View {
-        Menu {
-            // A `Picker` rather than a row of buttons: iOS draws the tick on
-            // the chosen row itself, which frees the row's own image for the
-            // style's icon. Hand-rolled buttons had to spend that image on the
-            // tick, so the menu listed six styles with no icons at all — the
-            // same six icons the button beside it is drawn from.
-            // Toggles rather than a `Picker`, and this is the whole reason the
-            // button's icon lagged a beat behind the choice: a picker inside a
-            // menu commits its selection when the menu *dismisses*, not when
-            // the row is tapped. The old style stayed on screen for the length
-            // of that animation because it was still the truth.
-            //
-            // A toggle fires on the tap, and keeps what the picker was chosen
-            // for: iOS draws the tick itself, so the row's image stays free for
-            // the style's own icon.
-            ForEach(WritingStyle.allCases, id: \.self) { item in
-                Toggle(isOn: styleBinding(for: item)) {
-                    Label(item.displayName, systemImage: item.symbolName)
-                }
-            }
+        Button {
+            state.present(.style)
         } label: {
-            // The button shows the style that is in force. Three things used
-            // to make it show it late, and all three are gone: the picker that
-            // committed on dismissal rather than on the tap, the second writer
-            // in the controller, and the poll that reassigned the value several
-            // times a second and could put a stale one back.
+            // The button shows the style that is in force, straight from the
+            // state the picker writes — one writer, no poll to put a stale
+            // value back.
             Image(systemName: state.style.symbolName)
                 .font(.system(size: Self.glyphSize, weight: .semibold))
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
-                .background(.ultraThinMaterial, in: Circle())
         }
-        // Keep decoration inside the label. Interactive glass around a Menu
-        // participates in its presentation snapshot and can leave the source
-        // button hidden or enlarged after dismissal in the keyboard extension.
         .buttonStyle(.plain)
+        .modifier(GlassButtonModifier(id: "styleGlass", namespace: animationNamespace))
         .accessibilityLabel("Writing style")
         .accessibilityValue(state.style.displayName)
     }
 
-    /// Writes through ``DictationSurfaceState/select(style:)`` so the choice is
-    /// persisted, rather than only changing what the menu shows.
-    /// Turning a style off is not a thing — one of the six is always in force —
-    /// so only the on direction does anything.
-    private func styleBinding(for style: WritingStyle) -> Binding<Bool> {
-        Binding(
-            get: { state.style == style },
-            set: { isOn in if isOn { state.select(style: style) } }
-        )
+    // MARK: - Pickers
+
+    /// The panels come and go the way the dashboard does.
+    private static let panelTransition = AnyTransition.opacity
+        .combined(with: .scale(scale: 0.97))
+
+    @ViewBuilder
+    private func panelContent(_ panel: SurfacePanel) -> some View {
+        switch panel {
+        case .dashboard: compactDashboard
+        case .style: stylePicker
+        case .language: languagePicker
+        }
     }
 
-    /// One row of the language menu. Disabled where the loaded model cannot be
-    /// asked for it, which is the same rule the dictation bar's menu applies.
-    @ViewBuilder
-    private func languageButton(_ lang: TranscriptionLanguage) -> some View {
-        Button {
-            state.select(language: lang)
-        } label: {
-            HStack {
-                Text(lang.displayName)
-                if lang == state.language {
-                    Image(systemName: "checkmark")
+    /// Above a picker: the way back, and what is being picked. A chevron when
+    /// back is the dashboard it was opened from, a cross when back is the keys.
+    private func pickerControlsRow(title: String) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                state.dismissPanel()
+            } label: {
+                Image(systemName: state.panelReturnsToPrevious ? "chevron.left" : "xmark")
+                    .font(.system(size: Self.glyphSize, weight: .semibold))
+                    .foregroundStyle(controlForeground)
+                    .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .modifier(GlassButtonModifier(id: "pickerClose", namespace: animationNamespace))
+            .accessibilityLabel(state.panelReturnsToPrevious ? "Back" : "Close")
+
+            Spacer(minLength: 0)
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(controlForeground)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            // The close button's width again, so the title sits in the middle.
+            Color.clear
+                .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Six styles, all visible at once, in the room the keys just left.
+    ///
+    /// Choosing one closes the picker in the same tap: the row it came from
+    /// shows the new style, which is the confirmation.
+    private var stylePicker: some View {
+        let rows = stride(from: 0, to: WritingStyle.allCases.count, by: 3).map {
+            Array(WritingStyle.allCases[$0..<min($0 + 3, WritingStyle.allCases.count)])
+        }
+        return VStack(spacing: 8) {
+            ForEach(rows, id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(row) { item in
+                        pickerTile(
+                            title: item.displayName,
+                            symbol: item.symbolName,
+                            isSelected: item == state.style
+                        ) {
+                            state.select(style: item)
+                            state.dismissPanel()
+                        }
+                    }
+                }
+                .frame(maxHeight: 84)
+            }
+            Text(state.style.detail)
+                .font(.system(size: 13))
+                .foregroundStyle(controlForeground.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+            Spacer(minLength: 0)
+            panelGlobeRow
+        }
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transition(Self.panelTransition)
+    }
+
+    /// Automatic and the languages this person uses first, then every language
+    /// the loaded model can be asked for, by name.
+    ///
+    /// The ones it cannot are counted rather than shown. On an English-only
+    /// model that is every language but one, and a screen of fifty dimmed
+    /// buttons reads as a broken keyboard rather than as a model's limits.
+    private var languagePicker: some View {
+        let remaining = state.remainingLanguages
+        let available = remaining
+            .filter(state.isSelectable)
+            .sorted { $0.displayName.localizedCompare($1.displayName) == .orderedAscending }
+        let unavailable = remaining.count - available.count
+        return VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    languageSection("Suggested", state.languageShortcuts)
+                    if !available.isEmpty {
+                        languageSection("All languages", available)
+                    }
+                    if unavailable > 0 {
+                        Text(
+                            "\(unavailable) more \(unavailable == 1 ? "language needs" : "languages need") "
+                                + "a multilingual model. Choose one in VocaPhone Settings."
+                        )
+                        .font(.system(size: 13))
+                        .foregroundStyle(controlForeground.opacity(0.55))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                    }
+                }
+                .padding(.vertical, 10)
+            }
+            panelGlobeRow
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transition(Self.panelTransition)
+    }
+
+    private func languageSection(
+        _ title: String,
+        _ languages: [TranscriptionLanguage]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold))
+                .tracking(1)
+                .textCase(.uppercase)
+                .foregroundStyle(controlForeground.opacity(0.55))
+                .padding(.leading, 4)
+                .accessibilityAddTraits(.isHeader)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                spacing: 8
+            ) {
+                ForEach(languages, id: \.self) { lang in
+                    languageChip(lang)
                 }
             }
         }
-        .disabled(!state.isSelectable(lang))
+    }
+
+    private func languageChip(_ lang: TranscriptionLanguage) -> some View {
+        let isSelected = lang == state.language
+        let isSelectable = state.isSelectable(lang)
+        return Button {
+            state.select(language: lang)
+            state.dismissPanel()
+        } label: {
+            HStack(spacing: 4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                Text(lang.displayName)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(isSelected ? dashboardAccent : controlForeground)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(pickerFill(isSelected: isSelected), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isSelectable)
+        .opacity(isSelectable ? 1 : 0.35)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func pickerTile(
+        title: String,
+        symbol: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                // One height for every glyph, so the names line up across a
+                // row whatever shape the symbol above them is.
+                Image(systemName: symbol)
+                    .font(.system(size: 20, weight: .medium))
+                    .frame(height: 24)
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(isSelected ? dashboardAccent : controlForeground)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minHeight: 60)
+            .background(
+                pickerFill(isSelected: isSelected),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(dashboardAccent, lineWidth: 1.5)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(PickerTileButtonStyle())
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// The key colour's cousin: quiet on both backgrounds, and the accent's
+    /// tint for the choice in force.
+    private func pickerFill(isSelected: Bool) -> Color {
+        isSelected
+            ? dashboardAccent.opacity(state.isDark ? 0.22 : 0.14)
+            : controlForeground.opacity(state.isDark ? 0.12 : 0.07)
+    }
+
+    @ViewBuilder
+    private var panelGlobeRow: some View {
+        if state.showsGlobeKey {
+            HStack {
+                Button {
+                    state.onGlobe?()
+                } label: {
+                    Image(systemName: "globe")
+                        .font(.system(size: 20))
+                        .foregroundStyle(controlForeground)
+                        .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Next keyboard")
+                Spacer()
+            }
+        }
     }
 
     // MARK: - Trailing Primary Action Button (Green Circle)
@@ -1242,6 +1432,16 @@ private struct CandidateButtonStyle: ButtonStyle {
 }
 
 // MARK: - Glass Button Modifier
+
+/// A picker tile answers the finger the way a key does: it dims while held.
+private struct PickerTileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
 
 /// The same glass as the leading buttons, in a capsule.
 private struct GlassCapsuleModifier: ViewModifier {

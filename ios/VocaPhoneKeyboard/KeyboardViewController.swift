@@ -19,11 +19,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var recordingStartedAt: Date?
     /// Whether the surface held the whole keyboard at the last layout pass.
     private var surfaceOwnedKeyboard = false
-    /// The compact dashboard owns the same full-height surface as a live
-    /// session. Keeping this at the controller level lets UIKit hide the grid
-    /// and hand its space to SwiftUI instead of clipping the dashboard into a
-    /// 54-point typing strip.
-    private var compactDashboardOwnsKeyboard = false
+    /// A panel — the compact dashboard or a picker — owns the same full-height
+    /// surface as a live session. Keeping this at the controller level lets
+    /// UIKit hide the grid and hand its space to SwiftUI instead of clipping
+    /// the panel into a 54-point typing strip.
+    private var panelOwnsKeyboard = false
 
     /// How much of the recording's measured audio the meter has already drawn.
     /// The session the meter on screen belongs to.
@@ -218,10 +218,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // The app's settings screen writes the same two keys, and it may have
         // done so while another keyboard was on screen.
         dictationSurfaceState.refreshPreferences()
-        // The dashboard belongs to the field it was opened in. A reused
-        // extension instance otherwise comes up in the next field with the
-        // stats page where the keys should be.
-        dictationSurfaceState.setCompactDashboardPresented(false)
+        // A panel belongs to the field it was opened in. A reused extension
+        // instance otherwise comes up in the next field with stats or a picker
+        // where the keys should be.
+        dictationSurfaceState.present(nil)
         startQuickDictationReadinessPolling()
         // A new appearance is a new field as far as this keyboard can tell.
         //
@@ -1435,7 +1435,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // under the bars becomes "Transcribing", and the check itself turns
         // into the spinner. Cancel keeps working throughout.
         let sessionOwnsKeyboard = Self.surfaceOwnsKeyboard(state, hasFullAccess: hasFullAccess)
-        let surfaceFillsKeyboard = sessionOwnsKeyboard || compactDashboardOwnsKeyboard
+        let surfaceFillsKeyboard = sessionOwnsKeyboard || panelOwnsKeyboard
         if surfaceFillsKeyboard {
             keyGrid.endActiveInteractions()
             keyGrid.isHidden = true
@@ -1566,9 +1566,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         dictationSurfaceState.onOpenSettings = { [weak self] in
             self?.openContainingAppAction("settings")
         }
-        dictationSurfaceState.onDashboardVisibilityChanged = { [weak self] presented in
+        dictationSurfaceState.onPanelVisibilityChanged = { [weak self] presented in
             guard let self else { return }
-            compactDashboardOwnsKeyboard = presented
+            panelOwnsKeyboard = presented
             render(lastRecord)
         }
         dictationSurfaceState.onVocaPhoneRunningChanged = { [weak self] running in
@@ -1818,7 +1818,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         let surfaceFillsKeyboard = Self.surfaceOwnsKeyboard(
             dictationSurfaceState.state,
             hasFullAccess: hasFullAccess
-        ) || compactDashboardOwnsKeyboard
+        ) || panelOwnsKeyboard
         // Recording's own bar model is the *expanded status* layout — the tall
         // card the old bar used to draw — and asking it for a height is what
         // still made the keyboard grow, by about forty points, after the two

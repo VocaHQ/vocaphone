@@ -36,15 +36,53 @@ struct KeyboardSurfaceTests {
         #expect(CompactDashboardPage.speed.label(for: stats, now: now) == "Average WPM")
     }
 
-    @Test func compactDashboardReportsOnlyRealVisibilityChanges() {
+    @Test func panelsReportOnlyRealVisibilityChanges() {
         let surface = DictationSurfaceState()
         var changes: [Bool] = []
-        surface.onDashboardVisibilityChanged = { changes.append($0) }
+        surface.onPanelVisibilityChanged = { changes.append($0) }
 
-        surface.setCompactDashboardPresented(true)
-        surface.setCompactDashboardPresented(true)
-        surface.setCompactDashboardPresented(false)
+        surface.present(.dashboard)
+        surface.present(.dashboard)
+        surface.present(nil)
 
+        #expect(changes == [true, false])
+    }
+
+    /// Dashboard to language picker is one panel replacing another: the keys
+    /// must not be uncovered in between, and leaving the picker goes back to
+    /// the dashboard it was opened from.
+    @Test func aPickerOpenedFromTheDashboardReturnsToIt() {
+        let surface = DictationSurfaceState()
+        var changes: [Bool] = []
+        surface.onPanelVisibilityChanged = { changes.append($0) }
+
+        surface.present(.dashboard)
+        surface.present(.language, returningTo: .dashboard)
+        #expect(surface.panelReturnsToPrevious)
+        surface.dismissPanel()
+
+        #expect(surface.presentedPanel == .dashboard)
+        #expect(!surface.panelReturnsToPrevious)
+        #expect(changes == [true])
+
+        surface.dismissPanel()
+        #expect(surface.presentedPanel == nil)
+        #expect(changes == [true, false])
+    }
+
+    @Test func theStylePickerFromTheRowClosesBackToTheKeys() {
+        let style = KeyboardPreferences.writingStyle
+        defer { KeyboardPreferences.writingStyle = style }
+        let surface = DictationSurfaceState()
+        var changes: [Bool] = []
+        surface.onPanelVisibilityChanged = { changes.append($0) }
+
+        surface.present(.style)
+        surface.select(style: .formal)
+        surface.dismissPanel()
+
+        #expect(surface.presentedPanel == nil)
+        #expect(surface.style == .formal)
         #expect(changes == [true, false])
     }
 
@@ -63,17 +101,17 @@ struct KeyboardSurfaceTests {
 
         let surface = DictationSurfaceState()
         surface.quickDictationReady = true
-        surface.setCompactDashboardPresented(true)
+        surface.present(.dashboard)
         var changes: [Bool] = []
         var visibilityChanges: [Bool] = []
         surface.onVocaPhoneRunningChanged = { changes.append($0) }
-        surface.onDashboardVisibilityChanged = { visibilityChanges.append($0) }
+        surface.onPanelVisibilityChanged = { visibilityChanges.append($0) }
 
         surface.setVocaPhoneRunning(false)
         surface.setVocaPhoneRunning(false)
 
         #expect(surface.quickDictationReady == false)
-        #expect(surface.compactDashboardPresented == false)
+        #expect(surface.presentedPanel == nil)
         #expect(changes == [false])
         #expect(visibilityChanges == [false])
         #expect(KeyboardPreferences.quickDictationEnabled)
