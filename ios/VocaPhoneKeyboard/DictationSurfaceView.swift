@@ -738,7 +738,7 @@ struct DictationSurfaceView: View {
                     .font(.system(size: Self.glyphSize, weight: .semibold))
                     .foregroundStyle(controlForeground)
                     .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                    .contentShape(Circle())
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .modifier(GlassButtonModifier(id: "dashboardClose", namespace: animationNamespace))
@@ -754,7 +754,7 @@ struct DictationSurfaceView: View {
                     .font(.system(size: Self.glyphSize, weight: .semibold))
                     .foregroundStyle(controlForeground)
                     .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                    .contentShape(Circle())
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .modifier(GlassButtonModifier(id: "dashboardSettings", namespace: animationNamespace))
@@ -869,6 +869,11 @@ struct DictationSurfaceView: View {
 
     /// The ellipsis is the disclosure control from the sketch. Readiness lives
     /// with the microphone action on the opposite side of the row.
+    ///
+    /// Square hit shapes on these round controls, here and below: a circle
+    /// inscribed in the 44-point frame throws away its corners — a fifth of the
+    /// target — and the corner is exactly where a thumb reaching across the
+    /// keyboard lands. The glass stays round; only the touch area is square.
     private var compactStatusControl: some View {
         Button {
             state.refreshDashboard()
@@ -879,7 +884,7 @@ struct DictationSurfaceView: View {
                 .font(.system(size: Self.glyphSize, weight: .bold))
                 .foregroundStyle(controlForeground)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                .contentShape(Circle())
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .modifier(GlassButtonModifier(id: "compactDisclosure", namespace: animationNamespace))
@@ -936,7 +941,7 @@ struct DictationSurfaceView: View {
                 .font(.system(size: Self.glyphSize, weight: .semibold))
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                .contentShape(Circle())
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .modifier(GlassButtonModifier(id: "leadGlass", namespace: animationNamespace))
@@ -951,7 +956,7 @@ struct DictationSurfaceView: View {
                 .font(.system(size: Self.glyphSize, weight: .semibold))
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                .contentShape(Circle())
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .modifier(GlassButtonModifier(id: "languageGlass", namespace: animationNamespace))
@@ -970,7 +975,7 @@ struct DictationSurfaceView: View {
                 .font(.system(size: Self.glyphSize, weight: .semibold))
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                .contentShape(Circle())
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .modifier(GlassButtonModifier(id: "styleGlass", namespace: animationNamespace))
@@ -1011,7 +1016,7 @@ struct DictationSurfaceView: View {
                     .font(.system(size: Self.glyphSize, weight: .semibold))
                     .foregroundStyle(controlForeground)
                     .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
-                    .contentShape(Circle())
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .modifier(GlassButtonModifier(id: "pickerClose", namespace: animationNamespace))
