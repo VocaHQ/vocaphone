@@ -174,6 +174,33 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             .keyboardShown,
             metadata: .megabytesAvailable(availableMB)
         )
+        reportIfLowOnMemory(availableMB)
+    }
+
+    /// Below this, a keyboard is living on borrowed time: the measured launches
+    /// that ended in iOS killing the extension — and handing the user another
+    /// keyboard mid-sentence — reported four to eight megabytes, against the
+    /// sixty-five of an unpressured one.
+    private static let lowMemoryMegabytes = 25
+
+    /// Tells the app, which is the only process that can do anything about it.
+    ///
+    /// The keyboard's allowance is not the keyboard's to grow: iOS shrinks what
+    /// an extension may have when the *system* is under pressure, and on this
+    /// phone the pressure is the app's own speech model. So this is a request,
+    /// not a report — see `RecordingCoordinator.releaseLocalEnginesIfIdle`.
+    private func reportIfLowOnMemory(_ availableMB: Int) {
+        guard availableMB < Self.lowMemoryMegabytes else { return }
+        VocaPhoneDarwinCenter.post(.keyboardLowOnMemory)
+    }
+
+    /// The warning comes shortly before the kill, and a keyboard killed while
+    /// on screen is one that freezes and then vanishes mid-word. Hidden planes
+    /// are what this process can give back; the rest is the app's to give.
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        keyGrid.discardHiddenPlanes()
+        VocaPhoneDarwinCenter.post(.keyboardLowOnMemory)
     }
 
 #if DEBUG
@@ -316,13 +343,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // A prepared generator keeps the Taptic Engine powered for a second or
         // two, which a dismissed keyboard has no business spending.
         KeyboardHaptics.shared.release()
-    }
-
-    /// The warning comes shortly before the kill, and a keyboard killed while
-    /// on screen is one that freezes and then vanishes mid-word.
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        keyGrid.discardHiddenPlanes()
     }
 
     /// The containing app has no API for whether this keyboard is installed or

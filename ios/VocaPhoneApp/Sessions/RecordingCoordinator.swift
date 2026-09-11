@@ -63,6 +63,7 @@ final class RecordingCoordinator {
     /// ``LocalModelManager/releaseLoadedEngines()``.
     private var localEngineReleaseTask: Task<Void, Never>?
     private var memoryWarningObservation: (any NSObjectProtocol)?
+    private var memoryPressureSource: (any DispatchSourceMemoryPressure)?
     private var pipelineSessionID: UUID?
     private var cancellationMonitorTask: Task<Void, Never>?
     private var quickDictationWatcherTask: Task<Void, Never>?
@@ -954,15 +955,16 @@ final class RecordingCoordinator {
         }
     }
 
-    /// How long a loaded model outlives the dictation that built it.
+    /// The backstop, not the mechanism.
     ///
-    /// Long enough that a second thought — the reply after the reply — still
-    /// starts instantly, and far short of the ten-minute window it used to sit
-    /// through. What that residency costs is not paid by this app: iOS answers
-    /// memory pressure by shrinking what an extension may have, and the
-    /// keyboard is then killed as it comes back, which iOS answers by switching
-    /// the user to another keyboard.
-    private static let localEngineIdleRelease: Duration = .seconds(30)
+    /// A clock is the wrong instrument here: thirty seconds of quiet costs the
+    /// next dictation the two or three seconds of rebuilding a model nothing
+    /// was short of, while ten minutes of it can starve the keyboard in the
+    /// first thirty seconds. So the model is dropped when memory is actually
+    /// wanted — the system says so, or the keyboard says so, or the standby
+    /// window it belonged to has ended — and this is only the long stop for a
+    /// window that stays armed all day with nothing happening in it.
+    private static let localEngineIdleRelease: Duration = .seconds(10 * 60)
 
     private func scheduleLocalEngineRelease() {
         localEngineReleaseTask?.cancel()
@@ -973,10 +975,14 @@ final class RecordingCoordinator {
         }
     }
 
-    /// Never mid-dictation: a recording in flight is about to need the model,
-    /// and a transcription in flight is holding it.
+    /// Never mid-dictation: a recording in flight is about to need the model, a
+    /// transcription in flight is holding it, and a session that has stopped
+    /// recording but not yet reached its end is between the two — which is
+    /// exactly where the finish path clears standby, so the record's own state
+    /// is checked rather than the pipeline alone.
     private func releaseLocalEnginesIfIdle() {
-        guard !isInert, pipelineTask == nil, !recorder.isRecording, startingSessionID == nil
+        guard !isInert, pipelineTask == nil, !recorder.isRecording, startingSessionID == nil,
+              activeRecord.map(\.state.isTerminal) ?? true
         else { return }
         localModels.releaseLoadedEngines()
         // The number this exists to move, recorded where the keyboard's own
@@ -1533,6 +1539,11 @@ final class RecordingCoordinator {
         clearQuickDictationMarker()
         recorder.stopStandby(deactivateAudioSession: deactivateAudioSession)
         liveActivity.stopStandby()
+        // The window the model was kept warm for has ended — by expiry, by the
+        // switch in the keyboard, or by the Live Activity. Nothing is coming
+        // that needs it, and the next dictation starts by opening this app
+        // anyway, which is seconds this load can hide behind.
+        releaseLocalEnginesIfIdle()
     }
 
     private func clearQuickDictationMarker() {
@@ -1590,9 +1601,8 @@ final class RecordingCoordinator {
                 }
             }
         )
-        // The one warning iOS gives before it starts killing things. The
-        // keyboard cannot hear it — it is a different process, and the one
-        // whose allowance shrinks first — so the app answers on its behalf.
+        // The one warning iOS gives this process before it starts killing
+        // things.
         memoryWarningObservation = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
@@ -1600,6 +1610,31 @@ final class RecordingCoordinator {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.releaseLocalEnginesIfIdle() }
         }
+        // And the one the *system* gives, which arrives earlier and for the
+        // whole device. This is the signal that matters: the app is rarely
+        // short of memory itself — it has gigabytes — while the keyboard's
+        // allowance is being cut to single megabytes on the same phone at the
+        // same moment.
+        let pressure = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .main
+        )
+        pressure.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.releaseLocalEnginesIfIdle() }
+        }
+        pressure.resume()
+        memoryPressureSource = pressure
+        // The keyboard, starving in a process that cannot free what is holding
+        // the memory. It is the most direct evidence there is that this model
+        // has to go: somebody is typing, and their keyboard is about to be
+        // taken away from them.
+        darwinObservations.append(
+            VocaPhoneDarwinCenter.observe(.keyboardLowOnMemory) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.releaseLocalEnginesIfIdle()
+                }
+            }
+        )
         darwinObservations.append(
             VocaPhoneDarwinCenter.observe(.closeVocaPhoneRequested) { [weak self] in
                 Task { @MainActor [weak self] in

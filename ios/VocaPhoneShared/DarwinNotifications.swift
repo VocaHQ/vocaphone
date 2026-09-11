@@ -13,6 +13,10 @@ enum VocaPhoneDarwinNotification: String, Sendable {
     /// stop, this is not a Quick Dictation pause: it ends the running app's
     /// window the way the app switcher would, and changes no preference.
     case closeVocaPhoneRequested = "com.vocahq.vocaphone.close-requested"
+    /// The keyboard came up with almost no room left. It cannot free what is
+    /// holding the memory — that is the app's loaded speech model, in another
+    /// process — so it says so, and the app answers by letting go.
+    case keyboardLowOnMemory = "com.vocahq.vocaphone.keyboard-low-memory"
     /// The keyboard ran, and could not reach the shared container.
     ///
     /// The exception to the rule above: this one carries no durable record to
