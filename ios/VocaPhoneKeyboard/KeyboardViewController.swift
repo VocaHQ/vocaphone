@@ -304,6 +304,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // A held key or an open accent popover must not survive the keyboard
         // being dismissed; iOS does not reliably cancel those touches for us.
         keyGrid.endActiveInteractions()
+        // The instance is about to be suspended, and a suspended extension is
+        // killed on its footprint like anything else — after which the next
+        // field gets a cold start. Hidden planes are the part of that footprint
+        // this keyboard can give back for free.
+        keyGrid.discardHiddenPlanes()
 #if DEBUG
         FrameMonitor.stop()
 #endif
@@ -311,6 +316,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // A prepared generator keeps the Taptic Engine powered for a second or
         // two, which a dismissed keyboard has no business spending.
         KeyboardHaptics.shared.release()
+    }
+
+    /// The warning comes shortly before the kill, and a keyboard killed while
+    /// on screen is one that freezes and then vanishes mid-word.
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        keyGrid.discardHiddenPlanes()
     }
 
     /// The containing app has no API for whether this keyboard is installed or

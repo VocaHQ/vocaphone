@@ -326,6 +326,47 @@ struct KeyGridLayoutTests {
             "spacebar ends at \(boundaryOnScreen) on screen, the system's at ~293"
         )
     }
+
+    /// Every cached plane keeps its key views, and their bitmaps, alive. Keyed
+    /// by plane and layout, cycling seven layouts once left some seven hundred
+    /// behind; the numbers and symbols are shared and only two layouts' letters
+    /// are kept.
+    @Test func cachedPlanesStayBoundedAcrossLayouts() {
+        let grid = Self.makeGrid(layout: .fallback)
+        for layout in TypingLayout.catalogue {
+            grid.layout = layout
+            for plane in [KeyPlane.letters, .numbers, .symbols] {
+                grid.plane = plane
+            }
+        }
+        grid.plane = .letters
+        func keyCount(_ plane: KeyPlane, _ layout: TypingLayout = .fallback) -> Int {
+            KeyLayout.rows(
+                for: plane,
+                layout: layout,
+                includesGlobe: grid.showsGlobeKey,
+                includesLayoutSwitch: true,
+                returnIsProminent: false
+            ).reduce(0) { $0 + $1.keys.count }
+        }
+        let widestLetters = TypingLayout.catalogue.map { keyCount(.letters, $0) }.max() ?? 0
+        let built = grid.subviews.filter { $0 is KeyView }.count
+        #expect(built <= 2 * widestLetters + keyCount(.numbers) + keyCount(.symbols))
+    }
+
+    @Test func discardingHiddenPlanesKeepsOnlyWhatIsOnScreen() {
+        let grid = Self.makeGrid(layout: .fallback)
+        grid.plane = .numbers
+        grid.plane = .symbols
+        grid.plane = .letters
+        grid.discardHiddenPlanes()
+        #expect(grid.subviews.filter { $0 is KeyView }.count == grid.keyViews.count)
+        #expect(grid.keyViews.allSatisfy { !$0.isHidden })
+
+        // And what was dropped comes back on demand.
+        grid.plane = .numbers
+        #expect(grid.keyViews.contains { $0.spec.cap == .character("1") })
+    }
 }
 
 /// The numeric keypads, which a `.numberPad` or `.phonePad` field used to be

@@ -176,7 +176,7 @@ final class KeyView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        titleLabel.frame = bounds.insetBy(dx: 2, dy: 0)
+        layoutTitleLabel()
         symbolView.frame = bounds
         layer.cornerRadius = metrics.cornerRadius
         // Without an explicit path every key forces an offscreen pass to derive
@@ -235,7 +235,40 @@ final class KeyView: UIView {
         }
     }
 
+    /// Sized to the text, not to the key.
+    ///
+    /// A label paints a bitmap the size of its bounds at screen scale, so one
+    /// that filled its key painted a key-sized bitmap around a glyph a fraction
+    /// of that — on every key of every cached plane, in an extension jetsam
+    /// watches at about sixty megabytes. Centred on the same point, the text
+    /// lands where the full-size label drew it; the origin is snapped to the
+    /// pixel grid so the smaller layer is not composited between pixels.
+    private func layoutTitleLabel() {
+        let available = bounds.insetBy(dx: 2, dy: 0)
+        let fitted = titleLabel.text?.isEmpty == false
+            ? titleLabel.sizeThatFits(available.size)
+            : .zero
+        let size = CGSize(
+            width: min(fitted.width.rounded(.up), available.width),
+            height: min(fitted.height.rounded(.up), available.height)
+        )
+        let scale = max(traitCollection.displayScale, 1)
+        func snapped(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
+        // Immediate even inside the spacebar's crossfade, which runs `refresh`
+        // in an animation block: a frame animating up from nothing would read
+        // as the caption zooming in rather than fading.
+        UIView.performWithoutAnimation {
+            titleLabel.frame = CGRect(
+                x: snapped(available.midX - size.width / 2),
+                y: snapped(available.midY - size.height / 2),
+                width: size.width,
+                height: size.height
+            )
+        }
+    }
+
     private func refresh() {
+        defer { layoutTitleLabel() }
         let symbolFont = UIFont.systemFont(ofSize: metrics.letterFontSize - 3, weight: .medium)
         let symbolConfiguration = UIImage.SymbolConfiguration(font: symbolFont)
 

@@ -207,15 +207,34 @@ final class KeyGridView: UIView {
     /// Switching to digits and back is frequent, and rebuilding thirty-odd key
     /// views each time means re-resolving fonts and symbol images. Built planes
     /// are kept and simply hidden; only a metrics or palette change discards them.
-    /// Built rows and their views, kept per plane *and* per layout: switching
-    /// between two layouts is a gesture people repeat, and rebuilding thirty
-    /// key views each time is work the finger would feel.
+    ///
+    /// Only the letters depend on the layout, so only the letters are kept per
+    /// layout, and only for the current one and the one before it — the pair
+    /// somebody flips between. Each cached plane holds thirty-odd key bitmaps,
+    /// about 1.3 MB, and keyed by plane *and* layout the numbers and symbols
+    /// were built again for every language: cycling all seven left some seven
+    /// hundred hidden key views and 26 MB behind, in a process jetsam watches
+    /// at about sixty.
     private struct PlaneKey: Hashable {
         let plane: KeyPlane
-        let layout: TypingLayout
+        /// Only for `.letters`; `nil` for every plane the layout does not change.
+        let layoutID: String?
+
+        init(plane: KeyPlane, layout: TypingLayout) {
+            self.plane = plane
+            layoutID = plane == .letters ? layout.id : nil
+        }
     }
 
+    /// How many layouts' letters stay built. Two: the one in use and the one a
+    /// swipe goes back to.
+    static let cachedLetterLayouts = 2
+
     private var planeCache: [PlaneKey: (rows: [KeyRow], views: [KeyView])] = [:]
+    /// Letter planes, most recently shown first, for eviction.
+    private var letterPlaneRecency: [PlaneKey] = []
+    /// The plane on screen, which eviction never touches.
+    private var activePlaneKey: PlaneKey?
     private var previewPool: [KeyPreviewView] = []
     /// The fading stroke drawn under the finger while a swipe is in flight.
     /// Created once and kept above the keys; it never takes a touch.
@@ -662,6 +681,8 @@ final class KeyGridView: UIView {
             plane.views.forEach { $0.removeFromSuperview() }
         }
         planeCache.removeAll()
+        letterPlaneRecency.removeAll()
+        activePlaneKey = nil
         // Every balloon, not just the pooled ones. `releaseTouches` above starts
         // a *fade* rather than hiding outright, so a preview that is still
         // fading is in neither the pool nor any tracked touch — it used to
@@ -713,6 +734,25 @@ final class KeyGridView: UIView {
         measured("activatePlane") { activatePlaneBody() }
     }
 
+    /// Drops every plane that is not on screen.
+    ///
+    /// For when the keyboard leaves the screen or iOS asks for memory back. A
+    /// suspended extension is judged on its footprint like any other process,
+    /// and one killed in the background comes back cold — which is the
+    /// keyboard that takes a beat to appear. The next plane switch rebuilds
+    /// what it needs in a few milliseconds.
+    func discardHiddenPlanes() {
+        for key in planeCache.keys where key != activePlaneKey {
+            evictPlane(key)
+        }
+        letterPlaneRecency.removeAll { $0 != activePlaneKey }
+    }
+
+    private func evictPlane(_ key: PlaneKey) {
+        guard let entry = planeCache.removeValue(forKey: key) else { return }
+        entry.views.forEach { $0.removeFromSuperview() }
+    }
+
     private func activatePlaneBody() {
         // Cleared here and rebuilt before this method returns: never let a
         // touch resolve old target indices against the new plane's views.
@@ -747,6 +787,14 @@ final class KeyGridView: UIView {
             }
             entry = (built, views)
             planeCache[cacheKey] = entry
+        }
+        activePlaneKey = cacheKey
+        if cacheKey.layoutID != nil {
+            letterPlaneRecency.removeAll { $0 == cacheKey }
+            letterPlaneRecency.insert(cacheKey, at: 0)
+            while letterPlaneRecency.count > Self.cachedLetterLayouts {
+                evictPlane(letterPlaneRecency.removeLast())
+            }
         }
 
         rows = entry.rows
