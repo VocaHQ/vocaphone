@@ -263,7 +263,14 @@ final class DictationSurfaceState: ObservableObject {
     func setQuickDictationEnabled(_ enabled: Bool) {
         guard quickDictationEnabled != enabled else { return }
         quickDictationEnabled = enabled
-        if !enabled { quickDictationReady = false }
+        if !enabled {
+            quickDictationReady = false
+            // Match the keyboard-first behavior of the reference flow: once
+            // standby is off, the dashboard has no follow-up action to offer.
+            // Close it in the same tap so the typing keys and Start control are
+            // immediately visible again.
+            setCompactDashboardPresented(false)
+        }
         onQuickDictationChanged?(enabled)
     }
 
@@ -668,16 +675,18 @@ struct DictationSurfaceView: View {
         }
     }
 
-    /// Logo/readiness, the writing style in force, and the microphone: the
-    /// three things the sketch asks the idle compact row to answer at a glance.
+    /// While VocaPhone is unavailable there is only one useful action: Start.
+    /// Style becomes relevant after standby is ready, beside the live mic.
     private var compactControlsRow: some View {
         HStack(spacing: 8) {
             compactStatusControl
             if isSuggesting {
                 CandidateRow(state: state.typing)
-            } else {
+            } else if state.quickDictationReady {
                 compactStyleButton
                     .frame(maxWidth: .infinity)
+            } else {
+                Spacer()
             }
             trailingActionButton
         }

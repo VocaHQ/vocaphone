@@ -52,14 +52,19 @@ struct KeyboardSurfaceTests {
         let surface = DictationSurfaceState()
         surface.quickDictationEnabled = true
         surface.quickDictationReady = true
+        surface.setCompactDashboardPresented(true)
         var changes: [Bool] = []
+        var visibilityChanges: [Bool] = []
         surface.onQuickDictationChanged = { changes.append($0) }
+        surface.onDashboardVisibilityChanged = { visibilityChanges.append($0) }
 
         surface.setQuickDictationEnabled(false)
         surface.setQuickDictationEnabled(false)
 
         #expect(surface.quickDictationReady == false)
+        #expect(surface.compactDashboardPresented == false)
         #expect(changes == [false])
+        #expect(visibilityChanges == [false])
     }
 
     @Test func recoveryGuidanceSurvivesPollingUntilTheStateChanges() {
