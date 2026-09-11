@@ -1324,14 +1324,16 @@ final class LocalModelManager {
     ///
     /// The caller decides when: see `RecordingCoordinator`, which waits for the
     /// window to go quiet and answers memory warnings with this.
-    func releaseLoadedEngines() {
-        guard whisperKit != nil || sherpaRecognizer != nil else { return }
+    @discardableResult
+    func releaseLoadedEngines() -> Bool {
+        guard whisperKit != nil || sherpaRecognizer != nil else { return false }
         whisperKit = nil
         sherpaRecognizer = nil
         loadedModelID = nil
         loadedLanguage = nil
         loadedTranslateTo = ""
         loadedQuality = nil
+        return true
     }
 
     func delete(_ descriptor: LocalModelDescriptor) throws {

@@ -993,7 +993,9 @@ final class RecordingCoordinator {
         guard !isInert, pipelineTask == nil, !recorder.isRecording, startingSessionID == nil,
               activeRecord.map(\.state.isTerminal) ?? true
         else { return }
-        localModels.releaseLoadedEngines()
+        // Only when something was actually let go: a line saying a release
+        // recovered nothing is a line that makes the log harder to read.
+        guard localModels.releaseLoadedEngines() else { return }
         // The number this exists to move, recorded where the keyboard's own
         // headroom is recorded, so the two can be read against each other.
         DiagnosticLog.record(

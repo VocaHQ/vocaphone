@@ -25,6 +25,11 @@ final class LiveActivityManager: @unchecked Sendable {
     private var transitionGeneration = 0
     private var pendingStandbyTask: Task<Void, Never>?
     private var pendingEndTask: Task<Void, Never>?
+    /// What a deferred end would say, so that backgrounding can say it now.
+    private var pendingEnd: (
+        state: VocaPhoneActivityAttributes.ContentState,
+        dismissalPolicy: ActivityUIDismissalPolicy
+    )?
     /// When ``currentActivityID`` was requested, so a stale id is not waited on.
     private var requestedAt: Date?
     private var activityMutationTask: Task<Void, Never>?
@@ -46,6 +51,20 @@ final class LiveActivityManager: @unchecked Sendable {
                 MainActor.assumeIsolated {
                     self?.endBeforeProcessExit(reason: "scene disconnected")
                 }
+            }
+        )
+        // A deferred end waits a second for something to take the activity
+        // over. The app is usually in the background while all of this happens
+        // — the keyboard's switch turning VocaPhone off is exactly that — and a
+        // process suspended inside that second would leave the island showing a
+        // window that has ended, until the next launch noticed the orphan.
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.flushPendingEnd() }
             }
         )
         lifecycleObservers.append(
@@ -293,6 +312,7 @@ final class LiveActivityManager: @unchecked Sendable {
         // about to destroy. See ``scheduleEndAll``.
         pendingEndTask?.cancel()
         pendingEndTask = nil
+        pendingEnd = nil
         pendingStandbyTask?.cancel()
         pendingStandbyTask = nil
         transitionGeneration &+= 1
@@ -448,14 +468,26 @@ final class LiveActivityManager: @unchecked Sendable {
         dismissalPolicy: ActivityUIDismissalPolicy
     ) {
         pendingEndTask?.cancel()
+        pendingEnd = (state, dismissalPolicy)
         pendingEndTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.endGrace)
             guard !Task.isCancelled, let self else { return }
             self.pendingEndTask = nil
+            self.pendingEnd = nil
             // A standby that re-armed, or a session that started, has taken it.
             guard !self.standbyRequested, self.activeSessionID == nil else { return }
             self.endAll(state: state, dismissalPolicy: dismissalPolicy)
         }
+    }
+
+    /// Ends now what was going to be ended in a moment.
+    private func flushPendingEnd() {
+        guard let pending = pendingEnd else { return }
+        pendingEndTask?.cancel()
+        pendingEndTask = nil
+        pendingEnd = nil
+        guard !standbyRequested, activeSessionID == nil else { return }
+        endAll(state: pending.state, dismissalPolicy: pending.dismissalPolicy)
     }
 
     private nonisolated static func endEverything(

@@ -225,14 +225,6 @@ enum DiagnosticLog {
     }
 
 #if DEBUG
-    /// Copies the log where a Mac can fetch it with `devicectl`.
-    ///
-    /// The log itself lives at the root of the App Group container, and
-    /// `devicectl` refuses to transfer anything there — it lists only
-    /// `Library/` and answers a root path with "File paths cannot contain
-    /// '..'". The app's own Documents directory it will hand over, so a debug
-    /// build leaves a copy there and the diagnosing loop stops depending on the
-    /// user exporting and pasting a file that the clipboard expires in minutes.
     /// The keyboard's touch and frame trace, alongside this log.
     ///
     /// Written by the extension into the App Group, which `devicectl` will not
@@ -254,6 +246,14 @@ enum DiagnosticLog {
         }
     }
 
+    /// Copies the log where a Mac can fetch it with `devicectl`.
+    ///
+    /// The log itself lives at the root of the App Group container, and
+    /// `devicectl` refuses to transfer anything there — it lists only
+    /// `Library/` and answers a root path with "File paths cannot contain
+    /// '..'". The app's own Documents directory it will hand over, so a debug
+    /// build leaves a copy there and the diagnosing loop stops depending on the
+    /// user exporting and pasting a file the clipboard expires in minutes.
     static func mirrorForDeviceTransfer() {
         guard let fileURL,
               let documents = FileManager.default.urls(

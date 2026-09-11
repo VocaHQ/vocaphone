@@ -742,7 +742,9 @@ final class KeyGridView: UIView {
     /// keyboard that takes a beat to appear. The next plane switch rebuilds
     /// what it needs in a few milliseconds.
     func discardHiddenPlanes() {
-        for key in planeCache.keys where key != activePlaneKey {
+        // Over a snapshot: the loop is removing entries from the dictionary it
+        // would otherwise be walking.
+        for key in Array(planeCache.keys) where key != activePlaneKey {
             evictPlane(key)
         }
         letterPlaneRecency.removeAll { $0 != activePlaneKey }
