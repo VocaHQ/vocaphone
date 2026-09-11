@@ -484,9 +484,8 @@ enum KeyboardPreferences {
     static let touchTraceKey = "touchTraceEnabled"
     /// Holding or sliding the spacebar to move the cursor.
     static let spacebarCursorKey = "spacebarCursorEnabled"
-    /// The compact dictation row: both left menus behind one ellipsis, and the
-    /// action button a glass capsule that stands in the middle until there is
-    /// something to type beside it.
+    /// The compact dictation row: VocaPhone readiness, writing style and the
+    /// microphone at a glance, with an expandable local-stats dashboard.
     static let compactControlsKey = "lab.usesCompactControls"
     /// The layout currently under the fingers.
     static let typingLayoutKey = "typingLayout"

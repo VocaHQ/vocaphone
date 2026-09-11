@@ -37,6 +37,11 @@ struct ContentView: View {
     @State private var testText = ""
     @State private var isShowingSourceDetail = false
     @FocusState private var diagFocused: Bool
+    @Binding private var isShowingSettings: Bool
+
+    init(isShowingSettings: Binding<Bool> = .constant(false)) {
+        _isShowingSettings = isShowingSettings
+    }
 
     var body: some View {
         NavigationStack {
@@ -93,6 +98,13 @@ struct ContentView: View {
                 NavigationStack {
                     SetupView(mode: .onboarding)
                 }
+            }
+            .sheet(isPresented: $isShowingSettings) {
+                NavigationStack {
+                    SettingsView()
+                }
+                .environment(coordinator)
+                .tint(.brand)
             }
         }
         .overlay {

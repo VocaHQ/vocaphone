@@ -59,13 +59,33 @@ struct VocaPhoneApp: App {
     @UIApplicationDelegateAdaptor(VocaPhoneAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var coordinator = RecordingCoordinator()
+    @State private var isShowingSettings = false
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(isShowingSettings: $isShowingSettings)
                 .environment(coordinator)
                 .tint(.brand)
-                .onOpenURL { coordinator.handleDeepLink($0) }
+                .onOpenURL { url in
+                    guard url.scheme == AppConfiguration.urlScheme else {
+                        coordinator.handleDeepLink(url)
+                        return
+                    }
+                    switch url.host {
+                    case "settings":
+                        isShowingSettings = true
+                    case "ready":
+                        isShowingSettings = false
+                        // Foregrounding the app is the only supported way for
+                        // its process to own the microphone. If permission has
+                        // not been granted yet, this presents the real system
+                        // request here rather than pretending the keyboard can
+                        // record by itself.
+                        coordinator.setQuickDictationEnabled(true)
+                    default:
+                        coordinator.handleDeepLink(url)
+                    }
+                }
                 .onAppear {
                     KeyboardPreferences.containingAppIsForeground = true
                     KeyboardPreferences.migrateTypingHapticsIfNeeded()

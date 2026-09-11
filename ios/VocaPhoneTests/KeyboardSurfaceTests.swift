@@ -10,6 +10,25 @@ import UIKit
 /// attached to the value.
 @MainActor
 struct KeyboardSurfaceTests {
+    @Test func compactDashboardUsesOnlyRecordedUsageTotals() {
+        let now = Date(timeIntervalSince1970: 1_789_000_000)
+        let stats = UsageStats(
+            totalWords: 6_289,
+            totalDictations: 18,
+            totalSeconds: 4_239,
+            lastDayKey: UsageStats.dayKey(now),
+            currentStreak: 1,
+            bestStreak: 4
+        )
+
+        #expect(CompactDashboardPage.allCases.count == 4)
+        #expect(CompactDashboardPage.words.value(for: stats, now: now) == "6,289 words")
+        #expect(CompactDashboardPage.sessions.value(for: stats, now: now) == "18 sessions")
+        #expect(CompactDashboardPage.streak.value(for: stats, now: now) == "1 day")
+        #expect(CompactDashboardPage.streak.detail(for: stats) == "Best streak: 4 days")
+        #expect(CompactDashboardPage.speed.value(for: stats, now: now) == "89 WPM")
+    }
+
     @Test func recoveryGuidanceSurvivesPollingUntilTheStateChanges() {
         let surface = DictationSurfaceState()
         surface.state = .awaitingReturn

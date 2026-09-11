@@ -485,17 +485,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 )
             )
         }
-        // The compact row moves its action button aside as soon as somebody
-        // types, and "as soon as" is the keystroke — not the suggestions it
-        // eventually produces. Latching on the candidates meant waiting for the
-        // spell checker to answer, which is a visible beat after the letter is
-        // already on screen.
-        switch output {
-        case .text, .space, .newline, .deleteBackward, .deleteWord, .swipeWord:
-            dictationSurfaceState.hasTypedThisSession = true
-        default:
-            break
-        }
         switch output {
         case let .text(text):
             if let substitution = SmartPunctuation.substitution(
@@ -1527,6 +1516,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         dictationSurfaceState.onFinish = { [weak self] in self?.perform(.finish) }
         dictationSurfaceState.onCancel = { [weak self] in self?.perform(.cancel) }
         dictationSurfaceState.onGlobe = { [weak self] in self?.advanceToNextInputMode() }
+        dictationSurfaceState.onStartQuickDictation = { [weak self] in
+            self?.openContainingAppAction("ready")
+        }
+        dictationSurfaceState.onOpenSettings = { [weak self] in
+            self?.openContainingAppAction("settings")
+        }
         dictationSurfaceState.onCandidate = { [weak self] candidate in
             guard let self, !isPerformingInsertion else { return }
             documentEvent { self.apply(candidate) }
@@ -1574,6 +1569,21 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // only part of that delay this code owns.
         hostView.setNeedsLayout()
         hostView.layoutIfNeeded()
+    }
+
+    /// Opens a user-requested destination in the containing app. These actions
+    /// carry no transcript or token; they only foreground VocaPhone so it can
+    /// arm its own microphone session or show its own Settings screen.
+    private func openContainingAppAction(_ action: String) {
+        guard let url = URL(string: "\(AppConfiguration.urlScheme)://\(action)") else { return }
+        openURLFromKeyboard(url) { [weak self] opened in
+            DispatchQueue.main.async {
+                guard let self, !opened else { return }
+                self.dictationSurfaceState.showRecoveryMessage(
+                    "Open vocaphone to continue."
+                )
+            }
+        }
     }
 
     private func configureUI() {
