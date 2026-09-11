@@ -98,6 +98,9 @@ struct VocaPhoneApp: App {
                     }
                 }
                 .onAppear {
+#if DEBUG
+                    DiagnosticLog.mirrorForDeviceTransfer()
+#endif
                     KeyboardPreferences.containingAppIsForeground = true
                     KeyboardPreferences.migrateTypingHapticsIfNeeded()
                     KeyboardPreferences.markQuickDictationRecoveryOfferIfNeeded()
@@ -114,6 +117,9 @@ struct VocaPhoneApp: App {
                     Task.detached(priority: .utility) { EmojiTable.warmUp() }
                 }
                 .onChange(of: scenePhase) { _, phase in
+#if DEBUG
+                    DiagnosticLog.mirrorForDeviceTransfer()
+#endif
                     KeyboardPreferences.containingAppIsForeground = phase == .active
                     guard phase == .active else {
                         // The queue is in memory and does not survive the

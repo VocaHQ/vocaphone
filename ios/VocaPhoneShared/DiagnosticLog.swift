@@ -224,6 +224,30 @@ enum DiagnosticLog {
         return writeQueue.sync { coordinatedRead(from: fileURL) }
     }
 
+#if DEBUG
+    /// Copies the log where a Mac can fetch it with `devicectl`.
+    ///
+    /// The log itself lives at the root of the App Group container, and
+    /// `devicectl` refuses to transfer anything there — it lists only
+    /// `Library/` and answers a root path with "File paths cannot contain
+    /// '..'". The app's own Documents directory it will hand over, so a debug
+    /// build leaves a copy there and the diagnosing loop stops depending on the
+    /// user exporting and pasting a file that the clipboard expires in minutes.
+    static func mirrorForDeviceTransfer() {
+        guard let fileURL,
+              let documents = FileManager.default.urls(
+                  for: .documentDirectory,
+                  in: .userDomainMask
+              ).first
+        else { return }
+        let destination = documents.appendingPathComponent("diagnostics-latest.ndjson")
+        writeQueue.async {
+            guard let data = try? Data(contentsOf: fileURL) else { return }
+            try? data.write(to: destination, options: .atomic)
+        }
+    }
+#endif
+
     static func clear() {
         guard let fileURL else { return }
         writeQueue.sync { coordinatedWrite(Data(), to: fileURL) }

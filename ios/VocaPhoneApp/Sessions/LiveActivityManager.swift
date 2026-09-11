@@ -24,6 +24,7 @@ final class LiveActivityManager: @unchecked Sendable {
     private var standbyRequested = false
     private var transitionGeneration = 0
     private var pendingStandbyTask: Task<Void, Never>?
+    private var pendingEndTask: Task<Void, Never>?
     private var activityMutationTask: Task<Void, Never>?
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var isAppExiting = false
@@ -131,7 +132,7 @@ final class LiveActivityManager: @unchecked Sendable {
         guard activeSessionID == nil else { return }
 
         beginTransition()
-        endAll(
+        scheduleEndAll(
             state: VocaPhoneActivityAttributes.ContentState(
                 status: "Quick Dictation off",
                 canFinish: false,
@@ -206,7 +207,7 @@ final class LiveActivityManager: @unchecked Sendable {
         )
 
         guard standbyRequested, let standbyExpiresAt, standbyExpiresAt > Date() else {
-            endAll(
+            scheduleEndAll(
                 state: finishedState,
                 dismissalPolicy: seconds > 0
                     ? .after(Date().addingTimeInterval(seconds))
@@ -286,6 +287,10 @@ final class LiveActivityManager: @unchecked Sendable {
     }
 
     private func beginTransition() {
+        // Whatever is starting now takes over the activity a deferred end was
+        // about to destroy. See ``scheduleEndAll``.
+        pendingEndTask?.cancel()
+        pendingEndTask = nil
         pendingStandbyTask?.cancel()
         pendingStandbyTask = nil
         transitionGeneration &+= 1
@@ -407,6 +412,36 @@ final class LiveActivityManager: @unchecked Sendable {
             // in flight must make a new activity rather than update a dying one.
             self?.currentActivityID = nil
             await Self.endEverything(with: content, dismissalPolicy: dismissalPolicy)
+        }
+    }
+
+    /// The gap between "standby is over" and "recording has begun".
+    ///
+    /// Those two arrive within the same second of each other, in that order,
+    /// for every dictation: the window is cleared as the microphone is taken,
+    /// and the session's own presentation follows. Ending the activity in
+    /// between destroyed the one the next presentation would have updated, so
+    /// the island blinked out and a new one grew back — twice a dictation, once
+    /// each way. Waiting this long before ending means the next presentation
+    /// finds it and updates it, and the island simply changes what it says.
+    ///
+    /// Long enough to cover that handover, short enough that an activity nobody
+    /// takes over still goes promptly.
+    private static let endGrace: Duration = .seconds(1)
+
+    /// Ends every activity unless something claims the island first.
+    private func scheduleEndAll(
+        state: VocaPhoneActivityAttributes.ContentState,
+        dismissalPolicy: ActivityUIDismissalPolicy
+    ) {
+        pendingEndTask?.cancel()
+        pendingEndTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.endGrace)
+            guard !Task.isCancelled, let self else { return }
+            self.pendingEndTask = nil
+            // A standby that re-armed, or a session that started, has taken it.
+            guard !self.standbyRequested, self.activeSessionID == nil else { return }
+            self.endAll(state: state, dismissalPolicy: dismissalPolicy)
         }
     }
 
