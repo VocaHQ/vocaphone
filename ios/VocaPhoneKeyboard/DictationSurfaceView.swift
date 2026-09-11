@@ -477,6 +477,7 @@ struct DictationSurfaceView: View {
     /// Layout springs stay off until the first real frame has landed. The
     /// keyboard restores a session in `viewDidLoad`; animating idle into
     /// recording is the blink after swiping back from vocaphone.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var layoutAnimationEnabled = false
     @State private var selectedDashboardPage = CompactDashboardPage.words
 
@@ -817,7 +818,7 @@ struct DictationSurfaceView: View {
             panelGlobeRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(Self.panelTransition)
+        .transition(panelTransition)
     }
 
     private var controlForeground: Color {
@@ -826,6 +827,17 @@ struct DictationSurfaceView: View {
 
     private var dashboardAccent: Color {
         Color(BrandPalette.accent(isDark: state.isDark))
+    }
+
+    /// The keys' own palette, so a panel standing in their place is made of
+    /// the same material rather than of grey rectangles invented for it.
+    private var keyPalette: KeyboardPalette { KeyboardPalette(isDark: state.isDark) }
+
+    /// What is legible on an accent fill: white in light, near-black in dark.
+    private var onAccent: Color {
+        Color(BrandPalette.onAccent.resolvedColor(
+            with: UITraitCollection(userInterfaceStyle: state.isDark ? .dark : .light)
+        ))
     }
 
     @ViewBuilder
@@ -968,9 +980,16 @@ struct DictationSurfaceView: View {
 
     // MARK: - Pickers
 
-    /// The panels come and go the way the dashboard does.
-    private static let panelTransition = AnyTransition.opacity
-        .combined(with: .scale(scale: 0.97))
+    /// A panel rises into the room the keys leave, and fades going back.
+    ///
+    /// A rise rather than the scale this started with: scaling a panel that
+    /// fills the keyboard reads as the whole keyboard flexing, while eight
+    /// points of travel reads as one layer arriving over another.
+    private var panelTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity)
+    }
 
     @ViewBuilder
     private func panelContent(_ panel: SurfacePanel) -> some View {
@@ -1000,7 +1019,7 @@ struct DictationSurfaceView: View {
 
             Spacer(minLength: 0)
             Text(title)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(controlForeground)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
@@ -1008,6 +1027,15 @@ struct DictationSurfaceView: View {
             Color.clear
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .accessibilityHidden(true)
+        }
+        // The hairline a sheet has under its title: it says the row above is a
+        // header for what is below rather than the keyboard's own toolbar.
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(controlForeground.opacity(0.1))
+                .frame(height: 1 / max(UITraitCollection.current.displayScale, 1))
+                .padding(.horizontal, -Self.sideInset)
+                .offset(y: 6)
         }
     }
 
@@ -1035,20 +1063,29 @@ struct DictationSurfaceView: View {
                 }
                 .frame(maxHeight: 84)
             }
-            Text(state.style.detail)
+            // What the style does, done to a sentence, rather than described.
+            // "Sentence capitalization and a closing full stop" is a rule; the
+            // sentence itself is the answer to the question being asked.
+            Text("\u{201C}\(state.style.example)\u{201D}")
                 .font(.system(size: 13))
+                .italic()
                 .foregroundStyle(controlForeground.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
-                .frame(maxWidth: .infinity)
+                // Reserved, so swapping one example for a longer one does not
+                // move the tiles above it.
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .top)
                 .padding(.horizontal, 12)
-                .padding(.top, 4)
+                .padding(.top, 6)
+                .animation(nil, value: state.style)
             Spacer(minLength: 0)
             panelGlobeRow
         }
         .padding(.top, 10)
+        .padding(.horizontal, 2)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(Self.panelTransition)
+        .transition(panelTransition)
+        .gesture(panelDismissGesture)
     }
 
     /// Automatic and the languages this person uses first, then every language
@@ -1082,11 +1119,26 @@ struct DictationSurfaceView: View {
                     }
                 }
                 .padding(.vertical, 10)
+                .padding(.horizontal, 2)
             }
+            // A list that runs off the bottom edge looks like a list that
+            // ends there. Fading the last few points says it carries on.
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.9),
+                        .init(color: .black.opacity(0), location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
             panelGlobeRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(Self.panelTransition)
+        .transition(panelTransition)
+        .gesture(panelDismissGesture)
     }
 
     private func languageSection(
@@ -1129,13 +1181,14 @@ struct DictationSurfaceView: View {
                     .minimumScaleFactor(0.75)
             }
             .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
-            .foregroundStyle(isSelected ? dashboardAccent : controlForeground)
-            .padding(.horizontal, 8)
+            .foregroundStyle(isSelected ? onAccent : controlForeground)
+            .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 38)
             .background(pickerFill(isSelected: isSelected), in: Capsule())
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickerTileButtonStyle())
+        .shadow(color: .black.opacity(state.isDark ? 0 : 0.16), radius: 0.75, y: 1.25)
         .disabled(!isSelectable)
         .opacity(isSelectable ? 1 : 0.35)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -1147,44 +1200,52 @@ struct DictationSurfaceView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
+        return Button(action: action) {
             VStack(spacing: 6) {
                 // One height for every glyph, so the names line up across a
                 // row whatever shape the symbol above them is.
                 Image(systemName: symbol)
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: 21, weight: .medium))
                     .frame(height: 24)
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .foregroundStyle(isSelected ? dashboardAccent : controlForeground)
+            .foregroundStyle(isSelected ? onAccent : controlForeground)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(minHeight: 60)
-            .background(
-                pickerFill(isSelected: isSelected),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(dashboardAccent, lineWidth: 1.5)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(minHeight: 58)
+            .background(pickerFill(isSelected: isSelected), in: shape)
+            .contentShape(shape)
         }
         .buttonStyle(PickerTileButtonStyle())
+        // The keys' own contact shadow, so a tile sits on the keyboard the way
+        // the key it replaced did.
+        .shadow(color: .black.opacity(state.isDark ? 0 : 0.16), radius: 0.75, y: 1.25)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    /// The key colour's cousin: quiet on both backgrounds, and the accent's
-    /// tint for the choice in force.
+    /// A key when it is one of several, the accent when it is the one in force
+    /// — the same distinction the Return key makes on the keyboard behind it.
     private func pickerFill(isSelected: Bool) -> Color {
-        isSelected
-            ? dashboardAccent.opacity(state.isDark ? 0.22 : 0.14)
-            : controlForeground.opacity(state.isDark ? 0.12 : 0.07)
+        isSelected ? dashboardAccent : Color(keyPalette.standardKey)
+    }
+
+    /// A downward drag closes a panel, the way it closes a sheet.
+    ///
+    /// The keys are underneath and the finger is already there, so the gesture
+    /// somebody tries first is pushing the panel back down. Deliberately long
+    /// at 60 points: a list that scrolls is under the same finger.
+    private var panelDismissGesture: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                guard value.translation.height > 60,
+                      abs(value.translation.width) < value.translation.height
+                else { return }
+                state.dismissPanel()
+            }
     }
 
     @ViewBuilder
