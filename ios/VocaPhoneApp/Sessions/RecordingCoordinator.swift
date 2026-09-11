@@ -1435,6 +1435,26 @@ final class RecordingCoordinator {
               !recorder.isRecording
         else { return }
 
+        // Already armed on the same terms. Several paths arm on return from the
+        // background — the scene going active, the pause being cleared, the
+        // keyboard's own switch — and they arrive within a second of each
+        // other. Each one used to tear the window down and build another: a
+        // Live Activity ended and a new one requested, which is the Dynamic
+        // Island blinking out and back for nothing. Renewing the lease says the
+        // same thing without the flicker.
+        if recorder.isStandbyActive,
+           quickDictationDuration == KeyboardPreferences.quickDictationDuration,
+           let expiresAt = quickDictationExpiresAt,
+           expiresAt > Date(),
+           let availability = try? store.loadQuickDictationAvailability(),
+           availability.isReady()
+        {
+            try? store.saveQuickDictationAvailability(
+                availability.renewingLease(KeyboardPreferences.quickDictationDuration)
+            )
+            return
+        }
+
         clearQuickDictationMarker()
         let duration = KeyboardPreferences.quickDictationDuration
         do {

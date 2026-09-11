@@ -7,6 +7,17 @@ import UIKit
 final class LiveActivityManager: @unchecked Sendable {
     static let shared = LiveActivityManager()
 
+    /// The activity this process asked for, held rather than looked up.
+    ///
+    /// `Activity.activities` is the reason the Dynamic Island flickered between
+    /// two faces: the array does not contain an activity the instant
+    /// `Activity.request` returns, so two presentations close together — arming
+    /// standby twice, or standby followed by a recording — each saw an empty
+    /// list and each requested one. Two activities is not one activity shown
+    /// twice: iOS splits the island between them and cycles, which is the
+    /// microphone in one glance and the app icon in the next.
+    private var currentActivityID: String?
+
     private var activeSessionID: String?
     private var recordingStartedAt: Date?
     private var standbyExpiresAt: Date?
@@ -287,17 +298,16 @@ final class LiveActivityManager: @unchecked Sendable {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
         let content = ActivityContent(state: state, staleDate: staleDate)
-        enqueueActivityMutation {
-            if !Activity<VocaPhoneActivityAttributes>.activities.isEmpty {
-                var isPrimary = true
-                for activity in Activity<VocaPhoneActivityAttributes>.activities {
-                    if isPrimary {
-                        isPrimary = false
-                        await activity.update(content)
-                    } else {
-                        await activity.end(content, dismissalPolicy: .immediate)
-                    }
-                }
+        enqueueActivityMutation { [weak self] in
+            guard let self else { return }
+            // The one this process is driving, waiting out the moment after a
+            // request in which the system has not listed it yet.
+            if let liveID = await self.presentableActivityID() {
+                self.currentActivityID = liveID
+                // Through a nonisolated helper, which is what keeps an
+                // `Activity` — not a `Sendable` type — from being handed from
+                // this actor to ActivityKit's own.
+                await Self.update(id: liveID, to: content)
                 return
             }
 
@@ -308,15 +318,82 @@ final class LiveActivityManager: @unchecked Sendable {
                 startedAt: state.startedAt ?? Date()
             )
             do {
-                _ = try Activity.request(
+                self.currentActivityID = try Activity.request(
                     attributes: attributes,
                     content: content,
                     pushType: nil
-                )
+                ).id
             } catch {
                 // Dictation must continue when the system declines to present
                 // a Live Activity.
+                self.currentActivityID = nil
             }
+        }
+    }
+
+    /// The activity to update: the one this process requested, or one left
+    /// listed by a previous process of this app.
+    ///
+    /// The wait is the whole point. `Activity.request` returns before the
+    /// activity is necessarily in `Activity.activities`, so a second
+    /// presentation arriving in that gap used to find an empty list and request
+    /// a second activity — which is the island showing two faces in turn. A
+    /// presentation is already asynchronous and off the user's path, so waiting
+    /// out that gap costs nothing a person can see.
+    ///
+    /// An activity the user has swiped away, or that the system has retired, is
+    /// not one to update: updating it shows nothing and stops a new one from
+    /// being requested.
+    private func presentableActivityID() async -> String? {
+        if let listed = Self.listedActivity(currentActivityID) { return listed.id }
+        guard currentActivityID != nil else {
+            return Activity<VocaPhoneActivityAttributes>.activities
+                .first(where: Self.isPresentable)?.id
+        }
+        for _ in 0..<Self.registrationPolls {
+            try? await Task.sleep(for: Self.registrationPollInterval)
+            if let listed = Self.listedActivity(currentActivityID) { return listed.id }
+        }
+        // It never arrived, or it has already gone. Either way this process is
+        // not driving it any more.
+        currentActivityID = nil
+        return Activity<VocaPhoneActivityAttributes>.activities
+            .first(where: Self.isPresentable)?.id
+    }
+
+    private static let registrationPolls = 10
+    private static let registrationPollInterval: Duration = .milliseconds(80)
+
+    private static func listedActivity(
+        _ id: String?
+    ) -> Activity<VocaPhoneActivityAttributes>? {
+        guard let id else { return nil }
+        return Activity<VocaPhoneActivityAttributes>.activities
+            .first { $0.id == id && isPresentable($0) }
+    }
+
+    /// Updates the one activity this app is driving and ends every other.
+    ///
+    /// Anything else carrying these attributes is from a process that died
+    /// mid-recording, or is a duplicate: two activities are not one activity
+    /// shown twice, they are two faces the island cycles between.
+    private nonisolated static func update(
+        id: String,
+        to content: ActivityContent<VocaPhoneActivityAttributes.ContentState>
+    ) async {
+        for activity in Activity<VocaPhoneActivityAttributes>.activities {
+            if activity.id == id {
+                await activity.update(content)
+            } else {
+                await activity.end(content, dismissalPolicy: .immediate)
+            }
+        }
+    }
+
+    private static func isPresentable(_ activity: Activity<VocaPhoneActivityAttributes>) -> Bool {
+        switch activity.activityState {
+        case .active, .stale: true
+        default: false
         }
     }
 
@@ -325,10 +402,20 @@ final class LiveActivityManager: @unchecked Sendable {
         dismissalPolicy: ActivityUIDismissalPolicy
     ) {
         let content = ActivityContent(state: state, staleDate: nil)
-        enqueueActivityMutation {
-            for activity in Activity<VocaPhoneActivityAttributes>.activities {
-                await activity.end(content, dismissalPolicy: dismissalPolicy)
-            }
+        enqueueActivityMutation { [weak self] in
+            // Cleared first: a presentation that arrives while these ends are
+            // in flight must make a new activity rather than update a dying one.
+            self?.currentActivityID = nil
+            await Self.endEverything(with: content, dismissalPolicy: dismissalPolicy)
+        }
+    }
+
+    private nonisolated static func endEverything(
+        with content: ActivityContent<VocaPhoneActivityAttributes.ContentState>,
+        dismissalPolicy: ActivityUIDismissalPolicy
+    ) async {
+        for activity in Activity<VocaPhoneActivityAttributes>.activities {
+            await activity.end(content, dismissalPolicy: dismissalPolicy)
         }
     }
 
