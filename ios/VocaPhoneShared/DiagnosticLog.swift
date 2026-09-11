@@ -233,6 +233,27 @@ enum DiagnosticLog {
     /// '..'". The app's own Documents directory it will hand over, so a debug
     /// build leaves a copy there and the diagnosing loop stops depending on the
     /// user exporting and pasting a file that the clipboard expires in minutes.
+    /// The keyboard's touch and frame trace, alongside this log.
+    ///
+    /// Written by the extension into the App Group, which `devicectl` will not
+    /// transfer; the app's Documents directory it will.
+    static func mirrorKeyboardTraceForDeviceTransfer() {
+        guard let group = FileManager.default.containerURL(
+                  forSecurityApplicationGroupIdentifier: AppConfiguration.appGroupIdentifier
+              ),
+              let documents = FileManager.default.urls(
+                  for: .documentDirectory,
+                  in: .userDomainMask
+              ).first
+        else { return }
+        let source = group.appendingPathComponent("touch-trace.txt")
+        let destination = documents.appendingPathComponent("touch-trace-latest.txt")
+        writeQueue.async {
+            guard let data = try? Data(contentsOf: source) else { return }
+            try? data.write(to: destination, options: .atomic)
+        }
+    }
+
     static func mirrorForDeviceTransfer() {
         guard let fileURL,
               let documents = FileManager.default.urls(

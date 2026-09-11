@@ -100,6 +100,7 @@ struct VocaPhoneApp: App {
                 .onAppear {
 #if DEBUG
                     DiagnosticLog.mirrorForDeviceTransfer()
+                    DiagnosticLog.mirrorKeyboardTraceForDeviceTransfer()
 #endif
                     KeyboardPreferences.containingAppIsForeground = true
                     KeyboardPreferences.migrateTypingHapticsIfNeeded()
@@ -119,6 +120,7 @@ struct VocaPhoneApp: App {
                 .onChange(of: scenePhase) { _, phase in
 #if DEBUG
                     DiagnosticLog.mirrorForDeviceTransfer()
+                    DiagnosticLog.mirrorKeyboardTraceForDeviceTransfer()
 #endif
                     KeyboardPreferences.containingAppIsForeground = phase == .active
                     guard phase == .active else {
