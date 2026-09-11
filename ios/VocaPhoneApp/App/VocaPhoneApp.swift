@@ -87,7 +87,10 @@ struct VocaPhoneApp: App {
                         // not been granted yet, this presents the real system
                         // request here rather than pretending the keyboard can
                         // record by itself.
-                        coordinator.setQuickDictationEnabled(true)
+                        // The compact dashboard controls only this live standby
+                        // window. Keep the saved duration and durable Settings
+                        // choice untouched, just as the Live Activity pause does.
+                        coordinator.startQuickDictationWindow()
                     default:
                         coordinator.handleDeepLink(url)
                     }

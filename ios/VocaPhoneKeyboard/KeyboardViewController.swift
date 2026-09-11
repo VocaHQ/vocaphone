@@ -1555,9 +1555,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             compactDashboardOwnsKeyboard = presented
             render(lastRecord)
         }
-        dictationSurfaceState.onQuickDictationChanged = { [weak self] enabled in
-            KeyboardPreferences.quickDictationEnabled = enabled
-            if enabled {
+        dictationSurfaceState.onQuickDictationReadinessChanged = { [weak self] ready in
+            if ready {
                 KeyboardPreferences.quickDictationPausedUntilRelaunch = false
                 self?.openContainingAppAction("ready")
             } else {

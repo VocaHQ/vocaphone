@@ -479,6 +479,29 @@ final class RecordingCoordinator {
         debugQuickDictation("pause cleared on foreground")
     }
 
+    /// Starts one live standby window from the keyboard dashboard without
+    /// rewriting the durable Settings switch or its selected duration. This is
+    /// intentionally different from `setQuickDictationEnabled`: the dashboard
+    /// is a now control, while Settings decides what future launches re-arm.
+    func startQuickDictationWindow() {
+        guard !isInert else { return }
+        KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+        if recorder.recordPermission == .granted {
+            armQuickDictation(allowWhenDisabled: true)
+            return
+        }
+        recorder.requestPermission { [weak self] granted in
+            guard let self else { return }
+            if granted {
+                self.message = "Microphone permission granted."
+                self.armQuickDictation(allowWhenDisabled: true)
+            } else {
+                self.message = "Microphone permission denied."
+            }
+            self.refreshSetupStatus()
+        }
+    }
+
     func setQuickDictationEnabled(_ enabled: Bool) {
         guard !isInert else { return }
         KeyboardPreferences.quickDictationEnabled = enabled
@@ -1366,8 +1389,8 @@ final class RecordingCoordinator {
             && record.sourceDocumentID != "in-app-test"
     }
 
-    private func armQuickDictation() {
-        guard KeyboardPreferences.quickDictationArmable,
+    private func armQuickDictation(allowWhenDisabled: Bool = false) {
+        guard (KeyboardPreferences.quickDictationArmable || allowWhenDisabled),
               audioSessionAvailable,
               !recorder.isRecording
         else { return }

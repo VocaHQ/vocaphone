@@ -48,18 +48,17 @@ struct KeyboardSurfaceTests {
         #expect(changes == [true, false])
     }
 
-    @Test func quickDictationToggleUpdatesReadinessAndReportsChanges() {
+    @Test func quickDictationToggleControlsOnlyTheLiveReadinessWindow() {
         let surface = DictationSurfaceState()
-        surface.quickDictationEnabled = true
         surface.quickDictationReady = true
         surface.setCompactDashboardPresented(true)
         var changes: [Bool] = []
         var visibilityChanges: [Bool] = []
-        surface.onQuickDictationChanged = { changes.append($0) }
+        surface.onQuickDictationReadinessChanged = { changes.append($0) }
         surface.onDashboardVisibilityChanged = { visibilityChanges.append($0) }
 
-        surface.setQuickDictationEnabled(false)
-        surface.setQuickDictationEnabled(false)
+        surface.setQuickDictationReady(false)
+        surface.setQuickDictationReady(false)
 
         #expect(surface.quickDictationReady == false)
         #expect(surface.compactDashboardPresented == false)

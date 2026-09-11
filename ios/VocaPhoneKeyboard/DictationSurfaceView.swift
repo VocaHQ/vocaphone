@@ -47,11 +47,6 @@ final class DictationSurfaceState: ObservableObject {
         get { storedQuickDictationReady }
         set { change(&storedQuickDictationReady, to: newValue) }
     }
-    private var storedQuickDictationEnabled = KeyboardPreferences.quickDictationEnabled
-    var quickDictationEnabled: Bool {
-        get { storedQuickDictationEnabled }
-        set { change(&storedQuickDictationEnabled, to: newValue) }
-    }
     /// Private, on-device totals shared by the app and keyboard through their
     /// existing App Group. Loaded only when the dashboard is opened so ordinary
     /// typing never pays for a directory scan.
@@ -212,7 +207,7 @@ final class DictationSurfaceState: ObservableObject {
     var onGlobe: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onDashboardVisibilityChanged: ((Bool) -> Void)?
-    var onQuickDictationChanged: ((Bool) -> Void)?
+    var onQuickDictationReadinessChanged: ((Bool) -> Void)?
     var onCandidate: ((TypingCandidate) -> Void)? {
         get { typing.onCandidate }
         set { typing.onCandidate = newValue }
@@ -240,7 +235,6 @@ final class DictationSurfaceState: ObservableObject {
         language = KeyboardPreferences.effectiveTranscriptionLanguage
         style = KeyboardPreferences.writingStyle
         usesCompactControls = KeyboardPreferences.compactControlsEnabled
-        quickDictationEnabled = KeyboardPreferences.quickDictationEnabled
         refreshQuickDictationReadiness()
     }
 
@@ -260,18 +254,21 @@ final class DictationSurfaceState: ObservableObject {
         onDashboardVisibilityChanged?(presented)
     }
 
-    func setQuickDictationEnabled(_ enabled: Bool) {
-        guard quickDictationEnabled != enabled else { return }
-        quickDictationEnabled = enabled
-        if !enabled {
-            quickDictationReady = false
+    /// Controls the live standby window shown by this dashboard. The durable
+    /// Settings preference and its ten-minute duration are deliberately not
+    /// changed here; this is the same temporary pause/resume contract as the
+    /// Live Activity control.
+    func setQuickDictationReady(_ ready: Bool) {
+        guard quickDictationReady != ready else { return }
+        quickDictationReady = ready
+        if !ready {
             // Match the keyboard-first behavior of the reference flow: once
             // standby is off, the dashboard has no follow-up action to offer.
             // Close it in the same tap so the typing keys and Start control are
             // immediately visible again.
             setCompactDashboardPresented(false)
         }
-        onQuickDictationChanged?(enabled)
+        onQuickDictationReadinessChanged?(ready)
     }
 
     /// Persists the choice, exactly as the dictation bar's own menu does.
@@ -726,8 +723,8 @@ struct DictationSurfaceView: View {
             Toggle(
                 "Quick Dictation",
                 isOn: Binding(
-                    get: { state.quickDictationEnabled },
-                    set: { state.setQuickDictationEnabled($0) }
+                    get: { state.quickDictationReady },
+                    set: { state.setQuickDictationReady($0) }
                 )
             )
             .labelsHidden()
