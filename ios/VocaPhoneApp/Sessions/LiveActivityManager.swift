@@ -25,6 +25,8 @@ final class LiveActivityManager: @unchecked Sendable {
     private var transitionGeneration = 0
     private var pendingStandbyTask: Task<Void, Never>?
     private var pendingEndTask: Task<Void, Never>?
+    /// When ``currentActivityID`` was requested, so a stale id is not waited on.
+    private var requestedAt: Date?
     private var activityMutationTask: Task<Void, Never>?
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var isAppExiting = false
@@ -328,10 +330,12 @@ final class LiveActivityManager: @unchecked Sendable {
                     content: content,
                     pushType: nil
                 ).id
+                self.requestedAt = Date()
             } catch {
                 // Dictation must continue when the system declines to present
                 // a Live Activity.
                 self.currentActivityID = nil
+                self.requestedAt = nil
             }
         }
     }
@@ -351,23 +355,31 @@ final class LiveActivityManager: @unchecked Sendable {
     /// being requested.
     private func presentableActivityID() async -> String? {
         if let listed = Self.listedActivity(currentActivityID) { return listed.id }
-        guard currentActivityID != nil else {
-            return Activity<VocaPhoneActivityAttributes>.activities
-                .first(where: Self.isPresentable)?.id
-        }
-        for _ in 0..<Self.registrationPolls {
-            try? await Task.sleep(for: Self.registrationPollInterval)
-            if let listed = Self.listedActivity(currentActivityID) { return listed.id }
+        // Only an activity this process asked for *just now* is worth waiting
+        // for. An id left over from one the system has since retired is not
+        // coming back, and waiting on it was a delay the user could feel: every
+        // dictation that followed a finished one paid it before ActivityKit was
+        // so much as asked.
+        if currentActivityID != nil, let requestedAt, requestedAt.timeIntervalSinceNow > -Self.registrationWindow {
+            for _ in 0..<Self.registrationPolls {
+                try? await Task.sleep(for: Self.registrationPollInterval)
+                if let listed = Self.listedActivity(currentActivityID) { return listed.id }
+            }
         }
         // It never arrived, or it has already gone. Either way this process is
         // not driving it any more.
         currentActivityID = nil
+        requestedAt = nil
         return Activity<VocaPhoneActivityAttributes>.activities
             .first(where: Self.isPresentable)?.id
     }
 
-    private static let registrationPolls = 10
-    private static let registrationPollInterval: Duration = .milliseconds(80)
+    /// Six polls of fifty milliseconds: three hundred in the worst case, and
+    /// only in the moments right after a request.
+    private static let registrationPolls = 6
+    private static let registrationPollInterval: Duration = .milliseconds(50)
+    /// How long after a request the system list is still worth waiting on.
+    private static let registrationWindow: TimeInterval = 2
 
     private static func listedActivity(
         _ id: String?
@@ -411,6 +423,7 @@ final class LiveActivityManager: @unchecked Sendable {
             // Cleared first: a presentation that arrives while these ends are
             // in flight must make a new activity rather than update a dying one.
             self?.currentActivityID = nil
+            self?.requestedAt = nil
             await Self.endEverything(with: content, dismissalPolicy: dismissalPolicy)
         }
     }
