@@ -784,24 +784,52 @@ enum LocalModelCatalog {
         deviceMemoryGB: Int,
         language: String = deviceLanguage
     ) -> [ModelPick] {
-        let english = bestEnglish(deviceMemoryGB: deviceMemoryGB)
-        let multilingual = bestMultilingual(deviceMemoryGB: deviceMemoryGB, language: language)
-        let regional = starter(for: language, deviceMemoryGB: deviceMemoryGB)
-        let compact = smallestCovering(deviceMemoryGB: deviceMemoryGB, language: language)
+        recommendations(deviceMemoryGB: deviceMemoryGB, languages: [language])
+    }
 
-        // First role wins when two roles land on the same model, which is why
-        // the order these are added in is the order the picker shows.
+    /// `languages` is the enabled-keyboard list from `spokenLanguages`.
+    /// Each non-English code gets its compact specialist (GigaAM for `ru`,
+    /// Paraformer for `zh`, …). A language that is not on a keyboard must not
+    /// appear here — that is how Chinese stopped showing up on a Russian layout.
+    static func recommendations(
+        deviceMemoryGB: Int,
+        languages: [String]
+    ) -> [ModelPick] {
+        var needed: [String] = []
+        for raw in languages {
+            guard let code = normalizedLanguageCode(raw) else { continue }
+            if !needed.contains(code) { needed.append(code) }
+        }
+        if needed.isEmpty { needed = [deviceLanguage] }
+
+        let lead = needed[0]
+        let nonEnglish = needed.filter { $0 != "en" }
+        let english = bestEnglish(deviceMemoryGB: deviceMemoryGB)
+        let multilingual = bestMultilingual(deviceMemoryGB: deviceMemoryGB, languages: needed)
+        let compact = smallestCovering(deviceMemoryGB: deviceMemoryGB, language: lead)
+
         var picks: [ModelPick] = []
         func add(_ role: ModelPickRole, _ model: LocalModelDescriptor?) {
             guard let model, !picks.contains(where: { $0.model.id == model.id }) else { return }
             picks.append(ModelPick(role: role, model: model))
         }
-        if language.lowercased() == "en" {
+        // Two keyboard languages mean no single-language specialist can serve
+        // them both, so the widest model that covers them leads. Offering the
+        // Russian specialist first to someone who also types English offers a
+        // model that cannot hear half of what they say — and because the card
+        // in first place is the one that carries FOR YOU, that was the one
+        // most people took.
+        if needed.count > 1 {
+            add(.multilingual, multilingual)
+        }
+        for language in nonEnglish {
+            add(.regional, starter(for: language, deviceMemoryGB: deviceMemoryGB))
+        }
+        if lead == "en" {
             add(.english, english)
-            add(.multilingual, multilingual)
-        } else {
-            add(.regional, regional)
-            add(.multilingual, multilingual)
+        }
+        add(.multilingual, multilingual)
+        if lead != "en" {
             add(.english, english)
         }
         add(.compact, compact)
@@ -815,6 +843,59 @@ enum LocalModelCatalog {
     /// The BCP-47 subtag from the phone, used to pick a first-run model.
     static var deviceLanguage: String {
         Locale.current.language.languageCode?.identifier ?? "en"
+    }
+
+    /// Languages that should drive the model picker.
+    ///
+    /// `keyboards` is primary-language tags from enabled IMEs (and test
+    /// fixtures that look like them). One enabled Russian keyboard must
+    /// recommend Russian — and must not recommend Chinese.
+    static func spokenLanguages(
+        device: String,
+        keyboards: [String],
+        explicit: String = ""
+    ) -> [String] {
+        let deviceCode = normalizedLanguageCode(device) ?? "en"
+        let keyboardCodes = uniqueLanguageCodes(keyboards)
+
+        var needed: [String] = []
+        func append(_ code: String) {
+            if !needed.contains(code) { needed.append(code) }
+        }
+        if let explicitCode = normalizedLanguageCode(explicit) {
+            append(explicitCode)
+        }
+        keyboardCodes.forEach(append)
+        if needed.isEmpty {
+            append(deviceCode)
+        }
+        return needed
+    }
+
+    /// BCP-47 / keyboard `primaryLanguage` → catalog code (`ru`, `zh`, `en`).
+    static func normalizedLanguageCode(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let lowered = raw.lowercased()
+        if lowered.contains("emoji") || lowered.contains("dictation") { return nil }
+        if lowered.contains("vocaphone") { return nil }
+        let localePart = raw.split(separator: "@").first.map(String.init) ?? raw
+        // Third-party keyboard bundle IDs, e.g. com.foo.keyboard.
+        if localePart.contains(".") { return nil }
+        var code = Locale(identifier: localePart).language.languageCode?.identifier.lowercased()
+            ?? localePart.split { $0 == "-" || $0 == "_" }.first.map(String.init)?.lowercased()
+            ?? localePart.lowercased()
+        if code.hasPrefix("zh") { code = "zh" }
+        if code == "yue" { return "yue" }
+        if code == TranscriptionLanguage.automatic.rawValue { return nil }
+        if code == "und" || code == "mul" { return nil }
+        guard LocalModelLanguages.picker.contains(code) else { return nil }
+        return code
+    }
+
+    private static func uniqueLanguageCodes(_ raw: [String]) -> [String] {
+        raw.compactMap(normalizedLanguageCode).reduce(into: [String]()) {
+            if !$0.contains($1) { $0.append($1) }
+        }
     }
 
     /// The most accurate English model this iPhone can hold. Parakeet first: on
@@ -838,6 +919,41 @@ enum LocalModelCatalog {
             ?? fitting(deviceMemoryGB: deviceMemoryGB).first {
                 !$0.englishOnly && $0.covers(language)
             }
+    }
+
+    /// Widest model that still transcribes the lead language (`languages[0]`).
+    /// Extra keyboard languages only widen coverage; they must not elect
+    /// SenseVoice just because it hits more of {zh, ja, ko} than Parakeet hits
+    /// of Russian.
+    static func bestMultilingual(
+        deviceMemoryGB: Int,
+        languages: [String]
+    ) -> LocalModelDescriptor? {
+        let needed = languages.compactMap(normalizedLanguageCode)
+        guard let lead = needed.first else {
+            return bestMultilingual(deviceMemoryGB: deviceMemoryGB, language: deviceLanguage)
+        }
+        if needed.count == 1 {
+            return bestMultilingual(deviceMemoryGB: deviceMemoryGB, language: lead)
+        }
+        let candidates = multilingualPreference.compactMap(descriptor(for:)).filter {
+            deviceMemoryGB >= $0.minimumRamGB && $0.covers(lead)
+        }
+        if let coversAll = candidates.first(where: { model in
+            needed.allSatisfy { model.covers($0) }
+        }) {
+            return coversAll
+        }
+        return candidates.max { a, b in
+            let ac = needed.filter { a.covers($0) }.count
+            let bc = needed.filter { b.covers($0) }.count
+            if ac != bc { return ac < bc }
+            func breadth(_ model: LocalModelDescriptor) -> Int {
+                if model.englishOnly { return 1 }
+                return model.languageCodes.isEmpty ? .max : model.languageCodes.count
+            }
+            return breadth(a) < breadth(b)
+        } ?? bestMultilingual(deviceMemoryGB: deviceMemoryGB, language: lead)
     }
 
     /// The lightest download that still transcribes this phone's language.

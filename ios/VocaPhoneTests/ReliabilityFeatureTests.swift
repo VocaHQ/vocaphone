@@ -381,6 +381,32 @@ struct ReliabilityFeatureTests {
         #expect(retained[0].contains("quickDictationArmed"))
     }
 
+    @Test func startDownloadAllowsTwoModelsAndQueuesAThird() {
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: ["a"], requestedID: "a")
+                == .alreadyThisModel
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: ["a"], requestedID: "b")
+                == .allowed
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: ["a", "b"], requestedID: "c")
+                == .atCapacity
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(
+                downloadingIDs: ["a", "b"],
+                queuedIDs: ["c"],
+                requestedID: "c"
+            ) == .alreadyQueued
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: [], requestedID: "a")
+                == .allowed
+        )
+    }
+
     @Test func diagnosticFileIsBounded() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

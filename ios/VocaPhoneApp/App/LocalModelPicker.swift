@@ -22,17 +22,20 @@ struct LocalModelPicker: View {
     var previewSelectedModelID: String?
 #endif
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var modelLoadTask: Task<Void, Never>?
     @State private var modelLoadError: String?
     @State private var availableModelsExpanded = false
     @State private var pendingDeletion: LocalModelDescriptor?
     @State private var guidancePriority: ModelGuidancePriority = .balanced
     @State private var guidanceLanguageOverride: String?
-
-    /// Read so the card can say what a large download costs before it starts.
-    /// Computed rather than stored: a stored property would join the memberwise
-    /// initializer, and reading it here tracks the observation just the same.
-    private var network: NetworkConditions { NetworkConditions.shared }
+    /// A download was started on this page and then stopped.
+    ///
+    /// The docked Continue goes grey again at that moment, and that is the
+    /// only time it needs explaining. Someone who has not started anything yet
+    /// has not been told "no" — putting the line there too would be the page
+    /// answering a question nobody asked.
+    @State private var didCancelDownload = false
 
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
@@ -51,11 +54,29 @@ struct LocalModelPicker: View {
     }
 
     private var recommendationLanguage: String {
-        let requested = guidanceLanguageOverride ?? guidanceLanguage
-        if requested.isEmpty || requested == TranscriptionLanguage.automatic.rawValue {
-            return LocalModelCatalog.deviceLanguage
-        }
-        return requested.lowercased()
+        recommendationLanguages.first ?? LocalModelCatalog.deviceLanguage
+    }
+
+    private var recommendationLanguages: [String] {
+        Self.recommendationLanguages(
+            preferred: guidanceLanguageOverride ?? guidanceLanguage
+        )
+    }
+
+    /// Enabled keyboards, globe order. See `LocalModelCatalog.spokenLanguages`.
+    @MainActor
+    static func recommendationLanguages(preferred: String) -> [String] {
+        LocalModelCatalog.spokenLanguages(
+            device: LocalModelCatalog.deviceLanguage,
+            keyboards: KeyboardInputLanguages.snapshot,
+            explicit: preferred
+        )
+    }
+
+    @MainActor
+    static func recommendationLanguage(preferred: String) -> String {
+        recommendationLanguages(preferred: preferred).first
+            ?? LocalModelCatalog.deviceLanguage
     }
 
     private var deviceLanguageName: String {
@@ -70,14 +91,14 @@ struct LocalModelPicker: View {
     }
 
     private var picks: [ModelPick] {
-        if onboarding {
-            guard let model = guidance.model else { return [] }
-            return [ModelPick(role: .guided, model: model)]
-        }
-        return LocalModelCatalog.recommendations(
+        let recommended = LocalModelCatalog.recommendations(
             deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
-            language: recommendationLanguage
+            languages: recommendationLanguages
         )
+        if onboarding {
+            return Array(recommended.prefix(3))
+        }
+        return recommended
     }
 
     /// Picks not yet on the phone. The installed ones already have a row above
@@ -91,8 +112,8 @@ struct LocalModelPicker: View {
         return usable.filter { state(for: $0) == .notDownloaded && !recommended.contains($0.id) }
     }
 
-    private var downloadDetailLine: String? {
-        let parts = [manager.downloadSizeProgress, manager.downloadTimeRemaining]
+    private func downloadDetailLine(for id: String) -> String? {
+        let parts = [manager.downloadSizeProgress(for: id), manager.downloadTimeRemaining(for: id)]
         let line = parts.compactMap { $0 }.joined(separator: " · ")
         return line.isEmpty ? nil : line
     }
@@ -113,15 +134,30 @@ struct LocalModelPicker: View {
     }
 
     private var downloadWarning: DownloadWarning? {
-        guard onboarding, let model = guidance.model else { return nil }
-        // Nothing to warn about once the transfer is running, and this reads the
-        // volume synchronously: the picker redraws on every progress tick.
-        guard manager.downloadingModelID == nil, !manager.isDownloaded(model.id) else { return nil }
-        return DownloadReadiness.warning(
+        guard onboarding, manager.downloadingModelIDs.isEmpty else { return nil }
+        let pending = picks.map(\.model).filter { !manager.isDownloaded($0.id) }
+        guard let model = pending.max(by: { $0.sizeBytes < $1.sizeBytes }) else { return nil }
+        let warning = DownloadReadiness.warning(
             sizeBytes: model.sizeBytes,
             freeBytes: manager.availableStorageBytes,
-            metered: network.isMetered
+            metered: false
         )
+        // Cellular "may charge for data" flickered on and off with path
+        // updates. Storage is the only hard stop worth a line here.
+        guard case .notEnoughStorage = warning else { return nil }
+        return warning
+    }
+
+    /// Prefer the model already in use, then FOR YOU, then the first downloaded pick.
+    private var onboardingChoice: LocalModelDescriptor? {
+        let downloaded = picks.map(\.model).filter {
+            manager.isDownloaded($0.id) && !manager.failedIntegrityModelIDs.contains($0.id)
+        }
+        if let inUse = LocalTranscriptionPreferences.modelIdentifier,
+           let match = downloaded.first(where: { $0.id == inUse }) {
+            return match
+        }
+        return downloaded.first ?? picks.first?.model
     }
 
     /// The one sentence a warning is worth. Written so it says what to do, not
@@ -145,6 +181,7 @@ struct LocalModelPicker: View {
     private enum ModelState: Equatable {
         case notDownloaded
         case downloading
+        case waiting
         case verifying
         case failedIntegrity
         case loading
@@ -155,6 +192,7 @@ struct LocalModelPicker: View {
             switch self {
             case .notDownloaded: "Not downloaded"
             case .downloading: "Downloading"
+            case .waiting: "Waiting"
             case .verifying: "Verifying"
             case .failedIntegrity: "Failed verification"
             case .loading: "Loading"
@@ -166,7 +204,7 @@ struct LocalModelPicker: View {
         var status: VocaStatus {
             switch self {
             case .notDownloaded: .inactive
-            case .downloading, .verifying, .loading: .working
+            case .downloading, .waiting, .verifying, .loading: .working
             case .failedIntegrity: .failed
             case .ready, .selected: .ready
             }
@@ -174,7 +212,8 @@ struct LocalModelPicker: View {
     }
 
     private func state(for model: LocalModelDescriptor) -> ModelState {
-        if manager.downloadingModelID == model.id { return .downloading }
+        if manager.isDownloading(model.id) { return .downloading }
+        if manager.isQueued(model.id) { return .waiting }
         if manager.loadingModelID == model.id { return .loading }
         if manager.verifyingModelIDs.contains(model.id) { return .verifying }
         if manager.failedIntegrityModelIDs.contains(model.id) { return .failedIntegrity }
@@ -260,163 +299,366 @@ struct LocalModelPicker: View {
 
     @ViewBuilder
     private var onboardingBody: some View {
-        if usable.isEmpty {
-            Section {
+        VStack(alignment: .leading, spacing: VocaMetrics.related) {
+            if usable.isEmpty {
                 Text("No on-device model fits this iPhone yet.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-        } else if let model = guidance.model {
-            let warning = downloadWarning
-            Section {
-                Text(guidance.reason)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if let warning {
-                    Text(warningHeadline(warning))
-                        .font(.footnote)
-                        // Only the storage case is a hard stop. Painting "you
-                        // are on cellular" the same red reads as something
-                        // broken rather than a cost worth knowing.
-                        .foregroundStyle(warning.isStorage ? Color.vocaError : Color.vocaWarning)
-                }
-                row(for: model, onboarding: true)
-                if let alternative = guidanceAlternative {
-                    VStack(alignment: .leading, spacing: VocaMetrics.related) {
-                        Text(
-                            warning.isStorage
-                                ? "\(alternative.displayName) needs only \(alternative.sizeLabel)."
-                                : "Need something smaller? \(alternative.displayName) · "
-                                    + "\(alternative.sizeLabel)."
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        Button {
-                            downloadAndUse(alternative)
-                        } label: {
-                            Text("Use \(alternative.displayName) instead")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .disabled(isBusy)
-                    }
-                }
-                ModelGuidanceChoiceButton(
-                    selection: $guidancePriority,
-                    language: guidanceLanguageSelection,
-                    deviceLanguageName: deviceLanguageName,
-                    enabled: !isBusy,
-                    onApply: applyGuidance
-                )
-            } header: {
-                Text("Recommended for you")
-            } footer: {
-                // Says what the one visible choice was made on, so the "Help me
-                // choose" button reads as a way to change an answer rather than
-                // as a second, unrelated question.
-                Text(
-                    "Chosen for \(guidance.languageName) · \(guidancePriority.title). "
-                        + "You can switch models later in Settings."
-                )
-            }
-
-            let otherInstalled = installedModels.filter { $0.id != model.id }
-            if !otherInstalled.isEmpty {
-                Section("Already on this iPhone") {
-                    ForEach(otherInstalled) { installed in
-                        row(for: installed)
-                    }
-                }
-            }
-
-            Section("More compatible models") {
-                if availableModels.isEmpty {
-                    Text("All other compatible models are already on this iPhone.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    DisclosureGroup(isExpanded: $availableModelsExpanded) {
-                        ForEach(availableModels) { available in
-                            row(for: available)
-                        }
-                    } label: {
-                        Text("Browse \(availableModels.count) compatible models")
-                    }
-                }
-            }
-        } else {
-            Section {
+            } else if picks.isEmpty {
                 Text(guidance.reason)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text("Choose another language in Dictation settings, or use your self-hosted gateway.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                ModelGuidanceChoiceButton(
-                    selection: $guidancePriority,
-                    language: guidanceLanguageSelection,
-                    deviceLanguageName: deviceLanguageName,
-                    enabled: !isBusy,
-                    onApply: applyGuidance
-                )
-            } header: {
-                Text("No guided match")
-            }
-            Section("Compatible models") {
-                ForEach(usable) { model in
-                    row(for: model)
+            } else {
+                if let warning = downloadWarning {
+                    Text(warningHeadline(warning))
+                        .font(.footnote)
+                        .foregroundStyle(Color.vocaError)
+                }
+                ForEach(Array(picks.enumerated()), id: \.element.model.id) { index, pick in
+                    row(for: pick.model, onboarding: true, forYou: index == 0)
+                }
+                // Continue unlocks the moment a transfer starts, and a button
+                // that merely stops being grey does not explain itself. This
+                // says what the next minute is for: the keyboard takes about
+                // as long to add as the model takes to arrive.
+                if isDownloadingSomething {
+                    Text("This keeps downloading while you set up the keyboard.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.vocaSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if explainsDisabledContinue {
+                    Text("Choose a model, or skip for now.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.vocaSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let modelLoadError {
+                    Text(modelLoadError)
+                        .font(.footnote)
+                        .foregroundStyle(Color.vocaError)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let message = manager.message, manager.hasError {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(Color.vocaError)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+        .onAppear { holdRecommendationLanguages() }
+        .onChange(of: manager.downloadedModelIDs) { _, _ in
+            prepareOnboardingChoiceIfReady()
+        }
+        // Leaving Choose model ends this page's claim on the selection. The
+        // download itself lives on the manager and carries on.
+        .onDisappear {
+            modelLoadTask?.cancel()
+            modelLoadTask = nil
+        }
     }
 
-    private func row(for model: LocalModelDescriptor, onboarding: Bool = false) -> some View {
+    /// A transfer is running or waiting for a slot.
+    private var isDownloadingSomething: Bool {
+        !manager.downloadingModelIDs.isEmpty || !manager.queuedModelIDs.isEmpty
+    }
+
+    /// Nothing on disk and nothing coming — the state where Continue is grey.
+    private var hasUsableDownload: Bool {
+        picks.contains {
+            manager.isDownloaded($0.model.id)
+                && !manager.failedIntegrityModelIDs.contains($0.model.id)
+        }
+    }
+
+    private var explainsDisabledContinue: Bool {
+        didCancelDownload && !hasUsableDownload
+    }
+
+    /// Retaken here rather than read per redraw: opening the picker is one of
+    /// the two moments the enabled-keyboard list can have changed.
+    private func holdRecommendationLanguages() {
+        KeyboardInputLanguages.refresh()
+    }
+
+    /// Get, the bar, and the check all occupy this capsule so the card does not jump.
+    private let onboardingGetWidth: CGFloat = 52
+    private let onboardingGetHeight: CGFloat = 28
+    private let onboardingCardHeight: CGFloat = 76
+
+    private func onboardingModelCard(
+        model: LocalModelDescriptor,
+        forYou: Bool,
+        state: ModelState
+    ) -> some View {
+        HStack(alignment: .center, spacing: VocaMetrics.related) {
+            VStack(alignment: .leading, spacing: VocaMetrics.tight) {
+                HStack(spacing: 6) {
+                    Text(model.displayName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if forYou { forYouBadge }
+                    Spacer(minLength: 0)
+                }
+                Text("\(model.sizeLabel) · \(model.languages)")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.vocaSecondaryText)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            OnboardingCardTrailing(
+                state: state,
+                progress: manager.progress(for: model.id),
+                getWidth: onboardingGetWidth,
+                getHeight: onboardingGetHeight
+            )
+        }
+        .padding(VocaMetrics.padding)
+        .frame(minHeight: onboardingCardHeight, maxHeight: onboardingCardHeight)
+        .background(
+            Color.vocaSurface,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var forYouBadge: some View {
+        Text("FOR YOU")
+            .font(.caption2.weight(.bold))
+            .tracking(0.2)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Color(red: 203 / 255, green: 48 / 255, blue: 224 / 255),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .accessibilityLabel("For you")
+    }
+
+    /// Get, the ring, and the check occupy this slot so the card does not jump.
+    /// After a download the check grows from a small mark into place; an
+    /// already-ready model does not replay that motion when the page appears.
+    private struct OnboardingCardTrailing: View {
+        let state: ModelState
+        let progress: Double
+        let getWidth: CGFloat
+        let getHeight: CGFloat
+
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var didAppear = false
+
+        private enum Kind: Equatable {
+            case get
+            case ring
+            case checkmark
+        }
+
+        private var kind: Kind {
+            switch state {
+            case .notDownloaded, .failedIntegrity: .get
+            case .downloading, .waiting, .verifying: .ring
+            case .ready, .selected, .loading: .checkmark
+            }
+        }
+
+        private var ringFraction: Double {
+            switch state {
+            case .waiting: 0
+            case .verifying: 1
+            default: progress
+            }
+        }
+
+        var body: some View {
+            ZStack {
+                if kind == .get {
+                    Text("Get")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: getWidth, height: getHeight)
+                        .background(Color.brand, in: Capsule())
+                        .transition(.opacity)
+                }
+
+                if kind == .ring {
+                    AppStoreDownloadRing(fraction: ringFraction)
+                        .transition(.opacity)
+                }
+
+                if kind == .checkmark {
+                    DownloadCompleteCheckmark(
+                        size: getHeight,
+                        playsPop: didAppear,
+                        reduceMotion: reduceMotion
+                    )
+                    .transition(.identity)
+                }
+            }
+            .frame(width: getWidth, height: VocaMetrics.minimumTarget)
+            .animation(didAppear ? .easeOut(duration: 0.18) : nil, value: kind)
+            .onAppear { didAppear = true }
+        }
+    }
+
+    /// Grows from a small mark into place. Opacity stays on so it is not a
+    /// finished icon that later enlarges.
+    private struct DownloadCompleteCheckmark: View {
+        var size: CGFloat
+        var playsPop: Bool
+        var reduceMotion: Bool
+
+        @State private var scale: CGFloat
+        @State private var opacity: Double
+
+        init(size: CGFloat, playsPop: Bool, reduceMotion: Bool) {
+            self.size = size
+            self.playsPop = playsPop
+            self.reduceMotion = reduceMotion
+            if playsPop && !reduceMotion {
+                _scale = State(initialValue: 0.18)
+                _opacity = State(initialValue: 1)
+            } else if playsPop {
+                _scale = State(initialValue: 1)
+                _opacity = State(initialValue: 0)
+            } else {
+                _scale = State(initialValue: 1)
+                _opacity = State(initialValue: 1)
+            }
+        }
+
+        var body: some View {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: size, weight: .regular))
+                .foregroundStyle(Color.brand)
+                .scaleEffect(scale)
+                .opacity(opacity)
+                .accessibilityHidden(true)
+                .onAppear {
+                    guard playsPop else { return }
+                    if reduceMotion {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            opacity = 1
+                        }
+                    } else {
+                        withAnimation(.spring(duration: 0.34, bounce: 0.32)) {
+                            scale = 1
+                        }
+                    }
+                }
+        }
+    }
+
+    /// App Store Get: a ring that fills clockwise from 12 o'clock, same slot as Get.
+    private struct AppStoreDownloadRing: View {
+        var fraction: Double
+        var diameter: CGFloat = 28
+        var lineWidth: CGFloat = 3.5
+
+        var body: some View {
+            let clamped = min(1, max(0, fraction))
+            ZStack {
+                Circle()
+                    .stroke(Color.brand.opacity(0.2), lineWidth: lineWidth)
+                Circle()
+                    .trim(from: 0, to: clamped == 0 ? 0 : max(0.03, clamped))
+                    .stroke(
+                        Color.brand,
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: diameter, height: diameter)
+            .accessibilityValue("\(Int(clamped * 100)) percent")
+        }
+    }
+
+    private func row(
+        for model: LocalModelDescriptor,
+        onboarding: Bool = false,
+        forYou: Bool = false
+    ) -> some View {
         let state = state(for: model)
         return VStack(alignment: .leading, spacing: VocaMetrics.related + 2) {
-            VocaStatusLine(
-                status: state.status,
-                title: model.displayName,
-                detail: onboarding
-                    ? "\(model.sizeLabel) · \(model.languages)"
-                    : detail(for: model, state: state)
-            )
+            if onboarding {
+                Button {
+                    handleOnboardingTap(model)
+                } label: {
+                    onboardingModelCard(
+                        model: model,
+                        forYou: forYou,
+                        state: state
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityValue(onboardingAccessibilityValue(model: model, state: state))
+                .accessibilityHint(onboardingAccessibilityHint(state: state))
+            } else {
+                VocaStatusLine(
+                    status: state.status,
+                    title: model.displayName,
+                    detail: detail(for: model, state: state)
+                )
+            }
 
             switch state {
-            case .downloading:
-                VStack(alignment: .leading, spacing: VocaMetrics.related) {
+            case .waiting:
+                if onboarding {
+                    EmptyView()
+                } else {
                     HStack {
-                        Text("Downloading")
+                        Text("Waiting")
                             .font(.subheadline.weight(.semibold))
                         Spacer()
-                        Text("\(Int(manager.progress * 100))%")
-                            .font(.subheadline.monospacedDigit())
+                        Button("Cancel") {
+                            manager.cancelDownload(model.id)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    ProgressView(value: manager.progress)
-                    // A bare percentage on a 670 MB download reads as stuck.
-                    // The size says how much is actually moving, and the
-                    // estimate stays absent until it has settled rather than
-                    // swinging wildly through the first seconds.
-                    if let detail = downloadDetailLine {
-                        Text(detail)
-                            .font(.footnote.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                }
+            case .downloading:
+                if onboarding {
+                    EmptyView()
+                } else {
+                    VStack(alignment: .leading, spacing: VocaMetrics.related) {
+                        HStack {
+                            Text("Downloading")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("\(Int(manager.progress(for: model.id) * 100))%")
+                                .font(.subheadline.monospacedDigit())
+                        }
+                        ProgressView(value: manager.progress(for: model.id))
+                        // A bare percentage on a 670 MB download reads as stuck.
+                        // The size says how much is actually moving, and the
+                        // estimate stays absent until it has settled rather than
+                        // swinging wildly through the first seconds.
+                        if let detail = downloadDetailLine(for: model.id) {
+                            Text(detail)
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Cancel") {
+                            manager.cancelDownload(model.id)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    Button("Cancel") {
-                        manager.cancelDownload()
-                    }
-                    .buttonStyle(.bordered)
                 }
             case .verifying, .loading:
-                HStack(spacing: VocaMetrics.related + 2) {
-                    ProgressView()
-                    Text(
-                        state == .verifying
-                            ? "Checking every file against its published SHA-256."
-                            : manager.loadingMessage ?? "Loading the model…"
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                if onboarding {
+                    EmptyView()
+                } else {
+                    HStack(spacing: VocaMetrics.related + 2) {
+                        ProgressView()
+                        Text(
+                            state == .verifying
+                                ? "Checking every file against its published SHA-256."
+                                : manager.loadingMessage ?? "Loading the model…"
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
                 }
             // `.frame(maxWidth:)` outside a button stretches its *layout* and
             // leaves the control its natural size, which is how these ended up
@@ -424,36 +666,40 @@ struct LocalModelPicker: View {
             // width belongs on the label.
             case .failedIntegrity:
                 Button {
-                    onboarding ? downloadAndUse(model) : download(model)
+                    downloadAndUse(model)
                 } label: {
                     Text("Download again").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
             case .notDownloaded:
-                Button {
-                    onboarding ? downloadAndUse(model) : download(model)
-                } label: {
-                    Text(
-                        onboarding
-                            ? "Download and continue · \(model.sizeLabel)"
-                            : "Download \(model.sizeLabel)"
-                    )
-                    .frame(maxWidth: .infinity)
+                if onboarding {
+                    EmptyView()
+                } else {
+                    Button {
+                        downloadAndUse(model)
+                    } label: {
+                        Text("Download \(model.sizeLabel)")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(manager.loadingModelID != nil)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(isBusy)
             case .ready:
-                VocaPrimaryButton(title: "Use this model") {
-                    prepare(model, languageOverride: onboarding ? guidanceLanguageOverride : nil)
+                if onboarding {
+                    EmptyView()
+                } else {
+                    VocaPrimaryButton(title: "Use this model") {
+                        prepare(model, languageOverride: onboarding ? guidanceLanguageOverride : nil)
+                    }
+                    .disabled(manager.loadingModelID != nil)
                 }
-                    .disabled(isBusy)
             case .selected:
                 EmptyView()
             }
 
-            if state == .ready || state == .selected || state == .failedIntegrity {
+            if !onboarding, state == .ready || state == .selected || state == .failedIntegrity {
                 // Centred and compact, with room above it. "Use this model" is
                 // a full-width filled button, so a full-width destructive one
                 // directly beneath it shares an edge with the very action it
@@ -465,7 +711,7 @@ struct LocalModelPicker: View {
                 .padding(.top, VocaMetrics.related)
             }
         }
-        .padding(.vertical, VocaMetrics.tight)
+        .padding(.vertical, onboarding ? 0 : VocaMetrics.tight)
         .confirmationDialog(
             "Delete \(pendingDeletion?.displayName ?? "this model")?",
             isPresented: Binding(
@@ -486,10 +732,6 @@ struct LocalModelPicker: View {
                     + "time; dictating offline needs a model on this iPhone."
             )
         }
-    }
-
-    private var isBusy: Bool {
-        manager.downloadingModelID != nil || manager.loadingModelID != nil
     }
 
     /// Size before download, languages before selection, and — for a failed
@@ -516,25 +758,117 @@ struct LocalModelPicker: View {
         }
     }
 
-    private func download(_ model: LocalModelDescriptor) {
-        manager.startDownload(model) {
-            onChange()
+    private func handleOnboardingTap(_ model: LocalModelDescriptor) {
+        switch state(for: model) {
+        case .notDownloaded, .failedIntegrity:
+            didCancelDownload = false
+            downloadAndUse(model)
+        case .downloading, .waiting:
+            didCancelDownload = true
+            manager.cancelDownload(model.id)
+        default:
+            break
         }
     }
 
+    private func onboardingAccessibilityValue(
+        model: LocalModelDescriptor,
+        state: ModelState
+    ) -> String {
+        switch state {
+        case .downloading:
+            "\(Int(manager.progress(for: model.id) * 100)) percent downloaded"
+        case .waiting:
+            "Waiting"
+        case .ready, .selected:
+            "Ready"
+        default:
+            "Not downloaded"
+        }
+    }
+
+    private func onboardingAccessibilityHint(state: ModelState) -> String {
+        switch state {
+        case .downloading, .waiting:
+            "Stops this download"
+        case .notDownloaded, .failedIntegrity:
+            "Starts downloading this model"
+        default:
+            ""
+        }
+    }
+
+    private func prepareOnboardingChoiceIfReady() {
+        guard onboarding, manager.loadingModelID == nil, let model = onboardingChoice else { return }
+        // Stop must not reload a model that is already on disk — that swapped
+        // its checkmark for a ring.
+        guard state(for: model) == .ready else { return }
+        guard LocalTranscriptionPreferences.modelIdentifier != model.id else { return }
+        prepare(model, languageOverride: guidanceLanguageOverride, adoptsOnlyIfUnclaimed: true)
+    }
+
+    /// Downloads, and makes the model the one in use only if nothing usable is
+    /// selected yet. Used from Settings as well as setup: a phone with no model
+    /// that finishes downloading one should be able to dictate with it, not
+    /// keep saying "No speech-to-text model downloaded" until someone finds
+    /// Use this model. With a model already chosen it changes nothing.
     private func downloadAndUse(_ model: LocalModelDescriptor) {
         manager.startDownload(model) {
             guard manager.isDownloaded(model.id) else {
                 onChange()
                 return
             }
-            prepare(model, languageOverride: onboarding ? guidanceLanguageOverride : nil)
+            let inUse = LocalTranscriptionPreferences.modelIdentifier
+            if let inUse, manager.isDownloaded(inUse) {
+                onChange()
+                return
+            }
+            prepare(
+                model,
+                languageOverride: onboarding ? guidanceLanguageOverride : nil,
+                adoptsOnlyIfUnclaimed: true
+            )
         }
     }
 
-    private func prepare(_ model: LocalModelDescriptor, languageOverride: String? = nil) {
+    /// Loads the engine and, on success, records the model as the one in use.
+    ///
+    /// `adoptsOnlyIfUnclaimed` is for the two callers that are adopting a
+    /// finished download rather than obeying a tap. Loading takes seconds, and
+    /// onboarding's Continue can commit a different model inside that window;
+    /// without the re-check the stored identifier ends up naming whichever
+    /// engine happened to finish second, which is not what anyone chose.
+    private func prepare(
+        _ model: LocalModelDescriptor,
+        languageOverride: String? = nil,
+        adoptsOnlyIfUnclaimed: Bool = false
+    ) {
         modelLoadError = nil
         modelLoadTask?.cancel()
+        // A finished download is adopted the moment its files are on disk,
+        // before the engine is loaded — which is how the rest of the app
+        // already defines ready (`isOnDeviceReady` is "downloaded", not
+        // "loaded"), and what Continue and a resumed download both do.
+        //
+        // Adopting only after the load left a gap of several seconds where the
+        // files were there and nothing was selected, and home filled it with
+        // "No speech-to-text model downloaded" right after the bar finished.
+        //
+        // Committed synchronously, not inside the task: a task starts on a
+        // later turn, and home would still get one frame of the wrong card.
+        if adoptsOnlyIfUnclaimed {
+            if let inUse = LocalTranscriptionPreferences.modelIdentifier,
+               inUse != model.id,
+               manager.isDownloaded(inUse),
+               !manager.failedIntegrityModelIDs.contains(inUse)
+            {
+                // Something else is the model. Nothing to adopt, and no reason
+                // to load an engine nobody chose.
+                return
+            }
+            commitSelection(model)
+        }
+        let commitsAfterLoad = !adoptsOnlyIfUnclaimed
         modelLoadTask = Task { @MainActor in
             do {
                 let requestedLanguage = languageOverride.flatMap(TranscriptionLanguage.init(rawValue:))
@@ -548,9 +882,10 @@ struct LocalModelPicker: View {
                     language: language.rawValue
                 )
                 guard !Task.isCancelled else { return }
-                LocalTranscriptionPreferences.modelIdentifier = model.id
-                LocalTranscriptionPreferences.enabled = true
-                onChange()
+                // "Use this model" is a choice the user is watching happen:
+                // it commits only once the engine has actually loaded, so a
+                // failed load does not quietly switch their model.
+                if commitsAfterLoad { commitSelection(model) }
             } catch is CancellationError {
                 // The picker does not expose cancellation for engine loading;
                 // cancellation here only prevents a stale selection commit.
@@ -560,6 +895,12 @@ struct LocalModelPicker: View {
             }
             modelLoadTask = nil
         }
+    }
+
+    private func commitSelection(_ model: LocalModelDescriptor) {
+        LocalTranscriptionPreferences.modelIdentifier = model.id
+        LocalTranscriptionPreferences.enabled = true
+        onChange()
     }
 
     private func applyGuidance(language: String, priority: ModelGuidancePriority) {
@@ -822,8 +1163,7 @@ private struct ModelPickerPreview: View {
     }
 }
 
-/// One model in use, another ready beside it — and every other Download button
-/// disabled by `isBusy` with nothing on screen saying why.
+/// One model in use, another downloading. Other Gets stay available.
 #Preview("Models — one in use, one downloading") {
     PreviewHost {
         ModelPickerPreview(
