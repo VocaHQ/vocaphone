@@ -812,8 +812,17 @@ final class RecordingCoordinator {
             try? store.save(record)
             clearQuickDictationMarker()
             activeRecord = record
-            let granted = await withCheckedContinuation { continuation in
-                recorder.requestPermission { continuation.resume(returning: $0) }
+            // Asked only when the answer is not already known. Every dictation
+            // paid a cross-process round trip to be told what
+            // `AVAudioApplication` had already cached, in the moment between
+            // the tap and the microphone opening.
+            let granted: Bool
+            if recorder.recordPermission == .granted {
+                granted = true
+            } else {
+                granted = await withCheckedContinuation { continuation in
+                    recorder.requestPermission { continuation.resume(returning: $0) }
+                }
             }
             guard granted else {
                 try record.transition(to: .permissionDenied)

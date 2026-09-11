@@ -1882,6 +1882,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             && keyboardHeightConstraint?.constant == keyboardHeight
         guard !unchanged else { return }
 
+        // Whether the keyboard itself changes size, or only what is inside it.
+        // A panel opening over the keys is the second kind: the bar grows into
+        // the grid's room and the keyboard stays exactly as tall as it was.
+        let keyboardResizes = keyboardHeightConstraint?.constant != keyboardHeight
+
         barHeightConstraint?.constant = wantedBarHeight
         gridHeightConstraint?.constant = metrics.gridHeight
         emojiPanelHeightConstraint?.constant = metrics.gridHeight
@@ -1891,12 +1896,25 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             view.setNeedsLayout()
             return
         }
-        // The host app resizes around the keyboard, so the expansion has to be
-        // a settle rather than a jump.
+        // Two animations run over the same pixels when a panel opens: this one
+        // on the container, and the surface's own spring on the content inside
+        // it. They were 340 ms at 0.9 damping against 150 ms at 1, so the panel
+        // arrived and then kept settling for another fifth of a second, with
+        // SwiftUI re-laying its content against a frame that was still moving.
+        // That is the lag: not slow to start, slow to stop.
+        //
+        // The settle is still right when the *keyboard* resizes, because the
+        // host app resizes around it and a jump there moves the whole document.
+        let duration = keyboardResizes
+            ? 0.34
+            : KeyboardPreferences.surfaceAnimationResponse
+        let damping = keyboardResizes
+            ? 0.9
+            : KeyboardPreferences.surfaceAnimationDamping
         UIView.animate(
-            withDuration: 0.34,
+            withDuration: duration,
             delay: 0,
-            usingSpringWithDamping: 0.9,
+            usingSpringWithDamping: damping,
             initialSpringVelocity: 0,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
