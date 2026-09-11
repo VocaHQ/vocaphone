@@ -479,29 +479,6 @@ final class RecordingCoordinator {
         debugQuickDictation("pause cleared on foreground")
     }
 
-    /// Starts one live standby window from the keyboard dashboard without
-    /// rewriting the durable Settings switch or its selected duration. This is
-    /// intentionally different from `setQuickDictationEnabled`: the dashboard
-    /// is a now control, while Settings decides what future launches re-arm.
-    func startQuickDictationWindow() {
-        guard !isInert else { return }
-        KeyboardPreferences.quickDictationPausedUntilRelaunch = false
-        if recorder.recordPermission == .granted {
-            armQuickDictation(allowWhenDisabled: true)
-            return
-        }
-        recorder.requestPermission { [weak self] granted in
-            guard let self else { return }
-            if granted {
-                self.message = "Microphone permission granted."
-                self.armQuickDictation(allowWhenDisabled: true)
-            } else {
-                self.message = "Microphone permission denied."
-            }
-            self.refreshSetupStatus()
-        }
-    }
-
     func setQuickDictationEnabled(_ enabled: Bool) {
         guard !isInert else { return }
         KeyboardPreferences.quickDictationEnabled = enabled
@@ -551,6 +528,20 @@ final class RecordingCoordinator {
         DiagnosticLog.record(
             .quickDictationStopped,
             metadata: .reason(.userRequested)
+        )
+    }
+
+    /// The keyboard's VocaPhone switch turned off — the same end as swiping
+    /// VocaPhone away in the app switcher. The live window, its microphone and
+    /// its Live Activity go; Quick Dictation, its duration and the pause flag
+    /// stay exactly as they were, so the next launch (the switch turned back
+    /// on, or the keyboard's Start) arms the usual window again.
+    func closeFromKeyboard() {
+        guard !isInert else { return }
+        clearQuickDictationReadiness(deactivateAudioSession: true)
+        DiagnosticLog.record(
+            .quickDictationStopped,
+            metadata: .reason(.closedFromKeyboard)
         )
     }
 
@@ -1389,8 +1380,8 @@ final class RecordingCoordinator {
             && record.sourceDocumentID != "in-app-test"
     }
 
-    private func armQuickDictation(allowWhenDisabled: Bool = false) {
-        guard (KeyboardPreferences.quickDictationArmable || allowWhenDisabled),
+    private func armQuickDictation() {
+        guard KeyboardPreferences.quickDictationArmable,
               audioSessionAvailable,
               !recorder.isRecording
         else { return }
@@ -1451,9 +1442,13 @@ final class RecordingCoordinator {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard let self else { return }
+                // The keyboard's VocaPhone switch removes the marker itself
+                // before it asks this process to close, so a dropped Darwin
+                // ping still ends the window here rather than being rewritten.
                 guard refreshedAvailability.expiresAt > Date(),
                       self.recorder.isStandbyActive,
-                      self.audioSessionAvailable
+                      self.audioSessionAvailable,
+                      (try? self.store.loadQuickDictationAvailability()) != nil
                 else {
                     self.clearQuickDictationReadiness(deactivateAudioSession: true)
                     return
@@ -1549,6 +1544,13 @@ final class RecordingCoordinator {
                 Task { @MainActor [weak self] in
                     DiagnosticLog.record(.stopQuickDictationRequested)
                     self?.pauseQuickDictation()
+                }
+            }
+        )
+        darwinObservations.append(
+            VocaPhoneDarwinCenter.observe(.closeVocaPhoneRequested) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.closeFromKeyboard()
                 }
             }
         )

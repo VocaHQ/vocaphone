@@ -48,22 +48,37 @@ struct KeyboardSurfaceTests {
         #expect(changes == [true, false])
     }
 
-    @Test func quickDictationToggleControlsOnlyTheLiveReadinessWindow() {
+    @Test func vocaPhoneSwitchClosesTheAppWithoutTouchingQuickDictation() {
+        let enabled = KeyboardPreferences.quickDictationEnabled
+        let duration = KeyboardPreferences.quickDictationDuration
+        let paused = KeyboardPreferences.quickDictationPausedUntilRelaunch
+        defer {
+            KeyboardPreferences.quickDictationEnabled = enabled
+            KeyboardPreferences.quickDictationDuration = duration
+            KeyboardPreferences.quickDictationPausedUntilRelaunch = paused
+        }
+        KeyboardPreferences.quickDictationEnabled = true
+        KeyboardPreferences.quickDictationDuration = .tenMinutes
+        KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+
         let surface = DictationSurfaceState()
         surface.quickDictationReady = true
         surface.setCompactDashboardPresented(true)
         var changes: [Bool] = []
         var visibilityChanges: [Bool] = []
-        surface.onQuickDictationReadinessChanged = { changes.append($0) }
+        surface.onVocaPhoneRunningChanged = { changes.append($0) }
         surface.onDashboardVisibilityChanged = { visibilityChanges.append($0) }
 
-        surface.setQuickDictationReady(false)
-        surface.setQuickDictationReady(false)
+        surface.setVocaPhoneRunning(false)
+        surface.setVocaPhoneRunning(false)
 
         #expect(surface.quickDictationReady == false)
         #expect(surface.compactDashboardPresented == false)
         #expect(changes == [false])
         #expect(visibilityChanges == [false])
+        #expect(KeyboardPreferences.quickDictationEnabled)
+        #expect(KeyboardPreferences.quickDictationDuration == .tenMinutes)
+        #expect(KeyboardPreferences.quickDictationPausedUntilRelaunch == false)
     }
 
     @Test func recoveryGuidanceSurvivesPollingUntilTheStateChanges() {

@@ -58,6 +58,9 @@ enum DiagnosticReason: String, Codable, Sendable {
     /// Quick Dictation was stopped from the Live Activity, which pauses the
     /// current window instead of changing the durable preference.
     case pausedUntilRelaunch
+    /// VocaPhone was switched off from the keyboard: the running window ended
+    /// as if the app had been closed, with every preference left alone.
+    case closedFromKeyboard
     case quickDictationOff
     case sessionFinished
     case processExit

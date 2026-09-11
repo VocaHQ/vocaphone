@@ -1555,12 +1555,17 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             compactDashboardOwnsKeyboard = presented
             render(lastRecord)
         }
-        dictationSurfaceState.onQuickDictationReadinessChanged = { [weak self] ready in
-            if ready {
+        dictationSurfaceState.onVocaPhoneRunningChanged = { [weak self] running in
+            if running {
                 KeyboardPreferences.quickDictationPausedUntilRelaunch = false
                 self?.openContainingAppAction("ready")
             } else {
-                VocaPhoneDarwinCenter.post(.stopQuickDictationRequested)
+                // Off is the app switcher's swipe, not the Live Activity's
+                // pause: no preference is written. The marker goes first so
+                // this keyboard stops routing to a window that is ending even
+                // if VocaPhone has already died and nothing is listening.
+                try? self?.store.clearQuickDictationAvailability()
+                VocaPhoneDarwinCenter.post(.closeVocaPhoneRequested)
             }
         }
         dictationSurfaceState.onCandidate = { [weak self] candidate in

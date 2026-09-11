@@ -207,7 +207,7 @@ final class DictationSurfaceState: ObservableObject {
     var onGlobe: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onDashboardVisibilityChanged: ((Bool) -> Void)?
-    var onQuickDictationReadinessChanged: ((Bool) -> Void)?
+    var onVocaPhoneRunningChanged: ((Bool) -> Void)?
     var onCandidate: ((TypingCandidate) -> Void)? {
         get { typing.onCandidate }
         set { typing.onCandidate = newValue }
@@ -254,21 +254,21 @@ final class DictationSurfaceState: ObservableObject {
         onDashboardVisibilityChanged?(presented)
     }
 
-    /// Controls the live standby window shown by this dashboard. The durable
-    /// Settings preference and its ten-minute duration are deliberately not
-    /// changed here; this is the same temporary pause/resume contract as the
-    /// Live Activity control.
-    func setQuickDictationReady(_ ready: Bool) {
-        guard quickDictationReady != ready else { return }
-        quickDictationReady = ready
-        if !ready {
+    /// The dashboard's VocaPhone switch: on opens VocaPhone, off closes it the
+    /// way the app switcher does. It says whether VocaPhone is running, not
+    /// whether Quick Dictation is enabled: off leaves that setting and its
+    /// duration alone, so the next launch from Start arms the same window.
+    func setVocaPhoneRunning(_ running: Bool) {
+        guard quickDictationReady != running else { return }
+        quickDictationReady = running
+        if !running {
             // Match the keyboard-first behavior of the reference flow: once
             // standby is off, the dashboard has no follow-up action to offer.
             // Close it in the same tap so the typing keys and Start control are
             // immediately visible again.
             setCompactDashboardPresented(false)
         }
-        onQuickDictationReadinessChanged?(ready)
+        onVocaPhoneRunningChanged?(running)
     }
 
     /// Persists the choice, exactly as the dictation bar's own menu does.
@@ -721,16 +721,16 @@ struct DictationSurfaceView: View {
             .accessibilityLabel("Open VocaPhone settings")
 
             Toggle(
-                "Quick Dictation",
+                "VocaPhone",
                 isOn: Binding(
                     get: { state.quickDictationReady },
-                    set: { state.setQuickDictationReady($0) }
+                    set: { state.setVocaPhoneRunning($0) }
                 )
             )
             .labelsHidden()
             .toggleStyle(.switch)
             .tint(dashboardAccent)
-            .accessibilityHint("Keeps VocaPhone ready for dictation from the keyboard")
+            .accessibilityHint("Opens or closes VocaPhone. Quick Dictation settings stay as they are.")
         }
     }
 
