@@ -125,7 +125,9 @@ struct ContentView: View {
             {
                 KeyboardHandoffView(record: record, presentation: presentation)
             } else if isShowingQuickDictationReturnGuide {
-                QuickDictationReturnGuide(reduceMotion: reduceMotion)
+                QuickDictationReturnGuide(reduceMotion: reduceMotion) {
+                    isShowingQuickDictationReturnGuide = false
+                }
             }
         }
     }
@@ -487,6 +489,12 @@ struct ContentView: View {
 private struct QuickDictationReturnGuide: View {
     @Environment(RecordingCoordinator.self) private var coordinator
     let reduceMotion: Bool
+    let onDismiss: () -> Void
+    /// Arming takes well under a second when it works. A wait past this is
+    /// not going to end on its own — audio held by a call, another app's
+    /// session — so the screen stops asking for patience and offers a way out
+    /// instead of covering Home until the user leaves the app.
+    @State private var isTakingLong = false
 
     var body: some View {
         if coordinator.isQuickDictationReady {
@@ -495,22 +503,62 @@ private struct QuickDictationReturnGuide: View {
                 detail: "Quick Dictation is ready. Tap the microphone there.",
                 reduceMotion: reduceMotion
             )
+        } else if coordinator.setupStatus.microphone == .denied {
+            status(
+                title: "Microphone access is off",
+                detail: "Quick Dictation needs the microphone. Turn it on in Settings, then try again."
+            ) {
+                VocaPrimaryButton(title: "Open Settings", symbol: "gear") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            }
         } else {
-            ZStack {
-                Color.vocaCanvas.ignoresSafeArea()
-                VStack(spacing: VocaMetrics.grouping) {
+            status(
+                title: "Getting Quick Dictation ready",
+                detail: isTakingLong
+                    ? (coordinator.message ?? "VocaPhone could not get the microphone yet.")
+                    : "Keep VocaPhone open for a moment.",
+                showsProgress: true
+            ) {
+                EmptyView()
+            }
+            .task {
+                try? await Task.sleep(for: .seconds(4))
+                isTakingLong = true
+            }
+        }
+    }
+
+    private func status<Actions: View>(
+        title: String,
+        detail: String,
+        showsProgress: Bool = false,
+        @ViewBuilder actions: () -> Actions
+    ) -> some View {
+        ZStack {
+            Color.vocaCanvas.ignoresSafeArea()
+            VStack(spacing: VocaMetrics.grouping) {
+                if showsProgress {
                     ProgressView()
                         .controlSize(.large)
                         .tint(Color.brand)
-                    Text("Getting Quick Dictation ready")
-                        .font(.title2.weight(.bold))
-                    Text("Keep VocaPhone open for a moment.")
-                        .font(.body)
-                        .foregroundStyle(Color.vocaSecondaryText)
                 }
-                .multilineTextAlignment(.center)
-                .padding(VocaMetrics.grouping)
+                Text(title)
+                    .font(.title2.weight(.bold))
+                Text(detail)
+                    .font(.body)
+                    .foregroundStyle(Color.vocaSecondaryText)
+                actions()
+                if !showsProgress || isTakingLong {
+                    Button("Close", action: onDismiss)
+                        .font(.body.weight(.semibold))
+                        .frame(minHeight: VocaMetrics.minimumTarget)
+                }
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 480)
+            .padding(VocaMetrics.grouping)
         }
     }
 }

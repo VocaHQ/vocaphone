@@ -759,8 +759,21 @@ struct DictationSurfaceView: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .indexViewStyle(.page(backgroundDisplayMode: .never))
+            // Drawn here rather than by the page style: its dots are white
+            // whatever the keyboard's appearance, and on a light keyboard they
+            // vanish into the background.
+            .tabViewStyle(.page(indexDisplayMode: .never))
+
+            HStack(spacing: 8) {
+                ForEach(CompactDashboardPage.allCases) { page in
+                    Circle()
+                        .fill(controlForeground.opacity(page == selectedDashboardPage ? 0.9 : 0.25))
+                        .frame(width: 7, height: 7)
+                }
+            }
+            .padding(.bottom, 6)
+            .animation(.easeOut(duration: 0.15), value: selectedDashboardPage)
+            .accessibilityHidden(true)
 
             if state.showsGlobeKey {
                 HStack {
@@ -854,9 +867,10 @@ struct DictationSurfaceView: View {
             .padding(.horizontal, 16)
             .frame(minWidth: 116, minHeight: Self.buttonDiameter)
             .contentShape(Capsule())
+            .background(.ultraThinMaterial, in: Capsule())
         }
+        // Inside the label for the same reason as the shipping menus.
         .buttonStyle(.plain)
-        .modifier(GlassCapsuleModifier())
         .accessibilityLabel("Writing style")
         .accessibilityValue(state.style.displayName)
     }
@@ -881,9 +895,10 @@ struct DictationSurfaceView: View {
             .padding(.horizontal, 12)
             .frame(minHeight: Self.buttonDiameter)
             .contentShape(Capsule())
+            .background(.ultraThinMaterial, in: Capsule())
         }
+        // Inside the label for the same reason as the shipping menus.
         .buttonStyle(.plain)
-        .modifier(GlassCapsuleModifier())
         .accessibilityLabel("Transcription language")
         .accessibilityValue(state.language.displayName)
     }
@@ -921,9 +936,12 @@ struct DictationSurfaceView: View {
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
+                .background(.ultraThinMaterial, in: Circle())
         }
+        // Keep decoration inside the label. Interactive glass around a Menu
+        // participates in its presentation snapshot and can leave the source
+        // button hidden or enlarged after dismissal in the keyboard extension.
         .buttonStyle(.plain)
-        .modifier(GlassButtonModifier(id: "languageGlass", namespace: animationNamespace))
         .accessibilityLabel("Transcription language")
     }
 
@@ -960,9 +978,12 @@ struct DictationSurfaceView: View {
                 .foregroundStyle(state.isDark ? Color.white : Color.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .contentShape(Circle())
+                .background(.ultraThinMaterial, in: Circle())
         }
+        // Keep decoration inside the label. Interactive glass around a Menu
+        // participates in its presentation snapshot and can leave the source
+        // button hidden or enlarged after dismissal in the keyboard extension.
         .buttonStyle(.plain)
-        .modifier(GlassButtonModifier(id: "styleGlass", namespace: animationNamespace))
         .accessibilityLabel("Writing style")
         .accessibilityValue(state.style.displayName)
     }

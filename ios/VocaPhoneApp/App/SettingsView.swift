@@ -307,6 +307,19 @@ struct KeyboardSettingsView: View {
         }
     }
 
+    /// Only the space bar gestures that are actually on: the cursor has its own
+    /// switch, and the swipe needs a second language to go to.
+    private var spaceBarHelp: String? {
+        let cursor = spacebarCursorEnabled
+            ? "Hold the space bar, then slide to move the cursor." : nil
+        let swipe = enabledLayoutIDs.count > 1
+            ? "Swipe across it to switch language." : nil
+        let parts = [cursor, swipe].compactMap { $0 }
+        guard !parts.isEmpty else { return nil }
+        if cursor == nil { return "Swipe across the space bar to switch language." }
+        return parts.joined(separator: " ")
+    }
+
     /// What the row shows on its right: the language, or the first of them and
     /// how many more. Naming them all turns the row into a paragraph at three,
     /// and the sheet is one tap away for the rest.
@@ -441,10 +454,9 @@ struct KeyboardSettingsView: View {
                 // The hold is the whole rule, and it is what makes the two
                 // gestures on this one key tell themselves apart: a swipe never
                 // waits, a cursor drag always does.
-                Text(
-                    "Hold the space bar, then slide to move the cursor. Swipe "
-                        + "across it to switch language."
-                )
+                if let spaceBarHelp {
+                    Text(spaceBarHelp)
+                }
             }
         }
     }
@@ -1772,8 +1784,13 @@ struct KeyboardLanguagesSheet: View {
         // Matched on the id as well as the written name, because somebody
         // looking for Russian may well type "ru" — and somebody whose keyboard
         // is currently Cyrillic cannot type "Русский" to find it.
+        // And on the name in the phone's own language, since somebody after
+        // German types "German", not "Deutsch".
         return TypingLayout.catalogue.filter {
-            $0.displayName.lowercased().contains(query) || $0.id.contains(query)
+            $0.displayName.lowercased().contains(query)
+                || $0.id.contains(query)
+                || (Locale.current.localizedString(forLanguageCode: $0.id)?
+                    .lowercased().contains(query) ?? false)
         }
     }
 

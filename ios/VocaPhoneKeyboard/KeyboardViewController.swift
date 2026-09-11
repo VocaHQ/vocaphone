@@ -218,6 +218,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // The app's settings screen writes the same two keys, and it may have
         // done so while another keyboard was on screen.
         dictationSurfaceState.refreshPreferences()
+        // The dashboard belongs to the field it was opened in. A reused
+        // extension instance otherwise comes up in the next field with the
+        // stats page where the keys should be.
+        dictationSurfaceState.setCompactDashboardPresented(false)
         startQuickDictationReadinessPolling()
         // A new appearance is a new field as far as this keyboard can tell.
         //
@@ -1920,6 +1924,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // announced itself on every field would be an advertisement.
         if announce, switchable {
             keyGrid.flashSpaceTitle("‹ \(layout.displayName) ›")
+            // The caption is visual only; VoiceOver hears the letters change
+            // under its finger with no word of why.
+            UIAccessibility.post(notification: .announcement, argument: layout.displayName)
         }
     }
 
