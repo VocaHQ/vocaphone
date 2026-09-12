@@ -1,7 +1,15 @@
 package com.vocahq.vocaphone.dictation
 
 import com.vocahq.vocaphone.core.DictationPhase
+import com.vocahq.vocaphone.core.DictationState
+import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -59,5 +67,68 @@ class DictationStartWatchTest {
         assertTrue(DictationPhase.FAILED.isTerminal)
         assertFalse(DictationPhase.TRANSCRIBING.isTerminal)
         assertFalse(DictationPhase.INSERTING.isTerminal)
+    }
+
+    @Test
+    fun `the idle snapshot the service subscribed with is not progress`() {
+        val initial = DictationState()
+        assertFalse(DictationStartWatch.hasProgressed(initial, initial))
+        assertTrue(DictationStartWatch.hasProgressed(DictationState(), initial))
+    }
+
+    /**
+     * Controller updates run off Main; the service collects on it. StateFlow
+     * then skips LISTENING/FINALIZING on a short tap and only delivers the
+     * reset Idle. hasSettled(Idle) is false, which is how the notification
+     * stayed on Listening after the dictation had already finished.
+     */
+    @Test
+    fun `a conflated short tap is progress even though it is idle again`() = runTest {
+        val initial = DictationState()
+        val flow = MutableStateFlow(initial)
+        flow.value = DictationState(
+            sessionId = UUID.randomUUID(),
+            phase = DictationPhase.LISTENING,
+        )
+        flow.value = DictationState()
+        val seen = flow.first { DictationStartWatch.hasProgressed(it, initial) }
+        assertEquals(DictationPhase.IDLE, seen.phase)
+        assertTrue(seen.phase.isTerminal)
+        assertTrue(DictationStartWatch.hasProgressed(seen, initial))
+    }
+
+    @Test
+    fun `hasSettled misses a conflated short tap`() = runTest {
+        val flow = MutableStateFlow(DictationState())
+        flow.value = DictationState(
+            sessionId = UUID.randomUUID(),
+            phase = DictationPhase.LISTENING,
+        )
+        flow.value = DictationState()
+        val settled = withTimeoutOrNull(50) {
+            flow.first { DictationStartWatch.hasSettled(it.phase) }
+        }
+        assertNull(settled)
+    }
+
+    /**
+     * The same skip can land on Transcribing. That is not terminal: the
+     * foreground service has to stay up through on-device inference.
+     */
+    @Test
+    fun `a conflated jump to transcribing is progress and stays busy`() = runTest {
+        val initial = DictationState()
+        val flow = MutableStateFlow(initial)
+        flow.value = DictationState(
+            sessionId = UUID.randomUUID(),
+            phase = DictationPhase.LISTENING,
+        )
+        flow.value = DictationState(
+            sessionId = UUID.randomUUID(),
+            phase = DictationPhase.TRANSCRIBING,
+        )
+        val seen = flow.first { DictationStartWatch.hasProgressed(it, initial) }
+        assertEquals(DictationPhase.TRANSCRIBING, seen.phase)
+        assertFalse(seen.phase.isTerminal)
     }
 }
