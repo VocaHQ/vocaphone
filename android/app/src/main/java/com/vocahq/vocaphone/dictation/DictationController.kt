@@ -202,6 +202,76 @@ class DictationController(
         }
     }
 
+    /**
+     * A short tap on Stop while the pipeline is still busy takes whatever
+     * partial transcript is already on hand instead of discarding it — only
+     * a long-press (see [cancel]) throws the take away entirely. Nothing is
+     * inserted if no partial ever arrived (e.g. the gateway route produced
+     * none before the user tapped).
+     */
+    fun acceptPartial(source: DictationSource) {
+        val current = _state.value
+        // INSERTING is already committing text via a largely synchronous
+        // editor call — cancelling here cannot retract that commit, so a
+        // second insertion of the partial would risk inserting twice.
+        // MicDictationControl.tap() already keeps this a no-op from the
+        // keyboard; guarded here too since this is also reachable from the
+        // foreground service.
+        if (current.phase == DictationPhase.INSERTING) return
+        if (!current.phase.isBusy) return
+        val partial = current.partialTranscript
+        diagnostics.recordAction("accept_partial", activeSource?.name)
+        cancelRequested = true
+        finishSignal.complete(Unit)
+        capture?.stop()
+        pipeline?.cancel()
+        if (partial.isBlank()) {
+            reset()
+            return
+        }
+        val sessionId = current.sessionId ?: UUID.randomUUID()
+        reset()
+        scope.launch {
+            val configuration = settings.current()
+            val styled = DictatedTranscript.finished(
+                partial,
+                style = configuration.style,
+                repairSpeech = false,
+                numbersAsDigits = configuration.numbersAsDigits,
+                spokenEmoji = configuration.spokenEmoji,
+                snippets = configuration.snippets,
+            )
+            val target = when (source) {
+                DictationSource.IME -> imeInserter
+                DictationSource.COMPANION_APP -> null
+            }
+            if (target == null) {
+                _state.value = _state.value.copy(
+                    phase = DictationPhase.READY_TO_INSERT,
+                    transcript = styled,
+                )
+                return@launch
+            }
+            val report = target.insert(styled)
+            history.recordSuccess(
+                sessionId = sessionId.toString(),
+                language = configuration.effectiveLanguage.wireValue,
+                style = configuration.style.wireValue,
+                transcript = styled,
+                targetPackage = report.applied?.packageName ?: target.currentTargetPackage(),
+                insertedIntoField = report.outcome == InsertionOutcome.INSERTED,
+            )
+            diagnostics.recordAction(
+                if (report.outcome == InsertionOutcome.INSERTED) {
+                    "accept_partial_inserted"
+                } else {
+                    "accept_partial_insertion_failed"
+                },
+                source.name,
+            )
+        }
+    }
+
     /** Re-sends audio that was preserved for a recoverable failure. */
     fun retry(sessionId: String) {
         if (pipeline?.isActive == true) return

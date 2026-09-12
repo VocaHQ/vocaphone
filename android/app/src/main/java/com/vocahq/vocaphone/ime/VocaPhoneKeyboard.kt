@@ -47,7 +47,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -1095,9 +1094,6 @@ private fun DictationBar(
         if (panelTitle != null) {
             ToolbarCloseButton(onClick = onClosePanel)
         }
-        if (MicDictationControl.showsSeparateCancel(state.phase)) {
-            DictationCancelButton(onClick = onMicLongPress)
-        }
         MicButton(
             state = state,
             enabled = editor.dictationAllowed && !isPreferenceWritePending,
@@ -1217,9 +1213,6 @@ private fun VoiceShortcutListeningBar(
                     )
                 }
             }
-        }
-        if (MicDictationControl.showsSeparateCancel(state.phase)) {
-            DictationCancelButton(onClick = onMicLongPress)
         }
         MicButton(
             state = state,
@@ -1741,34 +1734,6 @@ private val WritingStyle.keyboardDetail: String
     }
 
 @Composable
-private fun DictationCancelButton(onClick: () -> Unit) {
-    val view = LocalView.current
-    Surface(
-        modifier = Modifier
-            .size(ToolbarControlSize)
-            .semantics {
-                role = Role.Button
-                contentDescription = "Cancel dictation"
-            }
-            .clickable {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                onClick()
-            },
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.errorContainer,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(R.drawable.ic_cancel),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onErrorContainer,
-            )
-        }
-    }
-}
-
-@Composable
 private fun MicButton(
     state: DictationState,
     enabled: Boolean,
@@ -1783,10 +1748,14 @@ private fun MicButton(
         DictationPhase.INSERTING,
     )
     val recording = state.phase == DictationPhase.LISTENING
+    // Processing keeps the same Stop look as recording (color, icon) rather than
+    // swapping to a busy state: the button stays a single, consistent long-press
+    // target throughout. A busy indicator running along its border, rather than
+    // replacing its content, is a separate follow-up.
     val description = when {
         !enabled -> "Dictation unavailable"
         recording -> "Finish dictation. Long-press to discard without inserting"
-        processing -> "Dictation in progress"
+        processing -> "Accept what's transcribed so far. Long-press to discard instead"
         state.phase == DictationPhase.PERMISSION_REPAIR -> "Open VocaPhone"
         else -> "Start dictation"
     }
@@ -1802,40 +1771,70 @@ private fun MicButton(
         processing -> MaterialTheme.colorScheme.onSurface
         else -> MaterialTheme.colorScheme.onPrimary
     }
+    val busyIndicatorColor = MaterialTheme.colorScheme.onSurface
 
-    Surface(
-        modifier = Modifier
-            .size(ToolbarControlSize)
-            .semantics {
-                role = Role.Button
-                contentDescription = description
-                if (!enabled) disabled()
+    Box(modifier = Modifier.size(ToolbarControlSize)) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .semantics {
+                    role = Role.Button
+                    contentDescription = description
+                    if (!enabled) disabled()
+                }
+                .pointerInput(enabled) {
+                    if (!enabled) return@pointerInput
+                    detectTapGestures(
+                        onTap = {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            onClick()
+                        },
+                        onLongPress = { _ ->
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            onLongPress()
+                        },
+                    )
+                },
+            shape = CircleShape,
+            color = container,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                when {
+                    recording || processing -> KeyboardIcon(Glyph.STOP, content)
+                    else -> KeyboardIcon(Glyph.MIC, content)
+                }
             }
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
-                detectTapGestures(
-                    onTap = {
-                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                        onClick()
-                    },
-                    onLongPress = { _ ->
-                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        onLongPress()
-                    },
+        }
+        // Busy indicator traces the button's own border instead of replacing its
+        // content, so Stop stays visible and long-press-able while transcribing.
+        // The rotation animation itself is only created while processing, so
+        // idle/listening don't keep an unused infinite transition running.
+        if (processing) {
+            val busyRotation by rememberInfiniteTransition(label = "micBusy").animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 900, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "micBusyRotation",
+            )
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidthPx = 2.5.dp.toPx()
+                val diameter = size.minDimension - strokeWidthPx
+                val topLeft = Offset(
+                    (size.width - diameter) / 2f,
+                    (size.height - diameter) / 2f,
                 )
-            },
-        shape = CircleShape,
-        color = container,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            when {
-                processing -> CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = content,
-                    strokeWidth = 2.dp,
+                drawArc(
+                    color = busyIndicatorColor,
+                    startAngle = busyRotation,
+                    sweepAngle = 100f,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round),
                 )
-                recording -> KeyboardIcon(Glyph.STOP, content)
-                else -> KeyboardIcon(Glyph.MIC, content)
             }
         }
     }
