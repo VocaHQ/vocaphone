@@ -1094,9 +1094,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 )
             }
             VoiceShortcutIme.RejectedHandback.NONE -> {
+                // Late-capable EditorInfo while GUIDED chrome is up: cancel the
+                // bounce and start, same as delayedRejectedHandback's NONE arm.
                 mainHandler.removeCallbacks(delayedRejectedHandback)
                 voiceShortcutRejectGuidance = false
-                maybeReturnToPreviousIme()
+                maybeStartVoiceShortcutDictation()
             }
         }
     }

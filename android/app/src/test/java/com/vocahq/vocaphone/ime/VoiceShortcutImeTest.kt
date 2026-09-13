@@ -289,6 +289,39 @@ class VoiceShortcutImeTest {
     }
 
     @Test
+    fun `late capable EditorInfo after GUIDED cancels bounce and starts`() {
+        // Picker / unknown field first → GUIDED delay is armed.
+        assertEquals(
+            VoiceShortcutIme.RejectedHandback.GUIDED,
+            VoiceShortcutIme.rejectedHandback(
+                isVoiceShortcut = true,
+                dictationAllowed = false,
+                sensitive = false,
+            ),
+        )
+        // A late StartInput can still deliver a dictation-capable EditorInfo.
+        // Live re-check must flip to NONE so the service clears the delayed
+        // bounce + guidance and starts — matching the delayed NONE arm.
+        assertEquals(
+            VoiceShortcutIme.RejectedHandback.NONE,
+            VoiceShortcutIme.rejectedHandback(
+                isVoiceShortcut = true,
+                dictationAllowed = true,
+                sensitive = false,
+            ),
+        )
+        assertTrue(
+            VoiceShortcutIme.shouldAutoStart(
+                isVoiceShortcut = true,
+                dictationAllowed = true,
+                isBusy = false,
+                alreadyRequested = false,
+                inputViewShown = true,
+            ),
+        )
+    }
+
+    @Test
     fun `picker and unknown editors use guided delayed handback`() {
         assertEquals(
             VoiceShortcutIme.RejectedHandback.GUIDED,
