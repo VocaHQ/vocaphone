@@ -466,4 +466,134 @@ class VoiceShortcutImeTest {
     fun `publishing subtypes is a no-op without a manager or info`() {
         VoiceShortcutIme.publishEnabledSubtypes(null, "com.vocahq.vocaphone/.ime.VocaPhoneInputMethodService", null)
     }
+
+    @Test
+    fun `non-shortcut insets pass through the default`() {
+        assertEquals(
+            400,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = false,
+                windowHeightPx = 1000,
+                measuredInputHeightPx = 120,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 400,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets use the measured bar when it is shorter than the leftover window`() {
+        assertEquals(
+            880,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 1000,
+                measuredInputHeightPx = 120,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets use fallback when measured fills the leftover window`() {
+        assertEquals(
+            720,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 800,
+                measuredInputHeightPx = 800,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets use fallback when measured height is zero`() {
+        assertEquals(
+            720,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 800,
+                measuredInputHeightPx = 0,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets pass through default when window height is zero`() {
+        assertEquals(
+            400,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 0,
+                measuredInputHeightPx = 120,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 400,
+            ),
+        )
+    }
+
+    @Test
+    fun `measured height larger than the window is treated as leftover fill`() {
+        assertEquals(
+            720,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 800,
+                measuredInputHeightPx = 900,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets are zero when wrap has already shrunk the window to the bar`() {
+        assertEquals(
+            0,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 100,
+                measuredInputHeightPx = 100,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets are zero when wrap succeeded before measure`() {
+        assertEquals(
+            0,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 100,
+                measuredInputHeightPx = 0,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `effective bar is the window when wrap succeeded`() {
+        assertEquals(100, VoiceShortcutIme.effectiveBarHeightPx(100, 100, 80))
+    }
+
+    @Test
+    fun `input window is remeasured when entering leaving or staying on the shortcut`() {
+        assertFalse(VoiceShortcutIme.shouldRemeasureInputWindow(false, false))
+        assertTrue(VoiceShortcutIme.shouldRemeasureInputWindow(true, false))
+        assertTrue(VoiceShortcutIme.shouldRemeasureInputWindow(false, true))
+        assertTrue(VoiceShortcutIme.shouldRemeasureInputWindow(true, true))
+    }
+
+    @Test
+    fun `fallback bar height is default dictation bar plus listening bar padding`() {
+        assertEquals(62, VoiceShortcutIme.FALLBACK_BAR_DP)
+    }
 }
