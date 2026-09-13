@@ -106,6 +106,78 @@ internal object VoiceShortcutIme {
         return if (sensitive) RejectedHandback.IMMEDIATE else RejectedHandback.GUIDED
     }
 
+
+    /**
+     * Side effects for [rejectedHandback] without a Handler or IMS.
+     *
+     * The service applies these: cancel/schedule the delayed bounce, toggle
+     * the one-line hint, leave immediately, or request auto-start. Returning
+     * null means a no-op (guided path after we already handed back).
+     */
+    data class RejectedHandbackEffects(
+        val cancelDelayedHandback: Boolean,
+        val scheduleDelayedHandback: Boolean,
+        val showGuidance: Boolean,
+        val returnImmediately: Boolean,
+        val requestAutoStart: Boolean,
+    )
+
+    fun rejectedHandbackEffects(
+        decision: RejectedHandback,
+        alreadyReturned: Boolean,
+    ): RejectedHandbackEffects? = when (decision) {
+        RejectedHandback.IMMEDIATE -> RejectedHandbackEffects(
+            cancelDelayedHandback = true,
+            scheduleDelayedHandback = false,
+            showGuidance = false,
+            returnImmediately = true,
+            requestAutoStart = false,
+        )
+        RejectedHandback.GUIDED -> {
+            if (alreadyReturned) {
+                null
+            } else {
+                RejectedHandbackEffects(
+                    cancelDelayedHandback = true,
+                    scheduleDelayedHandback = true,
+                    showGuidance = true,
+                    returnImmediately = false,
+                    requestAutoStart = false,
+                )
+            }
+        }
+        RejectedHandback.NONE -> RejectedHandbackEffects(
+            cancelDelayedHandback = true,
+            scheduleDelayedHandback = false,
+            showGuidance = false,
+            returnImmediately = false,
+            requestAutoStart = true,
+        )
+    }
+
+    /**
+     * Pure fold of [RejectedHandbackEffects] onto the delayed-bounce flags the
+     * service keeps (pending Handler callback + guidance chrome). Lets unit
+     * tests prove GUIDED → NONE clears a pending bounce without Robolectric.
+     */
+    data class RejectedHandbackFlags(
+        val delayedPending: Boolean = false,
+        val guidanceVisible: Boolean = false,
+    )
+
+    fun applyRejectedHandbackEffects(
+        flags: RejectedHandbackFlags,
+        effects: RejectedHandbackEffects,
+    ): RejectedHandbackFlags {
+        var delayedPending = flags.delayedPending
+        if (effects.cancelDelayedHandback) delayedPending = false
+        if (effects.scheduleDelayedHandback) delayedPending = true
+        return RejectedHandbackFlags(
+            delayedPending = delayedPending,
+            guidanceVisible = effects.showGuidance,
+        )
+    }
+
     fun shouldReturnWhenDictationRejected(
         isVoiceShortcut: Boolean,
         dictationAllowed: Boolean,

@@ -1070,36 +1070,33 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     private fun maybeHandBackVoiceShortcut() {
-        when (
-            VoiceShortcutIme.rejectedHandback(
+        val effects = VoiceShortcutIme.rejectedHandbackEffects(
+            decision = VoiceShortcutIme.rejectedHandback(
                 isVoiceShortcut = voiceShortcutActive,
                 dictationAllowed = editorConfig.dictationAllowed,
                 sensitive = editorConfig.sensitive,
+            ),
+            alreadyReturned = voiceShortcutReturned,
+        ) ?: return
+        // Keep the chrome up for a beat with a one-line hint so the system
+        // IME picker path does not look like a broken flicker. Late-capable
+        // EditorInfo while GUIDED chrome is up cancels the bounce and starts
+        // (same as delayedRejectedHandback's NONE arm).
+        if (effects.cancelDelayedHandback) {
+            mainHandler.removeCallbacks(delayedRejectedHandback)
+        }
+        voiceShortcutRejectGuidance = effects.showGuidance
+        if (effects.scheduleDelayedHandback) {
+            mainHandler.postDelayed(
+                delayedRejectedHandback,
+                VoiceShortcutIme.REJECTED_HANDBACK_DELAY_MS,
             )
-        ) {
-            VoiceShortcutIme.RejectedHandback.IMMEDIATE -> {
-                mainHandler.removeCallbacks(delayedRejectedHandback)
-                voiceShortcutRejectGuidance = false
-                returnToPreviousIme()
-            }
-            VoiceShortcutIme.RejectedHandback.GUIDED -> {
-                if (voiceShortcutReturned) return
-                // Keep the chrome up for a beat with a one-line hint so the
-                // system IME picker path does not look like a broken flicker.
-                voiceShortcutRejectGuidance = true
-                mainHandler.removeCallbacks(delayedRejectedHandback)
-                mainHandler.postDelayed(
-                    delayedRejectedHandback,
-                    VoiceShortcutIme.REJECTED_HANDBACK_DELAY_MS,
-                )
-            }
-            VoiceShortcutIme.RejectedHandback.NONE -> {
-                // Late-capable EditorInfo while GUIDED chrome is up: cancel the
-                // bounce and start, same as delayedRejectedHandback's NONE arm.
-                mainHandler.removeCallbacks(delayedRejectedHandback)
-                voiceShortcutRejectGuidance = false
-                maybeStartVoiceShortcutDictation()
-            }
+        }
+        if (effects.returnImmediately) {
+            returnToPreviousIme()
+        }
+        if (effects.requestAutoStart) {
+            maybeStartVoiceShortcutDictation()
         }
     }
 
