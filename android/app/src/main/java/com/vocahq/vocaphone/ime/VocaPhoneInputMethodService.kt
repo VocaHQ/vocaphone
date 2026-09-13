@@ -166,6 +166,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     override fun voiceShortcutWindowActive() = voiceShortcutActive
 
+    override fun voiceShortcutBarHeightDp(): Int =
+        VoiceShortcutIme.fallbackBarDp(visibleSettings.value.keyboardHeight.dictationBarDp)
+
     @Composable
     override fun KeyboardContent() {
         val dictationState by visibleDictationState.collectAsState()
