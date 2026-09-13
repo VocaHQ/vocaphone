@@ -3,9 +3,13 @@ package com.vocahq.vocaphone.ime
 import android.content.res.Configuration
 import android.graphics.Color
 import android.inputmethodservice.InputMethodService
+import android.inputmethodservice.InputMethodService.Insets
 import android.provider.Settings
+import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -91,8 +95,56 @@ abstract class LifecycleInputMethodService : InputMethodService(),
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        requestInputViewRemeasure()
+    }
+
+    /**
+     * HeliBoard leaves a tall IME window. WRAP_CONTENT + BOTTOM sits the
+     * short bar at the bottom of that leftover window instead of the top.
+     */
+    protected fun applySoftInputWindowLayout(wrapToContentAtBottom: Boolean) {
+        if (wrapToContentAtBottom) {
+            window?.window?.let { imeWindow ->
+                val attrs = imeWindow.attributes
+                attrs.gravity = (attrs.gravity and Gravity.HORIZONTAL_GRAVITY_MASK) or
+                    VoiceShortcutIme.SHORTCUT_WINDOW_GRAVITY
+                attrs.height = VoiceShortcutIme.SHORTCUT_WINDOW_HEIGHT
+                imeWindow.attributes = attrs
+            }
+            val composeParams = inputComposeView?.layoutParams
+            if (composeParams is FrameLayout.LayoutParams) {
+                composeParams.gravity = Gravity.BOTTOM
+                composeParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+                inputComposeView?.layoutParams = composeParams
+            }
+        }
+        requestInputViewRemeasure()
+    }
+
+    protected fun requestInputViewRemeasure() {
         inputComposeView?.requestLayout()
         window?.window?.decorView?.requestLayout()
+    }
+
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        if (!voiceShortcutWindowActive()) return
+        val top = VoiceShortcutIme.contentTopInsetsPx(
+            isVoiceShortcut = true,
+            windowHeightPx = window?.window?.decorView?.height ?: 0,
+            measuredInputHeightPx = inputComposeView?.height ?: 0,
+            fallbackBarHeightPx = voiceShortcutBarHeightPx(),
+            defaultContentTopInsetsPx = outInsets.contentTopInsets,
+        )
+        outInsets.contentTopInsets = top
+        outInsets.visibleTopInsets = top
+    }
+
+    protected open fun voiceShortcutWindowActive(): Boolean = false
+
+    protected open fun voiceShortcutBarHeightPx(): Int {
+        val bar = (VoiceShortcutIme.FALLBACK_BAR_DP * resources.displayMetrics.density).toInt()
+        return bar + (inputComposeView?.paddingBottom ?: 0)
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
