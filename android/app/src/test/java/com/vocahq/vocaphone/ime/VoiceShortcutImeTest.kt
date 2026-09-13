@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.ime
 
+import android.view.WindowManager
 import com.vocahq.vocaphone.core.DictationPhase
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -651,6 +652,8 @@ class VoiceShortcutImeTest {
             assertNotNull("cannot find $relativeFromApp from ${File("").absolutePath}", walked)
             return walked!!
         }
+    }
+
     @Test
     fun `non-shortcut insets pass through the default`() {
         assertEquals(
@@ -777,6 +780,23 @@ class VoiceShortcutImeTest {
     }
 
     @Test
-    fun `fallback bar height is default dictation bar plus listening bar padding`() {
-        assertEquals(62, VoiceShortcutIme.FALLBACK_BAR_DP)
+    fun `fallback bar height ceilings at tall dictation bar plus listening bar padding`() {
+        assertEquals(10, VoiceShortcutIme.LISTENING_BAR_VERTICAL_PADDING_DP)
+        assertEquals(68, VoiceShortcutIme.FALLBACK_BAR_DP)
+        assertEquals(62, VoiceShortcutIme.fallbackBarDp(52))
+        assertEquals(68, VoiceShortcutIme.fallbackBarDp(58))
+    }
+
+    @Test
+    fun `restored soft-input height uses saved attrs or match parent`() {
+        assertEquals(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            VoiceShortcutIme.restoredSoftInputHeightPx(null),
+        )
+        assertEquals(1200, VoiceShortcutIme.restoredSoftInputHeightPx(1200))
+        assertEquals(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            VoiceShortcutIme.restoredSoftInputHeightPx(WindowManager.LayoutParams.WRAP_CONTENT),
+        )
+    }
 }

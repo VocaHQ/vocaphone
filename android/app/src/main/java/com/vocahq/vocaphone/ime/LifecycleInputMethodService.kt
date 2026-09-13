@@ -39,6 +39,12 @@ abstract class LifecycleInputMethodService : InputMethodService(),
     private val store = ViewModelStore()
     private val savedStateController = SavedStateRegistryController.create(this)
     private var inputComposeView: ComposeView? = null
+    /** Prior soft-input attrs so leave/non-shortcut can undo WRAP_CONTENT+BOTTOM. */
+    private var softInputLayoutWrapped = false
+    private var savedSoftInputHeight: Int? = null
+    private var savedSoftInputGravity: Int? = null
+    private var savedComposeHeight: Int? = null
+    private var savedComposeGravity: Int? = null
 
     final override val lifecycle: Lifecycle get() = lifecycleRegistry
     final override val viewModelStore: ViewModelStore get() = store
@@ -101,9 +107,12 @@ abstract class LifecycleInputMethodService : InputMethodService(),
     /**
      * HeliBoard leaves a tall IME window. WRAP_CONTENT + BOTTOM sits the
      * short bar at the bottom of that leftover window instead of the top.
+     * Leaving the shortcut restores the prior height/gravity so the typing
+     * keyboard is not stuck in wrap forever.
      */
     protected fun applySoftInputWindowLayout(wrapToContentAtBottom: Boolean) {
         if (wrapToContentAtBottom) {
+            captureSoftInputLayoutIfNeeded()
             window?.window?.let { imeWindow ->
                 val attrs = imeWindow.attributes
                 attrs.gravity = (attrs.gravity and Gravity.HORIZONTAL_GRAVITY_MASK) or
@@ -117,8 +126,51 @@ abstract class LifecycleInputMethodService : InputMethodService(),
                 composeParams.height = WindowManager.LayoutParams.WRAP_CONTENT
                 inputComposeView?.layoutParams = composeParams
             }
+        } else {
+            restoreSoftInputLayoutIfNeeded()
         }
         requestInputViewRemeasure()
+    }
+
+    private fun captureSoftInputLayoutIfNeeded() {
+        if (softInputLayoutWrapped) return
+        window?.window?.let { imeWindow ->
+            val attrs = imeWindow.attributes
+            savedSoftInputHeight = attrs.height
+            savedSoftInputGravity = attrs.gravity
+        }
+        val composeParams = inputComposeView?.layoutParams
+        if (composeParams is FrameLayout.LayoutParams) {
+            savedComposeHeight = composeParams.height
+            savedComposeGravity = composeParams.gravity
+        }
+        softInputLayoutWrapped = true
+    }
+
+    private fun restoreSoftInputLayoutIfNeeded() {
+        if (!softInputLayoutWrapped) return
+        window?.window?.let { imeWindow ->
+            val attrs = imeWindow.attributes
+            attrs.height = VoiceShortcutIme.restoredSoftInputHeightPx(savedSoftInputHeight)
+            val priorGravity = savedSoftInputGravity
+            if (priorGravity != null) {
+                attrs.gravity = priorGravity
+            } else {
+                attrs.gravity = attrs.gravity and Gravity.HORIZONTAL_GRAVITY_MASK
+            }
+            imeWindow.attributes = attrs
+        }
+        val composeParams = inputComposeView?.layoutParams
+        if (composeParams is FrameLayout.LayoutParams) {
+            composeParams.height = savedComposeHeight ?: WindowManager.LayoutParams.MATCH_PARENT
+            composeParams.gravity = savedComposeGravity ?: Gravity.NO_GRAVITY
+            inputComposeView?.layoutParams = composeParams
+        }
+        softInputLayoutWrapped = false
+        savedSoftInputHeight = null
+        savedSoftInputGravity = null
+        savedComposeHeight = null
+        savedComposeGravity = null
     }
 
     protected fun requestInputViewRemeasure() {
@@ -142,8 +194,11 @@ abstract class LifecycleInputMethodService : InputMethodService(),
 
     protected open fun voiceShortcutWindowActive(): Boolean = false
 
+    /** Dictation-bar dp + listening-bar padding; override with the live setting. */
+    protected open fun voiceShortcutBarHeightDp(): Int = VoiceShortcutIme.FALLBACK_BAR_DP
+
     protected open fun voiceShortcutBarHeightPx(): Int {
-        val bar = (VoiceShortcutIme.FALLBACK_BAR_DP * resources.displayMetrics.density).toInt()
+        val bar = (voiceShortcutBarHeightDp() * resources.displayMetrics.density).toInt()
         return bar + (inputComposeView?.paddingBottom ?: 0)
     }
 
@@ -183,6 +238,11 @@ abstract class LifecycleInputMethodService : InputMethodService(),
         }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         inputComposeView = null
+        softInputLayoutWrapped = false
+        savedSoftInputHeight = null
+        savedSoftInputGravity = null
+        savedComposeHeight = null
+        savedComposeGravity = null
         store.clear()
         super.onDestroy()
     }
