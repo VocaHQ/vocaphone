@@ -247,7 +247,7 @@ class VoiceShortcutImeTest {
     }
 
     @Test
-    fun `password and other rejected fields hand back immediately`() {
+    fun `password and other rejected fields still hand back`() {
         assertTrue(
             VoiceShortcutIme.shouldReturnWhenDictationRejected(
                 isVoiceShortcut = true,
@@ -265,6 +265,51 @@ class VoiceShortcutImeTest {
                 isVoiceShortcut = false,
                 dictationAllowed = false,
             ),
+        )
+    }
+
+    @Test
+    fun `sensitive rejected fields hand back immediately`() {
+        assertEquals(
+            VoiceShortcutIme.RejectedHandback.IMMEDIATE,
+            VoiceShortcutIme.rejectedHandback(
+                isVoiceShortcut = true,
+                dictationAllowed = false,
+                sensitive = true,
+            ),
+        )
+        assertEquals(
+            VoiceShortcutIme.RejectedHandback.NONE,
+            VoiceShortcutIme.rejectedHandback(
+                isVoiceShortcut = true,
+                dictationAllowed = true,
+                sensitive = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `picker and unknown editors use guided delayed handback`() {
+        assertEquals(
+            VoiceShortcutIme.RejectedHandback.GUIDED,
+            VoiceShortcutIme.rejectedHandback(
+                isVoiceShortcut = true,
+                dictationAllowed = false,
+                sensitive = false,
+            ),
+        )
+        assertEquals(
+            VoiceShortcutIme.RejectedHandback.NONE,
+            VoiceShortcutIme.rejectedHandback(
+                isVoiceShortcut = false,
+                dictationAllowed = false,
+                sensitive = false,
+            ),
+        )
+        assertTrue(VoiceShortcutIme.REJECTED_HANDBACK_DELAY_MS > 0L)
+        assertEquals(
+            "Open a text field, then use the host keyboard mic",
+            VoiceShortcutIme.REJECTED_HANDBACK_GUIDANCE,
         )
     }
 

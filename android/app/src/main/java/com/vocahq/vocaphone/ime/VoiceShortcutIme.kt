@@ -76,6 +76,36 @@ internal object VoiceShortcutIme {
         }
     }
 
+    /**
+     * How to leave the voice subtype when dictation cannot run.
+     *
+     * [RejectedHandback.IMMEDIATE] is for sensitive editors (passwords): leave
+     * without lingering chrome. [RejectedHandback.GUIDED] covers the system
+     * IME-picker path and other non-dictation fields: show a one-line hint,
+     * then hand back after [REJECTED_HANDBACK_DELAY_MS] so the subtype does
+     * not flicker away in the same frame (#281). HeliBoard/Gboard handoff
+     * still starts dictation when [dictationAllowed] is true.
+     */
+    enum class RejectedHandback {
+        NONE,
+        IMMEDIATE,
+        GUIDED,
+    }
+
+    const val REJECTED_HANDBACK_DELAY_MS = 1_800L
+
+    const val REJECTED_HANDBACK_GUIDANCE =
+        "Open a text field, then use the host keyboard mic"
+
+    fun rejectedHandback(
+        isVoiceShortcut: Boolean,
+        dictationAllowed: Boolean,
+        sensitive: Boolean,
+    ): RejectedHandback {
+        if (!isVoiceShortcut || dictationAllowed) return RejectedHandback.NONE
+        return if (sensitive) RejectedHandback.IMMEDIATE else RejectedHandback.GUIDED
+    }
+
     fun shouldReturnWhenDictationRejected(
         isVoiceShortcut: Boolean,
         dictationAllowed: Boolean,
