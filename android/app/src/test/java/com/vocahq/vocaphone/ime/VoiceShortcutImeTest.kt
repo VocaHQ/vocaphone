@@ -1,8 +1,10 @@
 package com.vocahq.vocaphone.ime
 
 import com.vocahq.vocaphone.core.DictationPhase
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -463,7 +465,61 @@ class VoiceShortcutImeTest {
     }
 
     @Test
+    fun `API 33 method xml keeps the voice override for HeliBoard`() {
+        val (keyboard, voice) = methodSubtypes("src/main/res/xml/method.xml")
+        assertTrue(keyboard.contains("""android:overridesImplicitlyEnabledSubtype="true""""))
+        assertTrue(voice.contains("""android:isAuxiliary="true""""))
+        assertTrue(voice.contains("""android:imeSubtypeMode="voice""""))
+        assertTrue(
+            "API 33 has no setExplicitlyEnabled API; voice must keep the override so HeliBoard sees it",
+            voice.contains("""android:overridesImplicitlyEnabledSubtype="true""""),
+        )
+    }
+
+    @Test
+    fun `API 34 method xml omits the voice override so subtype labels can differ`() {
+        val (keyboard, voice) = methodSubtypes("src/main/res/xml-v34/method.xml")
+        assertTrue(keyboard.contains("""android:overridesImplicitlyEnabledSubtype="true""""))
+        assertTrue(voice.contains("""android:isAuxiliary="true""""))
+        assertTrue(voice.contains("""android:imeSubtypeMode="voice""""))
+        assertFalse(
+            "omit voice override so AOSP can show voice_input_label instead of a null subtypeLabel",
+            voice.contains("overridesImplicitlyEnabledSubtype"),
+        )
+    }
+
+    @Test
     fun `publishing subtypes is a no-op without a manager or info`() {
+        // API 34+ setExplicitlyEnabledInputMethodSubtypes enables the voice
+        // shortcut after process start (Application + IME onCreate). That is
+        // not a guarantee of a single picker row: AOSP INCLUDE_AUXILIARY
+        // long-press can still list both enabled subtypes.
         VoiceShortcutIme.publishEnabledSubtypes(null, "com.vocahq.vocaphone/.ime.VocaPhoneInputMethodService", null)
+    }
+
+    private fun methodSubtypes(relativeFromApp: String): Pair<String, String> {
+        val file = methodXml(relativeFromApp)
+        val subtypes = Regex("""<subtype\b[^>]*/?>""")
+            .findAll(file.readText())
+            .map { it.value }
+            .toList()
+        assertEquals("keep both keyboard and voice subtypes", 2, subtypes.size)
+        val keyboard = subtypes.single { it.contains("""android:imeSubtypeMode="keyboard"""") }
+        val voice = subtypes.single { it.contains("""android:imeSubtypeMode="voice"""") }
+        return keyboard to voice
+    }
+
+    private fun methodXml(relativeFromApp: String): File {
+        val direct = listOf(
+            File(relativeFromApp),
+            File("app/$relativeFromApp"),
+            File("android/app/$relativeFromApp"),
+        ).firstOrNull { it.isFile }
+        if (direct != null) return direct
+        val walked = generateSequence(File("").absoluteFile) { it.parentFile }
+            .map { File(it, "android/app/$relativeFromApp") }
+            .firstOrNull { it.isFile }
+        assertNotNull("cannot find $relativeFromApp from ${File("").absolutePath}", walked)
+        return walked!!
     }
 }
