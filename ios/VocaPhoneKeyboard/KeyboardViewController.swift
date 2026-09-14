@@ -249,7 +249,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // instance otherwise comes up in the next field with stats or a picker
         // where the keys should be.
         dictationSurfaceState.present(nil)
-        dictationSurfaceState.hasTypedThisSession = false
+        // Empty field: Start in the centre. Field already has text: corner,
+        // so Start does not sit on top of regenerated candidates. Nil context
+        // is not empty — leave the latch, same as WordComposer.
+        if let hasContent = readDocument().hasContent {
+            dictationSurfaceState.hasTypedThisSession = hasContent
+        }
         startQuickDictationReadinessPolling()
         // A new appearance is a new field as far as this keyboard can tell.
         //

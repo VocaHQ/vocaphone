@@ -107,6 +107,24 @@ struct KeyboardSurfaceTests {
         #expect(KeyboardPreferences.recentTranscriptionLanguages.first == .spanish)
     }
 
+    @Test func closingTheLanguagePickerWithoutAPickLeavesRecentsAlone() {
+        let language = KeyboardPreferences.transcriptionLanguage
+        let recents = KeyboardPreferences.recentTranscriptionLanguages
+        defer {
+            KeyboardPreferences.transcriptionLanguage = language
+            KeyboardPreferences.recentTranscriptionLanguages = recents
+        }
+        KeyboardPreferences.recentTranscriptionLanguages = [.english]
+        KeyboardPreferences.transcriptionLanguage = .spanish
+
+        let surface = DictationSurfaceState()
+        surface.usesCompactControls = true
+        surface.present(.language)
+        surface.dismissPanel()
+
+        #expect(KeyboardPreferences.recentTranscriptionLanguages == [.english])
+    }
+
     @Test func aStylePickerOpenedFromTheDashboardReturnsToIt() {
         let surface = DictationSurfaceState()
         var changes: [Bool] = []

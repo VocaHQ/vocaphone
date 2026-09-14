@@ -80,6 +80,9 @@ final class DictationSurfaceState: ObservableObject {
     /// pick into recents would move that chip from All into Recent while
     /// the finger is still on it.
     private var frozenLanguageShortcuts: [TranscriptionLanguage]?
+    /// Whether a language chip was tapped while this picker was open.
+    /// Closing without a pick must not promote the current language.
+    private var languagePickerDidSelect = false
     private var storedShowsGlobeKey: Bool = false
     var showsGlobeKey: Bool {
         get { storedShowsGlobeKey }
@@ -280,11 +283,15 @@ final class DictationSurfaceState: ObservableObject {
         let wasCovering = presentedPanel != nil
         presentedPanel = panel
         if leaving == .language, panel != .language {
-            KeyboardPreferences.noteTranscriptionLanguageUse(language)
+            if languagePickerDidSelect {
+                KeyboardPreferences.noteTranscriptionLanguageUse(language)
+            }
             frozenLanguageShortcuts = nil
+            languagePickerDidSelect = false
         }
         if panel == .language, frozenLanguageShortcuts == nil {
             frozenLanguageShortcuts = liveLanguageShortcuts
+            languagePickerDidSelect = false
         }
         if wasCovering != (panel != nil) {
             onPanelVisibilityChanged?(panel != nil)
@@ -320,6 +327,7 @@ final class DictationSurfaceState: ObservableObject {
     func select(language newLanguage: TranscriptionLanguage) {
         KeyboardPreferences.transcriptionLanguage = newLanguage
         language = KeyboardPreferences.effectiveTranscriptionLanguage
+        languagePickerDidSelect = true
         onLanguageChanged?(newLanguage)
         if !usesCompactControls { dismissPanel() }
     }
