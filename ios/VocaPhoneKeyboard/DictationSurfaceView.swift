@@ -615,7 +615,6 @@ struct DictationSurfaceView: View {
             Group {
             if let panel = state.presentedPanel, !sessionIsOpen {
                 panelContent(panel)
-                    .id(panel)
                     .padding(.top, 8)
             } else if sessionIsOpen {
                 Spacer(minLength: 0)
@@ -690,10 +689,11 @@ struct DictationSurfaceView: View {
                 Spacer(minLength: 0)
             }
             }
-            .animation(
-                layoutAnimationEnabled ? .easeOut(duration: 0.18) : nil,
-                value: state.presentedPanel
-            )
+            // Panel-to-panel must not animate. `.id` plus a parent animation
+            // kept the outgoing TabView and the incoming picker both alive
+            // for the transition, which is how this extension walked into
+            // jetsam while flipping language and style.
+            .animation(nil, value: state.presentedPanel)
             .animation(layoutAnimationEnabled ? surfaceSpring : nil, value: sessionIsOpen)
         }
         // Deliberate air above the controls, rather than whatever the glass
@@ -853,51 +853,64 @@ struct DictationSurfaceView: View {
 
     private var compactDashboard: some View {
         VStack(spacing: 0) {
-            TabView(selection: $selectedDashboardPage) {
-                ForEach(CompactDashboardPage.allCases) { page in
-                    VStack(spacing: 10) {
-                        Text(page.label(for: state.usageStats))
-                            .font(.system(size: 13, weight: .bold))
-                            .tracking(1.4)
-                            .textCase(.uppercase)
-                            .foregroundStyle(controlForeground.opacity(0.62))
-                        Text(page.value(for: state.usageStats))
-                            .font(.system(size: 62, weight: .semibold, design: .rounded))
-                            .minimumScaleFactor(0.65)
-                            .lineLimit(1)
-                            .foregroundStyle(dashboardAccent)
-                        Text(page.detail(for: state.usageStats))
-                            .font(.system(size: 15, weight: .medium))
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(controlForeground.opacity(0.72))
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 8)
-                    .tag(page)
-                    .accessibilityElement(children: .combine)
-                }
-            }
-            // Drawn here rather than by the page style: its dots are white
-            // whatever the keyboard's appearance, and on a light keyboard they
-            // vanish into the background.
-            .tabViewStyle(.page(indexDisplayMode: .never))
+            dashboardPage(selectedDashboardPage)
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(.rect)
+                .gesture(dashboardSwipe)
 
             HStack(spacing: 8) {
                 ForEach(CompactDashboardPage.allCases) { page in
-                    Circle()
-                        .fill(controlForeground.opacity(page == selectedDashboardPage ? 0.9 : 0.25))
-                        .frame(width: 7, height: 7)
+                    Button {
+                        selectedDashboardPage = page
+                    } label: {
+                        Circle()
+                            .fill(controlForeground.opacity(page == selectedDashboardPage ? 0.9 : 0.25))
+                            .frame(width: 7, height: 7)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(page.label(for: state.usageStats))
                 }
             }
             .padding(.bottom, 6)
-            .animation(.easeOut(duration: 0.15), value: selectedDashboardPage)
-            .accessibilityHidden(true)
 
             panelGlobeRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(panelTransition)
         .onAppear { state.refreshDashboard() }
+    }
+
+    private func dashboardPage(_ page: CompactDashboardPage) -> some View {
+        VStack(spacing: 10) {
+            Text(page.label(for: state.usageStats))
+                .font(.system(size: 13, weight: .bold))
+                .tracking(1.4)
+                .textCase(.uppercase)
+                .foregroundStyle(controlForeground.opacity(0.62))
+            Text(page.value(for: state.usageStats))
+                .font(.system(size: 62, weight: .semibold, design: .rounded))
+                .minimumScaleFactor(0.65)
+                .lineLimit(1)
+                .foregroundStyle(dashboardAccent)
+            Text(page.detail(for: state.usageStats))
+                .font(.system(size: 15, weight: .medium))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(controlForeground.opacity(0.72))
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var dashboardSwipe: some Gesture {
+        DragGesture(minimumDistance: 24).onEnded { value in
+            let pages = CompactDashboardPage.allCases
+            guard let index = pages.firstIndex(of: selectedDashboardPage) else { return }
+            if value.translation.width < -40, index + 1 < pages.count {
+                selectedDashboardPage = pages[index + 1]
+            } else if value.translation.width > 40, index > 0 {
+                selectedDashboardPage = pages[index - 1]
+            }
+        }
     }
 
     private var controlForeground: Color {
@@ -1230,7 +1243,7 @@ struct DictationSurfaceView: View {
         let unavailable = remaining.count - available.count
         return VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 14) {
                     languageSection("Recent", state.languageShortcuts)
                     if !available.isEmpty {
                         languageSection("All languages", available)
