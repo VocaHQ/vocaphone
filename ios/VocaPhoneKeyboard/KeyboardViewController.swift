@@ -691,11 +691,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         emojiPanel = panel
         // Four thousand lines, parsed off the main actor, the first time anyone
         // asks for an emoji — and never if they do not.
-        emojiLoadTask = Task.detached(priority: .userInitiated) { [weak panel] in
+        emojiLoadTask = Task { @MainActor [weak panel] in
             guard !Task.isCancelled else { return }
-            let catalog = EmojiCatalog.load(from: Bundle(for: KeyboardViewController.self))
+            // Only Sendable catalog data crosses actors; the UIKit panel stays
+            // on the main actor, including its weak reference and delivery.
+            let catalog = await Task.detached(priority: .userInitiated) {
+                EmojiCatalog.load(from: Bundle(for: KeyboardViewController.self))
+            }.value
             guard !Task.isCancelled else { return }
-            await MainActor.run { panel?.catalog = catalog }
+            panel?.catalog = catalog
         }
         return panel
     }
