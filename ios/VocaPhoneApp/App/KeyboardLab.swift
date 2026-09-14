@@ -37,7 +37,7 @@ struct KeyboardLabView: View {
     @AppStorage("lab.usesSurface", store: KeyboardPreferences.defaults)
     private var usesSurface = true
     @AppStorage(KeyboardPreferences.compactControlsKey, store: KeyboardPreferences.defaults)
-    private var usesCompactControls = false
+    private var usesCompactControls = true
     @State private var touchTrace = KeyboardPreferences.touchTraceEnabled
     @State private var hapticStyle = KeyboardPreferences.typingHapticStyle
     @State private var hapticIntensity = KeyboardPreferences.typingHapticIntensity

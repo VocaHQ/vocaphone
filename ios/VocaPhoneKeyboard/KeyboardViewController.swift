@@ -249,6 +249,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // instance otherwise comes up in the next field with stats or a picker
         // where the keys should be.
         dictationSurfaceState.present(nil)
+        dictationSurfaceState.hasTypedThisSession = false
         startQuickDictationReadinessPolling()
         // A new appearance is a new field as far as this keyboard can tell.
         //
@@ -546,6 +547,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                     documentReads
                 )
             )
+        }
+        // The compact row moves its action button aside as soon as somebody
+        // types, and "as soon as" is the keystroke — not the suggestions it
+        // eventually produces.
+        switch output {
+        case .text, .space, .newline, .deleteBackward, .deleteWord, .swipeWord:
+            dictationSurfaceState.hasTypedThisSession = true
+        default:
+            break
         }
         switch output {
         case let .text(text):
@@ -1610,7 +1620,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         }
         dictationSurfaceState.onLanguageChanged = { [weak self] lang in
             KeyboardPreferences.transcriptionLanguage = lang
-            KeyboardPreferences.noteTranscriptionLanguageUse(lang)
             self?.refresh()
         }
         dictationSurfaceState.onStyleChanged = { [weak self] _ in
