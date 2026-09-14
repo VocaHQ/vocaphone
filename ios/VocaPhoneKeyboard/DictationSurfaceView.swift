@@ -615,6 +615,7 @@ struct DictationSurfaceView: View {
             Group {
             if let panel = state.presentedPanel, !sessionIsOpen {
                 panelContent(panel)
+                    .id(panel)
                     .padding(.top, 8)
             } else if sessionIsOpen {
                 Spacer(minLength: 0)
@@ -986,16 +987,16 @@ struct DictationSurfaceView: View {
     /// target — and the corner is exactly where a thumb reaching across the
     /// keyboard lands. The glass stays round; only the touch area is square.
     private var compactMenuButton: some View {
-        let isMenuOpen = state.presentedPanel != nil
+        let symbol = compactMenuSymbol
         return Button {
-            if isMenuOpen {
+            if state.presentedPanel != nil {
                 state.dismissPanel()
             } else {
                 selectedDashboardPage = .words
                 state.present(.dashboard)
             }
         } label: {
-            Image(systemName: isMenuOpen ? "xmark" : "ellipsis")
+            Image(systemName: symbol)
                 .font(.system(size: Self.glyphSize, weight: .semibold))
                 .foregroundStyle(controlForeground)
                 .contentTransition(.identity)
@@ -1004,9 +1005,26 @@ struct DictationSurfaceView: View {
         }
         .buttonStyle(.plain)
         .modifier(GlassButtonModifier(id: "compactDisclosure", namespace: animationNamespace))
-        .animation(nil, value: isMenuOpen)
-        .accessibilityLabel(isMenuOpen ? "Close" : "More")
+        .animation(nil, value: symbol)
+        .accessibilityLabel(compactMenuAccessibilityLabel)
         .accessibilityHint("Writing style, stats, and VocaPhone controls")
+    }
+
+    /// More on the idle row, close on the dashboard, back on a picker.
+    private var compactMenuSymbol: String {
+        switch state.presentedPanel {
+        case .language, .style: "chevron.left"
+        case .dashboard: "xmark"
+        case nil: "ellipsis"
+        }
+    }
+
+    private var compactMenuAccessibilityLabel: String {
+        switch state.presentedPanel {
+        case .language, .style: "Back"
+        case .dashboard: "Close"
+        case nil: "More"
+        }
     }
 
     private var compactLanguageButton: some View {
