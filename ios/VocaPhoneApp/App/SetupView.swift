@@ -93,6 +93,8 @@ struct SetupView: View {
     /// Answered here or with the switch in Settings › Privacy.
     @State private var hasAskedAboutReporting = UserDefaultsTelemetryPreferences().hasBeenAsked
     @State private var isShowingReportingPayload = false
+    /// Between the tap and the choice being stored. Holds the two buttons.
+    @State private var isAnsweringReporting = false
     @State private var isShowingReportingDetails = false
     /// Height of the docked button, so scrolling pages can end above it
     /// instead of sliding their last card underneath.
@@ -656,6 +658,7 @@ struct SetupView: View {
             usageReportingButton(UsageReportingCopy.notNow, enabled: false)
             usageReportingButton(UsageReportingCopy.turnOn, enabled: true)
         }
+        .disabled(isAnsweringReporting)
     }
 
     private func usageReportingButton(_ title: String, enabled: Bool) -> some View {
@@ -1866,12 +1869,19 @@ struct SetupView: View {
         }
     }
 
+    /// The choice is written before the question is marked answered. The
+    /// other order could lose a Turn on to a suspension in between and then
+    /// never ask again, leaving reporting off behind an answered question.
     private func answerUsageReporting(_ enabled: Bool) {
-        guard stage == .usageReporting, !hasAskedAboutReporting else { return }
-        Task { await Telemetry.shared.setEnabled(enabled) }
-        UserDefaultsTelemetryPreferences().hasBeenAsked = true
-        hasAskedAboutReporting = true
-        leaveFirstRun()
+        guard stage == .usageReporting, !hasAskedAboutReporting, !isAnsweringReporting else { return }
+        isAnsweringReporting = true
+        Task { @MainActor in
+            await Telemetry.shared.setEnabled(enabled)
+            UserDefaultsTelemetryPreferences().hasBeenAsked = true
+            hasAskedAboutReporting = true
+            isAnsweringReporting = false
+            leaveFirstRun()
+        }
     }
 
     private func finishSetup() {
