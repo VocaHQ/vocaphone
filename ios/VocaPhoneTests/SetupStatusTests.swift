@@ -95,6 +95,14 @@ struct SetupStatusTests {
         #expect(KeyboardSetupState.resolve(nil, isInstalled: nil) == .notAdded)
     }
 
+    @Test func aBundleIdentifierInAnInputModeCountsAsEnabled() {
+        #expect(
+            InstalledKeyboards.includesVocaPhone([
+                AppConfiguration.keyboardBundleIdentifier
+            ]) == true
+        )
+    }
+
     @Test func theKeyboardListMatchesEntriesCarryingLayoutOptions() {
         let entries = [
             "en_US@sw=QWERTY;hw=Automatic",
@@ -140,6 +148,91 @@ struct SetupStatusTests {
         #expect(
             KeyboardSetupState.resolve(status, now: Self.seenAt)
                 == .seenWithoutFullAccess(lastSeenAt: Self.seenAt)
+        )
+    }
+
+    // MARK: - The report a keyboard without Full Access can still make
+
+    /// Without this signal the state is indistinguishable from a keyboard that
+    /// was never switched to, and guided setup can only spin.
+    @Test func theKeyboardsOwnReportOfNoFullAccessIsBelieved() {
+        let state = KeyboardSetupState.resolve(
+            nil,
+            isInstalled: true,
+            lackedFullAccessAt: Self.seenAt,
+            now: Self.seenAt
+        )
+
+        #expect(state == .seenWithoutFullAccess(lastSeenAt: Self.seenAt))
+        #expect(!state.isReady)
+
+        var setup = complete
+        setup.keyboard = state
+        #expect(!setup.isReadyToDictate)
+        #expect(setup.attentionHeadline == "The keyboard needs Full Access")
+    }
+
+    /// Turning the switch off after a good run must not be described by the
+    /// older, better news.
+    @Test func theNewerOfTheTwoReportsWins() {
+        let ranWell = KeyboardStatus(lastSeenAt: Self.seenAt, hasFullAccess: true)
+        let switchedOffLater = Self.seenAt.addingTimeInterval(60)
+
+        #expect(
+            KeyboardSetupState.resolve(
+                ranWell,
+                isInstalled: true,
+                lackedFullAccessAt: switchedOffLater,
+                now: switchedOffLater
+            ) == .seenWithoutFullAccess(lastSeenAt: switchedOffLater)
+        )
+    }
+
+    /// The first launch after Full Access is turned on reports twice inside
+    /// one second: "off" from before UIKit finalized the switch, then a
+    /// status write once it had. The ping carries a fractional stamp and the
+    /// write a floored one, so compared raw the stale "off" always won — and
+    /// the only way out was toggling the switch again.
+    @Test func aWriteInTheSameSecondAsTheOffPingMeansFullAccessIsOn() {
+        let ranWell = KeyboardStatus(lastSeenAt: Self.seenAt, hasFullAccess: true)
+        let offPingSameSecond = Self.seenAt.addingTimeInterval(0.4)
+
+        #expect(
+            KeyboardSetupState.resolve(
+                ranWell,
+                isInstalled: true,
+                lackedFullAccessAt: offPingSameSecond,
+                now: Self.seenAt.addingTimeInterval(1)
+            ) == .ready(lastSeenAt: Self.seenAt)
+        )
+    }
+
+    /// And granting it afterwards must clear the complaint, or the checklist
+    /// would never let the user out of a problem they have already fixed.
+    @Test func aLaterGoodRunClearsAnEarlierComplaint() {
+        let switchedOffEarlier = Self.seenAt.addingTimeInterval(-60)
+        let ranWell = KeyboardStatus(lastSeenAt: Self.seenAt, hasFullAccess: true)
+
+        let state = KeyboardSetupState.resolve(
+            ranWell,
+            isInstalled: true,
+            lackedFullAccessAt: switchedOffEarlier,
+            now: Self.seenAt
+        )
+
+        #expect(state == .ready(lastSeenAt: Self.seenAt))
+    }
+
+    /// Either report proves the extension exists, which is stronger evidence
+    /// than the undocumented preference key that may not answer at all.
+    @Test func eitherReportProvesTheKeyboardIsInstalled() {
+        #expect(!KeyboardSetupState.hasRun(status: nil, lackedFullAccessAt: nil))
+        #expect(KeyboardSetupState.hasRun(status: nil, lackedFullAccessAt: Self.seenAt))
+        #expect(
+            KeyboardSetupState.hasRun(
+                status: KeyboardStatus(lastSeenAt: Self.seenAt, hasFullAccess: true),
+                lackedFullAccessAt: nil
+            )
         )
     }
 
@@ -191,6 +284,48 @@ struct SetupStatusTests {
         #expect(undetermined.attentionHeadline == "Microphone access is needed")
         #expect(denied.attentionHeadline == "Microphone access is turned off")
         #expect(denied.detail(for: .microphone).contains("Settings"))
+    }
+
+    /// Skip on Choose model used to leave a dead-end card. The verb has to name
+    /// the place the tap actually opens.
+    @Test func aMissingOnDeviceModelOffersADownload() {
+        var status = complete
+        status.source = TranscriptionSourceStatus(selected: .onDevice)
+
+        #expect(status.attentionHeadline == "No speech-to-text model downloaded")
+        #expect(status.attentionActionTitle == "Download a model")
+        #expect(status.attentionOpensSystemSettings == false)
+    }
+
+    @Test func aDeniedMicrophoneOffersSystemSettings() {
+        var denied = complete
+        denied.microphone = .denied
+
+        #expect(denied.attentionActionTitle == "Open Settings")
+        #expect(denied.attentionOpensSystemSettings == true)
+    }
+
+    @Test func aKeyboardWithoutFullAccessOffersSystemSettings() {
+        var status = complete
+        status.keyboard = .seenWithoutFullAccess(lastSeenAt: Self.seenAt)
+
+        #expect(status.attentionActionTitle == "Open Settings")
+        #expect(status.attentionOpensSystemSettings == true)
+    }
+
+    @Test func severalOutstandingStepsFollowTheFirst() {
+        var status = SetupStatus()
+        status.microphone = .granted
+        status.source = TranscriptionSourceStatus(selected: .onDevice)
+
+        #expect(status.attentionHeadline == "vocaphone needs 2 more steps")
+        #expect(status.attentionActionTitle == "Download a model")
+        #expect(status.attentionOpensSystemSettings == false)
+    }
+
+    @Test func aReadySetupHasNoAttentionAction() {
+        #expect(complete.attentionActionTitle == nil)
+        #expect(complete.attentionOpensSystemSettings == false)
     }
 }
 

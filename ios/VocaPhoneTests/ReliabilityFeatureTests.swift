@@ -50,6 +50,50 @@ struct ReliabilityFeatureTests {
         ))
     }
 
+    @Test func startDownloadAllowsTwoModelsAndQueuesAThird() {
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: ["a"], requestedID: "a")
+                == .alreadyThisModel
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: ["a"], requestedID: "b")
+                == .allowed
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: ["a", "b"], requestedID: "c")
+                == .atCapacity
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(
+                downloadingIDs: ["a", "b"],
+                queuedIDs: ["c"],
+                requestedID: "c"
+            ) == .alreadyQueued
+        )
+        #expect(
+            ModelDownloadStartDecision.decide(downloadingIDs: [], requestedID: "a")
+                == .allowed
+        )
+    }
+
+    @Test func completingKeyboardPracticePingsDarwinAndWritesAMarker() {
+        let original = KeyboardPreferences.hasCompletedKeyboardPractice
+        defer { KeyboardPreferences.hasCompletedKeyboardPractice = original }
+
+        KeyboardPreferences.hasCompletedKeyboardPractice = false
+        #expect(!KeyboardPreferences.refreshKeyboardPracticeProof())
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let observation = VocaPhoneDarwinCenter.observe(.keyboardPracticeCompleted) {
+            semaphore.signal()
+        }
+        defer { observation.invalidate() }
+
+        KeyboardPreferences.hasCompletedKeyboardPractice = true
+        #expect(semaphore.wait(timeout: .now() + 1) == .success)
+        #expect(KeyboardPreferences.refreshKeyboardPracticeProof())
+    }
+
     @Test func multipleDarwinObserversReceiveTheSameSignal() {
         let semaphore = DispatchSemaphore(value: 0)
         let callbackQueue = DispatchQueue(
@@ -301,12 +345,35 @@ struct ReliabilityFeatureTests {
         #expect(!availability.isReady(at: Date(timeIntervalSince1970: 1_800_000_000)))
     }
 
-    @Test func cursorTrackpadEmitsOnlyWholeCharacterSteps() {
-        #expect(CursorTrackpad.step(forHorizontalTranslation: 9.9) == 0)
-        #expect(CursorTrackpad.step(forHorizontalTranslation: 10) == 1)
-        #expect(CursorTrackpad.step(forHorizontalTranslation: 27) == 2)
-        #expect(CursorTrackpad.step(forHorizontalTranslation: -9.9) == 0)
-        #expect(CursorTrackpad.step(forHorizontalTranslation: -10) == -1)
+    /// The trackpad used to quantise the *absolute* translation at a fixed ten
+    /// points per character, and this test asserted that ruler. The ruler is
+    /// gone: a fixed rate puts the far end of a seventy-character line off the
+    /// glass, so reaching it cost a lift and another third of a second of
+    /// holding. What replaced it is a rate, and this is its contract.
+    @Test func cursorTravelPerCharacterFollowsHowFastTheFingerIsGoing() {
+        let slow = CursorTrackpad.pointsPerCharacter(atSpeed: 0)
+        let fast = CursorTrackpad.pointsPerCharacter(atSpeed: 10_000)
+        #expect(slow == CursorTrackpad.slowPointsPerCharacter)
+        #expect(fast == CursorTrackpad.fastPointsPerCharacter)
+        // A crawl places the cursor between two specific letters; a flick
+        // crosses a line. Anything else is one of them at the other's price.
+        #expect(slow > fast)
+
+        // Clamped outside the two speeds it interpolates between, so a fast
+        // flick cannot run away and a stationary finger cannot divide by zero.
+        #expect(CursorTrackpad.pointsPerCharacter(atSpeed: -50) == slow)
+        #expect(CursorTrackpad.pointsPerCharacter(atSpeed: CursorTrackpad.slowSpeed) == slow)
+        #expect(CursorTrackpad.pointsPerCharacter(atSpeed: CursorTrackpad.fastSpeed) == fast)
+
+        // Monotonic between them: no speed costs more travel per character than
+        // a slower one, which is the property that makes the gesture feel like
+        // a surface rather than a switch.
+        var previous = slow
+        for speed in stride(from: CGFloat(0), through: 2_000, by: 50) {
+            let rate = CursorTrackpad.pointsPerCharacter(atSpeed: speed)
+            #expect(rate <= previous + 0.001, "rate rose at \(speed) pt/s")
+            previous = rate
+        }
     }
 
     @Test func diagnosticsHaveNoPrivateContentFields() throws {

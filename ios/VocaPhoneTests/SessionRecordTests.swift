@@ -50,7 +50,7 @@ struct SessionRecordTests {
         try record.transition(to: .launchingApp)
         try record.transition(to: .recording)
         try store.save(record)
-        try store.saveMeter(0.8, for: record.sessionID)
+        try store.saveMeter(MeterSample(sequence: 5, levels: [0.2, 0.8]), for: record.sessionID)
 
         let recording = try #require(try store.load(record.sessionID))
         #expect(recording.state == .recording)
@@ -59,11 +59,32 @@ struct SessionRecordTests {
         try record.transition(to: .finalizing)
         try store.save(record)
         // Simulate one late microphone callback racing with the keyboard tap.
-        try store.saveMeter(0.4, for: record.sessionID)
+        try store.saveMeter(MeterSample(sequence: 7, levels: [0.4]), for: record.sessionID)
 
         let finalizing = try #require(try store.load(record.sessionID))
         #expect(finalizing.state == .finalizing)
         #expect(finalizing.meterLevel == 0)
+    }
+
+    @Test func retryWithoutANewCaptureKeepsTheOriginalDuration() {
+        var record = SessionRecord()
+        record.recordedSeconds = 12.5
+
+        record.recordCaptureDuration(startedAt: nil)
+
+        #expect(record.recordedSeconds == 12.5)
+    }
+
+    @Test func aNewCaptureReplacesThePreviousDuration() {
+        var record = SessionRecord()
+        record.recordedSeconds = 12.5
+
+        record.recordCaptureDuration(
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 104.25)
+        )
+
+        #expect(record.recordedSeconds == 4.25)
     }
 
     @Test func aParkedTranscriptSurvivesUntilTheOriginalFieldReturns() throws {

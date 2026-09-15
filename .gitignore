@@ -55,11 +55,15 @@ android/.idea/
 android/captures/
 android/*.hprof
 
-# Sherpa/ONNX Runtime xcframeworks are downloaded at iOS build time.
-# See ios/ThirdParty/SherpaOnnx/fetch.sh
-ios/ThirdParty/SherpaOnnx/sherpa-onnx.xcframework/
-ios/ThirdParty/SherpaOnnx/onnxruntime.xcframework/
-ios/ThirdParty/SherpaOnnx/.fetched-sha256
+# Local iOS signing identity: your team, your bundle IDs, your App Group, and
+# the entitlement copies that name it. Written by `just ios local-signing`.
+# The tracked entitlements and project.yml keep the shipping identity, and the
+# release workflow copies the tracked entitlements into the archive verbatim.
+/ios/Local.xcconfig
+/ios/Local/
+
+# Leftover from the pre-SPM tarball fetch. Safe to delete locally.
+ios/ThirdParty/SherpaOnnx/
 
 # Local Netlify folder
 .netlify

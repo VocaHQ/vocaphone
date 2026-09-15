@@ -22,6 +22,11 @@ protocol SpellChecking: AnyObject {
     func guesses(for word: String, language: String) -> [String]
     /// Whether the checker recognises the word at all.
     func isKnown(_ word: String, language: String) -> Bool
+    func releaseMemory()
+}
+
+extension SpellChecking {
+    func releaseMemory() {}
 }
 
 /// `UITextChecker`, which is the whole reason iOS needs no shipped dictionary:
@@ -29,6 +34,15 @@ protocol SpellChecking: AnyObject {
 ///
 /// One instance. A second one also means a second copy of the loaded language
 /// data, which matters when the whole extension is fighting for 45–60 MB.
+/// Main-actor isolated, because `UITextChecker` is. The SDK marks the class
+/// `NS_SWIFT_UI_ACTOR` — a per-class annotation Apple wrote deliberately, not
+/// UIKit's blanket one — so there is no version of this that runs on a queue of
+/// its own, however much the measurements would like one.
+///
+/// What those measurements found is real: 50 to 135 ms per new prefix, with the
+/// display link stopped for the whole of it, starting the instant a letter was
+/// committed. The answer is not to move the work but to ask for it less often —
+/// see ``TypingEngine``, which now waits for the hand to pause.
 @MainActor
 final class SystemSpellChecker: SpellChecking {
     /// Built on first use, never at launch.
@@ -49,6 +63,10 @@ final class SystemSpellChecker: SpellChecking {
 
     /// Whether the dictionaries have actually been paid for yet.
     var isLoaded: Bool { loaded != nil }
+
+    func releaseMemory() {
+        loaded = nil
+    }
 
     /// The languages the checker has data for. Also deferred: enumerating them
     /// touches the same dictionaries.

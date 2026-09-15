@@ -68,17 +68,23 @@ test("VocaGateway is presented as an explicit optional path", () => {
   assert.match(html, /trusted LAN, an encrypted private\s+network, or HTTPS/i);
   assert.match(html, /href="https:\/\/vocagateway\.vocahq\.com"/);
   assert.match(html, /href="https:\/\/github\.com\/VocaHQ\/vocagateway"/);
+  assert.match(
+    html,
+    /self-host\s+<a href="https:\/\/vocagateway\.vocahq\.com">VocaGateway<\/a>/,
+  );
+  assert.match(html, /<a href="https:\/\/vocagateway\.vocahq\.com">VocaGateway<\/a>/);
+  assert.doesNotMatch(
+    html,
+    /<a href="https:\/\/github\.com\/VocaHQ\/vocagateway">VocaGateway<\/a>/,
+  );
   assert.doesNotMatch(html, /no gateway\. no catch/i);
   assert.doesNotMatch(html, />no gateway needed</i);
 });
 
-test("hero presents a global supported-language mix", () => {
-  assert.match(html, /54 languages \+ automatic/i);
+test("language availability stays tied to the selected model", () => {
+  assert.match(html, /54 language choices/i);
   assert.match(html, /support depends on model/i);
   assert.match(html, /filtered to what your selected model can\s+actually transcribe/i);
-  for (const language of ["English", "Español", "Français", "日本語", "हिन्दी", "العربية"]) {
-    assert.match(html, new RegExp(`<b>${language}</b>`));
-  }
 });
 
 test("all local image assets exist", () => {
@@ -119,10 +125,11 @@ test("production metadata is complete", () => {
     /property="og:image:type" content="image\/png"/,
     /property="og:image:width" content="1200"/,
     /property="og:image:height" content="630"/,
+    /name="description"\s+content="Join the public TestFlight, or build from source, then install the keyboard and run speech-to-text on your iPhone\."/,
     /property="og:image:alt"\s+content="VocaPhone on Android and iPhone, on-device first with an optional self-hosted gateway"/,
     /property="og:description"\s+content="Join the public TestFlight, or build from source, then install the keyboard and run speech-to-text on your iPhone\."/,
     /name="twitter:title" content="Install VocaPhone on iPhone"/,
-    /name="twitter:description"\s+content="Join the public TestFlight, or build from source, then install the private keyboard and run speech-to-text on your iPhone\."/,
+    /name="twitter:description"\s+content="Join the public TestFlight, or build from source, then install the keyboard and run speech-to-text on your iPhone\."/,
     /name="twitter:image" content="https:\/\/vocaphone\.vocahq\.com\/assets\/og-image\.png"/,
     /name="twitter:image:alt"\s+content="VocaPhone on Android and iPhone, on-device first with an optional self-hosted gateway"/,
   ]) {
@@ -189,7 +196,7 @@ test("real Android product screenshots are present", () => {
     assert.ok(existsSync(join(siteRoot, screenshot)), `Missing ${screenshot}`);
   }
   assert.match(html, /real app, real phone/i);
-  assert.match(html, /These are unedited VocaPhone screens from Android/i);
+  assert.match(html, /real iPhone and Android screenshots/i);
 });
 
 test("availability and install paths are honest", () => {
@@ -202,9 +209,9 @@ test("availability and install paths are honest", () => {
   assert.match(html, /There is\s+no App Store release yet/);
   assert.match(
     html,
-    /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases\/tag\/android\/v0\.1\.6"/,
+    /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases\/tag\/android\/v0\.2\.0"/,
   );
-  assert.match(html, /v0\.1\.6/);
+  assert.match(html, /v0\.2\.0/);
   assert.match(html, /io\.github\.mrsunglasses\.localflow/);
   assert.match(html, /href="\/iphone\/"/);
   assert.match(html, /SHA256SUMS\.txt/);
@@ -230,14 +237,14 @@ test("availability and install paths are honest", () => {
   assert.match(hero, /<use href="#mark-android"/);
   assert.match(hero, /<use href="#mark-apple"/);
   assert.ok(
-    hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.1.6"),
+    hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.2.0"),
     "hero is missing the Android release link",
   );
 
   const androidCard = androidInstallBlock(html);
   const uninstallAt = androidCard.indexOf("io.github.mrsunglasses.localflow");
   const tagHrefAt = androidCard.indexOf(
-    "https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.1.6",
+    "https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.2.0",
   );
   const checksumAt = androidCard.indexOf("SHA256SUMS.txt");
   assert.ok(uninstallAt !== -1, "uninstall note missing from Android install block");
@@ -345,6 +352,21 @@ test("the iPhone gateway callout uses a dark-surface button", () => {
   );
 });
 
+test("iPhone and privacy Gateway CTAs point at the product site", () => {
+  for (const page of [iphoneHtml, privacyHtml]) {
+    assert.match(page, /href="https:\/\/vocagateway\.vocahq\.com"/);
+    assert.match(page, /href="https:\/\/github\.com\/VocaHQ\/vocagateway"/);
+    assert.match(
+      page,
+      /href="https:\/\/vocagateway\.vocahq\.com"[\s\S]*?explore VocaGateway/,
+    );
+    assert.match(
+      page,
+      /href="https:\/\/github\.com\/VocaHQ\/vocagateway"[\s\S]*?view on GitHub/,
+    );
+  }
+});
+
 test("visual treatment stays flat", () => {
   const bannedFunction = ["linear-" + "gradient", "radial-" + "gradient", "conic-" + "gradient"];
   for (const token of bannedFunction) {
@@ -383,4 +405,51 @@ test("hosted privacy page covers the Play listing facts", () => {
   assert.match(privacyHtml, /F-Droid[\s\S]{0,80}compil/i);
   assert.match(privacyHtml, /AGPL-3\.0/);
   assert.match(privacyHtml, /hello@vocahq\.com/);
+});
+
+test("iPhone screenshot assets preserve full capture dimensions", () => {
+  for (const name of ["keyboard", "dictate", "models", "handoff", "inserted"]) {
+    const bytes = readFileSync(join(siteRoot, `assets/screenshots/iphone-${name}.png`));
+    assert.deepEqual(pngDimensions(bytes), { width: 1179, height: 2556 });
+  }
+  assert.match(html, /real iPhone and Android screenshots/i);
+  assert.match(html, /iPhone beta captures · August 2026/);
+});
+
+test("walkthrough is labeled and does not autoplay or preload video", () => {
+  const video = html.match(/<video\b[\s\S]*?<\/video>/)?.[0];
+  assert.ok(video);
+  assert.match(video, /controls playsinline preload="none"/);
+  assert.doesNotMatch(video, /autoplay/);
+  assert.match(video, /kind="captions"/);
+  assert.match(html, /not live transcription speed/);
+  for (const asset of ["iphone-walkthrough.mp4", "iphone-walkthrough-poster.png", "iphone-walkthrough.vtt"]) {
+    assert.ok(existsSync(join(siteRoot, "assets/demo", asset)));
+  }
+  const movie = readFileSync(join(siteRoot, "assets/demo/iphone-walkthrough.mp4"));
+  assert.equal(movie.toString("ascii", 4, 8), "ftyp");
+  assert.ok(movie.length < 1024 * 1024, "15-second walkthrough should stay below 1 MiB");
+  assert.match(readFileSync(join(siteRoot, "assets/demo/iphone-walkthrough.vtt"), "utf8"), /^WEBVTT/);
+});
+
+test("iPhone guide leads with TestFlight and keeps source builds secondary", () => {
+  assert.ok(iphoneHtml.indexOf('id="iphone-quick-start"') < iphoneHtml.indexOf('id="steps-title"'));
+  assert.match(iphoneHtml, /No Mac or gateway is needed for the TestFlight route/);
+  assert.match(iphoneHtml, /Prefer to build from source/);
+});
+
+test("public pages resolve local links and media", () => {
+  for (const [route, content] of [["/", html], ["/iphone/", iphoneHtml], ["/iphone/device-setup/", deviceSetupHtml], ["/privacy/", privacyHtml]]) {
+    for (const [, value] of content.matchAll(/(?:src|href|poster)="([^"]+)"/g)) {
+      const url = new URL(value, `https://vocaphone.vocahq.com${route}`);
+      if (url.origin !== "https://vocaphone.vocahq.com") continue;
+      const pathname = decodeURIComponent(url.pathname);
+      const localPath = join(siteRoot, pathname, pathname.endsWith("/") ? "index.html" : "");
+      assert.ok(existsSync(localPath), `${route} references missing ${value}`);
+      if (url.hash && localPath.endsWith(".html")) {
+        const target = readFileSync(localPath, "utf8");
+        assert.ok(target.includes(`id="${url.hash.slice(1)}"`), `${route} references missing anchor ${value}`);
+      }
+    }
+  }
 });

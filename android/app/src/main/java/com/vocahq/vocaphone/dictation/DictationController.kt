@@ -24,6 +24,7 @@ import com.vocahq.vocaphone.core.MissingPermission
 import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.SnippetExpander
 import com.vocahq.vocaphone.data.HistoryRepository
+import com.vocahq.vocaphone.data.UsageStatsRepository
 import com.vocahq.vocaphone.data.DiagnosticLog
 import com.vocahq.vocaphone.gateway.GatewayClient
 import com.vocahq.vocaphone.gateway.GatewayException
@@ -90,6 +91,7 @@ class DictationController(
     private val localModels: LocalModelManager,
     private val telemetry: Telemetry,
     private val cues: DictationTonePlayer,
+    private val usageStats: UsageStatsRepository,
     private val scope: CoroutineScope,
 ) {
     private val _state = MutableStateFlow(DictationState())
@@ -703,6 +705,7 @@ class DictationController(
                 styledUpstream = true,
                 repairSpeech = configuration.repairSpeech,
                 numbersAsDigits = configuration.numbersAsDigits,
+                spokenEmoji = configuration.spokenEmoji,
                 snippets = configuration.snippets,
             )
             if (transcript != null && cleaned.isEmpty()) {
@@ -796,6 +799,7 @@ class DictationController(
                 styledUpstream = true,
                 repairSpeech = configuration.repairSpeech,
                 numbersAsDigits = configuration.numbersAsDigits,
+                spokenEmoji = configuration.spokenEmoji,
                 snippets = configuration.snippets,
             )
             if (transcript.isEmpty()) {
@@ -903,6 +907,7 @@ class DictationController(
         ),
         repairSpeech = configuration.repairSpeech,
         numbersAsDigits = configuration.numbersAsDigits,
+        spokenEmoji = configuration.spokenEmoji,
         snippets = configuration.snippets,
     )
 
@@ -925,6 +930,8 @@ class DictationController(
                 quality = configuration.transcriptionQuality,
             )
         }
+        val recordedMillis = lastRecordingMillis
+        scope.launch { usageStats.record(transcript, recordedMillis) }
         val target = when (source) {
             DictationSource.IME -> imeInserter
             DictationSource.COMPANION_APP -> null

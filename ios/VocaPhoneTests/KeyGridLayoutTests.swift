@@ -7,7 +7,8 @@ struct KeyGridLayoutTests {
 
     private static func makeGrid(
         traits: UITraitCollection = UITraitCollection { $0.verticalSizeClass = .regular },
-        plane: KeyPlane = .letters
+        plane: KeyPlane = .letters,
+        width: CGFloat = referenceWidth
     ) -> KeyGridView {
         let metrics = KeyboardMetrics.resolved(for: traits)
         let grid = KeyGridView(metrics: metrics, palette: KeyboardPalette(isDark: false))
@@ -15,11 +16,100 @@ struct KeyGridLayoutTests {
         grid.frame = CGRect(
             x: 0,
             y: 0,
-            width: referenceWidth,
+            width: width,
             height: metrics.gridHeight
         )
         grid.layoutIfNeeded()
         return grid
+    }
+
+    private static func makeGrid(layout: TypingLayout, switchKey: Bool = true) -> KeyGridView {
+        let grid = makeGrid()
+        grid.showsLayoutSwitchKey = switchKey
+        grid.layout = layout
+        grid.layoutIfNeeded()
+        return grid
+    }
+
+    // MARK: - Every layout, not just the one that fits
+
+    /// The column unit used to be the constant ten, which is QWERTY's top row.
+    /// ЙЦУКЕН is eleven, AZERTY's middle row is ten against a ten-key top —
+    /// and a unit that does not follow the rows puts the last key of an
+    /// eleven-key row off the side of the keyboard.
+    @Test func noLayoutRunsOffTheEdgeOfTheKeyboard() {
+        for layout in TypingLayout.catalogue {
+            let grid = Self.makeGrid(layout: layout)
+            let inset = grid.metrics.sideInset
+            for key in grid.keyViews {
+                #expect(
+                    key.frame.minX >= inset - 0.5,
+                    "\(layout.displayName): a key starts left of the margin"
+                )
+                #expect(
+                    key.frame.maxX <= Self.referenceWidth - inset + 0.5,
+                    "\(layout.displayName): a key runs past the right margin"
+                )
+            }
+        }
+    }
+
+    /// The property the ten-column constant was there to guarantee, now that it
+    /// is derived: within one layout every single-column key is the same width,
+    /// so the columns still line up between rows.
+    @Test func everyLayoutKeepsItsColumnsOneWidth() {
+        for layout in TypingLayout.catalogue {
+            let grid = Self.makeGrid(layout: layout)
+            let widths = Set(
+                grid.keyViews
+                    .filter { $0.spec.width == .unit }
+                    .map { ($0.frame.width * 100).rounded() }
+            )
+            #expect(widths.count == 1, "\(layout.displayName) has \(widths.count) column widths")
+        }
+    }
+
+    /// A wider alphabet makes narrower letters and must not make a narrower
+    /// bottom row: the spacebar, Return and the plane key are the same keys in
+    /// every language, and having them jump as the letters change is the sort
+    /// of thing a thumb notices before an eye does.
+    @Test func theBottomRowHoldsStillWhileTheLettersChange() {
+        let reference = Self.makeGrid(layout: .fallback)
+        let referenceRow = Self.rowsByPosition(in: reference)[3].map(\.frame)
+        for layout in TypingLayout.catalogue.dropFirst() {
+            let grid = Self.makeGrid(layout: layout)
+            let row = Self.rowsByPosition(in: grid)[3].map(\.frame)
+            #expect(row.count == referenceRow.count, "\(layout.displayName) bottom row differs")
+            for (moved, fixed) in zip(row, referenceRow) {
+                #expect(
+                    abs(moved.minX - fixed.minX) < 0.5 && abs(moved.width - fixed.width) < 0.5,
+                    "\(layout.displayName) moved a bottom-row key"
+                )
+            }
+        }
+    }
+
+    /// Ten stays the floor. The numeric keypads have no single-column keys at
+    /// all — three columns of `.multiple` — and letting the widest row speak
+    /// for them would blow every key up to a third of the keyboard.
+    @Test func theColumnReferenceFollowsTheRowsButNeverGoesBelowTen() {
+        for plane in [KeyPlane.numbers, .symbols, .numberPad, .phonePad] {
+            let rows = KeyLayout.rows(for: plane, includesGlobe: true, returnIsProminent: false)
+            #expect(KeyGridView.referenceColumns(for: rows) == 10, "\(plane)")
+        }
+        for layout in TypingLayout.catalogue {
+            let rows = KeyLayout.rows(
+                for: .letters,
+                layout: layout,
+                includesGlobe: true,
+                returnIsProminent: false
+            )
+            let widest = layout.rows.map(\.count).max() ?? 0
+            #expect(
+                KeyGridView.referenceColumns(for: rows) == CGFloat(max(widest, 10)),
+                "\(layout.displayName)"
+            )
+        }
     }
 
     /// Rows used to be built from three separate hardcoded widths, so the
@@ -189,6 +279,94 @@ struct KeyGridLayoutTests {
             .sorted { $0.key < $1.key }
             .map { $0.value.sorted { $0.frame.minX < $1.frame.minX } }
     }
+
+    /// The spacebar reaches as far as the system's does.
+    ///
+    /// Measured on device: every touch that typed a space landed between x=269
+    /// and x=286, and the first one that typed a *newline* landed at x=288 —
+    /// with the finger nowhere near the Return key, which starts a hundred
+    /// points further right. Somebody aiming at the right-hand end of the
+    /// spacebar was getting a line break instead, three times in one sentence.
+    ///
+    /// The proportions come from Apple's own bottom row, quoted in
+    /// `BottomRowColumns.resolved`: `1.25 | 1.25 | 5 | 2.5`. What this checks is
+    /// that the space the user can *hit* matches the space they can see, all the
+    /// way to where Return's own target begins.
+    @Test func theSpacebarsTargetReachesTheReturnKey() {
+        // Laid out the width the keyboard actually gives it: the screen less the
+        // chrome margin on each side. That margin is the whole point of this
+        // test — it decides where every boundary in the row falls, and at six
+        // points a side the spacebar ended six points short of the system's.
+        let chromeInset: CGFloat = 3
+        let grid = Self.makeGrid(width: Self.referenceWidth - 2 * chromeInset)
+        let row = Self.rowsByPosition(in: grid)[3]
+        guard let space = row.first(where: { $0.spec.cap == .space }),
+              let newline = row.first(where: { $0.spec.cap == .newline })
+        else {
+            Issue.record("bottom row has no space or no return: \(row.map(\.spec.cap))")
+            return
+        }
+        // No gap between them that belongs to neither.
+        #expect(
+            space.hitRect.maxX >= newline.hitRect.minX,
+            "space ends at \(space.hitRect.maxX), return starts at \(newline.hitRect.minX)"
+        )
+        // And the boundary is where the drawing says it is, not short of it.
+        #expect(
+            space.hitRect.maxX > space.frame.maxX,
+            "space is drawn to \(space.frame.maxX) but only claims \(space.hitRect.maxX)"
+        )
+        // And the boundary lands where the system's does, because that is where
+        // a thumb has learned it is. The grid is inset from the screen by the
+        // keyboard's chrome, so this is checked in screen terms: at 393 points
+        // wide, iOS ends its spacebar at about 293.
+        let boundaryOnScreen = space.hitRect.maxX + chromeInset
+        #expect(
+            abs(boundaryOnScreen - 293) < 4,
+            "spacebar ends at \(boundaryOnScreen) on screen, the system's at ~293"
+        )
+    }
+
+    /// Every cached plane keeps its key views, and their bitmaps, alive. Keyed
+    /// by plane and layout, cycling seven layouts once left some seven hundred
+    /// behind; the numbers and symbols are shared and only two layouts' letters
+    /// are kept.
+    @Test func cachedPlanesStayBoundedAcrossLayouts() {
+        let grid = Self.makeGrid(layout: .fallback)
+        for layout in TypingLayout.catalogue {
+            grid.layout = layout
+            for plane in [KeyPlane.letters, .numbers, .symbols] {
+                grid.plane = plane
+            }
+        }
+        grid.plane = .letters
+        func keyCount(_ plane: KeyPlane, _ layout: TypingLayout = .fallback) -> Int {
+            KeyLayout.rows(
+                for: plane,
+                layout: layout,
+                includesGlobe: grid.showsGlobeKey,
+                includesLayoutSwitch: true,
+                returnIsProminent: false
+            ).reduce(0) { $0 + $1.keys.count }
+        }
+        let widestLetters = TypingLayout.catalogue.map { keyCount(.letters, $0) }.max() ?? 0
+        let built = grid.subviews.filter { $0 is KeyView }.count
+        #expect(built <= 2 * widestLetters + keyCount(.numbers) + keyCount(.symbols))
+    }
+
+    @Test func discardingHiddenPlanesKeepsOnlyWhatIsOnScreen() {
+        let grid = Self.makeGrid(layout: .fallback)
+        grid.plane = .numbers
+        grid.plane = .symbols
+        grid.plane = .letters
+        grid.discardHiddenPlanes()
+        #expect(grid.subviews.filter { $0 is KeyView }.count == grid.keyViews.count)
+        #expect(grid.keyViews.allSatisfy { !$0.isHidden })
+
+        // And what was dropped comes back on demand.
+        grid.plane = .numbers
+        #expect(grid.keyViews.contains { $0.spec.cap == .character("1") })
+    }
 }
 
 /// The numeric keypads, which a `.numberPad` or `.phonePad` field used to be
@@ -274,4 +452,5 @@ struct KeypadLayoutTests {
         #expect(!KeyCap.blank.isCharacter)
         #expect(KeyCap.character("0").isInteractive)
     }
+
 }

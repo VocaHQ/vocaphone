@@ -160,26 +160,36 @@ VocaPhoneLiveActivity) under **Signing & Capabilities**; automatic signing
 does the rest. If you don't (most outside contributors), either ask a
 maintainer to comment `/build ios` on your pull request for a signed ad-hoc
 IPA (see [CONTRIBUTING.md](CONTRIBUTING.md#on-demand-pr-builds-build)), or run
-it under your own free Apple ID by changing `bundleIdPrefix` and the three
-`PRODUCT_BUNDLE_IDENTIFIER`s in `ios/project.yml`, the App Group string in all
-three `.entitlements` files, and `AppConfiguration.swift`'s
-`appGroupIdentifier`/`keyboardBundleIdentifier`. Don't commit that change.
+it under your own Apple ID and your own identifiers:
+
+```sh
+just ios local-signing <team-id> <your.reverse.dns>   # e.g. ABCDE12345 dev.janedoe
+just ios device
+```
+
+That writes `ios/Local.xcconfig` and entitlement copies under `ios/Local/`,
+both gitignored, and the app installs as `<your.reverse.dns>.vocaphone` with
+its own App Group. Nothing tracked changes — the identifiers are read at build
+time — so there is no local edit to keep out of a commit. `just ios
+local-signing-off` puts it back. The team ID is the **OU** of your signing
+certificate's subject, not the ID inside the certificate's own name; [device
+setup](docs/device-setup.md) has the one-liner that prints it.
 
 Grant microphone access on first launch, add the keyboard as above, and turn
 on Full Access. Complete the physical-device checklist in [device
 setup](docs/device-setup.md).
 
-The gateway checkout is a submodule. iOS also needs the Sherpa ONNX
-xcframeworks, which are fetched at build time (not Git LFS):
+The gateway checkout is a submodule. iOS pulls Sherpa ONNX through Swift
+Package Manager (not Git LFS, not a local tarball):
 
 ```sh
 git clone --recurse-submodules https://github.com/VocaHQ/vocaphone.git
 cd vocaphone
-just ios fetch   # or: bash ios/ThirdParty/SherpaOnnx/fetch.sh
 ```
 
-On an existing clone: `git submodule update --init --recursive` and the same
-fetch. Without that step the iOS project cannot link the on-device engine.
+On an existing clone: `git submodule update --init --recursive`. The first
+iOS build downloads the pinned `sherpa-onnx` package; `just ios fetch` only
+prefetches it.
 Pin bumps live in
 [CONTRIBUTING.md](CONTRIBUTING.md#gateway-submodule-pin-dev-vs-ship).
 

@@ -5,10 +5,12 @@ import android.content.ComponentCallbacks2
 import android.content.Context
 import androidx.room.Room
 import com.vocahq.vocaphone.audio.DictationTonePlayer
+import com.vocahq.vocaphone.core.EmojiTable
 import com.vocahq.vocaphone.data.HistoryRepository
 import com.vocahq.vocaphone.data.DiagnosticLog
 import com.vocahq.vocaphone.data.ProcessExitReporter
 import com.vocahq.vocaphone.data.recentProcessExits
+import com.vocahq.vocaphone.data.UsageStatsRepository
 import com.vocahq.vocaphone.data.VocaPhoneDatabase
 import com.vocahq.vocaphone.dictation.DictationController
 import com.vocahq.vocaphone.local.LocalModelManager
@@ -41,6 +43,9 @@ class AppContainer(context: Context) {
         .build()
 
     val history = HistoryRepository(database.dictationRecordDao())
+
+    /** Counts only, in their own store, and never sent anywhere. */
+    val usageStats = UsageStatsRepository(context)
 
     /** App-private and bounded; it never contains transcript or gateway data. */
     val diagnostics = DiagnosticLog(context)
@@ -105,6 +110,7 @@ class AppContainer(context: Context) {
         localModels = localModels,
         telemetry = telemetry,
         cues = dictationCues,
+        usageStats = usageStats,
         scope = applicationScope,
     )
 
@@ -136,6 +142,18 @@ class VocaPhoneApplication : Application() {
         // is explained in the log the user pastes, not only after they manage
         // to reproduce it with a cable attached.
         container.reportProcessExits()
+        // Read here rather than in the input method service: the typing strip
+        // is not the only reader any more. `SpokenEmoji` needs the same table
+        // wherever a transcript is finished, which includes the app's own
+        // recordings, in a process the keyboard may never have started in.
+        // Bind assets first so a transcript that finishes while the warm is
+        // still in flight can load synchronously from the same file rather
+        // than seeing a permanently empty table. Warm itself stays off the
+        // main thread via workScope (Dispatchers.Default).
+        EmojiTable.bind(assets)
+        container.workScope.launch {
+            runCatching { EmojiTable.load(assets) }
+        }
     }
 
     override fun onTrimMemory(level: Int) {
