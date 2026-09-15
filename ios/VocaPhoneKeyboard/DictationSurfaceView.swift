@@ -1539,6 +1539,7 @@ private struct CandidateRow: View {
         }
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
+        .modifier(ScrollEdgeEffectHiddenModifier())
         // The fade says "there is more this way" without a scrollbar, which on
         // a strip this short would be most of the strip.
         .mask {
@@ -1773,6 +1774,21 @@ private struct TrailingMatchedGeometryModifier: ViewModifier {
     func body(content: Content) -> some View {
         if enabled {
             content.matchedGeometryEffect(id: "trailingActionCircle", in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+/// No system blur at the scroll view's edges.
+///
+/// On iOS 27 a scroll view inside the keyboard gets the soft scroll edge effect,
+/// and on a 44-point strip that blur covers every suggestion. The row already
+/// fades its own ends with a mask.
+private struct ScrollEdgeEffectHiddenModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.scrollEdgeEffectHidden(true, for: .all)
         } else {
             content
         }
