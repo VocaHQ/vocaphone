@@ -256,6 +256,17 @@ struct TypingCandidatesTests {
         // keyboard: "w" is beside "e", "p" is not.
         #expect(KeyProximity.areAdjacent("w", "e"))
         #expect(!KeyProximity.areAdjacent("q", "p"))
+        #expect(KeyProximity.rowOffsets(for: TypingLayout.Arrangement.qwerty) == [0, 0.5, 1])
+        // AZERTY puts a and z next to each other on the top row. The QWERTY
+        // table used to call them two rows apart, and discount a/q instead.
+        let azerty = TypingLayout.Arrangement.azerty
+        // z and e sit next to each other on AZERTY's top row. QWERTY puts z
+        // on the bottom, two rows from e, so the old table missed this pair.
+        #expect(KeyProximity.areAdjacent("z", "e", rows: azerty))
+        #expect(!KeyProximity.areAdjacent("z", "e"))
+        let russian = TypingLayout.layout(id: "ru")!.rows
+        #expect(KeyProximity.areAdjacent("й", "ц", rows: russian))
+        #expect(!KeyProximity.areAdjacent("й", "ц"))
         #expect(
             KeyProximity.substitutionCost(typed: "w", intended: "e")
                 < KeyProximity.substitutionCost(typed: "q", intended: "p")
@@ -837,6 +848,87 @@ struct AppliedCorrectionArmingTests {
 @MainActor
 @Suite(.serialized)
 struct TypingEngineDocumentChangeTests {
+    @Test func memoryRecoveryRestoresChecksLazily() async throws {
+        let suggestions = KeyboardPreferences.typingSuggestionsEnabled
+        defer { KeyboardPreferences.typingSuggestionsEnabled = suggestions }
+        KeyboardPreferences.typingSuggestionsEnabled = true
+        let checker = RecordingSpellChecker()
+        let engine = TypingEngine(
+            checker: checker,
+            learned: LearnedWordStore(containerURL: nil),
+            wordList: .empty,
+            availableLanguages: { ["en_US"] }
+        )
+        engine.hasMemoryHeadroom = { true }
+        engine.insert("hel", document: DocumentSnapshot(before: "hel"))
+        engine.reduceMemoryUsage()
+        engine.resumeAfterMemoryPressure()
+        #expect(!engine.isMemoryConstrained)
+        #expect(checker.prefixesAsked.isEmpty)
+        engine.insert("p", document: DocumentSnapshot(before: "help"))
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(checker.prefixesAsked == ["help"])
+        engine.reduceMemoryUsage()
+        #expect(checker.releaseCount == 2)
+    }
+
+    @Test func memoryPressurePreservesCorrectionUndo() {
+        let engine = TypingEngine(
+            checker: RecordingSpellChecker(),
+            learned: LearnedWordStore(containerURL: nil),
+            wordList: .empty
+        )
+        engine.noteCorrection(typed: "teh", replacement: "the", boundary: " ")
+        let undo = engine.pendingRevert
+        let strip = engine.strip
+        engine.reduceMemoryUsage()
+        #expect(engine.pendingRevert == undo)
+        #expect(engine.strip == strip)
+        #expect(engine.takeRevert(documentBefore: "the ") == undo)
+    }
+
+    @Test func memoryPressureCancelsChecksAndPreservesTyping() async throws {
+        let suggestions = KeyboardPreferences.typingSuggestionsEnabled
+        defer { KeyboardPreferences.typingSuggestionsEnabled = suggestions }
+        KeyboardPreferences.typingSuggestionsEnabled = true
+        let checker = RecordingSpellChecker()
+        let engine = TypingEngine(
+            checker: checker,
+            learned: LearnedWordStore(containerURL: nil),
+            wordList: .empty
+        )
+        engine.insert("hel", document: DocumentSnapshot(before: "hel"))
+        engine.reduceMemoryUsage()
+        #expect(engine.composer.text == "hel")
+        #expect(checker.releaseCount == 1)
+        engine.insert("p", document: DocumentSnapshot(before: "help"))
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(engine.composer.text == "help")
+        #expect(checker.prefixesAsked.isEmpty)
+        engine.documentChanged(policy: .allowed)
+        engine.reduceMemoryUsage()
+        #expect(engine.isMemoryConstrained)
+        #expect(checker.releaseCount == 1)
+    }
+
+    @Test func lowHeadroomPreventsDictionaryLoading() async throws {
+        let suggestions = KeyboardPreferences.typingSuggestionsEnabled
+        defer { KeyboardPreferences.typingSuggestionsEnabled = suggestions }
+        KeyboardPreferences.typingSuggestionsEnabled = true
+        let checker = RecordingSpellChecker()
+        let engine = TypingEngine(
+            checker: checker,
+            learned: LearnedWordStore(containerURL: nil),
+            wordList: .empty,
+            availableLanguages: { Issue.record("Must not load languages under pressure"); return [] }
+        )
+        engine.hasMemoryHeadroom = { false }
+        engine.insert("hel", document: DocumentSnapshot(before: "hel"))
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(engine.isMemoryConstrained)
+        #expect(checker.prefixesAsked.isEmpty)
+        #expect(engine.composer.text == "hel")
+    }
     /// The checker blocks the main actor for 50-135 ms on a cold prefix. A
     /// debounce shorter than the interval between ordinary keystrokes starts
     /// that block just before the next finger lands, which is exactly the lag
@@ -952,6 +1044,8 @@ struct TypingEngineDocumentChangeTests {
 
     @MainActor
     private final class RecordingSpellChecker: SpellChecking {
+        private(set) var releaseCount = 0
+        func releaseMemory() { releaseCount += 1 }
         var completionsByPrefix: [String: [String]] = [:]
         private(set) var prefixesAsked: [String] = []
 

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import SwiftUI
 import UIKit
 
@@ -58,6 +59,11 @@ final class RecordingCoordinator {
     private let store = SharedStore.shared
     private var pollingTask: Task<Void, Never>?
     private var pipelineTask: Task<Void, Never>?
+    /// Releases the loaded speech model once a window has gone quiet. See
+    /// ``LocalModelManager/releaseLoadedEngines()``.
+    private var localEngineReleaseTask: Task<Void, Never>?
+    private var memoryWarningObservation: (any NSObjectProtocol)?
+    private var memoryPressureSource: (any DispatchSourceMemoryPressure)?
     private var pipelineSessionID: UUID?
     private var cancellationMonitorTask: Task<Void, Never>?
     private var quickDictationWatcherTask: Task<Void, Never>?
@@ -70,7 +76,10 @@ final class RecordingCoordinator {
     private let liveActivity = LiveActivityManager.shared
     private let streamingBridge = StreamingAudioBridge()
     private let soundFeedback = RecordingSoundFeedback()
-    private var localSherpaSession: SherpaIncrementalSession?
+    /// Held as the work rather than the result: the ONNX graph takes 1.8-2.7 s
+    /// to build the first time in a process, and nothing before the transcript
+    /// needs it. Awaited once, at finish.
+    private var localSherpaSession: Task<SherpaIncrementalSession?, Never>?
     let localModels: LocalModelManager
 
     var isRecording: Bool {
@@ -117,6 +126,26 @@ final class RecordingCoordinator {
         }
     }
 
+    /// iOS rewrites `AppleKeyboards` after the Keyboards pane. Reading that
+    /// key on the main thread during the rewrite hangs long enough for the
+    /// watchdog to kill the process — the crash after turning vocaphone off.
+    private var keyboardListQuietUntil: Date?
+    /// A single empty read after toggling Full Access is a reload, not
+    /// removal. Two false answers a second apart are removal.
+    private var keyboardListedFalseAt: Date?
+
+    /// Call before Settings, and on the way back, so the next status read
+    /// does not touch the keyboard list while iOS is still rewriting it.
+    func noteKeyboardListMayReload() {
+        keyboardListQuietUntil = Date().addingTimeInterval(0.45)
+    }
+
+    var isKeyboardListReadUnsafe: Bool {
+        if UIApplication.shared.applicationState != .active { return true }
+        if let until = keyboardListQuietUntil, Date() < until { return true }
+        return false
+    }
+
     /// Re-reads every setup signal. Called on foreground and after any action
     /// that could have changed one, because none of them are observable: iOS
     /// exposes no API for whether a keyboard extension is installed, and a
@@ -132,8 +161,12 @@ final class RecordingCoordinator {
             status: keyboardStatus,
             lackedFullAccessAt: lackedFullAccessAt
         )
-        let isKeyboardInstalled = InstalledKeyboards.includesVocaPhone()
-            ?? (hasRun ? true : nil)
+        // Keep the last answer while the list is in flux or the app is not
+        // active. A stale "yes" is safer than a hang; SetupView drops back
+        // once a later read says the keyboard is gone.
+        let isKeyboardInstalled = resolvedKeyboardInstallation(
+            hasRun: hasRun
+        )
         let refreshed = SetupStatus(
             source: transcriptionSource,
             microphone: microphoneAccess,
@@ -151,6 +184,35 @@ final class RecordingCoordinator {
         guard refreshed != setupStatus else { return }
         setupStatus = refreshed
         reportSetupProgress(refreshed)
+    }
+
+    /// `AppleKeyboards` goes empty for a beat while Keyboards rewrites it.
+    /// Believing the first `false` is how Full Access off/on stranded first
+    /// run on Open Settings with the keyboard still in the list.
+    private func resolvedKeyboardInstallation(hasRun: Bool) -> Bool? {
+        if isKeyboardListReadUnsafe {
+            return setupStatus.isKeyboardInstalled
+        }
+        let listed = InstalledKeyboards.includesVocaPhone()
+        switch listed {
+        case true:
+            keyboardListedFalseAt = nil
+            return true
+        case false:
+            if setupStatus.isKeyboardInstalled == true {
+                if keyboardListedFalseAt == nil {
+                    keyboardListedFalseAt = Date()
+                }
+                if let started = keyboardListedFalseAt,
+                   Date().timeIntervalSince(started) < 1
+                {
+                    return true
+                }
+            }
+            return false
+        case nil:
+            return setupStatus.isKeyboardInstalled ?? (hasRun ? true : nil)
+        }
     }
 
     /// Reports each setup step the first time it is satisfied.
@@ -329,7 +391,20 @@ final class RecordingCoordinator {
         installDarwinObservers()
         loadGatewaySettings()
         refreshSetupStatus()
+        adoptPendingHandoff()
         DiagnosticLog.record(.appStarted)
+    }
+
+    /// A hand-off is the only reason this app is opened by something other than
+    /// the user, and the record that says so is already on disk. Read here
+    /// rather than in the first `task`, which runs after the first frame: the
+    /// home screen would paint, and then be covered — and a flash of somewhere
+    /// else, after a microphone was tapped, reads as the request being lost.
+    private func adoptPendingHandoff() {
+        guard let record = try? store.mostRecent(),
+              KeyboardHandoffPresentation.shouldPresent(record)
+        else { return }
+        activeRecord = record
     }
 
 #if DEBUG
@@ -371,8 +446,16 @@ final class RecordingCoordinator {
 
     func handleDeepLink(_ url: URL) {
         guard !isInert else { return }
-        guard url.scheme == AppConfiguration.urlScheme,
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+        guard url.scheme == AppConfiguration.urlScheme else {
+            message = "The keyboard sent an invalid recording request."
+            return
+        }
+        if url.host == "full-access" {
+            wantsSystemSettings = true
+            openSystemSettingsIfPossible()
+            return
+        }
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let value = components.queryItems?.first(where: { $0.name == "session" })?.value,
               let id = UUID(uuidString: value)
         else {
@@ -400,6 +483,30 @@ final class RecordingCoordinator {
         }
     }
 
+    /// The keyboard asked for Settings and the app is still launching.
+    ///
+    /// `openSettingsURLString` is dropped on the floor while the scene is
+    /// inactive, which is exactly the moment a deep link from the keyboard
+    /// arrives — so the Locked button appeared to do nothing at all. The
+    /// request is held until the scene is active instead.
+    private var wantsSystemSettings = false
+
+    /// vocaphone's page in iOS Settings. Keyboards (and Allow Full Access)
+    /// live there; there is no public URL for the switch itself.
+    func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    /// Spends a held request once iOS will honour it. Safe to call on every
+    /// activation: it does nothing unless the keyboard asked.
+    func openSystemSettingsIfPossible() {
+        guard wantsSystemSettings else { return }
+        guard UIApplication.shared.applicationState == .active else { return }
+        wantsSystemSettings = false
+        openSystemSettings()
+    }
+
     /// Sends the preserved recording again, from the home screen rather than
     /// from the keyboard's deep link. The audio outlives a failed upload or a
     /// failed transcription, and Retry is the action that spends it — a new
@@ -419,13 +526,13 @@ final class RecordingCoordinator {
         }
     }
 
-    func requestMicrophonePermission() {
+    func requestMicrophonePermission(armQuickDictationOnGrant: Bool = true) {
         guard !isInert else { return }
         recorder.requestPermission { [weak self] granted in
             guard let self else { return }
             if granted {
                 self.message = "Microphone permission granted."
-                if KeyboardPreferences.quickDictationArmable {
+                if armQuickDictationOnGrant, KeyboardPreferences.quickDictationArmable {
                     self.armQuickDictation()
                 }
             } else {
@@ -443,13 +550,23 @@ final class RecordingCoordinator {
                 + "permission=\(recorder.recordPermission.rawValue) "
                 + "recording=\(recorder.isRecording)"
         )
-        guard KeyboardPreferences.quickDictationArmable,
+        guard KeyboardPreferences.setupCompleted,
+              KeyboardPreferences.quickDictationArmable,
               audioSessionAvailable,
               recorder.recordPermission == .granted,
               !recorder.isRecording,
               startingSessionID == nil
         else { return }
         armQuickDictation()
+    }
+
+    /// First-run must not look like dictation. The orange status-bar dot is
+    /// Quick Dictation waiting to record, and it used to arm on the way back
+    /// from Settings.
+    func suspendQuickDictationDuringFirstRun() {
+        guard !isInert else { return }
+        guard !KeyboardPreferences.setupCompleted else { return }
+        clearQuickDictationReadiness(deactivateAudioSession: true)
     }
 
     /// Called every time vocaphone reaches the foreground. A pause taken from
@@ -512,6 +629,20 @@ final class RecordingCoordinator {
         DiagnosticLog.record(
             .quickDictationStopped,
             metadata: .reason(.userRequested)
+        )
+    }
+
+    /// The keyboard's VocaPhone switch turned off — the same end as swiping
+    /// VocaPhone away in the app switcher. The live window, its microphone and
+    /// its Live Activity go; Quick Dictation, its duration and the pause flag
+    /// stay exactly as they were, so the next launch (the switch turned back
+    /// on, or the keyboard's Start) arms the usual window again.
+    func closeFromKeyboard() {
+        guard !isInert else { return }
+        clearQuickDictationReadiness(deactivateAudioSession: true)
+        DiagnosticLog.record(
+            .quickDictationStopped,
+            metadata: .reason(.closedFromKeyboard)
         )
     }
 
@@ -652,8 +783,7 @@ final class RecordingCoordinator {
         pipelineSessionID = nil
         cancellationMonitorTask?.cancel()
         Task { await streamingBridge.cancel() }
-        localSherpaSession?.cancel()
-        localSherpaSession = nil
+        discardIncrementalSession()
         guard var record = activeRecord else { return }
         let shouldRemainReady = shouldKeepQuickDictationReady(after: record)
         recorder.cancelSession(keepAudioSessionActive: shouldRemainReady)
@@ -751,6 +881,9 @@ final class RecordingCoordinator {
     private func startSession(id: UUID) async {
         guard startingSessionID == nil || startingSessionID == id else { return }
         guard startingSessionID != id else { return }
+        // A dictation is starting; the model it may need must not be dropped
+        // out from under it by a release scheduled after the last one.
+        localEngineReleaseTask?.cancel()
         startingSessionID = id
         defer { startingSessionID = nil }
 
@@ -774,8 +907,17 @@ final class RecordingCoordinator {
             try? store.save(record)
             clearQuickDictationMarker()
             activeRecord = record
-            let granted = await withCheckedContinuation { continuation in
-                recorder.requestPermission { continuation.resume(returning: $0) }
+            // Asked only when the answer is not already known. Every dictation
+            // paid a cross-process round trip to be told what
+            // `AVAudioApplication` had already cached, in the moment between
+            // the tap and the microphone opening.
+            let granted: Bool
+            if recorder.recordPermission == .granted {
+                granted = true
+            } else {
+                granted = await withCheckedContinuation { continuation in
+                    recorder.requestPermission { continuation.resume(returning: $0) }
+                }
             }
             guard granted else {
                 try record.transition(to: .permissionDenied)
@@ -818,19 +960,20 @@ final class RecordingCoordinator {
                 includeLocalModelChunks: shouldUseSherpaIncremental
             )
             if shouldUseSherpaIncremental, let chunks = recorder.localPcmChunks {
-                do {
-                    // Awaited rather than built inline: the ONNX graph now loads
-                    // off the main actor, so the capture that has already
-                    // started is not competing with a synchronous disk read.
-                    localSherpaSession = try await localModels.startSherpaIncrementalSession(
+                // Started, not awaited. Capture is already running and the
+                // chunks queue while the graph builds, so waiting here bought
+                // nothing and cost everything downstream of it: the recording
+                // state, the Live Activity, and the Finish button the user
+                // reaches for the moment they have swiped back.
+                //
+                // A failure keeps the intact WAV fallback — the finish path
+                // retries the same model in batch mode.
+                let language = record.language
+                localSherpaSession = Task { [localModels] in
+                    try? await localModels.startSherpaIncrementalSession(
                         chunks: chunks,
-                        language: record.language
+                        language: language
                     )
-                } catch {
-                    // Keep the intact WAV fallback. The normal finish path will
-                    // retry the same selected model in batch mode if preparing
-                    // the incremental engine fails.
-                    localSherpaSession = nil
                 }
             }
             if let client = gatewayClient, let chunks = recorder.pcmChunks {
@@ -905,13 +1048,55 @@ final class RecordingCoordinator {
     private func startPipeline(_ record: SessionRecord) {
         guard pipelineSessionID != record.sessionID else { return }
         pipelineTask?.cancel()
+        localEngineReleaseTask?.cancel()
         pipelineSessionID = record.sessionID
         pipelineTask = Task { [weak self] in
             await self?.finalizeAndTranscribe(record)
             guard let self, self.pipelineSessionID == record.sessionID else { return }
             self.pipelineSessionID = nil
             self.pipelineTask = nil
+            self.scheduleLocalEngineRelease()
         }
+    }
+
+    /// The backstop, not the mechanism.
+    ///
+    /// A clock is the wrong instrument here: thirty seconds of quiet costs the
+    /// next dictation the two or three seconds of rebuilding a model nothing
+    /// was short of, while ten minutes of it can starve the keyboard in the
+    /// first thirty seconds. So the model is dropped when memory is actually
+    /// wanted — the system says so, or the keyboard says so, or the standby
+    /// window it belonged to has ended — and this is only the long stop for a
+    /// window that stays armed all day with nothing happening in it.
+    private static let localEngineIdleRelease: Duration = .seconds(10 * 60)
+
+    private func scheduleLocalEngineRelease() {
+        localEngineReleaseTask?.cancel()
+        localEngineReleaseTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.localEngineIdleRelease)
+            guard !Task.isCancelled else { return }
+            self?.releaseLocalEnginesIfIdle()
+        }
+    }
+
+    /// Never mid-dictation: a recording in flight is about to need the model, a
+    /// transcription in flight is holding it, and a session that has stopped
+    /// recording but not yet reached its end is between the two — which is
+    /// exactly where the finish path clears standby, so the record's own state
+    /// is checked rather than the pipeline alone.
+    private func releaseLocalEnginesIfIdle() {
+        guard !isInert, pipelineTask == nil, !recorder.isRecording, startingSessionID == nil,
+              activeRecord.map(\.state.isTerminal) ?? true
+        else { return }
+        // Only when something was actually let go: a line saying a release
+        // recovered nothing is a line that makes the log harder to read.
+        guard localModels.releaseLoadedEngines() else { return }
+        // The number this exists to move, recorded where the keyboard's own
+        // headroom is recorded, so the two can be read against each other.
+        DiagnosticLog.record(
+            .localEngineReleased,
+            metadata: .megabytesAvailable(Int(os_proc_available_memory() / (1024 * 1024)))
+        )
     }
 
     private func beginPolling() {
@@ -1160,7 +1345,9 @@ final class RecordingCoordinator {
             try store.save(record)
             activeRecord = record
 
-            let incremental = localSherpaSession
+            // The only place the graph is waited for. By now the user has
+            // spoken, which is usually longer than it took to build.
+            let incremental = await localSherpaSession?.value
             localSherpaSession = nil
             // A chunk the queue refused never reached the decoder, so the
             // session cannot know it is short. Only the recorder can say.
@@ -1315,6 +1502,14 @@ final class RecordingCoordinator {
             : "Transcript ready. Return to the keyboard to insert it."
     }
 
+    /// Drops the incremental engine whether it finished building or not.
+    private func discardIncrementalSession() {
+        guard let building = localSherpaSession else { return }
+        localSherpaSession = nil
+        building.cancel()
+        Task { await building.value?.cancel() }
+    }
+
     private func persistMeter(_ levels: [Float]) {
         guard let record = activeRecord, record.state == .recording else { return }
         guard let last = levels.last else { return }
@@ -1341,10 +1536,31 @@ final class RecordingCoordinator {
     }
 
     private func armQuickDictation() {
-        guard KeyboardPreferences.quickDictationArmable,
+        guard KeyboardPreferences.setupCompleted,
+              KeyboardPreferences.quickDictationArmable,
               audioSessionAvailable,
               !recorder.isRecording
         else { return }
+
+        // Already armed on the same terms. Several paths arm on return from the
+        // background — the scene going active, the pause being cleared, the
+        // keyboard's own switch — and they arrive within a second of each
+        // other. Each one used to tear the window down and build another: a
+        // Live Activity ended and a new one requested, which is the Dynamic
+        // Island blinking out and back for nothing. Renewing the lease says the
+        // same thing without the flicker.
+        if recorder.isStandbyActive,
+           quickDictationDuration == KeyboardPreferences.quickDictationDuration,
+           let expiresAt = quickDictationExpiresAt,
+           expiresAt > Date(),
+           let availability = try? store.loadQuickDictationAvailability(),
+           availability.isReady()
+        {
+            try? store.saveQuickDictationAvailability(
+                availability.renewingLease(KeyboardPreferences.quickDictationDuration)
+            )
+            return
+        }
 
         clearQuickDictationMarker()
         let duration = KeyboardPreferences.quickDictationDuration
@@ -1402,9 +1618,13 @@ final class RecordingCoordinator {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard let self else { return }
+                // The keyboard's VocaPhone switch removes the marker itself
+                // before it asks this process to close, so a dropped Darwin
+                // ping still ends the window here rather than being rewritten.
                 guard refreshedAvailability.expiresAt > Date(),
                       self.recorder.isStandbyActive,
-                      self.audioSessionAvailable
+                      self.audioSessionAvailable,
+                      (try? self.store.loadQuickDictationAvailability()) != nil
                 else {
                     self.clearQuickDictationReadiness(deactivateAudioSession: true)
                     return
@@ -1446,6 +1666,11 @@ final class RecordingCoordinator {
         clearQuickDictationMarker()
         recorder.stopStandby(deactivateAudioSession: deactivateAudioSession)
         liveActivity.stopStandby()
+        // The window the model was kept warm for has ended — by expiry, by the
+        // switch in the keyboard, or by the Live Activity. Nothing is coming
+        // that needs it, and the next dictation starts by opening this app
+        // anyway, which is seconds this load can hide behind.
+        releaseLocalEnginesIfIdle()
     }
 
     private func clearQuickDictationMarker() {
@@ -1503,6 +1728,47 @@ final class RecordingCoordinator {
                 }
             }
         )
+        // The one warning iOS gives this process before it starts killing
+        // things.
+        memoryWarningObservation = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.releaseLocalEnginesIfIdle() }
+        }
+        // And the one the *system* gives, which arrives earlier and for the
+        // whole device. This is the signal that matters: the app is rarely
+        // short of memory itself — it has gigabytes — while the keyboard's
+        // allowance is being cut to single megabytes on the same phone at the
+        // same moment.
+        let pressure = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .main
+        )
+        pressure.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.releaseLocalEnginesIfIdle() }
+        }
+        pressure.resume()
+        memoryPressureSource = pressure
+        // The keyboard, starving in a process that cannot free what is holding
+        // the memory. It is the most direct evidence there is that this model
+        // has to go: somebody is typing, and their keyboard is about to be
+        // taken away from them.
+        darwinObservations.append(
+            VocaPhoneDarwinCenter.observe(.keyboardLowOnMemory) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.releaseLocalEnginesIfIdle()
+                }
+            }
+        )
+        darwinObservations.append(
+            VocaPhoneDarwinCenter.observe(.closeVocaPhoneRequested) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.closeFromKeyboard()
+                }
+            }
+        )
     }
 
     /// The keyboard cannot record this itself — no container, no write — so the
@@ -1540,8 +1806,7 @@ final class RecordingCoordinator {
             pipelineTask = nil
             pipelineSessionID = nil
             await streamingBridge.cancel()
-            localSherpaSession?.cancel()
-            localSherpaSession = nil
+            discardIncrementalSession()
             let shouldRemainReady = shouldKeepQuickDictationReady(after: shared)
             recorder.cancelSession(keepAudioSessionActive: shouldRemainReady)
             let headline = shared.state == .expired
