@@ -55,13 +55,18 @@ Every Gradle task name carries a flavor, because there are two:
 
 | Flavor | Speech engines | Use it for |
 | --- | --- | --- |
-| `full` | whisper.cpp, plus sherpa-onnx via the prebuilt JNI libraries in `app/src/full/jniLibs` | Everyday development, GitHub beta releases, and the Play AAB |
+| `full` | whisper.cpp, plus sherpa-onnx via the prebuilt JNI library in `app/src/full/jniLibs` | Everyday development, GitHub beta releases, and the Play AAB |
 | `fdroid` | whisper.cpp only, compiled from `third_party/whisper.cpp` | F-Droid only (never upload this flavour to Play) |
 
 `full` is the default, so Android Studio selects it on import. The flavors differ
 only in whether the prebuilt sherpa-onnx libraries are present; shared code asks
 `LocalModelCatalog.sherpaAvailable` rather than assuming either way, and the
 sherpa models are hidden from the picker when the library is absent.
+
+The ONNX Runtime that sherpa-onnx links against is not committed. `full` builds
+fetch it as a pinned, checksum-verified dependency and unpack it into the APK;
+`fdroid` builds resolve nothing. See
+[app/src/full/jniLibs/README.md](app/src/full/jniLibs/README.md).
 
 ## GitHub releases
 
