@@ -37,13 +37,11 @@ final class DictationSurfaceState: ObservableObject {
         get { storedHasTypedThisSession }
         set { change(&storedHasTypedThisSession, to: newValue) }
     }
-    /// The compact arrangement, for looking at in the keyboard lab.
-    ///
-    /// The shipping row keeps language and style in separate leading buttons.
-    /// Compact mode instead shows a menu and the microphone; writing style,
-    /// language, stats and settings live inside the menu. Debug builds opt
-    /// into it from the keyboard lab.
-    private var storedUsesCompactControls: Bool = true
+    /// The compact arrangement: a menu and the microphone, with writing
+    /// style, language, stats and settings inside the menu. The default; the
+    /// older row with language and style in separate leading buttons is what
+    /// the keyboard lab switch turns back on.
+    private var storedUsesCompactControls: Bool = KeyboardPreferences.compactControlsEnabled
     var usesCompactControls: Bool {
         get { storedUsesCompactControls }
         set { change(&storedUsesCompactControls, to: newValue) }
