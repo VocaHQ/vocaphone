@@ -279,11 +279,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // where the keys should be.
         dictationSurfaceState.present(nil)
         // Empty field: Start in the centre. Field already has text: corner,
-        // so Start does not sit on top of regenerated candidates. Nil context
-        // is not empty — leave the latch, same as WordComposer.
-        if let hasContent = readDocument().hasContent {
-            dictationSurfaceState.hasTypedThisSession = hasContent
-        }
+        // so Start does not sit on top of regenerated candidates. A reused
+        // instance may be in another app's field, so an unanswered read starts
+        // over rather than keeping the last field's latch.
+        dictationSurfaceState.noteDocument(readDocument(), isNewField: true)
         startQuickDictationReadinessPolling()
         // A new appearance is a new field as far as this keyboard can tell.
         //
@@ -473,6 +472,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // Moving to a different field brings different traits with it, and the
         // plane should reset so a number pad never leaves the user on letters.
         let documentID = currentDocumentID
+        // Start follows the field: a dictation or emoji with no keystroke moves
+        // it aside, and a field cleared by the host brings it back.
+        dictationSurfaceState.noteDocument(snapshot, isNewField: documentID != lastDocumentID)
         if documentID != lastDocumentID {
             lastDocumentID = documentID
             lastSpaceInsertedAt = nil

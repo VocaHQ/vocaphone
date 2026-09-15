@@ -109,10 +109,62 @@ struct KeyboardSurfaceTests {
         #expect(surface.language == .spanish)
         #expect(surface.languageShortcuts == shortcuts)
         #expect(surface.presentedPanel == .language)
-        #expect(!KeyboardPreferences.recentTranscriptionLanguages.contains(.spanish))
+        // Written at the tap: a keyboard switch from the picker ends this
+        // instance without ever closing it.
+        #expect(KeyboardPreferences.recentTranscriptionLanguages == [.spanish, .english])
 
         surface.dismissPanel()
-        #expect(KeyboardPreferences.recentTranscriptionLanguages.first == .spanish)
+        #expect(KeyboardPreferences.recentTranscriptionLanguages == [.spanish, .english])
+    }
+
+    @Test func onlyTheLastPickOfAPickerVisitBecomesRecent() {
+        let language = KeyboardPreferences.transcriptionLanguage
+        let recents = KeyboardPreferences.recentTranscriptionLanguages
+        let modelLanguages = KeyboardPreferences.modelLanguages
+        let localEnabled = LocalTranscriptionPreferences.enabled
+        defer {
+            KeyboardPreferences.transcriptionLanguage = language
+            KeyboardPreferences.recentTranscriptionLanguages = recents
+            KeyboardPreferences.modelLanguages = modelLanguages
+            LocalTranscriptionPreferences.enabled = localEnabled
+        }
+        KeyboardPreferences.recentTranscriptionLanguages = [.english]
+        KeyboardPreferences.transcriptionLanguage = .automatic
+        KeyboardPreferences.modelLanguages = []
+        LocalTranscriptionPreferences.enabled = false
+
+        let surface = DictationSurfaceState()
+        surface.usesCompactControls = true
+        surface.present(.language)
+        surface.select(language: .spanish)
+        surface.select(language: .french)
+        #expect(KeyboardPreferences.recentTranscriptionLanguages == [.french, .english])
+
+        surface.select(language: .automatic)
+        #expect(KeyboardPreferences.recentTranscriptionLanguages == [.english])
+    }
+
+    /// Start's place follows the field, not only the keys pressed in it.
+    @Test func startFollowsWhatTheFieldReports() {
+        let surface = DictationSurfaceState()
+        surface.usesCompactControls = true
+
+        // A dictation or emoji puts text in the field without a keystroke.
+        surface.noteDocument(DocumentSnapshot(before: "Hello there ", after: ""), isNewField: false)
+        #expect(surface.hasTypedThisSession)
+
+        // The same field not answering keeps it where it is.
+        surface.noteDocument(.unknown, isNewField: false)
+        #expect(surface.hasTypedThisSession)
+
+        // A host clearing the field after sending brings it back.
+        surface.noteDocument(DocumentSnapshot(before: "", after: ""), isNewField: false)
+        #expect(!surface.hasTypedThisSession)
+
+        // Another app's empty field often answers nil on both sides.
+        surface.hasTypedThisSession = true
+        surface.noteDocument(.unknown, isNewField: true)
+        #expect(!surface.hasTypedThisSession)
     }
 
     @Test func closingTheLanguagePickerWithoutAPickLeavesRecentsAlone() {

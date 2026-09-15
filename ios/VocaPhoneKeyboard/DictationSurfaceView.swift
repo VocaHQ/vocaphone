@@ -37,6 +37,20 @@ final class DictationSurfaceState: ObservableObject {
         get { storedHasTypedThisSession }
         set { change(&storedHasTypedThisSession, to: newValue) }
     }
+
+    /// Lets the field's own contents move the latch.
+    ///
+    /// A known answer wins either way: text means the corner, an empty field
+    /// (a new one, or one the host cleared after sending) means the centre. An
+    /// unanswered read keeps the latch in the same field, but a new field has
+    /// nothing typed in it yet, and empty fields often answer nil on both sides.
+    func noteDocument(_ snapshot: DocumentSnapshot, isNewField: Bool) {
+        if let hasContent = snapshot.hasContent {
+            hasTypedThisSession = hasContent
+        } else if isNewField {
+            hasTypedThisSession = false
+        }
+    }
     /// The compact arrangement: a menu and the microphone, with writing
     /// style, language, stats and settings inside the menu. The default; the
     /// older row with language and style in separate leading buttons is what
@@ -78,9 +92,10 @@ final class DictationSurfaceState: ObservableObject {
     /// pick into recents would move that chip from All into Recent while
     /// the finger is still on it.
     private var frozenLanguageShortcuts: [TranscriptionLanguage]?
-    /// Whether a language chip was tapped while this picker was open.
-    /// Closing without a pick must not promote the current language.
-    private var languagePickerDidSelect = false
+    /// Recents as stored when the picker opened. Each pick is written at once,
+    /// on top of this, so only the last pick of a visit counts and nothing is
+    /// lost when a keyboard switch or iOS ends the instance before it closes.
+    private var recentsBeforeLanguagePick: [TranscriptionLanguage]?
     private var storedShowsGlobeKey: Bool = false
     var showsGlobeKey: Bool {
         get { storedShowsGlobeKey }
@@ -281,15 +296,12 @@ final class DictationSurfaceState: ObservableObject {
         let wasCovering = presentedPanel != nil
         presentedPanel = panel
         if leaving == .language, panel != .language {
-            if languagePickerDidSelect {
-                KeyboardPreferences.noteTranscriptionLanguageUse(language)
-            }
             frozenLanguageShortcuts = nil
-            languagePickerDidSelect = false
+            recentsBeforeLanguagePick = nil
         }
         if panel == .language, frozenLanguageShortcuts == nil {
             frozenLanguageShortcuts = liveLanguageShortcuts
-            languagePickerDidSelect = false
+            recentsBeforeLanguagePick = KeyboardPreferences.recentTranscriptionLanguages
         }
         if wasCovering != (panel != nil) {
             onPanelVisibilityChanged?(panel != nil)
@@ -325,7 +337,10 @@ final class DictationSurfaceState: ObservableObject {
     func select(language newLanguage: TranscriptionLanguage) {
         KeyboardPreferences.transcriptionLanguage = newLanguage
         language = KeyboardPreferences.effectiveTranscriptionLanguage
-        languagePickerDidSelect = true
+        if let recentsBeforeLanguagePick {
+            KeyboardPreferences.recentTranscriptionLanguages = recentsBeforeLanguagePick
+        }
+        KeyboardPreferences.noteTranscriptionLanguageUse(language)
         onLanguageChanged?(newLanguage)
         if !usesCompactControls { dismissPanel() }
     }
@@ -725,11 +740,16 @@ struct DictationSurfaceView: View {
     /// Only with nothing typed and no session running. Once there are
     /// suggestions they take the middle; once a session is open the row has
     /// cancel on one end and finish on the other.
+    ///
+    /// Suggestions are checked as well as the latch: next-word predictions
+    /// after a dictation or an emoji arrive without a keystroke, and a centred
+    /// Start would sit on top of them.
     private var centresAction: Bool {
         state.usesCompactControls
             && state.presentedPanel == nil
             && !sessionIsOpen
             && !state.hasTypedThisSession
+            && !state.hasCandidates
     }
 
     @ViewBuilder
