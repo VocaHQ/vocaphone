@@ -82,12 +82,20 @@ struct KeyboardSurfaceTests {
     @Test func choosingALanguageKeepsTheOpenPickerInPlace() {
         let language = KeyboardPreferences.transcriptionLanguage
         let recents = KeyboardPreferences.recentTranscriptionLanguages
+        let modelLanguages = KeyboardPreferences.modelLanguages
+        let localEnabled = LocalTranscriptionPreferences.enabled
         defer {
             KeyboardPreferences.transcriptionLanguage = language
             KeyboardPreferences.recentTranscriptionLanguages = recents
+            KeyboardPreferences.modelLanguages = modelLanguages
+            LocalTranscriptionPreferences.enabled = localEnabled
         }
         KeyboardPreferences.recentTranscriptionLanguages = [.english]
         KeyboardPreferences.transcriptionLanguage = .automatic
+        // Other suites leave an English-only model behind, which would resolve
+        // Spanish back to Automatic. An empty set means every language is open.
+        KeyboardPreferences.modelLanguages = []
+        LocalTranscriptionPreferences.enabled = false
 
         let surface = DictationSurfaceState()
         surface.usesCompactControls = true
