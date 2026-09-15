@@ -1598,10 +1598,31 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             || model.layout != barLayout
             || surfaceFillsKeyboard != surfaceOwnedKeyboard
         {
+            // A panel opening or closing over the keys is not a resize. A
+            // spring on the container revealed the panel a strip at a time as
+            // the frame grew — title, then number, then caption — so the room
+            // changes hands in one frame and the surface fades its own content.
+            let panelOnly = !sessionOwnsKeyboard
+                && surfaceFillsKeyboard != surfaceOwnedKeyboard
+                && model.isExpanded == isBarExpanded
+                && model.layout == barLayout
             isBarExpanded = model.isExpanded
             barLayout = model.layout
             surfaceOwnedKeyboard = surfaceFillsKeyboard
-            applyLayoutMetrics(animated: hasRendered)
+            applyLayoutMetrics(animated: hasRendered, panelToggled: panelOnly)
+            // The keys come back the same way: faded in, not cut in.
+            if panelOnly, !surfaceFillsKeyboard, hasRendered, !keyGrid.isHidden,
+               !UIAccessibility.isReduceMotionEnabled
+            {
+                keyGrid.alpha = 0
+                UIView.animate(
+                    withDuration: 0.18,
+                    delay: 0,
+                    options: [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState]
+                ) {
+                    self.keyGrid.alpha = 1
+                }
+            }
         }
         dictationBar.apply(model, animated: hasRendered)
         announceStateChange(to: state, saying: model.announcement)
@@ -1927,7 +1948,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// Sizes everything from the current traits instead of a single portrait
     /// iPhone constant, and gives the dictation bar only as much room as the
     /// current state actually needs.
-    private func applyLayoutMetrics(animated: Bool = false) {
+    private func applyLayoutMetrics(animated: Bool = false, panelToggled: Bool = false) {
         let metrics = KeyboardMetrics.resolved(
             for: traitCollection,
             preference: heightPreference
@@ -1996,7 +2017,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         emojiPanelHeightConstraint?.constant = metrics.gridHeight
         keyboardHeightConstraint?.constant = keyboardHeight
 
-        guard animated, !UIAccessibility.isReduceMotionEnabled else {
+        // A panel over the keys hands over their room in one frame. Only when
+        // the keyboard itself changes height does it still get the spring: the
+        // host app resizes around it, and a jump there moves the document.
+        guard animated,
+              !UIAccessibility.isReduceMotionEnabled,
+              !(panelToggled && !keyboardResizes)
+        else {
             view.setNeedsLayout()
             return
         }

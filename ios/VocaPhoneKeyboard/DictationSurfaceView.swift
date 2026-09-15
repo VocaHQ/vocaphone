@@ -525,6 +525,11 @@ struct DictationSurfaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var layoutAnimationEnabled = false
     @State private var selectedDashboardPage = CompactDashboardPage.words
+    /// How far the finger has pulled the dashboard strip. Springs back with
+    /// the same curve the page change uses, so letting go is one motion.
+    @GestureState(resetTransaction: Transaction(animation: DictationSurfaceView.dashboardPageAnimation))
+    private var dashboardDrag: CGFloat = 0
+    private static let dashboardPageAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86)
 
 
     /// The diameter the rest of the product already uses for a round control:
@@ -702,10 +707,17 @@ struct DictationSurfaceView: View {
                 Spacer(minLength: 0)
             }
             }
-            // Panel-to-panel must not animate. `.id` plus a parent animation
-            // kept the outgoing TabView and the incoming picker both alive
-            // for the transition, which is how this extension walked into
-            // jetsam while flipping language and style.
+            // Opening and closing fade the panel in over the keys' room, which
+            // the controller now hands over in one frame. Panel-to-panel still
+            // must not animate. `.id` plus a parent animation kept the outgoing
+            // TabView and the incoming picker both alive for the transition,
+            // which is how this extension walked into jetsam while flipping
+            // language and style. The inner modifier wins only when visibility
+            // itself changed.
+            .animation(
+                layoutAnimationEnabled ? .easeOut(duration: 0.2) : nil,
+                value: state.presentedPanel != nil
+            )
             .animation(nil, value: state.presentedPanel)
             .animation(layoutAnimationEnabled ? surfaceSpring : nil, value: sessionIsOpen)
         }
@@ -871,17 +883,17 @@ struct DictationSurfaceView: View {
 
     private var compactDashboard: some View {
         VStack(spacing: 0) {
-            dashboardPage(selectedDashboardPage)
-                .padding(.horizontal, 24)
-                .padding(.top, 8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(.rect)
-                .gesture(dashboardSwipe)
+            GeometryReader { proxy in
+                dashboardPager(size: proxy.size)
+            }
+            .clipped()
 
             HStack(spacing: 8) {
                 ForEach(CompactDashboardPage.allCases) { page in
                     Button {
-                        selectedDashboardPage = page
+                        withAnimation(Self.dashboardPageAnimation) {
+                            selectedDashboardPage = page
+                        }
                     } label: {
                         Circle()
                             .fill(controlForeground.opacity(page == selectedDashboardPage ? 0.9 : 0.25))
@@ -896,7 +908,30 @@ struct DictationSurfaceView: View {
             panelGlobeRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transition(panelTransition)
         .onAppear { state.refreshDashboard() }
+    }
+
+    /// Every page side by side, moved as one strip.
+    ///
+    /// The page used to be swapped when the finger lifted, so a swipe read as
+    /// the number changing under it in one frame. Now the strip follows the
+    /// finger and a spring settles it on a page.
+    private func dashboardPager(size: CGSize) -> some View {
+        let offset = -CGFloat(selectedDashboardPage.rawValue) * size.width + dashboardDrag
+        return HStack(spacing: 0) {
+            ForEach(CompactDashboardPage.allCases) { page in
+                dashboardPage(page)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+                    .frame(width: size.width, height: size.height)
+                    .accessibilityHidden(page != selectedDashboardPage)
+            }
+        }
+        .offset(x: offset)
+        .frame(width: size.width, height: size.height, alignment: .leading)
+        .contentShape(.rect)
+        .gesture(dashboardSwipe(pageWidth: size.width))
     }
 
     private func dashboardPage(_ page: CompactDashboardPage) -> some View {
@@ -919,16 +954,34 @@ struct DictationSurfaceView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var dashboardSwipe: some Gesture {
-        DragGesture(minimumDistance: 24).onEnded { value in
-            let pages = CompactDashboardPage.allCases
-            guard let index = pages.firstIndex(of: selectedDashboardPage) else { return }
-            if value.translation.width < -40, index + 1 < pages.count {
-                selectedDashboardPage = pages[index + 1]
-            } else if value.translation.width > 40, index > 0 {
-                selectedDashboardPage = pages[index - 1]
+    private func dashboardSwipe(pageWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .updating($dashboardDrag) { value, drag, _ in
+                let dx = value.translation.width
+                guard abs(dx) > abs(value.translation.height) else { return }
+                let index = selectedDashboardPage.rawValue
+                let pastEdge = (index == 0 && dx > 0)
+                    || (index == CompactDashboardPage.allCases.count - 1 && dx < 0)
+                // Past the first or last page the strip gives a little and
+                // springs back, rather than stopping dead.
+                drag = pastEdge ? dx / 3 : dx
             }
-        }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                // The predicted end counts a flick as well as a long drag.
+                let travel = value.predictedEndTranslation.width
+                let pages = CompactDashboardPage.allCases
+                var index = selectedDashboardPage.rawValue
+                if travel < -pageWidth / 3 {
+                    index += 1
+                } else if travel > pageWidth / 3 {
+                    index -= 1
+                }
+                let target = pages[min(max(index, 0), pages.count - 1)]
+                withAnimation(Self.dashboardPageAnimation) {
+                    selectedDashboardPage = target
+                }
+            }
     }
 
     private var controlForeground: Color {
