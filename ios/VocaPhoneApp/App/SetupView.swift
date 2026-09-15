@@ -90,6 +90,18 @@ struct SetupView: View {
         store: KeyboardPreferences.defaults
     ) private var keyboardSettingsRoundTripStarted = false
     @State private var isShowingGatewaySetup = false
+    /// Answered here or with the switch in Settings › Privacy.
+    @State private var hasAskedAboutReporting = UserDefaultsTelemetryPreferences().hasBeenAsked
+    @State private var isShowingReportingPayload = false
+    @State private var isShowingReportingDetails = false
+    /// Height of the docked button, so scrolling pages can end above it
+    /// instead of sliding their last card underneath.
+    @State private var dockedActionHeight: CGFloat = 0
+    /// Back from Settings on Set up keyboard with vocaphone still not in the
+    /// list. iOS Settings can show a stale page without Keyboards on it.
+    @State private var keyboardMissingAfterSettings = false
+    /// Tallest welcome card's content, which every welcome card takes.
+    @State private var welcomeCardHeights: [Int: CGFloat] = [:]
     /// Full-screen "Microphone ready" or "Ready to dictate".
     @State private var readyFlash: OnboardingReadyFlash = .none
     /// Title frozen while `readyFlash` fades out so the stack does not collapse.
@@ -147,19 +159,16 @@ struct SetupView: View {
 
     private var status: SetupStatus { coordinator.setupStatus }
 
-    /// The three onboarding cards, same cut as `LocalModelPicker` (`prefix(3)`).
+    /// The three onboarding cards, the same list `LocalModelPicker` draws.
     private var onboardingModelPicks: [LocalModelDescriptor] {
         let languages = LocalModelPicker.recommendationLanguages(
             preferred: KeyboardPreferences.transcriptionLanguage.rawValue
         )
-        return Array(
-            LocalModelCatalog.recommendations(
-                deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
-                languages: languages
-            )
-            .map(\.model)
-            .prefix(3)
+        return LocalModelCatalog.onboardingRecommendations(
+            deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
+            languages: languages
         )
+        .map(\.model)
     }
 
     /// Continue is available once a model is on disk *or* on its way.
@@ -169,11 +178,16 @@ struct SetupView: View {
     /// Continue must not do is leave with nothing coming at all — that is what
     /// Skip is for, and Skip says so by dropping Try dictating.
     private var isOnboardingModelActionDisabled: Bool {
+        onboardingReadyModels.isEmpty && !modelIsArriving
+    }
+
+    /// Every verified model on disk, not only the three cards: More models
+    /// can download anything this iPhone runs.
+    private var onboardingReadyModels: [LocalModelDescriptor] {
         let models = coordinator.localModels
-        let hasReady = onboardingModelPicks.contains {
+        return LocalModelCatalog.usableOnDevice.filter {
             models.isDownloaded($0.id) && !models.failedIntegrityModelIDs.contains($0.id)
         }
-        return !hasReady && !modelIsArriving
     }
 
     /// No model on disk yet, but one is coming. Try dictating waits for it
@@ -531,12 +545,18 @@ struct SetupView: View {
     ) -> some View {
         let column = stageBody(for: page)
             .frame(maxWidth: .infinity, alignment: .leading)
+        let reserve = dockedActionReserve(for: page)
         if onlyIfNeeded {
+            // The reserve is part of what has to fit. Without it the last card
+            // "fit" by ending underneath the docked button.
             ViewThatFits(in: .vertical) {
-                column.fixedSize(horizontal: false, vertical: true)
+                column
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, reserve)
                 ScrollView {
                     column
                 }
+                .contentMargins(.bottom, reserve, for: .scrollContent)
                 .scrollDismissesKeyboard(.interactively)
                 .scrollContentBackground(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
@@ -545,9 +565,18 @@ struct SetupView: View {
             ScrollView {
                 column
             }
+            .contentMargins(.bottom, reserve, for: .scrollContent)
             .scrollDismissesKeyboard(page == .keyboardSwitch ? .never : .interactively)
             .scrollContentBackground(.hidden)
         }
+    }
+
+    /// Room for the docked button below a page's content. The button is an
+    /// overlay so pictures can run under it, but text and cards must be able
+    /// to end above it. The page already keeps `grouping` at its foot.
+    private func dockedActionReserve(for page: OnboardingStage) -> CGFloat {
+        guard pageAction(for: page) != nil || page == .usageReporting else { return 0 }
+        return max(0, dockedActionHeight - VocaMetrics.grouping)
     }
 
     @ViewBuilder
@@ -570,12 +599,20 @@ struct SetupView: View {
     private func onboardingCTA(for page: OnboardingStage) -> some View {
         // No cream slab under the dock. It ate the video and the picture.
         // Pages without a button must not reserve that space either.
-        if let action = pageAction(for: page) {
-            VocaPrimaryButton(
-                title: action.title,
-                action: action.perform
-            )
-            .disabled(page == .model && isOnboardingModelActionDisabled)
+        let asksAboutReporting = page == .usageReporting && readyFlash == .none && !holdingKeyboardOff
+        let action = pageAction(for: page)
+        if asksAboutReporting || action != nil {
+            Group {
+                if asksAboutReporting {
+                    usageReportingDecision
+                } else if let action {
+                    VocaPrimaryButton(
+                        title: action.title,
+                        action: action.perform
+                    )
+                    .disabled(page == .model && isOnboardingModelActionDisabled)
+                }
+            }
             .transaction { $0.animation = nil }
             .padding(.horizontal, VocaMetrics.padding)
             .padding(.top, VocaMetrics.padding)
@@ -583,7 +620,57 @@ struct SetupView: View {
             .safeAreaPadding(.bottom)
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
+            .background(alignment: .top) {
+                if dockHasBackdrop(for: page) {
+                    // Canvas under the buttons, fading out above them, so text
+                    // scrolled beneath reads as passing behind the dock instead
+                    // of through translucent buttons.
+                    VStack(spacing: 0) {
+                        OnboardingEdgeFade(from: .bottom)
+                        Color.vocaCanvas
+                    }
+                    .padding(.top, -OnboardingEdgeFade.length)
+                    .ignoresSafeArea(edges: .bottom)
+                    .allowsHitTesting(false)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                dockedActionHeight = height
+            }
         }
+    }
+
+    /// Pages whose content scrolls under the dock. Set up keyboard is left
+    /// bare: its video runs under the button, and a slab there hid it.
+    private func dockHasBackdrop(for page: OnboardingStage) -> Bool {
+        switch page {
+        case .keyboard, .keyboardSwitch, .practice: false
+        default: true
+        }
+    }
+
+    /// Turn on and Not now, the same size and the same weight. An optional
+    /// question with a louder yes is a nudge, not a question.
+    private var usageReportingDecision: some View {
+        HStack(spacing: VocaMetrics.related + VocaMetrics.tight) {
+            usageReportingButton(UsageReportingCopy.notNow, enabled: false)
+            usageReportingButton(UsageReportingCopy.turnOn, enabled: true)
+        }
+    }
+
+    private func usageReportingButton(_ title: String, enabled: Bool) -> some View {
+        Button {
+            answerUsageReporting(enabled)
+        } label: {
+            Text(title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Color.vocaPrimaryText)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(Color.vocaSurface, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.vocaBorder, lineWidth: 1))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Figma row: back, a thick brand bar, Skip on the right of the bar.
@@ -712,7 +799,7 @@ struct SetupView: View {
         case .source:
             ("Choose where speech becomes text", "On this iPhone, or a gateway you run.")
         case .model:
-            ("Choose model", "Matches the languages and keyboards on this iPhone.")
+            ("Choose model", "It turns your voice into text, offline on this iPhone. You can switch later.")
         case .microphone:
             ("Allow microphone access", "So vocaphone can hear what you say.")
         case .keyboard:
@@ -746,6 +833,8 @@ struct SetupView: View {
             } else {
                 ("Try dictating this", "Speak naturally — ums and repeats get cleaned up.")
             }
+        case .usageReporting:
+            (UsageReportingCopy.title, "Optional, and off unless you turn it on. You can change it later in Settings.")
         case .complete:
             nil
         }
@@ -827,35 +916,88 @@ struct SetupView: View {
             keyboardSwitchStage
         case .practice:
             practiceStage
+        case .usageReporting:
+            usageReportingStage
         case .complete:
             EmptyView()
         }
     }
 
     private var welcomeStage: some View {
-        VStack(alignment: .leading, spacing: VocaMetrics.grouping) {
-            OnboardingBoardCard {
-                OnboardingFeatureCopy(
-                    symbol: "lock.fill",
-                    title: "Your voice stays on this iPhone",
-                    detail: "That's the default. A gateway you run is a separate choice."
-                )
-            }
-            OnboardingBoardCard {
-                OnboardingFeatureCopy(
-                    symbol: "infinity.circle.fill",
-                    title: "No subscriptions or limits",
-                    detail: "Dictate as much as you want, whenever you want."
-                )
-            }
-            OnboardingBoardCard {
-                OnboardingFeatureCopy(
-                    symbol: "keyboard",
-                    title: "Works anywhere you can type",
-                    detail: "Use it in any app with a keyboard."
-                )
-            }
+        VStack(alignment: .leading, spacing: VocaMetrics.related + VocaMetrics.tight) {
+            welcomeCard(
+                0,
+                symbol: "lock.fill",
+                title: "Your voice stays on this iPhone",
+                detail: "That's the default. A gateway you run is a separate choice."
+            )
+            welcomeCard(
+                1,
+                symbol: "infinity",
+                title: "No subscriptions or limits",
+                detail: "Dictate as much as you want, whenever you want."
+            )
+            welcomeCard(
+                2,
+                symbol: "keyboard",
+                title: "Works anywhere you can type",
+                detail: "Use it in any app with a keyboard."
+            )
         }
+    }
+
+    /// One of three equal cards. Heights are measured unconstrained and the
+    /// tallest wins; a card that later grows (Dynamic Type) raises the rest.
+    private func welcomeCard(_ index: Int, symbol: String, title: String, detail: String) -> some View {
+        OnboardingBoardCard(
+            minContentHeight: welcomeCardHeights.values.max() ?? 0,
+            onContentHeight: { height in
+                if welcomeCardHeights[index] != height { welcomeCardHeights[index] = height }
+            }
+        ) {
+            OnboardingFeatureCopy(layout: .inline, symbol: symbol, title: title, detail: detail)
+        }
+    }
+
+    /// Two short lists instead of the Settings paragraphs. The full wording
+    /// is one tap away, and the literal payload one more — the lists are what
+    /// a person reads before deciding, so they have to fit on one screen.
+    private var usageReportingStage: some View {
+        VStack(alignment: .leading, spacing: VocaMetrics.padding - VocaMetrics.tight) {
+            UsageReportingListCard(
+                title: "Shared when on",
+                symbol: "checkmark.circle.fill",
+                tint: Color.brand,
+                items: [
+                    "Setup steps you reach",
+                    "Whether a dictation worked",
+                    "Which model you use",
+                    "The app version",
+                ]
+            )
+            UsageReportingListCard(
+                title: "Never shared",
+                symbol: "xmark.circle.fill",
+                tint: Color.vocaSecondaryText,
+                items: [
+                    "Your voice or audio",
+                    "What you say, type or dictate",
+                    "Your gateway address",
+                    "Anything that identifies you",
+                ]
+            )
+            HStack(spacing: VocaMetrics.padding) {
+                Button(UsageReportingCopy.seeWhatIsSent) { isShowingReportingPayload = true }
+                Spacer(minLength: 0)
+                Button("Full details") { isShowingReportingDetails = true }
+            }
+            .font(.subheadline.weight(.semibold))
+            .tint(Color.brand)
+            .frame(minHeight: VocaMetrics.minimumTarget)
+            .padding(.horizontal, VocaMetrics.tight)
+        }
+        .sheet(isPresented: $isShowingReportingPayload) { PendingPayloadSheet() }
+        .sheet(isPresented: $isShowingReportingDetails) { UsageReportingDetailsSheet() }
     }
 
     private var sourceStage: some View {
@@ -933,6 +1075,20 @@ struct SetupView: View {
                         OnboardingInstructionLine(
                             number: 3,
                             title: "Turn on vocaphone and Allow Full Access"
+                        )
+                    }
+                }
+                if keyboardMissingAfterSettings, setupKeyboardVerdict == .addKeyboard {
+                    // iOS Settings, not vocaphone: a Settings app that was
+                    // already open can keep drawing this app's page from
+                    // before the keyboard was registered, without Keyboards
+                    // on it. Relaunching Settings rebuilds the page.
+                    OnboardingBoardCard {
+                        OnboardingFeatureCopy(
+                            layout: .inline,
+                            symbol: "questionmark",
+                            title: "No Keyboards in Settings?",
+                            detail: "Close Settings from the app switcher, then tap Open Settings again."
                         )
                     }
                 }
@@ -1183,7 +1339,8 @@ struct SetupView: View {
             persistedStage: persisted,
             status: status,
             hasCompletedKeyboardPractice: hasCompletedKeyboardPractice,
-            modelIsArriving: modelIsArriving
+            modelIsArriving: modelIsArriving,
+            hasAnsweredUsageReporting: hasAskedAboutReporting
         )
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -1506,6 +1663,9 @@ struct SetupView: View {
     /// `setupCompleted`. Fading first would flash the last onboarding page.
     private func presentReadyFlash(_ flash: OnboardingReadyFlash, then next: OnboardingStage?) {
         guard flash != .none else { return }
+        // First run is not over while the usage question is unanswered: the
+        // cover lifts onto that page instead of home.
+        let next = next ?? (asksAboutUsageReporting ? .usageReporting : nil)
         readyCoverCopy = flash
         awaitingSettingsReturn = false
         // Reset while the cover is still transparent, so the previous run's
@@ -1578,9 +1738,10 @@ struct SetupView: View {
             guard hasCompletedKeyboardPractice else { return }
         case .keyboard:
             guard setupKeyboardVerdict == .ready else { return }
-        case .keyboardSwitch, .complete:
-            // Enable keyboard moves on the extension's own proof.
-            // `.complete` is leave, not a page.
+        case .keyboardSwitch, .usageReporting, .complete:
+            // Enable keyboard moves on the extension's own proof. Usage
+            // reporting moves on its own two buttons. `.complete` is leave,
+            // not a page.
             return
         }
         guard var next = OnboardingPresentation.nextStage(after: stage) else { return }
@@ -1600,11 +1761,10 @@ struct SetupView: View {
     /// Files on disk are enough to leave Choose model. Loading the engine is
     /// a background job; dictation will try again if this pass fails.
     private func continueOnboardingModels() {
-        let models = coordinator.localModels
-        let ready = onboardingModelPicks.filter {
-            models.isDownloaded($0.id) && !models.failedIntegrityModelIDs.contains($0.id)
-        }
+        let ready = onboardingReadyModels
+        let readyIDs = Set(ready.map(\.id))
         guard let model = ready.first(where: { $0.id == LocalTranscriptionPreferences.modelIdentifier })
+            ?? onboardingModelPicks.first(where: { readyIDs.contains($0.id) })
             ?? ready.first
         else {
             // Nothing has landed yet. Leaving is still allowed while a
@@ -1639,6 +1799,10 @@ struct SetupView: View {
     /// First run ends here. The Ready-to-dictate cover is only for a setup
     /// that can actually dictate — skipped download goes straight to home.
     private func leaveFirstRun() {
+        if stage != .usageReporting, asksAboutUsageReporting {
+            askAboutUsageReporting()
+            return
+        }
         // Whether the keys are up right now. Read before letting go: the
         // cover is an in-app overlay and the keyboard is a system window
         // above it, so "Ready to dictate" cannot paint over the keys.
@@ -1675,6 +1839,39 @@ struct SetupView: View {
             return
         }
         moveToStage(fallback, backward: true)
+    }
+
+    private var asksAboutUsageReporting: Bool {
+        OnboardingPresentation.asksAboutUsageReporting(
+            status: status,
+            hasBeenAsked: hasAskedAboutReporting
+        )
+    }
+
+    /// The last page. The keyboard goes first: Try dictating leaves it up, and
+    /// a page pushing in under a keyboard still sliding away is two motions.
+    private func askAboutUsageReporting() {
+        let dismissingKeyboard = practiceFocused || keyboardProbeFocused
+            || (stage == .practice && !practiceNeedsModel)
+        resignOnScreenKeyboard()
+        Task { @MainActor in
+            if dismissingKeyboard {
+                try? await Task.sleep(
+                    for: .milliseconds(reduceMotion ? 80 : Self.keyboardDismissal)
+                )
+            }
+            guard requiresMandatorySetup, stage != .usageReporting else { return }
+            moveToStage(.usageReporting)
+            UIAccessibility.post(notification: .screenChanged, argument: nil)
+        }
+    }
+
+    private func answerUsageReporting(_ enabled: Bool) {
+        guard stage == .usageReporting, !hasAskedAboutReporting else { return }
+        Task { await Telemetry.shared.setEnabled(enabled) }
+        UserDefaultsTelemetryPreferences().hasBeenAsked = true
+        hasAskedAboutReporting = true
+        leaveFirstRun()
     }
 
     private func finishSetup() {
@@ -1789,6 +1986,7 @@ struct SetupView: View {
                 + " stored=\(status.keyboard) verdict=\(setupKeyboardVerdict)"
         )
 #endif
+        keyboardMissingAfterSettings = setupKeyboardVerdict == .addKeyboard
         // They came back having done the whole thing: go on without a tap.
         if setupKeyboardVerdict == .ready {
             moveToStage(.keyboardSwitch)
@@ -2378,11 +2576,18 @@ private struct OnboardingEdgeFade: View {
 
 /// Figma Frame 13: surface fill, 16 continuous, no shadow, no stroke.
 private struct OnboardingBoardCard<Content: View>: View {
+    /// Cards that sit together as a set share one height, so a one-line card
+    /// does not break the column. Reports its natural content height.
+    var minContentHeight: CGFloat = 0
+    var onContentHeight: ((CGFloat) -> Void)? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
         content
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                onContentHeight?(height)
+            }
+            .frame(maxWidth: .infinity, minHeight: minContentHeight, alignment: .leading)
             .padding(16)
             .background(
                 Color.vocaSurface,
@@ -2391,29 +2596,135 @@ private struct OnboardingBoardCard<Content: View>: View {
     }
 }
 
+/// A titled checklist for the usage-reporting page.
+private struct UsageReportingListCard: View {
+    let title: String
+    let symbol: String
+    let tint: Color
+    let items: [String]
+
+    var body: some View {
+        OnboardingBoardCard {
+            VStack(alignment: .leading, spacing: VocaMetrics.related + VocaMetrics.tight) {
+                Text(title)
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(items, id: \.self) { item in
+                    Label {
+                        Text(item)
+                            .font(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: symbol)
+                            .foregroundStyle(tint)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The Settings wording, word for word, for anyone who wants all of it.
+private struct UsageReportingDetailsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: VocaMetrics.padding) {
+                    Text(UsageReportingCopy.whatIsSent)
+                    Text(UsageReportingCopy.whatIsNeverSent)
+                    Text(UsageReportingCopy.noIdentifier + " " + UsageReportingCopy.optOutIsLogged)
+                    Text(UsageReportingCopy.changeLater)
+                        .foregroundStyle(Color.vocaSecondaryText)
+                }
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(VocaMetrics.padding)
+            }
+            .navigationTitle(UsageReportingCopy.settingsTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
 /// Title and detail inside a board card. The three welcome features are
 /// separate cards, the way they sit on the board.
 private struct OnboardingFeatureCopy: View {
+    enum Layout {
+        /// Symbol on its own line above the copy.
+        case stacked
+        /// Symbol beside the copy. Welcome's three cards have to fit above
+        /// the docked button, and a line per symbol is what pushed the last
+        /// one under it.
+        case inline
+    }
+
+    var layout: Layout = .stacked
     let symbol: String
     let title: String
     let detail: String
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        VStack(alignment: .leading, spacing: VocaMetrics.related) {
-            Image(systemName: symbol)
-                .font(.title3)
-                .foregroundStyle(Color.vocaSecondaryText)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: VocaMetrics.tight) {
-                Text(title)
-                    .font(.headline)
-                Text(detail)
-                    .font(.body)
-                    .foregroundStyle(Color.vocaSecondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if layout == .inline, !dynamicTypeSize.isAccessibilitySize {
+                // Centred on the copy, in a tile of one fixed size. On a text
+                // baseline a lock, an infinity sign and a keyboard each sat at
+                // a different height and inset, and the column wandered.
+                HStack(alignment: .center, spacing: VocaMetrics.padding) {
+                    symbolTile
+                    copy
+                }
+            } else {
+                VStack(alignment: .leading, spacing: VocaMetrics.related) {
+                    symbolImage
+                    copy
+                }
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var symbolTile: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 18, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(Color.brand)
+            .frame(width: 40, height: 40)
+            .background(
+                Color.brand.opacity(0.14),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .accessibilityHidden(true)
+    }
+
+    private var symbolImage: some View {
+        Image(systemName: symbol)
+            .font(.title3)
+            .foregroundStyle(Color.vocaSecondaryText)
+            .accessibilityHidden(true)
+    }
+
+    private var copy: some View {
+        VStack(alignment: .leading, spacing: VocaMetrics.tight) {
+            Text(title)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(detail)
+                .font(.body)
+                .foregroundStyle(Color.vocaSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

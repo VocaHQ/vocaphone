@@ -168,39 +168,39 @@ struct KeyboardSettingsView: View {
     @AppStorage(
         KeyboardPreferences.typingSuggestionsKey,
         store: KeyboardPreferences.defaults
-    ) private var suggestionsEnabled = true
+    ) private var suggestionsEnabled = KeyboardDefaults.typingSuggestions
     @AppStorage(
         KeyboardPreferences.autocorrectKey,
         store: KeyboardPreferences.defaults
-    ) private var autocorrectEnabled = true
+    ) private var autocorrectEnabled = KeyboardDefaults.autocorrect
     @AppStorage(
         KeyboardPreferences.nextWordPredictionKey,
         store: KeyboardPreferences.defaults
-    ) private var predictionEnabled = true
+    ) private var predictionEnabled = KeyboardDefaults.nextWordPrediction
     @AppStorage(
         KeyboardPreferences.learnAsITypeKey,
         store: KeyboardPreferences.defaults
-    ) private var learnAsITypeEnabled = true
+    ) private var learnAsITypeEnabled = KeyboardDefaults.learnAsIType
     @AppStorage(
         KeyboardPreferences.smartPunctuationKey,
         store: KeyboardPreferences.defaults
-    ) private var smartPunctuationEnabled = true
+    ) private var smartPunctuationEnabled = KeyboardDefaults.smartPunctuation
     @AppStorage(
         KeyboardPreferences.typingHapticsKey,
         store: KeyboardPreferences.defaults
-    ) private var typingHapticsEnabled = false
+    ) private var typingHapticsEnabled = KeyboardDefaults.typingHaptics
     @AppStorage(
         KeyboardPreferences.emojiSuggestionsKey,
         store: KeyboardPreferences.defaults
-    ) private var emojiSuggestionsEnabled = true
+    ) private var emojiSuggestionsEnabled = KeyboardDefaults.emojiSuggestions
     @AppStorage(
         KeyboardPreferences.swipeTypingKey,
         store: KeyboardPreferences.defaults
-    ) private var swipeTypingEnabled = false
+    ) private var swipeTypingEnabled = KeyboardDefaults.swipeTyping
     @AppStorage(
         KeyboardPreferences.spacebarCursorKey,
         store: KeyboardPreferences.defaults
-    ) private var spacebarCursorEnabled = true
+    ) private var spacebarCursorEnabled = KeyboardDefaults.spacebarCursor
 
     /// Held rather than read straight from ``KeyboardPreferences`` on every
     /// redraw: the list has to keep its order, and the order is the order the
@@ -479,15 +479,15 @@ struct DictationSettingsView: View {
     @AppStorage(
         KeyboardPreferences.numbersAsDigitsKey,
         store: KeyboardPreferences.defaults
-    ) private var numbersAsDigits = false
+    ) private var numbersAsDigits = KeyboardDefaults.numbersAsDigits
     @AppStorage(
         KeyboardPreferences.spokenEmojiKey,
         store: KeyboardPreferences.defaults
-    ) private var spokenEmoji = false
+    ) private var spokenEmoji = KeyboardDefaults.spokenEmoji
     @AppStorage(
         KeyboardPreferences.repairSpeechKey,
         store: KeyboardPreferences.defaults
-    ) private var repairSpeech = true
+    ) private var repairSpeech = KeyboardDefaults.repairSpeech
     @AppStorage(
         KeyboardPreferences.transcriptionLanguageKey,
         store: KeyboardPreferences.defaults

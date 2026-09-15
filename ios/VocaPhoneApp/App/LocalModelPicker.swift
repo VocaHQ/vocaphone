@@ -14,6 +14,9 @@ struct LocalModelPicker: View {
     /// Onboarding presents one guided answer; Settings keeps the full catalog.
     var onboarding = false
     var guidanceLanguage = ""
+    /// Opens with every compatible model listed rather than behind a
+    /// disclosure. More models in onboarding exists only to show that list.
+    var expandsAvailableModels = false
 
 #if DEBUG
     /// Which model a `#Preview` should draw as "In use". Production leaves this
@@ -36,6 +39,7 @@ struct LocalModelPicker: View {
     /// has not been told "no" — putting the line there too would be the page
     /// answering a question nobody asked.
     @State private var didCancelDownload = false
+    @State private var isShowingMoreModels = false
 
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
@@ -95,10 +99,27 @@ struct LocalModelPicker: View {
             deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
             languages: recommendationLanguages
         )
-        if onboarding {
-            return Array(recommended.prefix(3))
+        // Settings answers the same two questions as first run, so its
+        // recommended section follows the same guide. More models keeps the
+        // role-based list: it exists to show everything, not to choose.
+        if onboarding || !expandsAvailableModels {
+            return LocalModelCatalog.onboardingRecommendations(
+                deviceMemoryGB: LocalModelCatalog.deviceMemoryGB,
+                languages: recommendationLanguages,
+                priority: guidancePriority,
+                limit: onboarding ? 3 : 4
+            )
         }
         return recommended
+    }
+
+    /// The cards on Choose model: the three picks, then anything else already
+    /// on this iPhone or on its way — a model started from More models has to
+    /// show its ring here, or the page looks like nothing happened.
+    private var onboardingCards: [LocalModelDescriptor] {
+        let picked = picks.map(\.model)
+        let pickedIDs = Set(picked.map(\.id))
+        return picked + installedModels.filter { !pickedIDs.contains($0.id) }
     }
 
     /// Picks not yet on the phone. The installed ones already have a row above
@@ -237,6 +258,58 @@ struct LocalModelPicker: View {
                     .foregroundStyle(.secondary)
             }
         } else {
+            if expandsAvailableModels {
+                allModelsSections
+            } else {
+                settingsSections
+            }
+        }
+    }
+
+    /// More models from onboarding: one flat list, recommended first, nothing
+    /// folded away. Folding it would make the sheet a second button to find.
+    @ViewBuilder
+    private var allModelsSections: some View {
+        if !installedModels.isEmpty {
+            Section("On this iPhone") {
+                ForEach(installedModels) { model in
+                    row(for: model)
+                }
+            }
+        }
+        if !recommendedPicks.isEmpty {
+            Section("Recommended for this iPhone") {
+                ForEach(recommendedPicks, id: \.model.id) { pick in
+                    row(for: pick.model)
+                }
+            }
+        }
+        if !availableModels.isEmpty {
+            Section {
+                ForEach(availableModels) { model in
+                    row(for: model)
+                }
+            } header: {
+                Text("More compatible models")
+            } footer: {
+                Text("Every model here runs on this iPhone. You can switch models later in Settings.")
+            }
+        }
+        if manager.message != nil || modelLoadError != nil {
+            messageSection
+        }
+    }
+
+    @ViewBuilder
+    private var settingsSections: some View {
+        Group {
+            Section {
+                guideContent
+                    .padding(.vertical, VocaMetrics.related)
+            } footer: {
+                Text("Updates the recommendations below. Your current model stays in use until you pick another.")
+            }
+
             if !installedModels.isEmpty {
                 Section("On this iPhone") {
                     ForEach(installedModels) { model in
@@ -254,9 +327,15 @@ struct LocalModelPicker: View {
                     Text("Recommended for this iPhone")
                 } footer: {
                     Text(
-                        "Each of these answers a different question. Every one runs "
-                            + "on this iPhone; pick the one that matches how you dictate."
+                        "\(guidancePriority.shortTitle) for \(recommendationLanguageName). "
+                            + "Every one runs offline on this iPhone."
                     )
+                }
+            } else if !picks.isEmpty {
+                Section("Recommended for this iPhone") {
+                    Text("The best matches for \(recommendationLanguageName) are already on this iPhone.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -281,25 +360,38 @@ struct LocalModelPicker: View {
             }
 
             if manager.message != nil || modelLoadError != nil {
-                Section {
-                    if let message = manager.message {
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(manager.hasError ? Color.vocaError : .secondary)
-                    }
-                    if let modelLoadError {
-                        Text(modelLoadError)
-                            .font(.footnote)
-                            .foregroundStyle(Color.vocaError)
-                    }
-                }
+                messageSection
+            }
+        }
+    }
+
+    private var messageSection: some View {
+        Section {
+            if let message = manager.message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(manager.hasError ? Color.vocaError : .secondary)
+            }
+            if let modelLoadError {
+                Text(modelLoadError)
+                    .font(.footnote)
+                    .foregroundStyle(Color.vocaError)
             }
         }
     }
 
     @ViewBuilder
     private var onboardingBody: some View {
-        VStack(alignment: .leading, spacing: VocaMetrics.related) {
+        VStack(alignment: .leading, spacing: VocaMetrics.padding - VocaMetrics.tight) {
+            if !usable.isEmpty {
+                onboardingGuide
+                Text("Recommended for you")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.vocaSecondaryText)
+                    .padding(.top, VocaMetrics.grouping - VocaMetrics.padding + VocaMetrics.related)
+                    .padding(.horizontal, VocaMetrics.tight)
+                    .accessibilityAddTraits(.isHeader)
+            }
             if usable.isEmpty {
                 Text("No on-device model fits this iPhone yet.")
                     .font(.footnote)
@@ -314,9 +406,11 @@ struct LocalModelPicker: View {
                         .font(.footnote)
                         .foregroundStyle(Color.vocaError)
                 }
-                ForEach(Array(picks.enumerated()), id: \.element.model.id) { index, pick in
-                    row(for: pick.model, onboarding: true, forYou: index == 0)
+                ForEach(Array(onboardingCards.enumerated()), id: \.element.id) { index, model in
+                    row(for: model, onboarding: true, forYou: index == 0)
                 }
+                .animation(.snappy(duration: 0.25), value: onboardingCards.map(\.id))
+                moreModelsButton
                 // Continue unlocks the moment a transfer starts, and a button
                 // that merely stops being grey does not explain itself. This
                 // says what the next minute is for: the keyboard takes about
@@ -347,6 +441,25 @@ struct LocalModelPicker: View {
             }
         }
         .onAppear { holdRecommendationLanguages() }
+        .sheet(isPresented: $isShowingMoreModels) {
+            NavigationStack {
+                List {
+                    LocalModelPicker(
+                        manager: manager,
+                        onChange: onChange,
+                        guidanceLanguage: guidanceLanguage,
+                        expandsAvailableModels: true
+                    )
+                }
+                .navigationTitle("All models")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { isShowingMoreModels = false }
+                    }
+                }
+            }
+        }
         .onChange(of: manager.downloadedModelIDs) { _, _ in
             prepareOnboardingChoiceIfReady()
         }
@@ -358,6 +471,201 @@ struct LocalModelPicker: View {
         }
     }
 
+    /// Help me choose, on the page rather than behind a sheet: the language
+    /// and the one trade-off that matter, and the cards below answer at once.
+    /// Nobody should need to know what "TDT" or "CTC" means to pick well.
+    private var onboardingGuide: some View {
+        guideContent
+            .padding(VocaMetrics.padding + 2)
+            .background(
+                Color.vocaSurface,
+                in: RoundedRectangle(cornerRadius: VocaMetrics.heroRadius, style: .continuous)
+            )
+    }
+
+    private var guideContent: some View {
+        VStack(alignment: .leading, spacing: VocaMetrics.padding - VocaMetrics.tight) {
+            Label("Help me choose", systemImage: "wand.and.sparkles")
+                .font(.headline)
+                .foregroundStyle(Color.vocaPrimaryText)
+
+            HStack(spacing: VocaMetrics.related) {
+                Text("I speak")
+                    .font(.body)
+                    .foregroundStyle(Color.vocaSecondaryText)
+                Spacer(minLength: VocaMetrics.related)
+                Picker("I speak", selection: onboardingLanguageBinding) {
+                    ForEach(onboardingLanguageOptions, id: \.code) { option in
+                        Text(option.name).tag(option.code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .tint(Color.brand)
+                .accessibilityLabel("Language you speak")
+            }
+            .padding(.leading, VocaMetrics.padding - VocaMetrics.tight)
+            .padding(.trailing, VocaMetrics.tight)
+            .frame(minHeight: VocaMetrics.minimumTarget + VocaMetrics.tight)
+            .background(
+                Color.vocaRecessedSurface,
+                in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
+            )
+
+            VStack(alignment: .leading, spacing: VocaMetrics.related + VocaMetrics.tight) {
+                HStack(spacing: VocaMetrics.related) {
+                    ForEach(ModelGuidancePriority.allCases) { priority in
+                        priorityTile(priority)
+                    }
+                }
+                // Equal tiles: the tallest label sets the row, and every tile
+                // fills it, selected or not.
+                .fixedSize(horizontal: false, vertical: true)
+                Text(guidancePriority.onboardingDetail)
+                    .font(.footnote)
+                    .foregroundStyle(Color.vocaSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .animation(nil, value: guidancePriority)
+            }
+        }
+    }
+
+    /// One of three equal tiles. A segmented control cut "Many languages"
+    /// to "Many languag…" at the text sizes people actually use.
+    private func priorityTile(_ priority: ModelGuidancePriority) -> some View {
+        let selected = guidancePriority == priority
+        return Button {
+            withAnimation(.snappy(duration: 0.22)) { guidancePriority = priority }
+        } label: {
+            VStack(spacing: VocaMetrics.related) {
+                Image(systemName: priority.symbol)
+                    .font(.title3.weight(.semibold))
+                    .accessibilityHidden(true)
+                Text(priority.shortTitle)
+                    .font(.footnote.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(selected ? Color.brand : Color.vocaPrimaryText)
+            .padding(.vertical, VocaMetrics.padding - VocaMetrics.tight)
+            .padding(.horizontal, VocaMetrics.tight)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minHeight: 76)
+            .background(
+                selected ? Color.brand.opacity(0.14) : Color.vocaRecessedSurface,
+                in: RoundedRectangle(cornerRadius: VocaMetrics.cardRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: VocaMetrics.cardRadius, style: .continuous)
+                    .strokeBorder(selected ? Color.brand.opacity(0.7) : Color.clear, lineWidth: 1.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: VocaMetrics.cardRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityHint(priority.onboardingDetail)
+    }
+
+    private var recommendationLanguageName: String {
+        TranscriptionLanguage(rawValue: recommendationLanguage)?.displayName
+            ?? Locale.current.localizedString(forLanguageCode: recommendationLanguage)
+            ?? recommendationLanguage.uppercased()
+    }
+
+    private var onboardingLanguageBinding: Binding<String> {
+        Binding(
+            get: { recommendationLanguage },
+            set: { code in
+                guidanceLanguageOverride = code
+                // First run has no dictation language yet, so the answer
+                // becomes it. In Settings that switch has its own row, and
+                // asking for suggestions must not quietly change it.
+                if onboarding, let language = TranscriptionLanguage(rawValue: code) {
+                    KeyboardPreferences.transcriptionLanguage = language
+                }
+            }
+        )
+    }
+
+    /// The languages this iPhone already types first, then every other one.
+    private var onboardingLanguageOptions: [(code: String, name: String)] {
+        func name(_ code: String) -> String {
+            TranscriptionLanguage(rawValue: code)?.displayName
+                ?? Locale.current.localizedString(forLanguageCode: code)
+                ?? code.uppercased()
+        }
+        let spoken = recommendationLanguages
+        let others = TranscriptionLanguage.allCases
+            .filter { $0 != .automatic }
+            .map(\.rawValue)
+            .filter { !spoken.contains($0) }
+            .sorted { name($0) < name($1) }
+        return (spoken + others).map { ($0, name($0)) }
+    }
+
+    /// Why this card, in words rather than parameters — and a different
+    /// reason on each card. Three cards all saying "Very accurate" gave nobody
+    /// a way to pick between them.
+    private func onboardingBenefit(for model: LocalModelDescriptor) -> String {
+        let cards = onboardingCards
+        let languageName = TranscriptionLanguage(rawValue: recommendationLanguage)?.displayName
+            ?? recommendationLanguage.uppercased()
+        if cards.first?.id == model.id {
+            switch guidancePriority {
+            case .balanced: return "Most accurate for \(languageName)"
+            case .lighter: return "Smallest download"
+            case .multilingual: return "Best across languages"
+            }
+        }
+        if let first = cards.first, model.sizeBytes * 2 < first.sizeBytes {
+            return "Smaller download"
+        }
+        if !model.englishOnly, model.languageCodes.count != 1 {
+            let count = model.languageCodes.isEmpty ? 100 : model.languageCodes.count
+            if count > 1 { return "\(count) languages in one" }
+        }
+        if LocalModelCatalog.isHighAccuracy(model, for: recommendationLanguage) {
+            return "Very accurate"
+        }
+        return "Works offline"
+    }
+
+    /// Languages as a count once there are more than two names to list.
+    private func onboardingLanguagesFact(for model: LocalModelDescriptor) -> String {
+        if model.languageCodes.count > 2 { return "\(model.languageCodes.count) languages" }
+        return model.languages.replacingOccurrences(of: " · auto-detect", with: "")
+    }
+
+    /// The rest of the catalog: every model this iPhone can run, with the
+    /// same download, use and delete actions as Settings.
+    private var moreModelsButton: some View {
+        Button {
+            isShowingMoreModels = true
+        } label: {
+            HStack(spacing: VocaMetrics.related) {
+                Text("More models")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 0)
+                Text("\(usable.count) for this iPhone")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.vocaSecondaryText)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.vocaSecondaryText)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, VocaMetrics.padding)
+            .frame(maxWidth: .infinity, minHeight: VocaMetrics.minimumTarget + VocaMetrics.related)
+            .background(
+                Color.vocaSurface,
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows every model that runs on this iPhone")
+    }
+
     /// A transfer is running or waiting for a slot.
     private var isDownloadingSomething: Bool {
         !manager.downloadingModelIDs.isEmpty || !manager.queuedModelIDs.isEmpty
@@ -365,9 +673,9 @@ struct LocalModelPicker: View {
 
     /// Nothing on disk and nothing coming — the state where Continue is grey.
     private var hasUsableDownload: Bool {
-        picks.contains {
-            manager.isDownloaded($0.model.id)
-                && !manager.failedIntegrityModelIDs.contains($0.model.id)
+        onboardingCards.contains {
+            manager.isDownloaded($0.id)
+                && !manager.failedIntegrityModelIDs.contains($0.id)
         }
     }
 
@@ -384,26 +692,32 @@ struct LocalModelPicker: View {
     /// Get, the bar, and the check all occupy this capsule so the card does not jump.
     private let onboardingGetWidth: CGFloat = 52
     private let onboardingGetHeight: CGFloat = 28
-    private let onboardingCardHeight: CGFloat = 76
+    private let onboardingCardHeight: CGFloat = 96
 
     private func onboardingModelCard(
         model: LocalModelDescriptor,
         forYou: Bool,
         state: ModelState
     ) -> some View {
-        HStack(alignment: .center, spacing: VocaMetrics.related) {
-            VStack(alignment: .leading, spacing: VocaMetrics.tight) {
-                HStack(spacing: 6) {
-                    Text(model.displayName)
-                        .font(.headline)
-                        .lineLimit(1)
-                    if forYou { forYouBadge }
-                    Spacer(minLength: 0)
+        HStack(alignment: .top, spacing: VocaMetrics.padding - VocaMetrics.tight) {
+            ModelMakerTile(maker: model.maker, size: 44)
+            VStack(alignment: .leading, spacing: VocaMetrics.related - 2) {
+                if forYou { forYouBadge }
+                Text(onboardingName(for: model))
+                    .font(.headline)
+                    .foregroundStyle(Color.vocaPrimaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(onboardingBenefit(for: model))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.brand)
+                    .fixedSize(horizontal: false, vertical: true)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: VocaMetrics.padding - VocaMetrics.tight) { onboardingFactLabels(for: model) }
+                    VStack(alignment: .leading, spacing: VocaMetrics.tight) { onboardingFactLabels(for: model) }
                 }
-                Text("\(model.sizeLabel) · \(model.languages)")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.vocaSecondaryText)
-                    .lineLimit(1)
+                .font(.footnote)
+                .foregroundStyle(Color.vocaSecondaryText)
+                .padding(.top, 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             OnboardingCardTrailing(
@@ -412,14 +726,47 @@ struct LocalModelPicker: View {
                 getWidth: onboardingGetWidth,
                 getHeight: onboardingGetHeight
             )
+            .padding(.top, forYou ? 22 : 0)
         }
-        .padding(VocaMetrics.padding)
-        .frame(minHeight: onboardingCardHeight, maxHeight: onboardingCardHeight)
+        .padding(VocaMetrics.padding + 2)
+        .frame(minHeight: onboardingCardHeight)
         .background(
             Color.vocaSurface,
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            in: RoundedRectangle(cornerRadius: VocaMetrics.heroRadius - 2, style: .continuous)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: VocaMetrics.heroRadius - 2, style: .continuous)
+                .strokeBorder(forYou ? Color.brand.opacity(0.35) : Color.clear, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: VocaMetrics.heroRadius - 2, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func onboardingFactLabels(for model: LocalModelDescriptor) -> some View {
+        Label(model.sizeLabel, systemImage: "arrow.down.circle")
+            .labelStyle(OnboardingFactLabelStyle())
+        Label(onboardingLanguagesFact(for: model), systemImage: "globe")
+            .labelStyle(OnboardingFactLabelStyle())
+    }
+
+    /// The family name with its language, without build details: "Whisper
+    /// Tiny · English", not "Whisper Large v3 Turbo · Turbo pipeline · 632 MB
+    /// build". Two Whisper Tiny cards with nothing to tell them apart was the
+    /// other thing cutting the language off did.
+    private func onboardingName(for model: LocalModelDescriptor) -> String {
+        model.displayName
+            .components(separatedBy: " · ")
+            .filter { !$0.contains("pipeline") && !$0.contains("build") }
+            .joined(separator: " · ")
+    }
+
+    private struct OnboardingFactLabelStyle: LabelStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            HStack(spacing: 5) {
+                configuration.icon.imageScale(.small)
+                configuration.title
+            }
+        }
     }
 
     private var forYouBadge: some View {
@@ -595,11 +942,7 @@ struct LocalModelPicker: View {
                 .accessibilityValue(onboardingAccessibilityValue(model: model, state: state))
                 .accessibilityHint(onboardingAccessibilityHint(state: state))
             } else {
-                VocaStatusLine(
-                    status: state.status,
-                    title: model.displayName,
-                    detail: detail(for: model, state: state)
-                )
+                settingsRowHeader(for: model, state: state)
             }
 
             switch state {
@@ -731,6 +1074,44 @@ struct LocalModelPicker: View {
                 "\(model.sizeLabel) will be freed. You can download it again at any "
                     + "time; dictating offline needs a model on this iPhone."
             )
+        }
+    }
+
+    /// The maker, the name and one line of facts, with the state as a chip
+    /// only once there is one. A status ring beside the maker tile was two
+    /// icons saying different things about the same row.
+    private func settingsRowHeader(for model: LocalModelDescriptor, state: ModelState) -> some View {
+        HStack(alignment: .center, spacing: VocaMetrics.padding - VocaMetrics.tight) {
+            ModelMakerTile(maker: model.maker, size: 40)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(onboardingName(for: model))
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(settingsDetail(for: model, state: state))
+                    .font(.subheadline)
+                    .foregroundStyle(state == .failedIntegrity ? Color.vocaError : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if state != .notDownloaded {
+                Text(state.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(state.status.tint)
+                    .padding(.horizontal, VocaMetrics.related)
+                    .padding(.vertical, VocaMetrics.tight)
+                    .background(state.status.tint.opacity(0.15), in: Capsule())
+                    .fixedSize()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func settingsDetail(for model: LocalModelDescriptor, state: ModelState) -> String {
+        switch state {
+        case .failedIntegrity:
+            return "The files do not match their published checksums. Download it again."
+        default:
+            return "\(model.sizeLabel) · \(onboardingLanguagesFact(for: model))"
         }
     }
 
@@ -909,6 +1290,72 @@ struct LocalModelPicker: View {
         if let language = TranscriptionLanguage(rawValue: language) {
             KeyboardPreferences.transcriptionLanguage = language
         }
+    }
+}
+
+/// A model's maker, as a small brand-coloured tile. Makers with a published
+/// glyph (Simple Icons, CC0) show it; the rest show their initials.
+struct ModelMakerTile: View {
+    let maker: ModelMaker
+    var size: CGFloat = 40
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                .fill(tileColor)
+            RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            if let glyph {
+                Image(glyph)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(glyphColor)
+                    .padding(size * 0.22)
+            } else {
+                Text(monogram)
+                    .font(.system(size: size * (monogram.count > 1 ? 0.32 : 0.42), weight: .bold, design: .rounded))
+                    .foregroundStyle(glyphColor)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement()
+        .accessibilityLabel("Made by \(maker.displayName)")
+    }
+
+    private var glyph: String? {
+        switch maker {
+        case .nvidia: "MakerNVIDIA"
+        case .openAI: "MakerOpenAI"
+        case .huggingFace: "MakerHuggingFace"
+        case .alibaba: "MakerAlibaba"
+        case .usefulSensors, .dataocean, .sber: nil
+        }
+    }
+
+    private var monogram: String {
+        switch maker {
+        case .usefulSensors: "US"
+        case .dataocean: "D"
+        case .sber: "S"
+        default: ""
+        }
+    }
+
+    private var tileColor: Color {
+        switch maker {
+        case .nvidia: Color(red: 118 / 255, green: 185 / 255, blue: 0)
+        case .openAI: Color(white: 0.12)
+        case .huggingFace: Color(red: 1, green: 210 / 255, blue: 30 / 255)
+        case .alibaba: Color(red: 1, green: 106 / 255, blue: 0)
+        case .usefulSensors: Color(red: 91 / 255, green: 79 / 255, blue: 219 / 255)
+        case .dataocean: Color(red: 21 / 255, green: 101 / 255, blue: 192 / 255)
+        case .sber: Color(red: 33 / 255, green: 160 / 255, blue: 56 / 255)
+        }
+    }
+
+    private var glyphColor: Color {
+        maker == .huggingFace ? Color.black : Color.white
     }
 }
 

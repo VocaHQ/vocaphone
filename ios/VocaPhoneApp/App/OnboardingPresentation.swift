@@ -11,6 +11,9 @@ enum OnboardingStage: String, CaseIterable, Identifiable, Hashable, Sendable {
     case keyboard
     case keyboardSwitch
     case practice
+    /// Optional anonymous usage reporting. The last page, and only for someone
+    /// who has not answered the question yet — here or in Settings › Privacy.
+    case usageReporting
     /// Not a walkable page. Persistence token after first run ends, and the
     /// signal `SetupView` uses to leave — with the Ready-to-dictate cover
     /// only when a model is actually on disk.
@@ -20,7 +23,8 @@ enum OnboardingStage: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     /// Left-to-right order of the first-run pages.
     static let pageOrder: [OnboardingStage] = [
-        .welcome, .source, .model, .microphone, .keyboard, .keyboardSwitch, .practice, .complete,
+        .welcome, .source, .model, .microphone, .keyboard, .keyboardSwitch, .practice,
+        .usageReporting, .complete,
     ]
 
     /// Decode a saved page. `handoff` was a teaching screen that no longer exists.
@@ -40,7 +44,7 @@ enum OnboardingStage: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .model: 3.0 / 6.0
         case .microphone: 4.0 / 6.0
         case .keyboard, .keyboardSwitch: 5.0 / 6.0
-        case .practice, .complete: 1
+        case .practice, .usageReporting, .complete: 1
         }
     }
 
@@ -115,7 +119,8 @@ enum OnboardingPresentation {
         persistedStage: OnboardingStage?,
         status: SetupStatus,
         hasCompletedKeyboardPractice: Bool,
-        modelIsArriving: Bool = false
+        modelIsArriving: Bool = false,
+        hasAnsweredUsageReporting: Bool = true
     ) -> OnboardingStage {
         // The two teaching pages have no system proof to reconstruct, so keep
         // their exact position. From the first operational page onward, live
@@ -138,6 +143,15 @@ enum OnboardingPresentation {
                 hasCompletedKeyboardPractice: hasCompletedKeyboardPractice,
                 allowSkippedModel: true
             )
+        case .usageReporting:
+            // The question is only worth staying for while everything before
+            // it still holds. Otherwise resume where setup actually broke.
+            let resume = resumeStage(
+                status: status,
+                hasCompletedKeyboardPractice: hasCompletedKeyboardPractice,
+                allowSkippedModel: true
+            )
+            return resume == .complete && !hasAnsweredUsageReporting ? .usageReporting : resume
         case .model:
             // Stay. Skip is a choice. Later pages must not rewind here.
             return .model
@@ -313,6 +327,7 @@ enum OnboardingPresentation {
         case .keyboard: .microphone
         case .keyboardSwitch: .keyboard
         case .practice: .keyboardSwitch
+        case .usageReporting: .practice
         case .complete: .practice
         }
     }
@@ -336,7 +351,7 @@ enum OnboardingPresentation {
         }
         // Enable keyboard auto-advances once vocaphone is the IME. Landing
         // there after a skipped model bounced straight back.
-        if stage == .complete, practiceBlockedUntilModel {
+        if stage == .complete || stage == .usageReporting, practiceBlockedUntilModel {
             return .keyboard
         }
         if previous == .keyboardSwitch, isKeyboardReady || practiceBlockedUntilModel {
@@ -366,6 +381,7 @@ enum OnboardingPresentation {
         case .keyboard: .keyboardSwitch
         case .keyboardSwitch: .practice
         case .practice: .complete
+        case .usageReporting: .complete
         case .complete: nil
         }
     }
@@ -386,6 +402,13 @@ enum OnboardingPresentation {
     static func showsSetupReadyFlash(status: SetupStatus) -> Bool {
         canFinishSetup(status: status)
             && !practiceIsBlockedUntilModelDownload(status: status)
+    }
+
+    /// First run ends by asking about usage reporting, once. Someone who
+    /// already answered — on this page or with the switch in Settings — is not
+    /// asked again, and nobody is asked before setup can actually finish.
+    static func asksAboutUsageReporting(status: SetupStatus, hasBeenAsked: Bool) -> Bool {
+        !hasBeenAsked && canFinishSetup(status: status)
     }
 
     /// Skip on Choose model is the "no download" answer. Once Get has started

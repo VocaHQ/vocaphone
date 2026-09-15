@@ -858,6 +858,56 @@ struct OnboardingPresentationTests {
         #expect(!OnboardingPresentation.showsSkip(stage: .welcome, modelIsArriving: false))
     }
 
+    @Test func usageReportingIsAskedOnceAndOnlyWhenSetupCanFinish() {
+        var ready = SetupStatus()
+        ready.source.selected = .onDevice
+        ready.source.isOnDeviceReady = true
+        ready.microphone = .granted
+        ready.keyboard = .ready(lastSeenAt: Date())
+        ready.isKeyboardInstalled = true
+        #expect(OnboardingPresentation.asksAboutUsageReporting(status: ready, hasBeenAsked: false))
+        #expect(!OnboardingPresentation.asksAboutUsageReporting(status: ready, hasBeenAsked: true))
+
+        var micMissing = ready
+        micMissing.microphone = .denied
+        #expect(!OnboardingPresentation.asksAboutUsageReporting(status: micMissing, hasBeenAsked: false))
+    }
+
+    @Test func aRelaunchOnUsageReportingStaysOnlyWhileTheQuestionIsOpen() {
+        var ready = SetupStatus()
+        ready.source.selected = .onDevice
+        ready.source.isOnDeviceReady = true
+        ready.microphone = .granted
+        ready.keyboard = .ready(lastSeenAt: Date())
+        ready.isKeyboardInstalled = true
+        #expect(
+            OnboardingPresentation.initialStage(
+                persistedStage: .usageReporting,
+                status: ready,
+                hasCompletedKeyboardPractice: true,
+                hasAnsweredUsageReporting: false
+            ) == .usageReporting
+        )
+        #expect(
+            OnboardingPresentation.initialStage(
+                persistedStage: .usageReporting,
+                status: ready,
+                hasCompletedKeyboardPractice: true,
+                hasAnsweredUsageReporting: true
+            ) == .complete
+        )
+        var micMissing = ready
+        micMissing.microphone = .denied
+        #expect(
+            OnboardingPresentation.initialStage(
+                persistedStage: .usageReporting,
+                status: micMissing,
+                hasCompletedKeyboardPractice: true,
+                hasAnsweredUsageReporting: false
+            ) == .microphone
+        )
+    }
+
     @Test func theChromeBarFillsWithoutJumpingSidewaysForAState() {
         #expect(OnboardingStage.welcome.chromeProgress < OnboardingStage.source.chromeProgress)
         #expect(OnboardingStage.keyboard.chromeProgress == OnboardingStage.keyboardSwitch.chromeProgress)

@@ -803,9 +803,9 @@ enum LocalModelCatalog {
         if needed.isEmpty { needed = [deviceLanguage] }
 
         let lead = needed[0]
-        let nonEnglish = needed.filter { $0 != "en" }
         let english = bestEnglish(deviceMemoryGB: deviceMemoryGB)
         let multilingual = bestMultilingual(deviceMemoryGB: deviceMemoryGB, languages: needed)
+        let leadMultilingual = bestMultilingual(deviceMemoryGB: deviceMemoryGB, language: lead)
         let compact = smallestCovering(deviceMemoryGB: deviceMemoryGB, language: lead)
 
         var picks: [ModelPick] = []
@@ -814,30 +814,178 @@ enum LocalModelCatalog {
             picks.append(ModelPick(role: role, model: model))
         }
         // Two keyboard languages mean no single-language specialist can serve
-        // them both, so the widest model that covers them leads. Offering the
-        // Russian specialist first to someone who also types English offers a
-        // model that cannot hear half of what they say — and because the card
-        // in first place is the one that carries FOR YOU, that was the one
-        // most people took.
-        if needed.count > 1 {
+        // them both, so a model that covers them can lead — the Russian
+        // specialist in first place, the card that carries FOR YOU, cannot
+        // hear a word of the English keyboard next to it.
+        //
+        // Only when that model is also the one the lead language would pick on
+        // its own. Parakeet v3 covering English and Russian is a first-rate
+        // English model; Dolphin covering English and Hindi is not, and leading
+        // with it put an East Asian model above Parakeet on an English iPhone.
+        if needed.count > 1, let multilingual, multilingual.id == leadMultilingual?.id {
             add(.multilingual, multilingual)
-        }
-        for language in nonEnglish {
-            add(.regional, starter(for: language, deviceMemoryGB: deviceMemoryGB))
         }
         if lead == "en" {
             add(.english, english)
+        } else {
+            add(.regional, starter(for: lead, deviceMemoryGB: deviceMemoryGB))
         }
         add(.multilingual, multilingual)
+        for language in needed.dropFirst() where language != "en" {
+            add(.regional, starter(for: language, deviceMemoryGB: deviceMemoryGB))
+        }
         if lead != "en" {
             add(.english, english)
         }
         add(.compact, compact)
 
-        let ordered = Array(picks.prefix(4))
+        // One card per language on top of the usual four, so a phone with
+        // several keyboards still sees each language's specialist in Settings.
+        let ordered = Array(picks.prefix(max(4, needed.count + 1)))
         return ordered.isEmpty
             ? [ModelPick(role: .compact, model: lastResort(deviceMemoryGB: deviceMemoryGB))]
             : ordered
+    }
+
+    /// The three cards on Choose model: only models at the top for accuracy.
+    ///
+    /// `recommendations` answers several questions at once, and two of its
+    /// answers — the smallest download, and a wide model that merely covers a
+    /// language — are the ones that dictate worst. First run is where someone
+    /// decides whether dictation works, so it offers only the lowest word error
+    /// rates this iPhone can hold, and leaves the rest to More models.
+    ///
+    /// Falls back to the plain recommendations on a phone that fits none of
+    /// them, because an empty page is worse than a smaller model.
+    static func onboardingRecommendations(
+        deviceMemoryGB: Int,
+        languages: [String],
+        priority: ModelGuidancePriority = .balanced,
+        limit: Int = 3
+    ) -> [ModelPick] {
+        var needed: [String] = []
+        for raw in languages {
+            guard let code = normalizedLanguageCode(raw) else { continue }
+            if !needed.contains(code) { needed.append(code) }
+        }
+        if needed.isEmpty { needed = [deviceLanguage] }
+        let lead = needed[0]
+        let base = recommendations(deviceMemoryGB: deviceMemoryGB, languages: needed)
+
+        var picks: [ModelPick]
+        switch priority {
+        case .balanced:
+            picks = base.filter { pick in
+                needed.contains { isHighAccuracy(pick.model, for: $0) }
+            }
+            // Lead language first: its best models fill the page before a
+            // second keyboard's do.
+            for language in needed {
+                for id in accuracyRanking(for: language) {
+                    guard picks.count < limit else { break }
+                    guard let model = descriptor(for: id),
+                          deviceMemoryGB >= model.minimumRamGB,
+                          model.covers(language),
+                          !picks.contains(where: { $0.model.id == id })
+                    else { continue }
+                    let role: ModelPickRole = model.englishOnly ? .english
+                        : model.languageCodes.count == 1 ? .regional : .multilingual
+                    picks.append(ModelPick(role: role, model: model))
+                }
+            }
+        case .lighter:
+            // Smallest first, among models that are actually for this
+            // language. Paraformer lists English, but it is a Mandarin model,
+            // and the smallest English download should not be one.
+            picks = fitting(deviceMemoryGB: deviceMemoryGB)
+                .filter { $0.covers(lead) && incidentalCoverage[$0.id]?.contains(lead) != true }
+                .sorted { ($0.sizeBytes, $0.id) < ($1.sizeBytes, $1.id) }
+                .reduce(into: [LocalModelDescriptor]()) { kept, model in
+                    // One build per family. Whisper Tiny and Whisper Tiny
+                    // English side by side are one choice shown twice.
+                    let family = model.displayName.components(separatedBy: " · ").first
+                    if !kept.contains(where: { $0.displayName.components(separatedBy: " · ").first == family }) {
+                        kept.append(model)
+                    }
+                }
+                .map { ModelPick(role: .compact, model: $0) }
+        case .multilingual:
+            let candidates = manyLanguagesPreference.compactMap(descriptor(for:)).filter {
+                deviceMemoryGB >= $0.minimumRamGB && !$0.englishOnly && $0.covers(lead)
+                    && incidentalCoverage[$0.id]?.contains(lead) != true
+            }
+            let coversAll = candidates.filter { model in needed.allSatisfy { model.covers($0) } }
+            let rest = candidates.filter { model in !coversAll.contains { $0.id == model.id } }
+            picks = (coversAll + rest).map { ModelPick(role: .multilingual, model: $0) }
+        }
+        let chosen = Array(picks.prefix(limit))
+        return chosen.isEmpty ? Array(base.prefix(limit)) : chosen
+    }
+
+    /// A language a model transcribes on paper but was not built for.
+    private static let incidentalCoverage: [String: Set<String>] = [
+        "paraformer-zh-small": ["en"],
+        "dolphin-base-ctc": ["en"],
+        "dolphin-small-ctc": ["en"],
+    ]
+
+    /// Several languages in one model, the accurate ones first.
+    private static let manyLanguagesPreference = [
+        "parakeet-tdt-0.6b-v3",
+        "openai_whisper-large-v3-v20240930_turbo_632MB",
+        "canary-180m-flash",
+        "dolphin-small-ctc",
+        "sense-voice",
+        "openai_whisper-small",
+        "dolphin-base-ctc",
+        "openai_whisper-base",
+        "openai_whisper-tiny",
+    ]
+
+    /// Whether `model` is among the most accurate for `language`.
+    static func isHighAccuracy(_ model: LocalModelDescriptor, for language: String) -> Bool {
+        model.covers(language) && accuracyRanking(for: language).contains(model.id)
+    }
+
+    /// The most accurate models for a language, lowest word error rate first,
+    /// from the published benchmarks for each family (Hugging Face Open ASR
+    /// Leaderboard for English, the model cards elsewhere). Whisper large-v3
+    /// closes every list: it is the accurate answer for any language it covers,
+    /// and the specialists above it beat it on theirs.
+    ///
+    /// A ranking, not measured numbers — nothing here was benchmarked on a
+    /// phone. Small, tiny and base builds are left out on purpose.
+    static func accuracyRanking(for language: String) -> [String] {
+        let code = language.lowercased()
+        let largeV3 = [
+            "openai_whisper-large-v3-v20240930_turbo_632MB",
+            "openai_whisper-large-v3-v20240930_626MB",
+        ]
+        switch code {
+        case "en":
+            return [
+                "parakeet-tdt-0.6b-v2-en",
+                "parakeet-tdt-0.6b-v3",
+                "canary-180m-flash",
+                "distil-whisper_distil-large-v3_turbo_600MB",
+            ] + largeV3
+        case "ru":
+            return ["giga-am-ctc-ru", "parakeet-tdt-0.6b-v3"] + largeV3
+        case "ja":
+            return ["parakeet-tdt-ctc-ja", "sense-voice"] + largeV3
+        case "zh", "yue", "ko":
+            return ["sense-voice"] + largeV3
+        case "de", "es", "fr":
+            return ["parakeet-tdt-0.6b-v3", "canary-180m-flash"] + largeV3
+        default:
+            if LocalModelLanguages.parakeetV3.contains(code) {
+                return ["parakeet-tdt-0.6b-v3"] + largeV3
+            }
+            if LocalModelLanguages.dolphinStarters.contains(code) {
+                return ["dolphin-small-ctc"] + largeV3
+            }
+            return largeV3
+        }
     }
 
     /// The BCP-47 subtag from the phone, used to pick a first-run model.
@@ -864,6 +1012,12 @@ enum LocalModelCatalog {
         }
         if let explicitCode = normalizedLanguageCode(explicit) {
             append(explicitCode)
+        }
+        // The phone's own language leads when it is also typed. It is still
+        // not a keyboard on its own: a Chinese iPhone with Russian and English
+        // layouts gets neither Paraformer nor SenseVoice.
+        if keyboardCodes.contains(deviceCode) {
+            append(deviceCode)
         }
         keyboardCodes.forEach(append)
         if needed.isEmpty {
@@ -1045,6 +1199,34 @@ enum ModelGuidancePriority: String, CaseIterable, Identifiable, Sendable {
         case .balanced: "Balanced"
         case .lighter: "Smallest download"
         case .multilingual: "Works across languages"
+        }
+    }
+
+    /// The tile symbol on Choose model.
+    var symbol: String {
+        switch self {
+        case .balanced: "checkmark.seal"
+        case .lighter: "arrow.down.circle"
+        case .multilingual: "globe"
+        }
+    }
+
+    /// Segment labels on Choose model. Three words a person can pick between
+    /// without knowing what a word error rate is.
+    var shortTitle: String {
+        switch self {
+        case .balanced: "Accurate"
+        case .lighter: "Smallest"
+        case .multilingual: "Multilingual"
+        }
+    }
+
+    /// The line under the segments, saying what the choice trades.
+    var onboardingDetail: String {
+        switch self {
+        case .balanced: "The best at getting your words right. Larger downloads."
+        case .lighter: "Quick to download and light on storage. Less accurate."
+        case .multilingual: "One model that understands several languages."
         }
     }
 
@@ -1231,6 +1413,43 @@ enum ModelPickRole: String, Sendable {
 struct ModelPick: Sendable, Equatable {
     let role: ModelPickRole
     let model: LocalModelDescriptor
+}
+
+/// Who trained a model. Shown as its icon, because a name like "Parakeet TDT
+/// 0.6B" means nothing to most people and "NVIDIA" or "OpenAI" often does.
+enum ModelMaker: String, CaseIterable, Sendable {
+    case nvidia
+    case openAI
+    case huggingFace
+    case alibaba
+    case usefulSensors
+    case dataocean
+    case sber
+
+    var displayName: String {
+        switch self {
+        case .nvidia: "NVIDIA"
+        case .openAI: "OpenAI"
+        case .huggingFace: "Hugging Face"
+        case .alibaba: "Alibaba"
+        case .usefulSensors: "Useful Sensors"
+        case .dataocean: "DataoceanAI"
+        case .sber: "Sber"
+        }
+    }
+}
+
+extension LocalModelDescriptor {
+    /// Read from the identifier's family, which is stable across builds.
+    var maker: ModelMaker {
+        if id.hasPrefix("distil-whisper") { return .huggingFace }
+        if id.hasPrefix("openai_whisper") { return .openAI }
+        if id.hasPrefix("moonshine") { return .usefulSensors }
+        if id.hasPrefix("sense-voice") || id.hasPrefix("paraformer") { return .alibaba }
+        if id.hasPrefix("dolphin") { return .dataocean }
+        if id.hasPrefix("giga-am") { return .sber }
+        return .nvidia
+    }
 }
 
 extension LocalModelDescriptor {
