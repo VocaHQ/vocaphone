@@ -1,6 +1,8 @@
 package com.vocahq.vocaphone.ime
 
 import android.os.Build
+import android.view.Gravity
+import android.view.WindowManager
 import android.view.inputmethod.InputMethodInfo
 import android.view.inputmethod.InputMethodManager
 import com.vocahq.vocaphone.core.DictationPhase
@@ -16,6 +18,16 @@ internal object VoiceShortcutIme {
     const val MODE_VOICE = "voice"
     const val MAX_WINDOW_WAITS = 10
     const val WINDOW_WAIT_DELAY_MS = 50L
+    // VoiceShortcutListeningBar vertical padding (top 4 + bottom 6).
+    const val LISTENING_BAR_VERTICAL_PADDING_DP = 10
+    // Conservative ceiling when settings are unknown: KeyboardHeight.TALL (58) + padding.
+    const val FALLBACK_BAR_DP = 68
+    const val SHORTCUT_WINDOW_GRAVITY = Gravity.BOTTOM
+    const val SHORTCUT_WINDOW_HEIGHT = WindowManager.LayoutParams.WRAP_CONTENT
+
+    /** Real fallback from the active keyboard-height setting. */
+    fun fallbackBarDp(dictationBarDp: Int): Int =
+        dictationBarDp + LISTENING_BAR_VERTICAL_PADDING_DP
 
     fun isVoiceShortcutSubtype(mode: String?, auxiliary: Boolean): Boolean =
         auxiliary && !mode.isNullOrEmpty() && mode.equals(MODE_VOICE, ignoreCase = true)
@@ -205,4 +217,55 @@ internal object VoiceShortcutIme {
      * it; we cancel when the view finishes.
      */
     fun usesMicrophoneForegroundService(isVoiceShortcut: Boolean): Boolean = !isVoiceShortcut
+
+    /**
+     * Real bar height for shortcut insets.
+     *
+     * A measured height strictly in (0, window) is a distinct short bar in
+     * leftover fill. After WRAP_CONTENT the window has already shrunk to the
+     * bar, so measured == window is success. Leftover fill is only when the
+     * window is clearly taller than a bar (more than 2× fallback).
+     */
+    fun effectiveBarHeightPx(
+        windowHeightPx: Int,
+        measuredInputHeightPx: Int,
+        fallbackBarHeightPx: Int,
+    ): Int {
+        val fallback = fallbackBarHeightPx.coerceAtLeast(1)
+        if (windowHeightPx <= 0) return fallback
+        if (measuredInputHeightPx in 1 until windowHeightPx) return measuredInputHeightPx
+        val leftoverThreshold = fallback * 2
+        if (windowHeightPx <= leftoverThreshold) return windowHeightPx.coerceAtLeast(1)
+        return fallback.coerceAtMost(windowHeightPx)
+    }
+
+    /**
+     * contentTopInsets so the editor pans only for the bar, not the leftover
+     * tall window HeliBoard left behind.
+     */
+    fun contentTopInsetsPx(
+        isVoiceShortcut: Boolean,
+        windowHeightPx: Int,
+        measuredInputHeightPx: Int,
+        fallbackBarHeightPx: Int,
+        defaultContentTopInsetsPx: Int,
+    ): Int {
+        if (!isVoiceShortcut || windowHeightPx <= 0) return defaultContentTopInsetsPx
+        val bar = effectiveBarHeightPx(windowHeightPx, measuredInputHeightPx, fallbackBarHeightPx)
+        return (windowHeightPx - bar).coerceAtLeast(0)
+    }
+
+    /** Remeasure on enter, leave, or stay (rapid cancel/restart). */
+    fun shouldRemeasureInputWindow(isVoiceShortcut: Boolean, wasVoiceShortcut: Boolean): Boolean =
+        isVoiceShortcut || wasVoiceShortcut
+
+    /** WRAP_CONTENT + BOTTOM is applied for the whole time the shortcut is showing. */
+    fun shouldApplyShortcutWindow(isVoiceShortcut: Boolean): Boolean = isVoiceShortcut
+
+    /**
+     * Height to put back when leaving the shortcut. Prefer the captured prior
+     * attrs; MATCH_PARENT is the normal IME soft-input default.
+     */
+    fun restoredSoftInputHeightPx(savedHeightPx: Int?): Int =
+        savedHeightPx ?: WindowManager.LayoutParams.MATCH_PARENT
 }

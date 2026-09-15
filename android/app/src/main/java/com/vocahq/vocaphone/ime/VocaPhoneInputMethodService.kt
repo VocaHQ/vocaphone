@@ -164,6 +164,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         }
     }
 
+    override fun voiceShortcutWindowActive() = voiceShortcutActive
+
+    override fun voiceShortcutBarHeightDp(): Int =
+        VoiceShortcutIme.fallbackBarDp(visibleSettings.value.keyboardHeight.dictationBarDp)
+
     @Composable
     override fun KeyboardContent() {
         val dictationState by visibleDictationState.collectAsState()
@@ -263,7 +268,12 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        val wasActive = voiceShortcutActive
         applyVoiceShortcutSubtype(currentSubtype())
+        if (VoiceShortcutIme.shouldRemeasureInputWindow(voiceShortcutActive, wasActive)) {
+            applySoftInputWindowLayout(VoiceShortcutIme.shouldApplyShortcutWindow(voiceShortcutActive))
+            requestInputViewRemeasure()
+        }
         if (!voiceShortcutActive) {
             startClipboardWatch()
             refreshEditorText()
@@ -306,6 +316,10 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         super.onCurrentInputMethodSubtypeChanged(newSubtype)
         val wasActive = voiceShortcutActive
         applyVoiceShortcutSubtype(newSubtype)
+        if (VoiceShortcutIme.shouldRemeasureInputWindow(voiceShortcutActive, wasActive)) {
+            applySoftInputWindowLayout(VoiceShortcutIme.shouldApplyShortcutWindow(voiceShortcutActive))
+            requestInputViewRemeasure()
+        }
         if (voiceShortcutActive && !wasActive) {
             maybeHandBackVoiceShortcut()
         }
@@ -1036,6 +1050,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         voiceShortcutWindowWaits = 0
         mainHandler.removeCallbacks(delayedRejectedHandback)
         voiceShortcutRejectGuidance = false
+        applySoftInputWindowLayout(VoiceShortcutIme.shouldApplyShortcutWindow(active))
+        requestInputViewRemeasure()
     }
 
     private fun scheduleVoiceShortcutDictation() {
