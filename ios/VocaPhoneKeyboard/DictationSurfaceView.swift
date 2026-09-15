@@ -888,7 +888,10 @@ struct DictationSurfaceView: View {
             }
             .clipped()
 
-            HStack(spacing: 8) {
+            // Each 7-point dot answers a 15 × 32 point target, which keeps the
+            // dots 15 points apart as before. The negative padding gives the
+            // extra height back so the dashboard lays out as it did.
+            HStack(spacing: 0) {
                 ForEach(CompactDashboardPage.allCases) { page in
                     Button {
                         withAnimation(Self.dashboardPageAnimation) {
@@ -898,11 +901,14 @@ struct DictationSurfaceView: View {
                         Circle()
                             .fill(controlForeground.opacity(page == selectedDashboardPage ? 0.9 : 0.25))
                             .frame(width: 7, height: 7)
+                            .frame(width: 15, height: 32)
+                            .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(page.label(for: state.usageStats))
                 }
             }
+            .padding(.vertical, -12.5)
             .padding(.bottom, 6)
 
             panelGlobeRow

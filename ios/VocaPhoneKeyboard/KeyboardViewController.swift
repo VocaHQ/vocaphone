@@ -19,6 +19,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var recordingStartedAt: Date?
     /// Whether the surface held the whole keyboard at the last layout pass.
     private var surfaceOwnedKeyboard = false
+    /// `panelOwnsKeyboard` as of the last render, so a layout change can tell
+    /// a panel opening or closing from a session handing the keys back.
+    private var renderedPanelOwnsKeyboard = false
     /// A panel — the compact dashboard or a picker — owns the same full-height
     /// surface as a live session. Keeping this at the controller level lets
     /// UIKit hide the grid and hand its space to SwiftUI instead of clipping
@@ -611,8 +614,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // types, and "as soon as" is the keystroke — not the suggestions it
         // eventually produces.
         switch output {
-        case .text, .space, .newline, .deleteBackward, .deleteWord, .swipeWord:
+        case .text, .space, .newline, .swipeWord:
             dictationSurfaceState.hasTypedThisSession = true
+        case .deleteBackward, .deleteWord:
+            // Delete in an empty field changes nothing, and nothing would
+            // bring Start back from the corner. An unanswered read is left to
+            // `noteDocument`, which hears about any text that did go.
+            if document.before?.isEmpty == false {
+                dictationSurfaceState.hasTypedThisSession = true
+            }
         default:
             break
         }
@@ -1602,7 +1612,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             // spring on the container revealed the panel a strip at a time as
             // the frame grew — title, then number, then caption — so the room
             // changes hands in one frame and the surface fades its own content.
-            let panelOnly = !sessionOwnsKeyboard
+            // The panel itself has to be what changed: a dictation leaving
+            // `.inserting` for `.completed` hands the keys back with the same
+            // bar model and would otherwise pass for a panel closing.
+            let panelOnly = panelOwnsKeyboard != renderedPanelOwnsKeyboard
+                && !sessionOwnsKeyboard
                 && surfaceFillsKeyboard != surfaceOwnedKeyboard
                 && model.isExpanded == isBarExpanded
                 && model.layout == barLayout
@@ -1624,6 +1638,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 }
             }
         }
+        renderedPanelOwnsKeyboard = panelOwnsKeyboard
         dictationBar.apply(model, animated: hasRendered)
         announceStateChange(to: state, saying: model.announcement)
         hasRendered = true
