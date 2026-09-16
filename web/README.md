@@ -51,7 +51,7 @@ so "nothing links to it" does not decide this.
 routes.
 
 The Android product images in `assets/screenshots/` are 576×1280 captures
-from a physical device running the current Android beta. The website frames
+from a physical device running the current Android app. The website frames
 them with CSS and does not load media from GitHub at runtime.
 
 The Open Graph card is `assets/og-image.png` (1200×630), drawn from
