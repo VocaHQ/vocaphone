@@ -60,6 +60,7 @@ import com.vocahq.vocaphone.local.ModelGuidancePriority
 import com.vocahq.vocaphone.local.ModelGuidanceResult
 import com.vocahq.vocaphone.local.ModelPick
 import com.vocahq.vocaphone.local.byteLabel
+import com.vocahq.vocaphone.local.coversLanguage
 import com.vocahq.vocaphone.local.deviceLanguageCode
 import com.vocahq.vocaphone.local.downloadSizeProgress
 import com.vocahq.vocaphone.local.downloadTimeRemaining
@@ -315,13 +316,24 @@ fun LocalModelPicker(
                 } else {
                     null
                 },
-                guidanceReason = if (compact && guidance.model?.id == model.id) {
+                guidanceReason = if (
+                    compact &&
+                    guidance.model?.id == model.id &&
+                    model.coversLanguage(guidance.intent.language)
+                ) {
                     guidance.reason
                 } else {
                     null
                 },
                 guidanceDetail = if (compact) {
-                    modelDownloadDetail(model, guidance.languageName)
+                    modelDownloadDetail(
+                        model,
+                        featuredCoverageLanguageName(
+                            model,
+                            spokenLanguages,
+                            guidance.intent.language,
+                        ),
+                    )
                 } else {
                     null
                 },
@@ -887,6 +899,28 @@ private fun deviceLanguageDisplayName(code: String): String =
         ?.displayName
         ?: Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault())
             .ifBlank { code.uppercase(Locale.ROOT) }
+
+/**
+ * Language name for the compact lead card's "Works with X" line.
+ *
+ * Onboarding can feature a specialist for a spoken language that is not
+ * [guidanceLanguage], so the claim has to come from what [model] covers.
+ */
+private fun featuredCoverageLanguageName(
+    model: LocalModelDescriptor,
+    spokenLanguages: List<String>,
+    guidanceLanguage: String,
+): String {
+    val code = when {
+        model.englishOnly -> "en"
+        model.languageCodes.size == 1 -> model.languageCodes.first()
+        else -> spokenLanguages.firstOrNull { model.coversLanguage(it) }
+            ?: guidanceLanguage.takeIf { model.coversLanguage(it) }
+            ?: model.languageCodes.firstOrNull()
+            ?: "en"
+    }
+    return deviceLanguageDisplayName(code)
+}
 
 @Composable
 private fun ModelCatalogSearch(

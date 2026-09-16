@@ -327,6 +327,13 @@ class DeviceProfileTest {
         assertEquals("yue", LocalModelCatalog.normalizedLanguageCode("yue-Hant"))
         assertEquals("en", LocalModelCatalog.normalizedLanguageCode("en-US"))
         assertEquals(null, LocalModelCatalog.normalizedLanguageCode("auto"))
+        assertEquals("tl", LocalModelCatalog.normalizedLanguageCode("fil"))
+        assertEquals("tl", LocalModelCatalog.normalizedLanguageCode("fil-PH"))
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "en",
+            keyboards = listOf("fil-PH"),
+        )
+        assertTrue(spoken.contains("tl"))
     }
 
     @Test

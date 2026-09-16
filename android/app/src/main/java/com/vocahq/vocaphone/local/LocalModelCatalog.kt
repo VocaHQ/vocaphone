@@ -570,6 +570,7 @@ object LocalModelCatalog {
         }
         if (code.startsWith("zh")) code = "zh"
         if (code == "yue") return "yue"
+        if (code == "fil") code = TranscriptionLanguage.FILIPINO.wireValue
         if (code == TranscriptionLanguage.AUTOMATIC.wireValue) return null
         if (code == "und" || code == "mul") return null
         if (code !in PICKER_LANGUAGES) return null
