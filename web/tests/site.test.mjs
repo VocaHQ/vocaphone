@@ -209,6 +209,10 @@ test("availability and install paths are honest", () => {
   assert.match(html, /There is\s+no App Store release yet/);
   assert.match(
     html,
+    /href="https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.vocahq\.vocaphone"/,
+  );
+  assert.match(
+    html,
     /href="https:\/\/github\.com\/VocaHQ\/vocaphone\/releases\/tag\/android\/v0\.2\.0"/,
   );
   assert.match(html, /v0\.2\.0/);
@@ -237,21 +241,30 @@ test("availability and install paths are honest", () => {
   assert.match(hero, /<use href="#mark-android"/);
   assert.match(hero, /<use href="#mark-apple"/);
   assert.ok(
-    hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.2.0"),
-    "hero is missing the Android release link",
+    hero.includes("https://play.google.com/store/apps/details?id=com.vocahq.vocaphone"),
+    "hero is missing the Google Play link",
+  );
+  assert.ok(
+    !hero.includes("https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.2.0"),
+    "hero should send Android visitors to Play, not the GitHub APK",
   );
 
   const androidCard = androidInstallBlock(html);
-  const uninstallAt = androidCard.indexOf("io.github.mrsunglasses.localflow");
+  const playHrefAt = androidCard.indexOf(
+    "https://play.google.com/store/apps/details?id=com.vocahq.vocaphone",
+  );
   const tagHrefAt = androidCard.indexOf(
     "https://github.com/VocaHQ/vocaphone/releases/tag/android/v0.2.0",
   );
   const checksumAt = androidCard.indexOf("SHA256SUMS.txt");
-  assert.ok(uninstallAt !== -1, "uninstall note missing from Android install block");
+  const uninstallAt = androidCard.indexOf("io.github.mrsunglasses.localflow");
+  assert.ok(playHrefAt !== -1, "Play Store URL missing from Android install block");
   assert.ok(tagHrefAt !== -1, "pinned release URL missing from Android install block");
   assert.ok(checksumAt !== -1, "checksum note missing from Android install block");
-  assert.ok(uninstallAt < tagHrefAt, "uninstall line must lead the Android install block");
+  assert.ok(uninstallAt !== -1, "uninstall note missing from Android install block");
+  assert.ok(playHrefAt < tagHrefAt, "Play Store must lead the Android install block");
   assert.ok(tagHrefAt < checksumAt, "pinned release URL must precede the checksum note");
+  assert.ok(checksumAt < uninstallAt, "sideload checksum note must precede the Local Flow uninstall line");
 
   assert.match(iphoneHtml, /The gateway is optional/);
   assert.match(iphoneHtml, /No gateway address or token\s+is needed for this mode/);
