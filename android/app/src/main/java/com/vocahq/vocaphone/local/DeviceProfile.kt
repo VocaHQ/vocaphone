@@ -1,6 +1,7 @@
 package com.vocahq.vocaphone.local
 
 import android.os.Build
+import android.os.LocaleList
 import java.io.File
 import java.util.Locale
 import kotlin.math.abs
@@ -29,6 +30,12 @@ data class DeviceProfile(
     val sherpaAvailable: Boolean = false,
     /** BCP-47 language subtag from the phone, used to pick a first-run model. */
     val language: String = "en",
+    /**
+     * Spoken languages in picker order: explicit choice, then the device
+     * language when it is also typed, then every enabled keyboard. Empty means
+     * "just [language]". Extra [LocaleList] entries are not stored here.
+     */
+    val languages: List<String> = emptyList(),
 ) {
     val arm64: Boolean get() = abi == "arm64-v8a"
 
@@ -82,16 +89,39 @@ data class DeviceProfile(
         fun current(
             totalRamGB: Long,
             sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
-        ): DeviceProfile = DeviceProfile(
-            totalRamGB = totalRamGB,
-            cpuCores = Runtime.getRuntime().availableProcessors(),
-            performanceClass = Build.VERSION.MEDIA_PERFORMANCE_CLASS,
-            abi = Build.SUPPORTED_ABIS?.firstOrNull().orEmpty(),
-            maxCpuKHz = readMaxCpuKHz(),
-            sherpaAvailable = sherpaAvailable,
-            language = Locale.getDefault().language,
-        )
+            keyboards: List<String> = emptyList(),
+            explicit: String = "",
+            deviceLanguage: String = deviceLanguageCode(),
+        ): DeviceProfile {
+            val spoken = LocalModelCatalog.spokenLanguages(
+                device = deviceLanguage,
+                keyboards = keyboards,
+                explicit = explicit,
+            )
+            return DeviceProfile(
+                totalRamGB = totalRamGB,
+                cpuCores = Runtime.getRuntime().availableProcessors(),
+                performanceClass = Build.VERSION.MEDIA_PERFORMANCE_CLASS,
+                abi = Build.SUPPORTED_ABIS?.firstOrNull().orEmpty(),
+                maxCpuKHz = readMaxCpuKHz(),
+                sherpaAvailable = sherpaAvailable,
+                language = spoken.firstOrNull() ?: deviceLanguage.ifBlank { "en" },
+                languages = spoken,
+            )
+        }
     }
+}
+
+/**
+ * The phone's UI language: the first [LocaleList] entry, which is the same
+ * subtag [Locale.getDefault] reports. Later preferred languages are not
+ * spoken languages unless a keyboard is enabled for them.
+ */
+internal fun deviceLanguageCode(): String {
+    val locales: LocaleList? = LocaleList.getDefault()
+    val first = if (locales != null && locales.size() > 0) locales[0] else null
+    val language = first?.language?.ifBlank { null } ?: Locale.getDefault().language
+    return language.ifBlank { "en" }
 }
 
 /**
