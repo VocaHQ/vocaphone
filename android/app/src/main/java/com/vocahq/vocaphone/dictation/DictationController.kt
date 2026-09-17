@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -1083,10 +1084,13 @@ class DictationController(
     }
 
     private suspend fun followDownload(target: String) {
-        val outcome = localModels.state
-            .map { latest ->
-                downloadOutcome(latest, target).also {
-                    when (it) {
+        val (outcome, latest, configuredId) = combine(
+            localModels.state,
+            settings.settings.map { it.localModelId }.distinctUntilChanged(),
+        ) { latest, configuredId ->
+            Triple(
+                downloadOutcome(latest, target, configuredId).also { result ->
+                    when (result) {
                         DownloadOutcome.WAITING -> _state.update { state ->
                             state.copy(
                                 missingPermissions = setOf(MissingPermission.MODEL_DOWNLOADING),
@@ -1101,16 +1105,27 @@ class DictationController(
                         }
                         else -> Unit
                     }
-                }
-            }
-            .first { it != DownloadOutcome.WAITING && it != DownloadOutcome.PREPARING }
+                },
+                latest,
+                configuredId,
+            )
+        }.first { it.first != DownloadOutcome.WAITING && it.first != DownloadOutcome.PREPARING }
         when (outcome) {
             DownloadOutcome.LANDED -> reset()
-            DownloadOutcome.DIED -> _state.update {
-                it.copy(
-                    missingPermissions = setOf(MissingPermission.MODEL_MISSING),
-                    modelDownloadProgress = null,
-                )
+            DownloadOutcome.DIED -> {
+                val repair = modelRepair(configuredId, latest)
+                if (repair == null) {
+                    reset()
+                } else {
+                    _state.update {
+                        it.copy(
+                            missingPermissions = setOf(repair),
+                            modelDownloadProgress = latest.progress.takeIf {
+                                repair == MissingPermission.MODEL_DOWNLOADING
+                            },
+                        )
+                    }
+                }
             }
             DownloadOutcome.WAITING, DownloadOutcome.PREPARING -> Unit
         }
@@ -1212,9 +1227,18 @@ internal fun modelRepair(configuredId: String, models: LocalModelState): Missing
 
 internal enum class DownloadOutcome { WAITING, PREPARING, LANDED, DIED }
 
-internal fun downloadOutcome(latest: LocalModelState, target: String): DownloadOutcome =
+internal fun downloadOutcome(
+    latest: LocalModelState,
+    target: String,
+    configuredId: String,
+): DownloadOutcome =
     when {
-        target in latest.downloaded && latest.pendingUse != target -> DownloadOutcome.LANDED
+        // On disk, pending gone, and settings actually name this model.
+        target in latest.downloaded && latest.pendingUse != target && configuredId == target ->
+            DownloadOutcome.LANDED
+        // On disk and pending gone, but this id was never persisted: prep failed,
+        // or the user picked something else. Not ready.
+        target in latest.downloaded && latest.pendingUse != target -> DownloadOutcome.DIED
         target in latest.downloaded -> DownloadOutcome.PREPARING
         latest.downloading == target -> DownloadOutcome.WAITING
         else -> DownloadOutcome.DIED

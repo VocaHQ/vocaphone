@@ -74,48 +74,83 @@ class DownloadFollowTest {
 
     @Test
     fun theTargetStillDownloadingIsAWait() {
-        assertEquals(DownloadOutcome.WAITING, downloadOutcome(LocalModelState(downloading = parakeet, progress = 40), parakeet))
+        assertEquals(
+            DownloadOutcome.WAITING,
+            downloadOutcome(LocalModelState(downloading = parakeet, progress = 40), parakeet, configuredId = ""),
+        )
     }
 
     @Test
     fun theTargetOnDiskAndAdoptedLanded() {
-        assertEquals(DownloadOutcome.LANDED, downloadOutcome(LocalModelState(downloaded = setOf(parakeet)), parakeet))
+        assertEquals(
+            DownloadOutcome.LANDED,
+            downloadOutcome(
+                LocalModelState(downloaded = setOf(parakeet)),
+                parakeet,
+                configuredId = parakeet,
+            ),
+        )
     }
 
-    /** On disk but still pending is not landed yet — adoption is loading it. */
+    /** On disk but still pending is not landed yet: adoption is loading it. */
     @Test
     fun theTargetOnDiskButStillPendingIsPreparing() {
         val state = LocalModelState(downloaded = setOf(parakeet), pendingUse = parakeet, preparing = "Parakeet")
-        assertEquals(DownloadOutcome.PREPARING, downloadOutcome(state, parakeet))
+        assertEquals(DownloadOutcome.PREPARING, downloadOutcome(state, parakeet, configuredId = ""))
     }
 
-    /** Prepare failure clears the pending flag; the wait ends and the next tap re-evaluates. */
+    /** Prepare failure clears pending without writing the id, so this wait died. */
     @Test
-    fun aClearedPendingFlagEndsTheWaitEvenIfNothingWasAdopted() {
+    fun aClearedPendingFlagWithoutAdoptionDied() {
         val state = LocalModelState(downloaded = setOf(parakeet), pendingUse = null)
-        assertEquals(DownloadOutcome.LANDED, downloadOutcome(state, parakeet))
+        assertEquals(DownloadOutcome.DIED, downloadOutcome(state, parakeet, configuredId = ""))
+        assertEquals(DownloadOutcome.DIED, downloadOutcome(state, parakeet, configuredId = tiny))
+    }
+
+    @Test
+    fun prepFailedWithoutAConfiguredModelDied() {
+        val state = LocalModelState(downloaded = setOf(parakeet), pendingUse = null)
+        assertEquals(DownloadOutcome.DIED, downloadOutcome(state, parakeet, configuredId = ""))
+    }
+
+    /**
+     * Prep failed for B while A is still the configured model and on disk.
+     * The wait on B died; repair of A finds nothing missing, so the keyboard
+     * can reset to Ready rather than claim the model is gone.
+     */
+    @Test
+    fun prepFailedForBLeavesAWorkingConfiguredModel() {
+        val state = LocalModelState(downloaded = setOf(parakeet, tiny), pendingUse = null)
+        assertEquals(DownloadOutcome.DIED, downloadOutcome(state, tiny, configuredId = parakeet))
+        assertNull(modelRepair(parakeet, state))
     }
 
     /** The other half of Greptile's case: a different file landing is not this wait ending. */
     @Test
     fun anUnrelatedModelLandingDoesNotEndTheWait() {
         val state = LocalModelState(downloaded = setOf(tiny), downloading = parakeet, progress = 55)
-        assertEquals(DownloadOutcome.WAITING, downloadOutcome(state, parakeet))
+        assertEquals(DownloadOutcome.WAITING, downloadOutcome(state, parakeet, configuredId = ""))
     }
 
     @Test
     fun theTargetStoppingWithoutLandingDied() {
-        assertEquals(DownloadOutcome.DIED, downloadOutcome(LocalModelState(downloading = null), parakeet))
+        assertEquals(
+            DownloadOutcome.DIED,
+            downloadOutcome(LocalModelState(downloading = null), parakeet, configuredId = ""),
+        )
     }
 
     @Test
     fun theTargetBeingReplacedByAnotherDownloadDied() {
-        assertEquals(DownloadOutcome.DIED, downloadOutcome(LocalModelState(downloading = tiny), parakeet))
+        assertEquals(
+            DownloadOutcome.DIED,
+            downloadOutcome(LocalModelState(downloading = tiny), parakeet, configuredId = ""),
+        )
     }
 
     @Test
     fun landedWinsOverAReplacementThatStartedAfterwards() {
         val state = LocalModelState(downloaded = setOf(parakeet), downloading = tiny, pendingUse = null)
-        assertEquals(DownloadOutcome.LANDED, downloadOutcome(state, parakeet))
+        assertEquals(DownloadOutcome.LANDED, downloadOutcome(state, parakeet, configuredId = parakeet))
     }
 }

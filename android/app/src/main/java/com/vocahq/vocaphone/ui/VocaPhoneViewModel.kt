@@ -528,6 +528,8 @@ class VocaPhoneViewModel @JvmOverloads constructor(
 
     fun setLocalModel(model: LocalModelDescriptor) {
         viewModelScope.launch {
+            pendingUseToClearOnSelect(container.localModels.state.value.pendingUse, model.id)
+                ?.let { container.localModels.clearPendingUse(it) }
             container.settings.setLocalModel(model.id)
             container.settings.setLocalTranscriptionEnabled(true)
             refreshSetup()
@@ -617,10 +619,29 @@ class VocaPhoneViewModel @JvmOverloads constructor(
                                 refreshSetup()
                                 return@launch
                             }
-                            container.settings.setLocalModel(model.id)
-                            container.settings.setLocalTranscriptionEnabled(true)
-                            container.localModels.markAdopted(model.id)
-                            refreshSetup()
+                            when (
+                                downloadAdoptAction(
+                                    pendingUse = container.localModels.state.value.pendingUse,
+                                    configuredId = container.settings.current().localModelId,
+                                    modelId = model.id,
+                                )
+                            ) {
+                                DownloadAdoptAction.IGNORE -> {
+                                    refreshSetup()
+                                    return@launch
+                                }
+                                DownloadAdoptAction.DROP -> {
+                                    container.localModels.clearPendingUse(model.id)
+                                    refreshSetup()
+                                    return@launch
+                                }
+                                DownloadAdoptAction.ADOPT -> {
+                                    container.settings.setLocalModel(model.id)
+                                    container.settings.setLocalTranscriptionEnabled(true)
+                                    container.localModels.markAdopted(model.id)
+                                    refreshSetup()
+                                }
+                            }
                         }
                     }
                 }
@@ -669,3 +690,20 @@ class VocaPhoneViewModel @JvmOverloads constructor(
 
     fun clearDiagnosticEvents() = container.diagnostics.clear()
 }
+
+/** After prepare succeeds: persist this download only if it is still the selection. */
+internal enum class DownloadAdoptAction { ADOPT, IGNORE, DROP }
+
+internal fun downloadAdoptAction(
+    pendingUse: String?,
+    configuredId: String,
+    modelId: String,
+): DownloadAdoptAction = when {
+    pendingUse != modelId -> DownloadAdoptAction.IGNORE
+    configuredId.isNotEmpty() && configuredId != modelId -> DownloadAdoptAction.DROP
+    else -> DownloadAdoptAction.ADOPT
+}
+
+/** Pending download-and-use that an explicit pick of [selectedId] must drop. */
+internal fun pendingUseToClearOnSelect(pendingUse: String?, selectedId: String): String? =
+    pendingUse?.takeIf { it != selectedId }
