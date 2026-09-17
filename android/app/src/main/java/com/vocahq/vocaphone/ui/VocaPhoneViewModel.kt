@@ -630,11 +630,6 @@ class VocaPhoneViewModel @JvmOverloads constructor(
                                     refreshSetup()
                                     return@launch
                                 }
-                                DownloadAdoptAction.DROP -> {
-                                    container.localModels.clearPendingUse(model.id)
-                                    refreshSetup()
-                                    return@launch
-                                }
                                 DownloadAdoptAction.ADOPT -> {
                                     container.settings.setLocalModel(model.id)
                                     container.settings.setLocalTranscriptionEnabled(true)
@@ -692,17 +687,20 @@ class VocaPhoneViewModel @JvmOverloads constructor(
 }
 
 /** After prepare succeeds: persist this download only if it is still the selection. */
-internal enum class DownloadAdoptAction { ADOPT, IGNORE, DROP }
+internal enum class DownloadAdoptAction { ADOPT, IGNORE }
 
+/**
+ * A finishing download-and-use may persist only while it is still the pending
+ * selection. An older configured id is normal during replacement downloads and
+ * must not block adoption; an explicit pick of another installed model clears
+ * pendingUse via [pendingUseToClearOnSelect], which ends here as IGNORE.
+ */
 internal fun downloadAdoptAction(
     pendingUse: String?,
-    configuredId: String,
+    @Suppress("UNUSED_PARAMETER") configuredId: String,
     modelId: String,
-): DownloadAdoptAction = when {
-    pendingUse != modelId -> DownloadAdoptAction.IGNORE
-    configuredId.isNotEmpty() && configuredId != modelId -> DownloadAdoptAction.DROP
-    else -> DownloadAdoptAction.ADOPT
-}
+): DownloadAdoptAction =
+    if (pendingUse == modelId) DownloadAdoptAction.ADOPT else DownloadAdoptAction.IGNORE
 
 /** Pending download-and-use that an explicit pick of [selectedId] must drop. */
 internal fun pendingUseToClearOnSelect(pendingUse: String?, selectedId: String): String? =

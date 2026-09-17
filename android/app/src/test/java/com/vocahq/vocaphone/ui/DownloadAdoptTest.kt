@@ -29,6 +29,18 @@ class DownloadAdoptTest {
         )
     }
 
+    /**
+     * Replacement download: an older installed model stays configured until
+     * adoption. That must not look like a newer pick.
+     */
+    @Test
+    fun stillPendingWhileAnOlderModelRemainsConfiguredIsAdopted() {
+        assertEquals(
+            DownloadAdoptAction.ADOPT,
+            downloadAdoptAction(pendingUse = parakeet, configuredId = tiny, modelId = parakeet),
+        )
+    }
+
     @Test
     fun aNewerPendingDownloadIsIgnored() {
         assertEquals(
@@ -38,14 +50,6 @@ class DownloadAdoptTest {
         assertEquals(
             DownloadAdoptAction.IGNORE,
             downloadAdoptAction(pendingUse = null, configuredId = "", modelId = parakeet),
-        )
-    }
-
-    @Test
-    fun anotherInstalledModelPickedDuringDownloadIsDropped() {
-        assertEquals(
-            DownloadAdoptAction.DROP,
-            downloadAdoptAction(pendingUse = parakeet, configuredId = tiny, modelId = parakeet),
         )
     }
 
