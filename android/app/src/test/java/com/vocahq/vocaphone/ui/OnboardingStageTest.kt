@@ -62,6 +62,8 @@ class OnboardingStageTest {
     fun `after review the model page leads straight to the end`() {
         // The reported case: skip the model, meet everything else, come back
         // for the model — Continue must not replay three green pages.
+        // KEYBOARD_READY is injected only when next() is KEYBOARD (or we are
+        // already there), so review from MODEL still jumps to READY.
         assertEquals(OnboardingStage.READY, OnboardingStage.MODEL.advance(ready, true))
     }
 
@@ -85,8 +87,13 @@ class OnboardingStageTest {
     }
 
     @Test
-    fun `continue never lands on the confirmation`() {
-        assertEquals(OnboardingStage.READY, OnboardingStage.KEYBOARD.advance(ready, true))
+    fun `continue from the selected keyboard shows the confirmation`() {
+        assertEquals(OnboardingStage.KEYBOARD_READY, OnboardingStage.KEYBOARD.advance(ready, true))
+    }
+
+    @Test
+    fun `continue to an already selected keyboard shows the confirmation`() {
+        assertEquals(OnboardingStage.KEYBOARD_READY, OnboardingStage.NOTIFICATIONS.advance(ready, true))
     }
 
     @Test

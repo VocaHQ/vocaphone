@@ -136,6 +136,28 @@ optional clipboard history read
 clips only while the input view is showing; history stays on the phone. Neither
 path is used to insert a transcript.
 
+## On-device model downloads (Android)
+
+Choosing an on-device model downloads its weights over HTTPS into app-private
+storage. The URLs and integrity checks are the same ones the catalog already
+used; nothing new leaves the phone, and the download is never audio or a
+transcript.
+
+While a transfer is in flight — especially during guided setup, when the person
+is sent to system Settings to enable the keyboard — Android may kill a
+backgrounded process within seconds on some OEM builds. A multi-hundred-megabyte
+download in a plain coroutine did not survive that. The app therefore starts a
+short-lived `dataSync` foreground service (`ModelDownloadService`) for the
+duration of the transfer. That service:
+
+- holds `FOREGROUND_SERVICE_DATA_SYNC` only while a model download is active;
+- posts a notification with progress and a Cancel action;
+- does not upload audio, transcripts, tokens, or any other user content;
+- stops when the download finishes, is cancelled, or fails.
+
+The notification is progress the person can see while they are still in
+Settings. It is not a second network path.
+
 ## Usage statistics (Android)
 
 Settings → Stats counts how much you have dictated. It is counts only: six

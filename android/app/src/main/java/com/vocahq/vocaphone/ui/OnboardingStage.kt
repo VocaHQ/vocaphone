@@ -88,6 +88,11 @@ internal enum class OnboardingStage(
 
     fun advance(status: SetupStatus, localTranscriptionEnabled: Boolean): OnboardingStage = when {
         this == SOURCE -> if (localTranscriptionEnabled) MODEL else resume(MICROPHONE, status)
+        // Live walk only: an already-selected IME still gets the confirmation.
+        // resume() never lands here after reopen; review from MODEL still skips
+        // past KEYBOARD because next() there is MICROPHONE, not KEYBOARD.
+        this == KEYBOARD && status.keyboard -> KEYBOARD_READY
+        next() == KEYBOARD && status.keyboard -> KEYBOARD_READY
         else -> resume(next(), status)
     }
 

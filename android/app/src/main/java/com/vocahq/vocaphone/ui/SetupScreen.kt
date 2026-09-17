@@ -199,7 +199,7 @@ fun SetupScreen(
     }
     // The keyboard landing gets its own moment. Detected from status, which
     // Android reads directly (DEFAULT_INPUT_METHOD) — no probe field needed.
-    LaunchedEffect(status.keyboard) {
+    LaunchedEffect(stage, status.keyboard) {
         if (status.keyboard && stage == OnboardingStage.KEYBOARD) stage = OnboardingStage.KEYBOARD_READY
     }
     LaunchedEffect(stage) {

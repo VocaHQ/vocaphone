@@ -74,6 +74,7 @@ The app does not use accessibility services or overlay / draw-over-other-apps.
 | --- | --- |
 | `RECORD_AUDIO` | Dictation while the user holds Dictate |
 | `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MICROPHONE` | Ongoing recording notification Android requires for mic capture |
+| `FOREGROUND_SERVICE_DATA_SYNC` | Progress notification while an on-device model download runs (`ModelDownloadService`) |
 | `CAMERA` | Optional gateway pairing via "Scan QR" only |
 | `INTERNET` | Optional gateway traffic and on-device model downloads |
 | `POST_NOTIFICATIONS` | The recording notification on Android 13+ |
