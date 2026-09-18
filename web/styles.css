@@ -12,7 +12,6 @@
   --mint: #cfe9dc;
   --mint-soft: #e5f2eb;
   --sun: #e9b949;
-  --blue: #b8d7f0;
   --red: #de6a57;
   --shadow-soft: 0 18px 45px rgb(35 45 39 / 12%);
   --shadow-window: 0 22px 55px rgb(21 37 29 / 16%);
@@ -1180,8 +1179,8 @@ svg {
   bottom: -28px;
   left: -27px;
   padding: 14px 18px;
-  background: var(--blue);
-  border: 1px solid #789dbb;
+  background: var(--mint);
+  border: 1px solid var(--brand);
   border-radius: 19px 19px 19px 5px;
   box-shadow: 0 8px 18px rgb(34 53 43 / 12%);
   font-size: 12px;
@@ -1311,8 +1310,8 @@ svg {
 }
 
 .text-route .route-icon {
-  color: var(--ink);
-  background: var(--blue);
+  color: var(--brand-dark);
+  background: var(--mint);
   font-family: Georgia, serif;
   font-size: 15px;
 }
