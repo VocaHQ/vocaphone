@@ -273,11 +273,15 @@ test("availability and install paths are honest", () => {
   );
   assert.ok(platformAndroid.includes(PLAY_LISTING), "platform card is missing the Google Play link");
   assert.ok(!platformAndroid.includes(ANDROID_TAG), "platform card should not sideload");
+  assert.match(platformAndroid, /<small>Android beta<\/small>/);
+  assert.doesNotMatch(platformAndroid, /<small>[^<]*Google Play/i);
 
   const faq = htmlBlock(html, /<section class="faq-section[\s\S]*?<\/section>/, "FAQ");
   assert.ok(faq.includes(PLAY_LISTING), "FAQ is missing the Google Play link");
 
   const androidCard = androidInstallBlock(html);
+  assert.match(androidCard, /<h3>Android<\/h3><p>Android beta<\/p>/);
+  assert.doesNotMatch(androidCard, /<h3>Android<\/h3><p>[^<]*Google Play/i);
   const playHrefAt = androidCard.indexOf(PLAY_LISTING);
   const tagHrefAt = androidCard.indexOf(ANDROID_TAG);
   const checksumAt = androidCard.indexOf("SHA256SUMS.txt");
@@ -297,6 +301,17 @@ test("availability and install paths are honest", () => {
   );
   assert.ok(download.includes(PLAY_LISTING), "download section is missing the Google Play link");
   assert.ok(!download.includes(ANDROID_TAG), "download section should send Android visitors to Play");
+  assert.match(
+    download,
+    /<div class="download-chip download-chip-offline">on-device ✓<\/div>/,
+  );
+
+  assert.match(
+    html,
+    /<div class="privacy-stamp">on-device<br \/>after download<\/div>/,
+  );
+  assert.doesNotMatch(html, /stays offline/i);
+  assert.doesNotMatch(html, /offline ✓/);
 
   const footer = htmlBlock(html, /<footer class="site-footer">[\s\S]*?<\/footer>/, "footer");
   assert.ok(footer.includes(PLAY_LISTING), "footer is missing the Google Play link");
