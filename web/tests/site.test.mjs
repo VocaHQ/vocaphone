@@ -86,15 +86,17 @@ test("native dictation comparison stays fair, specific, and sourced", () => {
   );
   assert.match(comparison, /Why use VocaPhone[\s\S]*if my phone already transcribes/i);
   assert.match(comparison, /built-in dictation is a useful default/i);
-  assert.match(comparison, /VocaPhone includes Whisper choices/i);
-  assert.match(comparison, /not automatically more accurate on every voice or in every room/i);
+  assert.match(comparison, /Download a transcription model that fits your phone/i);
+  assert.match(comparison, /No model wins on every voice or in every room/i);
   assert.match(comparison, /on-device in supported languages and devices/i);
   assert.match(comparison, /self-hosted VocaGateway/i);
-  assert.match(comparison, /github\.com\/openai\/whisper/);
+  assert.doesNotMatch(comparison, /Whisper/i);
   assert.match(comparison, /support\.apple\.com\/guide\/iphone\/dictate-text-iph2c0651d2\/ios/);
   assert.match(comparison, /support\.google\.com\/gboard\/answer\/11197787/);
   assert.match(css, /\.dictation-table\s*\{/);
   assert.match(css, /\.comparison-scroll\s*\{[\s\S]*?overflow-x:\s*auto/);
+  assert.doesNotMatch(css, /\.dictation-table thead\s*\{\s*display:\s*none/);
+  assert.match(css, /\.dictation-table thead\s*\{[\s\S]*?clip:\s*rect\(0, 0, 0, 0\)/);
 });
 
 test("VocaGateway is presented as an explicit optional path", () => {
