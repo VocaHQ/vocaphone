@@ -7,14 +7,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -41,6 +46,7 @@ import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelState
+import com.vocahq.vocaphone.local.downloadProgressLine
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.telemetry.TelemetryInspectPayload
 import kotlinx.coroutines.delay
@@ -58,13 +64,31 @@ internal object SetupCopy {
     const val TITLE = "Set up VocaPhone"
     const val INTRO = "Turn on the keyboard, allow the microphone, then download a model."
     const val START = "Start dictating"
+    const val REVIEW = "Review remaining setup"
+    // The last page while a download-and-use is still in flight. The button
+    // carries the same progress line as the card above it, and the
+    // "preparing" text matches the keyboard's hint for the same second.
+    const val WAITING_TITLE = "Almost there"
+    const val WAITING_DETAIL = "Your model is downloading. Dictation opens as soon as it lands."
+    const val WAITING_DOWNLOADING = "Downloading"
+    const val WAITING_PREPARING = "Preparing model\u2026"
     const val DOWNLOAD = "Download"
     const val DOWNLOAD_AND_CONTINUE = "Download and continue"
-    const val HELP_ME_CHOOSE = "Help me choose"
-    const val BROWSE_MODELS = "Browse"
-    const val BROWSE_SHEET_TITLE = "Other models"
-    const val BROWSE_SHEET_SUPPORTING =
-        "These also run on this phone. The recommendation is still the default."
+    // Named for what they do. "Browse" and "Help me choose" sat side by side
+    // with nothing to say which one a person wanting another language should
+    // press — the reported case was someone who pressed neither.
+    const val HELP_ME_CHOOSE = "Choose language"
+    const val BROWSE_MODELS = "All models"
+    const val BROWSE_SHEET_TITLE = "All models"
+    // Not "the recommendation is still the default": someone here came because
+    // the recommendation was wrong for them, and that sentence talked them
+    // back into it.
+    const val BROWSE_SHEET_SUPPORTING = "Everything that runs on this phone."
+    const val DOWNLOAD_CONFIRM_TITLE = "Download this model?"
+    const val DOWNLOAD_CONFIRM = "Download"
+    fun downloadConfirmBody(name: String, size: String, metered: Boolean): String =
+        if (metered) "$name is $size. You are on mobile data — this may cost you."
+        else "$name is $size. It downloads once and stays on this phone."
     const val SLOW_ON_PHONES = "Slow on phones"
     const val SLOW_ON_PHONES_DETAIL =
         "This may not perform well on a phone."
@@ -112,6 +136,7 @@ fun SetupScreen(
     status: SetupStatus,
     settings: VocaPhoneSettings,
     localModels: LocalModelState,
+    deviceLanguages: List<String> = emptyList(),
     onOpenGateway: () -> Unit,
     onLanguage: (TranscriptionLanguage) -> Unit,
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
@@ -124,6 +149,7 @@ fun SetupScreen(
     telemetryPendingCount: () -> Int,
     telemetryDeliveryStatus: () -> String,
     onFinish: () -> Unit,
+    onStageChange: (String) -> Unit,
     onRefreshSetup: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -148,11 +174,44 @@ fun SetupScreen(
     val askUsageReporting = BuildConfig.TELEMETRY && !settings.telemetryAsked
     var askingUsageReporting by remember { mutableStateOf(false) }
     val recentlyReady = rememberRecentlyReadySteps(status)
+    val readyPresentation = readyPagePresentation(status, settings.localTranscriptionEnabled, localModels)
+    val attention = attentionCopy(status.remainingSteps)
 
-    var stage by rememberSaveable { mutableStateOf(SetupPage.resume(status)) }
+    // The saved page is read only once status has loaded (the guard above),
+    // because settings arrive with it: reading the stage a frame early would
+    // send every returning user back to the welcome.
+    var stage by rememberSaveable {
+        mutableStateOf(OnboardingStage.resume(OnboardingStage.persisted(settings.onboardingStage), status))
+    }
+    // rememberSaveable brings the page back verbatim after process death —
+    // and granting a permission from Settings kills the process. Re-validate
+    // once on first composition: a restored page whose requirement was met
+    // while the app was away is walked past, exactly as a fresh launch would.
+    // Idempotent on an ordinary first composition, since the initial value
+    // already came through resume().
+    LaunchedEffect(Unit) { stage = OnboardingStage.resume(stage, status) }
     val scrollState = rememberScrollState()
-    LaunchedEffect(stage) { scrollState.scrollTo(0) }
-    BackHandler(enabled = stage != SetupPage.KEYBOARD) { stage = stage.previous() }
+    LaunchedEffect(stage) {
+        scrollState.scrollTo(0)
+        // The confirmation is a moment, not a place: saving it would reopen
+        // the app on a page that immediately leaves.
+        if (stage != OnboardingStage.KEYBOARD_READY) onStageChange(stage.name)
+    }
+    // The keyboard landing gets its own moment. Detected from status, which
+    // Android reads directly (DEFAULT_INPUT_METHOD) — no probe field needed.
+    LaunchedEffect(status.keyboard) {
+        if (status.keyboard && stage == OnboardingStage.KEYBOARD) stage = OnboardingStage.KEYBOARD_READY
+    }
+    LaunchedEffect(stage) {
+        if (stage == OnboardingStage.KEYBOARD_READY) {
+            kotlinx.coroutines.delay(KEYBOARD_READY_MILLIS)
+            if (stage == OnboardingStage.KEYBOARD_READY) stage = OnboardingStage.READY
+        }
+    }
+    fun advance() {
+        stage = stage.advance(status, settings.localTranscriptionEnabled)
+    }
+    BackHandler(enabled = stage != OnboardingStage.WELCOME) { stage = stage.previous() }
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -174,36 +233,143 @@ fun SetupScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        if (stage == SetupPage.READY) {
-                            if (status.isReadyToDictate) "Setup complete" else "Setup needs attention"
-                        } else "Step ${stage.ordinal + 1} of 4",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    if (stage != SetupPage.KEYBOARD) {
-                        TextButton(onClick = { stage = stage.previous() }) { Text("Back") }
+                    if (stage != OnboardingStage.WELCOME) {
+                        IconButton(onClick = { stage = stage.previous() }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_arrow_back),
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier)
+                    }
+                    if (stage == OnboardingStage.READY) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (status.isReadyToDictate) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_check),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                            Text(
+                                when {
+                                    status.isReadyToDictate -> "Setup complete"
+                                    status.remainingSteps.size == 1 -> "1 step left"
+                                    else -> "${status.remainingSteps.size} steps left"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier)
+                    }
+                    if (stage.allowsSkip) {
+                        TextButton(onClick = { advance() }) {
+                            Text("Skip")
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chevron),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier)
                     }
                 }
+                // Page progress, not requirement progress: the bar answers "how
+                // far through" and the footer below answers "what is still
+                // needed", and they used to disagree.
                 LinearProgressIndicator(
-                    progress = { status.completedStepCount.toFloat() / status.stepCount },
+                    progress = { stage.progress },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text(
-                    if (stage == SetupPage.READY && !status.isReadyToDictate) "Let’s get you ready" else stage.title,
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Text(
-                    if (stage == SetupPage.READY && !status.isReadyToDictate)
-                        "A permission, keyboard, or speech source needs attention." else stage.detail,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (stage != OnboardingStage.KEYBOARD_READY) {
+                    Text(
+                        when {
+                            stage != OnboardingStage.READY -> stage.title
+                            readyPresentation == ReadyPagePresentation.NEEDS_ATTENTION -> attention.title
+                            readyPresentation == ReadyPagePresentation.WAITING_FOR_MODEL -> SetupCopy.WAITING_TITLE
+                            else -> stage.title
+                        },
+                        style = MaterialTheme.typography.headlineLarge,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        when {
+                            stage != OnboardingStage.READY -> stage.detail
+                            readyPresentation == ReadyPagePresentation.NEEDS_ATTENTION -> attention.detail
+                            readyPresentation == ReadyPagePresentation.WAITING_FOR_MODEL -> SetupCopy.WAITING_DETAIL
+                            else -> stage.detail
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             when (stage) {
-                SetupPage.KEYBOARD -> {
+                OnboardingStage.WELCOME -> {
+                    WelcomeCard(
+                        icon = R.drawable.ic_lock,
+                        title = "Your voice stays on this phone",
+                        body = "That's the default. A gateway you run is a separate choice.",
+                    )
+                    WelcomeCard(
+                        icon = R.drawable.ic_infinity,
+                        title = "No subscriptions or limits",
+                        body = "Dictate as much as you want, whenever you want.",
+                    )
+                    WelcomeCard(
+                        icon = R.drawable.ic_keyboard,
+                        title = "Works anywhere you can type",
+                        body = "Use it in any app with a keyboard.",
+                    )
+                }
+                OnboardingStage.SOURCE -> {
+                    SpeechSourceCard(
+                        settings = settings,
+                        compact = true,
+                        onOpenGateway = onOpenGateway,
+                        onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
+                    )
+                }
+                OnboardingStage.MODEL -> {
+                    if (settings.localTranscriptionEnabled) {
+                        LocalModelPicker(
+                            state = localModels,
+                            selectedModelId = settings.localModelId,
+                            compact = true,
+                            onSelect = onLocalModel,
+                            onDownload = onDownloadLocalModel,
+                            // "Download and continue" means both halves: the
+                            // download runs in the background and the page moves
+                            // on. The last page and the home screen carry its
+                            // progress, and the keyboard says "downloading" until
+                            // it lands — nobody waits here for 661 MB.
+                            onDownloadAndUse = { model ->
+                                onDownloadAndUseLocalModel(model)
+                                advance()
+                            },
+                            onCancelDownload = onCancelLocalModelDownload,
+                            guidanceLanguage = settings.language.wireValue,
+                            languages = deviceLanguages,
+                            onGuidanceLanguage = { onLanguage(TranscriptionLanguage.fromWire(it)) },
+                        )
+                    } else {
+                        Notice { Text("Speech goes to your gateway. No model is needed on this phone.") }
+                    }
+                }
+                OnboardingStage.KEYBOARD_READY -> {
+                    KeyboardReadyMoment()
+                }
+                OnboardingStage.KEYBOARD -> {
                     Notice {
                         Text("Your voice, wherever you type", style = MaterialTheme.typography.titleMedium)
                         Text("Open a text field, tap the microphone on VocaPhone, then speak. Your words become text at the cursor.")
@@ -218,11 +384,11 @@ fun SetupScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                SetupPage.MICROPHONE, SetupPage.NOTIFICATIONS -> {
-                    val step = if (stage == SetupPage.MICROPHONE) SetupStep.MICROPHONE else SetupStep.NOTIFICATIONS
+                OnboardingStage.MICROPHONE, OnboardingStage.NOTIFICATIONS -> {
+                    val step = if (stage == OnboardingStage.MICROPHONE) SetupStep.MICROPHONE else SetupStep.NOTIFICATIONS
                     SetupPermissionRow(
                         step = step,
-                        permission = if (stage == SetupPage.MICROPHONE) Manifest.permission.RECORD_AUDIO
+                        permission = if (stage == OnboardingStage.MICROPHONE) Manifest.permission.RECORD_AUDIO
                             else Manifest.permission.POST_NOTIFICATIONS,
                         satisfied = status.isSatisfied(step),
                         nextStep = step,
@@ -233,39 +399,26 @@ fun SetupScreen(
                     )
                     Notice {
                         Text(
-                            if (stage == SetupPage.MICROPHONE) "You choose when to record" else "Stay in control",
+                            if (stage == OnboardingStage.MICROPHONE) "You choose when to record" else "Stay in control",
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            if (stage == SetupPage.MICROPHONE)
+                            if (stage == OnboardingStage.MICROPHONE)
                                 "Recording starts when you tap the microphone. You can finish or cancel from the keyboard."
                             else "The recording notification lets you see when the microphone is active and cancel recording outside the keyboard.",
                         )
                     }
                 }
-                SetupPage.SOURCE -> {
-                    SpeechSourceCard(
-                        settings = settings,
-                        compact = true,
-                        onOpenGateway = onOpenGateway,
-                        onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
-                    )
-                    if (settings.localTranscriptionEnabled) {
-                        LocalModelPicker(
-                            state = localModels,
-                            selectedModelId = settings.localModelId,
-                            compact = true,
-                            onSelect = onLocalModel,
-                            onDownload = onDownloadLocalModel,
-                            onDownloadAndUse = onDownloadAndUseLocalModel,
-                            onCancelDownload = onCancelLocalModelDownload,
-                            guidanceLanguage = settings.language.wireValue,
-                            onGuidanceLanguage = { onLanguage(TranscriptionLanguage.fromWire(it)) },
-                        )
+                OnboardingStage.READY -> {
+                    // The model may still be on its way: setup no longer waits
+                    // for it. The bar lives here so the last page answers "when
+                    // can I dictate" rather than leaving it to the keyboard.
+                    if (settings.localTranscriptionEnabled && localModels.downloading != null) {
+                        ModelDownloadCard(state = localModels, onCancelDownload = onCancelLocalModelDownload)
                     }
-                }
-                SetupPage.READY -> {
-                    if (status.isReadyToDictate) {
+                    // Nothing to try while the model is on its way: the
+                    // keyboard would only say "downloading" back.
+                    if (readyPresentation == ReadyPagePresentation.READY) {
                         Notice {
                             Text("Try your keyboard", style = MaterialTheme.typography.titleMedium)
                             Text("Tap the field below to bring up VocaPhone, then tap the microphone and speak. Finish recording and your words appear in the field.")
@@ -294,8 +447,10 @@ fun SetupScreen(
                         Text("Practice is optional. You can also start with the dictation screen.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        Notice { Text("A setup requirement changed. Review it before you start dictating.") }
+                    } else if (readyPresentation == ReadyPagePresentation.NEEDS_ATTENTION) {
+                        val reason = localModels.message
+                            ?.takeIf { settings.localTranscriptionEnabled && !status.gatewayConfigured }
+                        if (reason != null) Notice { Text(reason) }
                     }
                 }
             }
@@ -319,16 +474,25 @@ fun SetupScreen(
                         .padding(top = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-            if (stage.isSatisfied(status) || stage == SetupPage.READY) {
+            if (stage != OnboardingStage.KEYBOARD_READY && (stage.isSatisfied(status) || stage == OnboardingStage.READY)) {
                 PrimaryButton(
-                    text = when {
-                        stage == SetupPage.READY && !status.isReadyToDictate -> "Review remaining setup"
-                        stage == SetupPage.READY -> SetupCopy.START
+                    text = when (stage) {
+                        OnboardingStage.WELCOME -> "Get started"
+                        OnboardingStage.SOURCE -> "Next"
+                        OnboardingStage.READY -> readyPageButtonLabel(
+                            readyPresentation,
+                            localModels.takeIf { it.downloading != null }?.let(::downloadProgressLine),
+                            attention.button,
+                        )
                         else -> "Continue"
                     },
+                    // Greyed, not hidden: the label is where the progress
+                    // reads, and a button that comes back on its own says
+                    // "wait here" better than an empty bar would.
+                    enabled = stage != OnboardingStage.READY || readyPresentation != ReadyPagePresentation.WAITING_FOR_MODEL,
                     onClick = {
-                        if (stage != SetupPage.READY) stage = stage.next()
-                        else if (!status.isReadyToDictate) stage = SetupPage.resume(status)
+                        if (stage != OnboardingStage.READY) advance()
+                        else if (!status.isReadyToDictate) stage = OnboardingStage.firstUnmet(status)
                         else if (askUsageReporting) askingUsageReporting = true
                         else onFinish()
                     },
@@ -336,8 +500,11 @@ fun SetupScreen(
                 )
             }
             Text(
-                if (stage == SetupPage.READY) "You can change your setup in Settings."
-                else "${status.completedStepCount} of ${status.stepCount} requirements ready. Your progress is kept when you leave.",
+                when (stage) {
+                    OnboardingStage.READY -> "You can change your setup in Settings."
+                    OnboardingStage.WELCOME, OnboardingStage.KEYBOARD_READY -> ""
+                    else -> "${status.completedStepCount} of ${status.stepCount} requirements ready. Your progress is kept when you leave."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -360,7 +527,7 @@ fun SetupScreen(
             onDecision = { enabled ->
                 askingUsageReporting = false
                 onTelemetryDecision(enabled)
-                if (status.isReadyToDictate) onFinish() else stage = SetupPage.resume(status)
+                if (status.isReadyToDictate) onFinish() else stage = OnboardingStage.firstUnmet(status)
             },
             inspect = telemetryInspect,
             pendingCount = telemetryPendingCount,
@@ -485,5 +652,45 @@ internal fun ImeSetupCard(
         } else {
             SecondaryButton(text = action, onClick = onAction, modifier = Modifier.fillMaxWidth())
         }
+    }
+}
+
+/** How long the keyboard confirmation stays before moving on by itself. */
+private const val KEYBOARD_READY_MILLIS = 1_200L
+
+@Composable
+private fun WelcomeCard(icon: Int, title: String, body: String) {
+    Notice {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * A full check for the step people most often stall on. Satisfying a
+ * requirement used to teleport straight to the next page, so the one moment
+ * worth a pause was the one moment never shown.
+ */
+@Composable
+private fun KeyboardReadyMoment() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 64.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_step_done),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(72.dp),
+        )
+        Text(OnboardingStage.KEYBOARD_READY.title, style = MaterialTheme.typography.headlineMedium)
     }
 }
