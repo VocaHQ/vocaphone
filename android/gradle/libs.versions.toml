@@ -18,6 +18,12 @@ androidxTestExt = "1.3.0"
 espresso = "3.7.0"
 camerax = "1.5.3"
 zxing = "3.5.3"
+# Not a Maven coordinate: the prebuilt ONNX Runtime the `full` flavor's
+# sherpa-onnx engine links against, fetched from csukuangfj/onnxruntime-libs
+# through the ivy repository in settings.gradle.kts. Raising it means changing
+# onnxRuntimeSha256 in app/build.gradle.kts and rebuilding libsherpa-onnx-jni.so
+# to match; app/src/full/jniLibs/README.md says why and how.
+onnxruntime = "1.28.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
