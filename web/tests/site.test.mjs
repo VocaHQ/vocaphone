@@ -92,11 +92,18 @@ test("native dictation comparison stays fair, specific, and sourced", () => {
   assert.match(comparison, /self-hosted VocaGateway/i);
   assert.doesNotMatch(comparison, /Whisper/i);
   assert.match(comparison, /support\.apple\.com\/guide\/iphone\/dictate-text-iph2c0651d2\/ios/);
+  assert.match(comparison, /www\.apple\.com\/legal\/privacy\/data\/en\/ask-siri-dictation\//);
+  assert.match(comparison, /support\.google\.com\/gboard\/answer\/2781851\?hl=en-AI/);
   assert.match(comparison, /support\.google\.com\/gboard\/answer\/11197787/);
   assert.match(css, /\.dictation-table\s*\{/);
   assert.match(css, /\.comparison-scroll\s*\{[\s\S]*?overflow-x:\s*auto/);
+  assert.match(css, /@media\s*\(\s*max-width:\s*640px\s*\)[\s\S]*?\.comparison-scroll\s*\{\s*overflow:\s*visible;[\s\S]*?\.dictation-table\s*\{\s*min-width:\s*0;\s*display:\s*block;/);
+  assert.match(css, /\.dictation-table\s*td::before\s*\{[\s\S]*?content:\s*attr\(data-comparison\)/);
   assert.doesNotMatch(css, /\.dictation-table thead\s*\{\s*display:\s*none/);
   assert.match(css, /\.dictation-table thead\s*\{[\s\S]*?clip:\s*rect\(0, 0, 0, 0\)/);
+  assert.doesNotMatch(comparison, /\bbetter\b/i);
+  assert.doesNotMatch(comparison, /cloud-only/i);
+  assert.doesNotMatch(comparison, /unavailable offline/i);
 });
 
 test("VocaGateway is presented as an explicit optional path", () => {
