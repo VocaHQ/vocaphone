@@ -5653,7 +5653,7 @@ body:has(.screenshot-dialog[open]) {
 
   .comparison-heading h2 {
     margin-bottom: 25px;
-    font-size: clamp(3rem, 14vw, 4.35rem);
+    font-size: clamp(2.75rem, 11.5vw, 3.5rem);
   }
 
   .comparison-scroll {
@@ -5675,8 +5675,7 @@ body:has(.screenshot-dialog[open]) {
   }
 
   .dictation-table tbody tr {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: block;
     border-bottom: 1px solid var(--line);
   }
 
@@ -5685,7 +5684,6 @@ body:has(.screenshot-dialog[open]) {
   }
 
   .dictation-table tbody th {
-    grid-column: 1 / -1;
     width: auto;
     padding: 12px 16px;
     border-right: 0;
@@ -5693,10 +5691,12 @@ body:has(.screenshot-dialog[open]) {
   }
 
   .dictation-table td {
-    min-width: 0;
+    display: block;
     padding: 16px;
-    border-bottom: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
     font-size: 12px;
+    line-height: 1.62;
   }
 
   .dictation-table td::before {
@@ -5705,14 +5705,18 @@ body:has(.screenshot-dialog[open]) {
     color: var(--brand-dark);
     content: attr(data-comparison);
     font-family: var(--font-mono);
-    font-size: 8px;
+    font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
 
   .dictation-table tbody td:nth-child(2) {
-    border-right: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .dictation-table tbody td:last-child {
+    border-bottom: 0;
   }
 
   .comparison-notes {

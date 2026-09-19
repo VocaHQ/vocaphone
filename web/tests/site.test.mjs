@@ -84,11 +84,13 @@ test("native dictation comparison stays fair, specific, and sourced", () => {
     /<section class="comparison-section" id="native-dictation"[\s\S]*?<\/section>/,
     "native dictation comparison",
   );
-  assert.match(comparison, /Your phone already has[\s\S]*speech-to-text model/i);
-  assert.match(comparison, /not “non-AI” alternatives/i);
-  assert.match(comparison, /No blanket accuracy winner/i);
+  assert.match(comparison, /Why use VocaPhone[\s\S]*if my phone already transcribes/i);
+  assert.match(comparison, /built-in dictation is a useful default/i);
+  assert.match(comparison, /VocaPhone includes Whisper choices/i);
+  assert.match(comparison, /not automatically more accurate on every voice or in every room/i);
   assert.match(comparison, /on-device in supported languages and devices/i);
   assert.match(comparison, /self-hosted VocaGateway/i);
+  assert.match(comparison, /github\.com\/openai\/whisper/);
   assert.match(comparison, /support\.apple\.com\/guide\/iphone\/dictate-text-iph2c0651d2\/ios/);
   assert.match(comparison, /support\.google\.com\/gboard\/answer\/11197787/);
   assert.match(css, /\.dictation-table\s*\{/);
