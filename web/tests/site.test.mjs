@@ -78,6 +78,23 @@ test("on-device transcription is the primary product promise", () => {
   assert.match(html, /gateway optional/i);
 });
 
+test("native dictation comparison stays fair, specific, and sourced", () => {
+  const comparison = htmlBlock(
+    html,
+    /<section class="comparison-section" id="native-dictation"[\s\S]*?<\/section>/,
+    "native dictation comparison",
+  );
+  assert.match(comparison, /Your phone already has[\s\S]*speech-to-text model/i);
+  assert.match(comparison, /not “non-AI” alternatives/i);
+  assert.match(comparison, /No blanket accuracy winner/i);
+  assert.match(comparison, /on-device in supported languages and devices/i);
+  assert.match(comparison, /self-hosted VocaGateway/i);
+  assert.match(comparison, /support\.apple\.com\/guide\/iphone\/dictate-text-iph2c0651d2\/ios/);
+  assert.match(comparison, /support\.google\.com\/gboard\/answer\/11197787/);
+  assert.match(css, /\.dictation-table\s*\{/);
+  assert.match(css, /\.comparison-scroll\s*\{[\s\S]*?overflow-x:\s*auto/);
+});
+
 test("VocaGateway is presented as an explicit optional path", () => {
   assert.match(html, /two paths/i);
   assert.doesNotMatch(html, /two local paths/i);
