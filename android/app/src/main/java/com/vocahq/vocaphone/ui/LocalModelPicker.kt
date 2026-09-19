@@ -30,19 +30,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.local.DeviceProfile
@@ -56,9 +60,12 @@ import com.vocahq.vocaphone.local.ModelGuidancePriority
 import com.vocahq.vocaphone.local.ModelGuidanceResult
 import com.vocahq.vocaphone.local.ModelPick
 import com.vocahq.vocaphone.local.byteLabel
+import com.vocahq.vocaphone.local.coversLanguage
+import com.vocahq.vocaphone.local.deviceLanguageCode
 import com.vocahq.vocaphone.local.downloadSizeProgress
 import com.vocahq.vocaphone.local.downloadTimeRemaining
 import com.vocahq.vocaphone.local.downloadWarning
+import com.vocahq.vocaphone.local.modelDownloadDetail
 import java.util.Locale
 
 internal const val MORE_MODELS_LABEL = SetupCopy.BROWSE_MODELS
@@ -67,8 +74,8 @@ internal const val MORE_MODELS_LABEL = SetupCopy.BROWSE_MODELS
  * The on-device model list, shared by setup and settings.
  *
  * Settings shows the filtered catalog on the page. Setup passes [compact] so
- * only the recommended model and any installed models stay on screen. The
- * rest opens from More models.
+ * the accuracy-first onboarding picks and any installed models stay on
+ * screen. The rest opens from Browse.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,30 +95,52 @@ fun LocalModelPicker(
     val usable = remember(state.totalRamGB) {
         LocalModelCatalog.usableOnDevice(state.totalRamGB).sortedBy { it.sizeBytes }
     }
-    val profile = remember(state.totalRamGB) {
-        DeviceProfile.current(state.totalRamGB)
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var keyboardTick by remember { mutableIntStateOf(0) }
+    DisposableEffect(lifecycleOwner, context) {
+        KeyboardInputLanguages.refresh(context)
+        keyboardTick++
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                KeyboardInputLanguages.refresh(context)
+                keyboardTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val keyboards = remember(keyboardTick) {
+        KeyboardInputLanguages.snapshot(context)
     }
     var guidancePriority by rememberSaveable { mutableStateOf(ModelGuidancePriority.BALANCED) }
     var guidanceOpen by rememberSaveable { mutableStateOf(false) }
-    var guidanceLanguageSelection by rememberSaveable(guidanceLanguage, profile.language) {
+    var guidanceLanguageSelection by rememberSaveable(guidanceLanguage) {
         mutableStateOf(guidanceLanguage.ifBlank { TranscriptionLanguage.AUTOMATIC.wireValue })
     }
-    val selectedGuidanceLanguage = if (
+    val explicitLanguage = if (
         guidanceLanguageSelection.isBlank() ||
             guidanceLanguageSelection == TranscriptionLanguage.AUTOMATIC.wireValue
     ) {
-        profile.language
+        ""
     } else {
         guidanceLanguageSelection
     }
-    val guidanceProfile = remember(profile, selectedGuidanceLanguage) {
-        profile.copy(language = selectedGuidanceLanguage)
+    val profile = remember(state.totalRamGB, keyboards, explicitLanguage) {
+        DeviceProfile.current(
+            totalRamGB = state.totalRamGB,
+            keyboards = keyboards,
+            explicit = explicitLanguage,
+        )
     }
-    val guidance = remember(guidanceProfile, guidancePriority) {
+    val spokenLanguages = remember(profile) {
+        profile.languages.ifEmpty { listOf(profile.language) }
+    }
+    val guidance = remember(profile, guidancePriority) {
         ModelGuidance.recommend(
-            guidanceProfile,
+            profile,
             ModelGuidanceIntent(
-                language = guidanceProfile.language,
+                language = profile.language,
                 priority = guidancePriority,
             ),
         )
@@ -120,17 +149,34 @@ fun LocalModelPicker(
     // concrete swap rather than a grid: the setup card stays a single answer,
     // but the fact that a 32 MB option exists no longer lives only behind a
     // sheet most people never open.
-    val lighter = remember(guidanceProfile) {
+    val lighter = remember(profile) {
         ModelGuidance.recommend(
-            guidanceProfile,
+            profile,
             ModelGuidanceIntent(
-                language = guidanceProfile.language,
+                language = profile.language,
                 priority = ModelGuidancePriority.LIGHTER,
             ),
         ).model
     }
     val guidanceAlternative = lighter?.takeIf { it.id != guidance.model?.id }
-    val warning = guidance.model
+    // Settings keeps the richer role-based catalog. Setup draws the accuracy
+    // first onboarding picks so a second keyboard is on the page, not behind
+    // Browse.
+    val picks = remember(profile, spokenLanguages, guidancePriority, compact) {
+        if (compact) {
+            LocalModelCatalog.onboardingRecommendations(
+                profile,
+                spokenLanguages,
+                priority = guidancePriority,
+                limit = 3,
+            )
+        } else {
+            LocalModelCatalog.recommendations(profile, spokenLanguages)
+        }
+    }
+    val recommended = picks.firstOrNull()?.model ?: guidance.model
+    val alternates = picks.drop(1)
+    val warning = recommended
         ?.takeIf { state.downloading == null && it.id !in state.downloaded }
         ?.let {
             downloadWarning(
@@ -139,15 +185,6 @@ fun LocalModelPicker(
                 metered = state.meteredNetwork,
             )
         }
-    // Settings keeps the richer role-based catalog. Setup gets one answer so
-    // people do not have to compare several technical model names.
-    val picks = remember(profile, guidance.intent.language) {
-        LocalModelCatalog.recommendations(
-            profile.copy(language = guidance.intent.language),
-        )
-    }
-    val recommended = if (compact) guidance.model ?: picks.first().model else picks.first().model
-    val alternates = picks.drop(1)
     val selectedModel = usable.firstOrNull { it.id == selectedModelId }
 
     var query by remember { mutableStateOf("") }
@@ -161,13 +198,14 @@ fun LocalModelPicker(
     val filtered = remember(usable, query, engineFilter, sizeFilter, languageFilter) {
         filterModelCatalog(usable, query, engineFilter, sizeFilter, languageFilter)
     }
-    val recommendedVisible = if (compact) {
-        guidance.model != null && usable.any { it.id == recommended.id }
+    val recommendedVisible = recommended != null && if (compact) {
+        usable.any { it.id == recommended.id }
     } else {
         filtered.any { it.id == recommended.id }
     }
+    val shownPickIds = picks.map { it.model.id }.toSet()
     val installedModels = if (compact) {
-        pickerInstalledModels(usable, state.downloaded)
+        pickerInstalledModels(usable, state.downloaded).filter { it.id !in shownPickIds }
     } else {
         pickerInstalledModels(filtered, state.downloaded)
     }
@@ -179,14 +217,19 @@ fun LocalModelPicker(
         sizeFilter != ModelSizeFilter.ANY ||
         languageFilter != ModelLanguageFilter.ANY
     val showAlternates = alternates.isNotEmpty() && !compact && !browsing
-    val alternateIds = if (showAlternates) alternates.map { it.model.id }.toSet() else emptySet()
+    val showCompactAlternates = compact && alternates.isNotEmpty()
+    val alternateIds = when {
+        showCompactAlternates || showAlternates -> alternates.map { it.model.id }.toSet()
+        else -> emptySet()
+    }
+    val recommendedId = recommended?.id
     val availableModels = filtered.filter {
         it.id !in state.downloaded &&
             it.id !in alternateIds &&
-            !(recommendedVisible && it.id == recommended.id)
+            !(recommendedVisible && recommendedId != null && it.id == recommendedId)
     }
     val sections = modelPickerSections(
-        recommended = recommended,
+        recommended = recommended ?: usable.first(),
         showRecommended = recommendedVisible,
         installed = installedModels,
         available = availableModels,
@@ -243,12 +286,13 @@ fun LocalModelPicker(
         ModelBusyBanner(state = state, onCancelDownload = onCancelDownload)
     }
 
-    val oversizedWarning = selectedModel != null &&
+    val lead = recommended
+    val oversizedWarning = selectedModel != null && lead != null &&
         LocalModelCatalog.needsHeavierWarning(selectedModel, profile)
-    if (oversizedWarning) {
+    if (lead != null && oversizedWarning) {
         OversizedModelNotice(
-            recommended = recommended,
-            installed = recommended.id in state.downloaded,
+            recommended = lead,
+            installed = lead.id in state.downloaded,
             busy = busy,
             onSelect = onSelect,
             onDownloadAndUse = onDownloadAndUse,
@@ -272,13 +316,43 @@ fun LocalModelPicker(
                 } else {
                     null
                 },
-                guidanceReason = guidance.reason.takeIf { compact },
-                guidanceDetail = guidance.downloadDetail.takeIf { compact },
+                guidanceReason = if (
+                    compact &&
+                    guidance.model?.id == model.id &&
+                    model.coversLanguage(guidance.intent.language)
+                ) {
+                    guidance.reason
+                } else {
+                    null
+                },
+                guidanceDetail = if (compact) {
+                    modelDownloadDetail(
+                        model,
+                        featuredCoverageLanguageName(
+                            model,
+                            spokenLanguages,
+                            guidance.intent.language,
+                        ),
+                    )
+                } else {
+                    null
+                },
                 warning = warning.takeIf { compact },
-                alternative = guidanceAlternative.takeIf { compact },
+                alternative = guidanceAlternative?.takeIf {
+                    compact && it.id !in shownPickIds
+                },
                 onUseAlternative = onDownloadAndUse,
             )
         }
+    }
+
+    if (showCompactAlternates) {
+        ModelPickGrid(
+            picks = alternates,
+            state = state,
+            selectedModelId = selectedModelId,
+            onInspect = { inspecting = it },
+        )
     }
 
     if (compact) {
@@ -401,15 +475,14 @@ fun LocalModelPicker(
             selectedLanguage = guidanceLanguageSelection,
             deviceLanguageName = deviceLanguageDisplayName(profile.language),
             previewFor = { language, priority ->
-                val resolved = if (
-                    language.isBlank() || language == TranscriptionLanguage.AUTOMATIC.wireValue
-                ) {
-                    profile.language
-                } else {
-                    language
-                }
+                val resolvedLanguages = LocalModelCatalog.spokenLanguages(
+                    device = deviceLanguageCode(),
+                    keyboards = keyboards,
+                    explicit = language,
+                )
+                val resolved = resolvedLanguages.firstOrNull() ?: profile.language
                 ModelGuidance.recommend(
-                    profile.copy(language = resolved),
+                    profile.copy(language = resolved, languages = resolvedLanguages),
                     ModelGuidanceIntent(language = resolved, priority = priority),
                 )
             },
@@ -436,7 +509,7 @@ fun LocalModelPicker(
             model = model,
             state = state,
             selected = selectedModelId == model.id,
-            recommended = model.id == recommended.id,
+            recommended = model.id == recommended?.id,
             busy = busy,
             onSelect = onSelect,
             onDownloadAndUse = onDownloadAndUse,
@@ -547,7 +620,7 @@ private fun RecommendedModelCard(
 ) {
     FeaturedCard {
         Text(
-            if (compact) "Recommended for you" else "Recommended for this phone",
+            if (compact) "For you" else "Recommended for this phone",
             style = MaterialTheme.typography.titleSmall,
         )
         Text(model.displayName, style = MaterialTheme.typography.titleMedium)
@@ -826,6 +899,28 @@ private fun deviceLanguageDisplayName(code: String): String =
         ?.displayName
         ?: Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault())
             .ifBlank { code.uppercase(Locale.ROOT) }
+
+/**
+ * Language name for the compact lead card's "Works with X" line.
+ *
+ * Onboarding can feature a specialist for a spoken language that is not
+ * [guidanceLanguage], so the claim has to come from what [model] covers.
+ */
+private fun featuredCoverageLanguageName(
+    model: LocalModelDescriptor,
+    spokenLanguages: List<String>,
+    guidanceLanguage: String,
+): String {
+    val code = when {
+        model.englishOnly -> "en"
+        model.languageCodes.size == 1 -> model.languageCodes.first()
+        else -> spokenLanguages.firstOrNull { model.coversLanguage(it) }
+            ?: guidanceLanguage.takeIf { model.coversLanguage(it) }
+            ?: model.languageCodes.firstOrNull()
+            ?: "en"
+    }
+    return deviceLanguageDisplayName(code)
+}
 
 @Composable
 private fun ModelCatalogSearch(

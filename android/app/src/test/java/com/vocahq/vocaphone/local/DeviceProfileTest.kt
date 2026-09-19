@@ -1,6 +1,7 @@
 package com.vocahq.vocaphone.local
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -232,5 +233,221 @@ class DeviceProfileTest {
         assertTrue(text.contains("8 cores"))
         assertTrue(text.contains("2.8 GHz"))
         assertTrue(text.contains("7 GB model budget"))
+    }
+
+    @Test
+    fun twoKeyboardLanguagesLeadWithTheModelThatCoversBoth() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "en",
+            keyboards = listOf("en-US", "ru-RU"),
+        )
+        assertEquals(listOf("en", "ru"), spoken)
+        val picks = LocalModelCatalog.recommendations(profile(8), spoken)
+        assertEquals(ModelPickRole.MULTILINGUAL, picks[0].role)
+        assertTrue(picks[0].model.coversLanguage("en"))
+        assertTrue(picks[0].model.coversLanguage("ru"))
+        assertTrue(picks.any { it.model.id == "giga-am-ctc-ru" })
+        assertTrue(picks.any { it.model.id == "parakeet-tdt-0.6b-v2-en" })
+    }
+
+    @Test
+    fun aSingleKeyboardLanguageStillLeadsWithItsSpecialist() {
+        val spoken = LocalModelCatalog.spokenLanguages(device = "en", keyboards = listOf("ru-RU"))
+        assertEquals(listOf("ru"), spoken)
+        val picks = LocalModelCatalog.recommendations(profile(8), spoken)
+        assertEquals(ModelPickRole.REGIONAL, picks[0].role)
+        assertEquals("giga-am-ctc-ru", picks[0].model.id)
+    }
+
+    @Test
+    fun everyEnabledKeyboardLanguageIsInTheSpokenList() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "en",
+            keyboards = listOf("en-US", "zh-Hans", "ja", "ko", "ru-RU"),
+        )
+        assertEquals(listOf("en", "zh", "ja", "ko", "ru"), spoken)
+        val picks = LocalModelCatalog.recommendations(profile(8), spoken)
+        assertTrue(picks.any { it.model.id == "giga-am-ctc-ru" })
+        assertTrue(picks.any { it.model.id == "paraformer-zh-small" })
+        assertTrue(picks.any { it.model.id == "sense-voice" })
+    }
+
+    @Test
+    fun noChineseModelWithoutAChineseKeyboard() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "en",
+            keyboards = listOf("en-US", "ru-RU"),
+        )
+        assertEquals(listOf("en", "ru"), spoken)
+        val picks = LocalModelCatalog.recommendations(profile(8), spoken)
+        assertTrue(picks.none { it.model.id == "paraformer-zh-small" })
+        assertTrue(picks.none { it.model.id == "sense-voice" })
+    }
+
+    @Test
+    fun deviceLanguageDoesNotInventAKeyboard() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "zh",
+            keyboards = listOf("en-US", "ru-RU"),
+        )
+        assertEquals(listOf("en", "ru"), spoken)
+        assertFalse(spoken.contains("zh"))
+        val picks = LocalModelCatalog.recommendations(profile(8), spoken)
+        assertTrue(picks.any { it.model.id == "giga-am-ctc-ru" })
+        assertTrue(picks.none { it.model.id == "paraformer-zh-small" })
+        assertTrue(picks.none { it.model.id == "sense-voice" })
+    }
+
+    @Test
+    fun extraDeviceLocalesAreNotSpokenWithoutAKeyboard() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "en",
+            keyboards = listOf("en-US"),
+        )
+        assertEquals(listOf("en"), spoken)
+        assertFalse(spoken.contains("hi"))
+    }
+
+    @Test
+    fun emptyKeyboardsFallBackToThePhoneLanguage() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "ru",
+            keyboards = listOf("emoji", "com.vocahq.vocaphone.keyboard"),
+        )
+        assertEquals(listOf("ru"), spoken)
+    }
+
+    @Test
+    fun normalizedLanguageCodeSkipsEmojiDictationAndBundles() {
+        assertEquals(null, LocalModelCatalog.normalizedLanguageCode("emoji"))
+        assertEquals(null, LocalModelCatalog.normalizedLanguageCode("dictation"))
+        assertEquals(null, LocalModelCatalog.normalizedLanguageCode("com.vocahq.vocaphone.keyboard"))
+        assertEquals("ru", LocalModelCatalog.normalizedLanguageCode("ru_RU@sw=Russian"))
+        assertEquals("zh", LocalModelCatalog.normalizedLanguageCode("zh-Hans"))
+        assertEquals("yue", LocalModelCatalog.normalizedLanguageCode("yue-Hant"))
+        assertEquals("en", LocalModelCatalog.normalizedLanguageCode("en-US"))
+        assertEquals(null, LocalModelCatalog.normalizedLanguageCode("auto"))
+        assertEquals("tl", LocalModelCatalog.normalizedLanguageCode("fil"))
+        assertEquals("tl", LocalModelCatalog.normalizedLanguageCode("fil-PH"))
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "en",
+            keyboards = listOf("fil-PH"),
+        )
+        assertTrue(spoken.contains("tl"))
+    }
+
+    @Test
+    fun multilingualPickCoversEveryLanguageOnThePhone() {
+        val pick = LocalModelCatalog.bestMultilingual(profile(8), listOf("ru", "en"))
+        assertEquals("parakeet-tdt-0.6b-v3", pick?.id)
+        assertTrue(pick!!.coversLanguage("en"))
+        assertTrue(pick.coversLanguage("ru"))
+    }
+
+    @Test
+    fun anEnglishPhoneWithAnIndicKeyboardLeadsWithTheBestEnglishModel() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "en",
+            keyboards = listOf("hi-IN", "en-IN"),
+        )
+        assertEquals(listOf("en", "hi"), spoken)
+        val picks = LocalModelCatalog.recommendations(profile(6), spoken)
+        assertEquals("parakeet-tdt-0.6b-v2-en", picks[0].model.id)
+        assertTrue(picks.any { it.model.coversLanguage("hi") })
+    }
+
+    @Test
+    fun thePhoneLanguageLeadsTheKeyboardsItIsOn() {
+        assertEquals(
+            listOf("en", "hi"),
+            LocalModelCatalog.spokenLanguages(device = "en", keyboards = listOf("hi-IN", "en-US")),
+        )
+        assertEquals(
+            listOf("hi"),
+            LocalModelCatalog.spokenLanguages(device = "en", keyboards = listOf("hi-IN")),
+        )
+    }
+
+    @Test
+    fun onboardingOffersOnlyTheMostAccurateModels() {
+        val picks = LocalModelCatalog.onboardingRecommendations(profile(6), listOf("en"))
+        assertEquals(
+            listOf("parakeet-tdt-0.6b-v2-en", "parakeet-tdt-0.6b-v3", "canary-180m-flash"),
+            picks.map { it.model.id },
+        )
+        assertTrue(picks.all { LocalModelCatalog.isHighAccuracy(it.model, "en") })
+    }
+
+    @Test
+    fun onboardingKeepsTheBestModelForASecondKeyboard() {
+        val picks = LocalModelCatalog.onboardingRecommendations(
+            profile(6),
+            listOf("en", "hi"),
+        )
+        assertEquals(3, picks.size)
+        assertEquals("parakeet-tdt-0.6b-v2-en", picks[0].model.id)
+        assertTrue(picks.any { it.model.id == "dolphin-small-ctc" })
+        assertTrue(picks.none { it.model.id == "dolphin-base-ctc" })
+    }
+
+    @Test
+    fun onboardingFallsBackWhenNothingAccurateFits() {
+        val picks = LocalModelCatalog.onboardingRecommendations(profile(1), listOf("en"))
+        assertTrue(picks.isNotEmpty())
+    }
+
+    @Test
+    fun theSmallestChoiceIsOrderedBySizeForTheLanguage() {
+        val picks = LocalModelCatalog.onboardingRecommendations(
+            profile(6),
+            listOf("en"),
+            priority = ModelGuidancePriority.LIGHTER,
+        )
+        assertEquals(3, picks.size)
+        assertEquals(picks.map { it.model.sizeBytes }.sorted(), picks.map { it.model.sizeBytes })
+        assertTrue(picks.none { it.model.id == "paraformer-zh-small" })
+        assertTrue(picks.none { it.model.id.startsWith("dolphin") })
+    }
+
+    @Test
+    fun theManyLanguagesChoiceNeverOffersAnEnglishOnlyModel() {
+        val picks = LocalModelCatalog.onboardingRecommendations(
+            profile(6),
+            listOf("en", "de"),
+            priority = ModelGuidancePriority.MULTILINGUAL,
+        )
+        assertTrue(picks.isNotEmpty())
+        assertTrue(picks.all { !it.model.englishOnly })
+        assertTrue(picks[0].model.coversLanguage("en") && picks[0].model.coversLanguage("de"))
+    }
+
+    @Test
+    fun spokenLanguagesUsesDeviceWhenItIsNotEnglish() {
+        val spoken = LocalModelCatalog.spokenLanguages(
+            device = "ru",
+            keyboards = listOf("ru-RU", "en-US"),
+        )
+        assertEquals("ru", spoken.first())
+        assertTrue(spoken.contains("en"))
+    }
+
+    @Test
+    fun currentProfileLeadsWithSpokenLanguages() {
+        val device = DeviceProfile.current(
+            totalRamGB = 8,
+            sherpaAvailable = true,
+            keyboards = listOf("hi-IN", "en-US"),
+            deviceLanguage = "en",
+        )
+        assertEquals("en", device.language)
+        assertEquals(listOf("en", "hi"), device.languages)
+        val russianOnly = DeviceProfile.current(
+            totalRamGB = 8,
+            sherpaAvailable = true,
+            keyboards = listOf("ru-RU"),
+            deviceLanguage = "en",
+        )
+        assertEquals("ru", russianOnly.language)
+        assertEquals(listOf("ru"), russianOnly.languages)
     }
 }

@@ -44,8 +44,16 @@ data class ModelGuidanceResult(
     val isAvailable: Boolean get() = model != null
 
     val downloadDetail: String?
-        get() = model?.let { "Works with $languageName · ${it.sizeLabel} download" }
+        get() = model?.let { modelDownloadDetail(it, languageName) }
 }
+
+/** The one line that says what this download costs and what it covers. */
+fun modelDownloadDetail(model: LocalModelDescriptor, languageName: String): String =
+    if (model.englishOnly) {
+        "English only · ${model.sizeLabel} download"
+    } else {
+        "Works with $languageName · ${model.sizeLabel} download"
+    }
 
 /**
  * A pure, platform-local decision layer for onboarding.

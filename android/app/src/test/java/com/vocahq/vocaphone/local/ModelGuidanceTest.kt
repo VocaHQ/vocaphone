@@ -2,6 +2,7 @@ package com.vocahq.vocaphone.local
 
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -145,6 +146,37 @@ class ModelGuidanceTest {
         assertEquals("af", result.intent.language)
         assertTrue(result.languageName.isNotBlank())
         assertTrue(result.languageName != TranscriptionLanguage.AUTOMATIC.displayName)
+    }
+
+    @Test
+    fun englishOnlyDownloadDetailNamesTheLimitation() {
+        val result = ModelGuidance.recommend(
+            profile(8),
+            ModelGuidanceIntent("en", ModelGuidancePriority.BALANCED),
+        )
+
+        assertEquals("parakeet-tdt-0.6b-v2-en", result.model?.id)
+        assertTrue(result.model!!.englishOnly)
+        assertTrue(result.downloadDetail!!.startsWith("English only"))
+        assertFalse(result.downloadDetail!!.contains("Works with"))
+        assertTrue(result.downloadDetail!!.contains("download"))
+    }
+
+    @Test
+    fun nonEnglishSpecialistStillSaysWorksWithTheLanguage() {
+        val result = ModelGuidance.recommend(
+            profile(8, language = "ru"),
+            ModelGuidanceIntent("ru"),
+        )
+
+        val model = result.model
+        assertNotNull(model)
+        assertTrue(model!!.coversLanguage("ru"))
+        assertFalse(model.englishOnly)
+        val detail = result.downloadDetail
+        assertNotNull(detail)
+        assertTrue(detail!!.contains("Works with Russian"))
+        assertFalse(detail.startsWith("English only"))
     }
 
     @Test
