@@ -96,7 +96,10 @@ test("native dictation comparison stays fair, specific, and sourced", () => {
   assert.match(css, /\.dictation-table\s*\{/);
   assert.match(css, /\.comparison-scroll\s*\{[\s\S]*?overflow-x:\s*auto/);
   assert.doesNotMatch(css, /\.dictation-table thead\s*\{\s*display:\s*none/);
-  assert.match(css, /\.dictation-table thead\s*\{[\s\S]*?clip:\s*rect\(0, 0, 0, 0\)/);
+  assert.doesNotMatch(css, /\.dictation-table thead\s*\{[\s\S]*?clip:\s*rect\(0, 0, 0, 0\)/);
+  assert.match(html, /class="swipe-hint"[\s\S]*?>Swipe left to see VocaPhone/);
+  assert.match(css, /\.dictation-table thead th\s*\{[\s\S]*?position:\s*sticky/);
+  assert.match(css, /\.dictation-table tbody th\s*\{[\s\S]*?position:\s*sticky/);
 });
 
 test("VocaGateway is presented as an explicit optional path", () => {
