@@ -24,7 +24,9 @@ import com.vocahq.vocaphone.dictation.DictationService
 import com.vocahq.vocaphone.dictation.DictationSource
 import com.vocahq.vocaphone.gateway.GatewayClient
 import com.vocahq.vocaphone.gateway.GatewayException
+import com.vocahq.vocaphone.local.DeviceProfile
 import com.vocahq.vocaphone.local.LocalModelDescriptor
+import com.vocahq.vocaphone.local.ModelDownloadService
 import com.vocahq.vocaphone.local.LocalModelIntegrityException
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.AudioRetention
@@ -39,6 +41,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
@@ -81,9 +86,17 @@ data class MicrophoneStatus(
     }
 }
 
-class VocaPhoneViewModel(application: Application) : AndroidViewModel(application) {
+class VocaPhoneViewModel @JvmOverloads constructor(
+    application: Application,
+    private val languageSource: () -> List<String> = {
+        DeviceProfile.phoneLanguages() + KeyboardInputLanguages.enabled(application)
+    },
+) : AndroidViewModel(application) {
 
     private val container = VocaPhoneApplication.container(application)
+
+    private val _deviceLanguages = MutableStateFlow<List<String>>(emptyList())
+    val deviceLanguages: StateFlow<List<String>> = _deviceLanguages.asStateFlow()
 
     val settings: StateFlow<VocaPhoneSettings> = container.settings.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VocaPhoneSettings())
@@ -160,6 +173,23 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+        // A download starting or landing changes whether the speech source is
+        // satisfied, and neither is a resume. Same reasoning as the IME
+        // observer above: the state should arrive, not wait to be sampled.
+        viewModelScope.launch {
+            container.localModels.state
+                .map { Triple(it.downloading, it.downloaded, it.pendingUse) }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { refreshSetup() }
+        }
+        viewModelScope.launch {
+            settings
+                .map { it.localModelId to it.localTranscriptionEnabled }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { refreshSetup() }
+        }
     }
 
     override fun onCleared() {
@@ -174,6 +204,7 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun refreshSetup() {
+        _deviceLanguages.value = runCatching(languageSource).getOrDefault(emptyList())
         viewModelScope.launch {
             // Cheap, and stale here is wrong in the direction that matters: the
             // setup card decides whether to warn about a 670 MB download from
@@ -182,9 +213,17 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
             val configuration = container.settings.current()
             _setup.value = SetupStatus.read(
                 context = getApplication(),
+                // A model on its way counts: setup finishes while it downloads,
+                // as on iOS, and the keyboard says "downloading" until it lands
+                // rather than the app holding the person on the setup screen.
+                // Any download in progress counts, not only the chosen id: a
+                // download started from setup is always download-and-use, and
                 gatewayConfigured = configuration.isConfigured || (
-                    configuration.localTranscriptionEnabled &&
-                        container.localModels.isDownloaded(configuration.localModelId)
+                    configuration.localTranscriptionEnabled && (
+                        container.localModels.isDownloaded(configuration.localModelId) ||
+                            container.localModels.isDownloadingAny() ||
+                            container.localModels.hasPendingUse()
+                        )
                     ),
             )
             reportSetupProgress(_setup.value)
@@ -450,6 +489,9 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
     fun clearClipboardHistory() =
         viewModelScope.launch { container.settings.clearClipboardHistory() }
 
+    fun setOnboardingStage(stage: String) =
+        viewModelScope.launch { container.settings.setOnboardingStage(stage) }
+
     fun setOnboardingComplete(complete: Boolean) =
         viewModelScope.launch {
             container.settings.setOnboardingComplete(complete)
@@ -486,6 +528,8 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setLocalModel(model: LocalModelDescriptor) {
         viewModelScope.launch {
+            pendingUseToClearOnSelect(container.localModels.state.value.pendingUse, model.id)
+                ?.let { container.localModels.clearPendingUse(it) }
             container.settings.setLocalModel(model.id)
             container.settings.setLocalTranscriptionEnabled(true)
             refreshSetup()
@@ -524,7 +568,10 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun startLocalModelDownload(model: LocalModelDescriptor, useWhenReady: Boolean) {
-        val job = container.localModels.startDownload(model)
+        val job = container.localModels.startDownload(model, useWhenReady = useWhenReady)
+        // Keeps the process alive while the person is in system Settings, and
+        // puts progress in the shade. The download itself stays in the manager.
+        ModelDownloadService.start(getApplication(), model.id, model.displayName)
         localModelDownloadJob = job
         job.invokeOnCompletion { cause ->
             if (localModelDownloadJob === job) localModelDownloadJob = null
@@ -568,11 +615,28 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
                                 throw error
                             } catch (_: Exception) {
                                 container.localModels.reportPreparationFailure(model)
+                                container.localModels.clearPendingUse(model.id)
+                                refreshSetup()
                                 return@launch
                             }
-                            container.settings.setLocalModel(model.id)
-                            container.settings.setLocalTranscriptionEnabled(true)
-                            refreshSetup()
+                            when (
+                                downloadAdoptAction(
+                                    pendingUse = container.localModels.state.value.pendingUse,
+                                    configuredId = container.settings.current().localModelId,
+                                    modelId = model.id,
+                                )
+                            ) {
+                                DownloadAdoptAction.IGNORE -> {
+                                    refreshSetup()
+                                    return@launch
+                                }
+                                DownloadAdoptAction.ADOPT -> {
+                                    container.settings.setLocalModel(model.id)
+                                    container.settings.setLocalTranscriptionEnabled(true)
+                                    container.localModels.markAdopted(model.id)
+                                    refreshSetup()
+                                }
+                            }
                         }
                     }
                 }
@@ -621,3 +685,23 @@ class VocaPhoneViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun clearDiagnosticEvents() = container.diagnostics.clear()
 }
+
+/** After prepare succeeds: persist this download only if it is still the selection. */
+internal enum class DownloadAdoptAction { ADOPT, IGNORE }
+
+/**
+ * A finishing download-and-use may persist only while it is still the pending
+ * selection. An older configured id is normal during replacement downloads and
+ * must not block adoption; an explicit pick of another installed model clears
+ * pendingUse via [pendingUseToClearOnSelect], which ends here as IGNORE.
+ */
+internal fun downloadAdoptAction(
+    pendingUse: String?,
+    @Suppress("UNUSED_PARAMETER") configuredId: String,
+    modelId: String,
+): DownloadAdoptAction =
+    if (pendingUse == modelId) DownloadAdoptAction.ADOPT else DownloadAdoptAction.IGNORE
+
+/** Pending download-and-use that an explicit pick of [selectedId] must drop. */
+internal fun pendingUseToClearOnSelect(pendingUse: String?, selectedId: String): String? =
+    pendingUse?.takeIf { it != selectedId }
