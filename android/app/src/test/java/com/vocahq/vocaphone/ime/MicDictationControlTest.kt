@@ -10,11 +10,20 @@ import org.junit.Test
 class MicDictationControlTest {
 
     @Test
-    fun `tap starts, finishes, or cancels by phase`() {
+    fun `tap starts, finishes, accepts the partial, or cancels by phase`() {
         assertEquals(MicDictationAction.START, MicDictationControl.tap(DictationPhase.IDLE))
         assertEquals(MicDictationAction.FINISH, MicDictationControl.tap(DictationPhase.LISTENING))
-        assertEquals(MicDictationAction.CANCEL, MicDictationControl.tap(DictationPhase.TRANSCRIBING))
-        assertEquals(MicDictationAction.CANCEL, MicDictationControl.tap(DictationPhase.FINALIZING))
+        assertEquals(
+            MicDictationAction.ACCEPT_PARTIAL,
+            MicDictationControl.tap(DictationPhase.TRANSCRIBING),
+        )
+        assertEquals(
+            MicDictationAction.ACCEPT_PARTIAL,
+            MicDictationControl.tap(DictationPhase.FINALIZING),
+        )
+        // INSERTING is already committing text; accepting the partial there
+        // would risk a double insertion, so it stays a no-op.
+        assertEquals(MicDictationAction.NONE, MicDictationControl.tap(DictationPhase.INSERTING))
         assertEquals(
             MicDictationAction.OPEN_APP,
             MicDictationControl.tap(DictationPhase.PERMISSION_REPAIR),
@@ -33,15 +42,6 @@ class MicDictationControlTest {
         )
         assertNull(MicDictationControl.longPress(DictationPhase.IDLE))
         assertNull(MicDictationControl.longPress(DictationPhase.FAILED))
-    }
-
-    @Test
-    fun `separate cancel is hidden while listening so a walking tap cannot discard`() {
-        assertFalse(MicDictationControl.showsSeparateCancel(DictationPhase.IDLE))
-        assertFalse(MicDictationControl.showsSeparateCancel(DictationPhase.LISTENING))
-        assertTrue(MicDictationControl.showsSeparateCancel(DictationPhase.TRANSCRIBING))
-        assertTrue(MicDictationControl.showsSeparateCancel(DictationPhase.FINALIZING))
-        assertFalse(MicDictationControl.showsSeparateCancel(DictationPhase.FAILED))
     }
 
     @Test
