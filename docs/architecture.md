@@ -36,15 +36,16 @@ the gateway wire format changed.
 ## Recorded request flow
 
 1. The keyboard creates a UUID session and atomically writes `launchingApp`.
-2. If a nonexpired Quick Dictation marker exists, the already-running app sees
-   the request while its background input is active. Otherwise the keyboard
-   opens `vocaphone://dictate?session=<uuid>` after a short fallback delay.
+2. If a nonexpired Quick Dictation marker exists — only while the containing
+   app is in the foreground — the already-running app sees the request on its
+   live input. Otherwise the keyboard opens
+   `vocaphone://dictate?session=<uuid>` after a short fallback delay.
 3. The app validates the session, claims it, and resolves which speech-to-text
    route the session will take — `onDevice` or `gateway` — writing that
    `processingLocation` into the record before any audio moves. It then switches
    its persistent audio input from discarding buffers to writing a WAV
    recording, and writes `recording` plus bounded meter updates. The audio graph
-   is not rebuilt between dictations.
+   is not rebuilt between dictations while vocaphone stays in the foreground.
 4. The user manually returns to the original app.
 5. Finish changes shared state to `finalizing`.
 6. The app negotiates streaming support on the authenticated WebSocket itself,
@@ -58,15 +59,23 @@ the gateway wire format changed.
    `insertText`, then persists `inserted` and `completed`.
 
 After Finish, the app can rearm a Quick Dictation window without
-tearing down its `AVAudioEngine`. The window length is a preference — 10
-minutes, 20 minutes, or "until I close vocaphone", which takes a short lease the
-standby heartbeat keeps renewing so a killed process cannot leave a marker that
-never expires. The same input tap writes buffers only while a dictation is
+tearing down its `AVAudioEngine`, but only while vocaphone is in the
+foreground. The app does not declare `UIBackgroundModes` audio, so iOS can
+suspend as soon as the scene leaves `.active`. Leaving the foreground
+therefore clears the availability marker and ends the standby Live Activity —
+the same teardown as pausing, without flipping the durable Settings toggle.
+Returning to the foreground re-arms if Quick Dictation is still enabled.
+
+The window length is a preference — 10 minutes, 20 minutes, or "until I close
+vocaphone", which takes a short lease the standby heartbeat keeps renewing
+while the app is in the foreground so a killed process cannot leave a marker
+that never expires. The same input tap writes buffers only while a dictation is
 active and deliberately discards every standby buffer. The shared availability
-file contains only activation and expiry timestamps. It is cleared before active
-recording, on expiry, on audio failure, when the user turns the feature off, and
-when the Live Activity's Pause button ends the current window. Pausing sets a
-flag that the next foreground clears; only the Settings toggle is durable.
+file contains only activation and expiry timestamps. It is cleared before
+active recording, on expiry, on audio failure, when the user turns the feature
+off, when the Live Activity's Pause button ends the current window, and when
+the containing app leaves the foreground. Pausing sets a flag that the next
+foreground clears; only the Settings toggle is durable.
 
 Persisting `inserting` before touching the document intentionally favors
 avoiding duplicate text if the extension terminates at the worst moment.

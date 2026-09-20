@@ -108,18 +108,23 @@ Notes field → vocaphone keyboard → Start
 → transcript becomes available → Insert
 ```
 
-Then, while Quick Dictation still shows Ready, repeat:
+Then, with vocaphone still in the foreground and Quick Dictation showing Ready,
+repeat from vocaphone's own field (or any field hosted by vocaphone):
 
 ```text
-Notes field → vocaphone keyboard → Dictate
-→ Notes remains visible → keyboard changes to Recording → Finish
+vocaphone field → vocaphone keyboard → Dictate
+→ vocaphone remains visible → keyboard changes to Recording → Finish
 → transcript becomes available → Insert
 ```
 
+Background vocaphone and repeat from Notes: Dictate must open vocaphone.
+Standby does not stay ready across suspension.
+
 Verify that:
 
-- the microphone remains active while returning to Notes;
-- later Dictate taps do not foreground vocaphone during the ready window;
+- later Dictate taps skip the handoff only while vocaphone is still in the
+  foreground with a fresh ready marker;
+- backgrounding vocaphone clears that marker, and Dictate then opens the app;
 - an expired or interrupted ready window falls back to opening vocaphone;
 - Finish stops the recorder;
 - the App Group state survives app switching;
@@ -197,8 +202,10 @@ Run these checks on a physical iPhone after changing audio or App Group code:
   vocaphone: standby must arm again on its own, and the Settings toggle must
   still read as on — a pause is not a preference change.
 - Set **Stay ready for** to *Until I close vocaphone*, background the app, and
-  confirm standby is still Ready well past 10 minutes. Force-quit vocaphone and
-  confirm the keyboard falls back to opening the app.
+  confirm standby is no longer Ready. Dictate from the keyboard must open
+  vocaphone. Returning to vocaphone must re-arm standby, and the Settings
+  toggle must still read as on. Force-quit vocaphone and confirm the keyboard
+  still falls back to opening the app.
 - Upgrading with Quick Dictation already off must show the one-time card on
   Home offering to turn it back on, and must not arm the microphone until that
   card is answered. **Not now** has to keep it off and never ask again.

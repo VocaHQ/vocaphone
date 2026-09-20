@@ -63,6 +63,10 @@ enum DiagnosticReason: String, Codable, Sendable {
     /// VocaPhone was switched off from the keyboard: the running window ended
     /// as if the app had been closed, with every preference left alone.
     case closedFromKeyboard
+    /// The containing app left the foreground. Standby cannot survive
+    /// suspension without background-audio eligibility, so the window ends
+    /// here. The durable preference is unchanged.
+    case leftForeground
     case quickDictationOff
     case sessionFinished
     case processExit

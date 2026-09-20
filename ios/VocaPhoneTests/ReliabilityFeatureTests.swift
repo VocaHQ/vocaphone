@@ -183,6 +183,93 @@ struct ReliabilityFeatureTests {
         #expect(!KeyboardPreferences.quickDictationArmable)
     }
 
+    /// Backgrounding has to drop the marker the keyboard reads, or Dictate
+    /// still thinks a suspended app is listening. The Settings switch stays
+    /// on: that is `suspendQuickDictationForBackground`, and not
+    /// `disableQuickDictation`.
+    @Test func backgroundingClearsTheAvailabilityMarkerWithoutTouchingThePreference() throws {
+        let enabled = KeyboardPreferences.quickDictationEnabled
+        let paused = KeyboardPreferences.quickDictationPausedUntilRelaunch
+        defer {
+            KeyboardPreferences.quickDictationEnabled = enabled
+            KeyboardPreferences.quickDictationPausedUntilRelaunch = paused
+        }
+        KeyboardPreferences.quickDictationEnabled = true
+        KeyboardPreferences.quickDictationPausedUntilRelaunch = false
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SharedStore(rootOverride: directory)
+        try store.saveQuickDictationAvailability(
+            QuickDictationAvailability(expiresAt: Date().addingTimeInterval(600))
+        )
+        #expect(try store.loadQuickDictationAvailability()?.isReady() == true)
+
+        try store.clearQuickDictationAvailability()
+
+        #expect(try store.loadQuickDictationAvailability() == nil)
+        #expect(KeyboardPreferences.quickDictationEnabled)
+        #expect(KeyboardPreferences.quickDictationArmable)
+    }
+
+    /// `RecordingCoordinator` is not in the test target, so the contract is
+    /// pinned here: leaving `.active` calls suspend, suspend clears readiness
+    /// without writing the durable switch, and arming refuses to rebuild
+    /// standby once iOS has already backgrounded us.
+    @Test func leavingTheForegroundClearsStandbyFromTheScenePhaseHook() throws {
+        let app = try Self.source("VocaPhoneApp/App/VocaPhoneApp.swift")
+        let coordinator = try Self.source(
+            "VocaPhoneApp/Sessions/RecordingCoordinator.swift"
+        )
+
+        let inactivePath = try #require(
+            app.range(of: "guard phase == .active else").map {
+                String(app[$0.lowerBound...])
+            }
+        )
+        let suspendAt = try #require(
+            inactivePath.range(of: "coordinator.suspendQuickDictationForBackground()")
+        )
+        let returnAt = try #require(inactivePath.range(of: "return"))
+        #expect(suspendAt.lowerBound < returnAt.lowerBound)
+
+        let suspend = try #require(
+            Self.instanceMethod(named: "suspendQuickDictationForBackground", in: coordinator)
+        )
+        #expect(suspend.contains("clearQuickDictationReadiness(deactivateAudioSession: true)"))
+        #expect(!suspend.contains("quickDictationEnabled"))
+        #expect(suspend.contains(".leftForeground"))
+
+        let disable = try #require(
+            Self.instanceMethod(named: "disableQuickDictation", in: coordinator)
+        )
+        #expect(disable.contains("quickDictationEnabled = false"))
+
+        let arm = try #require(
+            Self.instanceMethod(named: "armQuickDictation", in: coordinator)
+        )
+        #expect(arm.contains("applicationState != .background"))
+    }
+
+    @Test func leftForegroundIsAStableDiagnosticReason() {
+        #expect(DiagnosticReason.leftForeground.rawValue == "leftForeground")
+    }
+
+    @Test func docsDoNotPromiseBackgroundStandby() throws {
+        let architecture = try Self.repoFile("docs/architecture.md")
+        let privacy = try Self.repoFile("docs/privacy.md")
+        let deviceSetup = try Self.repoFile("docs/device-setup.md")
+        let decisions = try Self.repoFile("docs/decisions.md")
+
+        #expect(!architecture.contains("background input is active"))
+        #expect(architecture.contains("clears the availability marker"))
+        #expect(privacy.contains("does not keep microphone input"))
+        #expect(privacy.contains("across background suspension"))
+        #expect(!deviceSetup.contains("still Ready well past 10 minutes"))
+        #expect(!decisions.contains("background microphone readiness"))
+    }
+
     /// Both new preferences are absent for everyone upgrading, and the defaults
     /// they fall back to have to be the behaviour those users already have.
     @Test func newQuickDictationPreferencesDefaultToTodaysBehaviour() {
@@ -441,5 +528,39 @@ struct ReliabilityFeatureTests {
 
         let size = try #require(file.resourceValues(forKeys: [.fileSizeKey]).fileSize)
         #expect(size <= DiagnosticLog.maximumFileSize)
+    }
+
+    private static func source(_ path: String) throws -> String {
+        try String(
+            contentsOf: iosDirectory.appendingPathComponent(path),
+            encoding: .utf8
+        )
+    }
+
+    private static func repoFile(_ path: String) throws -> String {
+        try String(
+            contentsOf: repoRoot.appendingPathComponent(path),
+            encoding: .utf8
+        )
+    }
+
+    private static func instanceMethod(named name: String, in source: String) -> String? {
+        let signature = "func \(name)("
+        guard let start = source.range(of: signature) else { return nil }
+        let remainder = source[start.upperBound...]
+        let nextMarkers = ["\n    func ", "\n    private func ", "\n    nonisolated func "]
+        let end = nextMarkers.compactMap { remainder.range(of: $0)?.lowerBound }.min()
+            ?? source.endIndex
+        return String(source[start.lowerBound..<end])
+    }
+
+    private static var iosDirectory: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static var repoRoot: URL {
+        iosDirectory.deletingLastPathComponent()
     }
 }

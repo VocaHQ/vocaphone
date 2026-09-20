@@ -569,6 +569,24 @@ final class RecordingCoordinator {
         clearQuickDictationReadiness(deactivateAudioSession: true)
     }
 
+    /// iOS can suspend this process as soon as the scene leaves the
+    /// foreground: there is no `UIBackgroundModes` audio to keep it running.
+    /// Standby and its Live Activity have to end here, while we can still
+    /// talk to ActivityKit. The durable Quick Dictation preference is left
+    /// alone; the next foreground re-arms through
+    /// ``prepareQuickDictationIfEnabled()``.
+    func suspendQuickDictationForBackground() {
+        guard !isInert else { return }
+        let hadWindow = quickDictationExpiresAt != nil
+            || (try? store.loadQuickDictationAvailability()) != nil
+        clearQuickDictationReadiness(deactivateAudioSession: true)
+        guard hadWindow else { return }
+        DiagnosticLog.record(
+            .quickDictationStopped,
+            metadata: .reason(.leftForeground)
+        )
+    }
+
     /// Called every time vocaphone reaches the foreground. A pause taken from
     /// the Live Activity lasts exactly until the user comes back — which is the
     /// whole point of it being a pause — so this runs before the arming check
@@ -1530,16 +1548,24 @@ final class RecordingCoordinator {
     }
 
     private func shouldKeepQuickDictationReady(after record: SessionRecord) -> Bool {
+        // Finish from a Live Activity can land while we are already
+        // backgrounded. Re-arming there would put the marker and the
+        // island back up for a process iOS is about to suspend.
         KeyboardPreferences.quickDictationArmable
             && audioSessionAvailable
             && record.sourceDocumentID != "in-app-test"
+            && UIApplication.shared.applicationState != .background
     }
 
     private func armQuickDictation() {
         guard KeyboardPreferences.setupCompleted,
               KeyboardPreferences.quickDictationArmable,
               audioSessionAvailable,
-              !recorder.isRecording
+              !recorder.isRecording,
+              // Finish from a Live Activity can land while we are already
+              // backgrounded. Re-arming there would put the marker and the
+              // island back up for a process iOS is about to suspend.
+              UIApplication.shared.applicationState != .background
         else { return }
 
         // Already armed on the same terms. Several paths arm on return from the

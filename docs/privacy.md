@@ -8,15 +8,17 @@ bearer-authenticated gateway over HTTP or HTTPS, and deletes the iPhone copy
 after a transcript is safely stored. HTTPS or an encrypted private network is
 recommended so the recording and token are protected in transit.
 
-When Quick Dictation is enabled, the containing app may keep microphone input
-active so later keyboard actions do not need another app handoff. The window is
-the user's choice — 10 minutes by default, 20 minutes, or until vocaphone is
-closed. The system's orange microphone indicator remains visible. Audio buffers
-captured while waiting are discarded in memory: they are not written to disk,
-placed in shared state, or uploaded. Only audio after an explicit Dictate action
-is saved for transcription. The user can turn Quick Dictation off in the app,
-or pause the current window from the Live Activity without changing the
-setting.
+When Quick Dictation is enabled and vocaphone is in the foreground, the
+containing app may keep microphone input active so a later Dictate tap does
+not need another app handoff. The window is the user's choice — 10 minutes by
+default, 20 minutes, or until vocaphone is closed — and it ends as soon as
+vocaphone leaves the foreground. The app does not keep microphone input
+across background suspension. The system's orange microphone indicator
+remains visible while standby is armed. Audio buffers captured while waiting
+are discarded in memory: they are not written to disk, placed in shared
+state, or uploaded. Only audio after an explicit Dictate action is saved for
+transcription. The user can turn Quick Dictation off in the app, or pause the
+current window from the Live Activity without changing the setting.
 
 The gateway host stores randomized audio names under its private data directory.
 On success, original and normalized audio are deleted by default. Failed and
