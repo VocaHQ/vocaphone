@@ -201,11 +201,13 @@ Run these checks on a physical iPhone after changing audio or App Group code:
   vocaphone, and the next keyboard dictation must open the app. Then reopen
   vocaphone: standby must arm again on its own, and the Settings toggle must
   still read as on — a pause is not a preference change.
-- Set **Stay ready for** to *Until I close vocaphone*, background the app, and
-  confirm standby is no longer Ready. Dictate from the keyboard must open
-  vocaphone. Returning to vocaphone must re-arm standby, and the Settings
-  toggle must still read as on. Force-quit vocaphone and confirm the keyboard
-  still falls back to opening the app.
+- Set **Stay ready for** to *Until I close vocaphone*, send vocaphone to the
+  Home Screen or app switcher, and confirm standby is no longer Ready. Dictate
+  from the keyboard must open vocaphone. Returning to vocaphone must re-arm
+  standby, and the Settings toggle must still read as on. Opening Control
+  Center or a system alert must leave the window armed — those only move the
+  scene to `.inactive`, not `.background`. Force-quit vocaphone and confirm
+  the keyboard still falls back to opening the app.
 - Upgrading with Quick Dictation already off must show the one-time card on
   Home offering to turn it back on, and must not arm the microphone until that
   card is answered. **Not now** has to keep it off and never ask again.

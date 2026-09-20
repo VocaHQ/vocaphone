@@ -214,25 +214,29 @@ struct ReliabilityFeatureTests {
     }
 
     /// `RecordingCoordinator` is not in the test target, so the contract is
-    /// pinned here: leaving `.active` calls suspend, suspend clears readiness
-    /// without writing the durable switch, and arming refuses to rebuild
-    /// standby once iOS has already backgrounded us.
+    /// pinned here: reaching `.background` calls suspend, a pure `.inactive`
+    /// path does not, suspend clears readiness without writing the durable
+    /// switch, and arming refuses to rebuild standby once iOS has already
+    /// backgrounded us.
     @Test func leavingTheForegroundClearsStandbyFromTheScenePhaseHook() throws {
         let app = try Self.source("VocaPhoneApp/App/VocaPhoneApp.swift")
         let coordinator = try Self.source(
             "VocaPhoneApp/Sessions/RecordingCoordinator.swift"
         )
 
-        let inactivePath = try #require(
+        let leavingActive = try #require(
             app.range(of: "guard phase == .active else").map {
                 String(app[$0.lowerBound...])
             }
         )
-        let suspendAt = try #require(
-            inactivePath.range(of: "coordinator.suspendQuickDictationForBackground()")
-        )
-        let returnAt = try #require(inactivePath.range(of: "return"))
-        #expect(suspendAt.lowerBound < returnAt.lowerBound)
+        let returnAt = try #require(leavingActive.range(of: "return"))
+        let elseBody = String(leavingActive[..<returnAt.lowerBound])
+        let backgroundAt = try #require(elseBody.range(of: "if phase == .background"))
+        let backgroundBranch = String(elseBody[backgroundAt.lowerBound...])
+        let inactivePath = String(elseBody[..<backgroundAt.lowerBound])
+
+        #expect(backgroundBranch.contains("coordinator.suspendQuickDictationForBackground()"))
+        #expect(!inactivePath.contains("coordinator.suspendQuickDictationForBackground()"))
 
         let suspend = try #require(
             Self.instanceMethod(named: "suspendQuickDictationForBackground", in: coordinator)

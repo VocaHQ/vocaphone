@@ -134,18 +134,19 @@ struct VocaPhoneApp: App {
                         KeyboardInputLanguages.refresh()
                     }
                     guard phase == .active else {
-                        // No UIBackgroundModes audio: iOS can suspend as soon
-                        // as we leave the foreground. Standby and its Live
-                        // Activity have to end first, including on `.inactive`,
-                        // which is the first step of backgrounding and may be
-                        // the last chance we get to talk to ActivityKit.
-                        coordinator.suspendQuickDictationForBackground()
                         // The queue is in memory and does not survive the
                         // process, so backgrounding is the only moment a flush
                         // reliably has something to send. A deferred background
                         // task would usually wake to an empty queue.
                         Task { await Telemetry.shared.flush() }
                         if phase == .background {
+                            // No UIBackgroundModes audio: iOS can suspend as
+                            // soon as we reach `.background`. Standby and its
+                            // Live Activity have to end here, while we can
+                            // still talk to ActivityKit. Control Center and
+                            // alerts only move the scene to `.inactive`; those
+                            // must not reset the Stay-ready window.
+                            coordinator.suspendQuickDictationForBackground()
                             // Hands any in-flight model download to the
                             // background session, which is the only one the
                             // system keeps running once we are suspended.
