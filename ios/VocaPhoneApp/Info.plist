@@ -39,7 +39,7 @@
     <string>twitter</string>
   </array>
   <key>NSMicrophoneUsageDescription</key>
-  <string>vocaphone records your dictation and turns it into text on this iPhone or on a gateway you run. Audio is deleted once the transcript is saved. Quick Dictation can keep the microphone ready between dictations; that audio is discarded.</string>
+  <string>vocaphone records your dictation and turns it into text on this iPhone or on a gateway you run. Audio is deleted once the transcript is saved.</string>
   <key>NSCameraUsageDescription</key>
   <string>Only to scan a gateway pairing code. Skip this if you transcribe on this iPhone.</string>
   <key>NSLocalNetworkUsageDescription</key>
@@ -59,10 +59,6 @@
   <true/>
   <key>ITSAppUsesNonExemptEncryption</key>
   <false/>
-  <key>UIBackgroundModes</key>
-  <array>
-    <string>audio</string>
-  </array>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

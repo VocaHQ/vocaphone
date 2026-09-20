@@ -804,7 +804,7 @@ struct SetupView: View {
         case .model:
             ("Choose model", "It turns your voice into text, offline on this iPhone. You can switch later.")
         case .microphone:
-            ("Allow microphone access", "So vocaphone can hear what you say.")
+            (SetupStep.microphone.title, "So vocaphone can hear what you say.")
         case .keyboard:
             ("Set up keyboard", "So vocaphone can type in any app.")
         case .keyboardSwitch:
@@ -893,13 +893,14 @@ struct SetupView: View {
     }
 
     private var microphonePageAction: (title: String, perform: () -> Void)? {
+        let title = status.microphone.onboardingActionTitle
         switch status.microphone {
-        case .granted: return ("Continue", advance)
+        case .granted: return (title, advance)
         case .undetermined:
-            return ("Allow access", {
+            return (title, {
                 coordinator.requestMicrophonePermission(armQuickDictationOnGrant: false)
             })
-        case .denied: return ("Open Settings", openSystemSettings)
+        case .denied: return (title, openSystemSettings)
         }
     }
 

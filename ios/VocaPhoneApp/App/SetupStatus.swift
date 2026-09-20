@@ -24,7 +24,7 @@ enum SetupStep: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .source: "Choose where speech becomes text"
-        case .microphone: "Allow microphone access"
+        case .microphone: "Microphone access"
         case .keyboard: "Add the keyboard with Full Access"
         case .firstDictation: "Try one dictation"
         }
@@ -177,6 +177,18 @@ enum MicrophoneAccess: Sendable {
     case undetermined
     case denied
     case granted
+
+    /// Custom UI shown before iOS's microphone prompt. Guideline 5.1.1(iv)
+    /// rejects a button labeled like "Allow" on that screen.
+    static let prePromptActionTitle = "Continue"
+
+    /// Docked first-run action on the microphone page.
+    var onboardingActionTitle: String {
+        switch self {
+        case .granted, .undetermined: Self.prePromptActionTitle
+        case .denied: "Open Settings"
+        }
+    }
 }
 
 /// Everything guided setup checks, re-read whenever the app returns to the

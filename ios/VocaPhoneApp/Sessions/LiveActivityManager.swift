@@ -514,10 +514,10 @@ final class LiveActivityManager: @unchecked Sendable {
 
     /// A Live Activity belongs to the system and otherwise survives its app.
     /// Scene disconnection is the force-quit signal for a scene-based app; the
-    /// termination notification is a fallback while background audio keeps the
-    /// process running. ActivityKit's end operation is asynchronous, so briefly
-    /// servicing the main run loop gives it time to reach the system before iOS
-    /// tears down this process.
+    /// termination notification is a fallback if the process is still running.
+    /// ActivityKit's end operation is asynchronous, so briefly servicing the
+    /// main run loop gives it time to reach the system before iOS tears down
+    /// this process.
     private func endBeforeProcessExit(reason: String) {
         guard !isAppExiting else { return }
         isAppExiting = true

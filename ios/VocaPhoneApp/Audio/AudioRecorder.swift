@@ -266,8 +266,9 @@ final class AudioRecorder: NSObject {
         }
     }
 
-    /// Keeps the containing app eligible for background audio execution while
-    /// discarding every captured buffer. No standby audio reaches the ring.
+    /// Opens the capture graph and discards every buffer. No standby audio
+    /// reaches the ring. The app does not declare `UIBackgroundModes` audio,
+    /// so iOS can suspend this as soon as vocaphone leaves the foreground.
     func startStandby() throws {
         guard !isRecording else { return }
         try ensureEngineRunning()

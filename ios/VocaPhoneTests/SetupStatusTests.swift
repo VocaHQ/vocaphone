@@ -327,6 +327,22 @@ struct SetupStatusTests {
         #expect(complete.attentionActionTitle == nil)
         #expect(complete.attentionOpensSystemSettings == false)
     }
+
+    /// Guideline 5.1.1(iv): custom UI in front of the system microphone prompt
+    /// must not look like the grant itself. "Allow" was the word App Review
+    /// flagged; Continue is the same verb the rest of first-run already uses.
+    @Test func thePreMicrophonePromptDoesNotSayAllow() {
+        #expect(MicrophoneAccess.prePromptActionTitle == "Continue")
+        #expect(
+            !MicrophoneAccess.prePromptActionTitle
+                .localizedCaseInsensitiveContains("allow")
+        )
+        #expect(MicrophoneAccess.undetermined.onboardingActionTitle == "Continue")
+        #expect(MicrophoneAccess.granted.onboardingActionTitle == "Continue")
+        #expect(MicrophoneAccess.denied.onboardingActionTitle == "Open Settings")
+        #expect(SetupStep.microphone.title == "Microphone access")
+        #expect(!SetupStep.microphone.title.hasPrefix("Allow"))
+    }
 }
 
 /// The keyboard's identifier is derived from the running bundle, not written

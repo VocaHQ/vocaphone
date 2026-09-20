@@ -66,11 +66,11 @@ enum QuickDictationDuration: String, CaseIterable, Codable, Identifiable, Sendab
         case .twentyMinutes: window = "for up to 20 minutes"
         case .untilAppCloses: window = "until you close vocaphone"
         }
-        return "After vocaphone gets microphone access, it keeps an active background "
-            + "input \(window) so Dictate can start without leaving the app you are in. "
-            + "Standby audio is discarded and never saved or uploaded. The orange "
-            + "microphone indicator stays visible while it is on. Pausing from the "
-            + "Dynamic Island ends only the current window — reopening vocaphone arms "
-            + "a new one, and this switch stays on."
+        return "After vocaphone gets microphone access, it can stay ready \(window) "
+            + "while vocaphone is running so Dictate can start without leaving the "
+            + "app you are in. Standby audio is discarded and never saved or uploaded. "
+            + "The orange microphone indicator stays visible while it is on. Pausing "
+            + "from the Dynamic Island ends only the current window — reopening "
+            + "vocaphone arms a new one, and this switch stays on."
     }
 }

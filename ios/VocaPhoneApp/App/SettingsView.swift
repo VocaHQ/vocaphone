@@ -1085,7 +1085,7 @@ struct PrivacySettingsView: View {
 
                 switch coordinator.microphoneAccess {
                 case .undetermined:
-                    Button("Allow microphone access") {
+                    Button(MicrophoneAccess.prePromptActionTitle) {
                         coordinator.requestMicrophonePermission()
                     }
                 case .denied:
