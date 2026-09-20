@@ -151,7 +151,9 @@ final class LiveActivityManager: @unchecked Sendable {
     /// same second can take the island over. Once we are backgrounded there
     /// is no next presentation coming, and without `UIBackgroundModes` audio
     /// iOS can suspend before that deferred end runs — leaving the island
-    /// showing a window that has already ended.
+    /// showing a window that has already ended. The immediate path holds a
+    /// short background task so the ActivityKit mutation can finish before
+    /// suspension; it does not keep the microphone or claim a background mode.
     func stopStandby(immediate: Bool = false) {
         standbyRequested = false
         standbyExpiresAt = nil
@@ -166,7 +168,13 @@ final class LiveActivityManager: @unchecked Sendable {
             phase: .finished
         )
         if immediate {
-            endAll(state: state, dismissalPolicy: .immediate)
+            let assertion = BackgroundAssertion()
+            assertion.begin()
+            endAll(
+                state: state,
+                dismissalPolicy: .immediate,
+                onFinished: { assertion.end() }
+            )
         } else {
             scheduleEndAll(
                 state: state,
@@ -448,16 +456,20 @@ final class LiveActivityManager: @unchecked Sendable {
 
     private func endAll(
         state: VocaPhoneActivityAttributes.ContentState,
-        dismissalPolicy: ActivityUIDismissalPolicy
+        dismissalPolicy: ActivityUIDismissalPolicy,
+        onFinished: (@Sendable () -> Void)? = nil
     ) {
         let content = ActivityContent(state: state, staleDate: nil)
-        enqueueActivityMutation { [weak self] in
-            // Cleared first: a presentation that arrives while these ends are
-            // in flight must make a new activity rather than update a dying one.
-            self?.currentActivityID = nil
-            self?.requestedAt = nil
-            await Self.endEverything(with: content, dismissalPolicy: dismissalPolicy)
-        }
+        enqueueActivityMutation(
+            { [weak self] in
+                // Cleared first: a presentation that arrives while these ends are
+                // in flight must make a new activity rather than update a dying one.
+                self?.currentActivityID = nil
+                self?.requestedAt = nil
+                await Self.endEverything(with: content, dismissalPolicy: dismissalPolicy)
+            },
+            onFinished: onFinished
+        )
     }
 
     /// The gap between "standby is over" and "recording has begun".
@@ -513,14 +525,52 @@ final class LiveActivityManager: @unchecked Sendable {
 
     /// ActivityKit mutations are asynchronous. Keeping them ordered prevents a
     /// late "off" operation from ending a newly rearmed standby activity.
+    ///
+    /// `onFinished` runs after the mutation returns, and also if this task is
+    /// cancelled or the process is already exiting — so a background assertion
+    /// taken for an immediate end is not left hanging.
     private func enqueueActivityMutation(
-        _ mutation: @escaping @MainActor @Sendable () async -> Void
+        _ mutation: @escaping @MainActor @Sendable () async -> Void,
+        onFinished: (@Sendable () -> Void)? = nil
     ) {
         let precedingMutation = activityMutationTask
         activityMutationTask = Task { @MainActor [weak self] in
             await precedingMutation?.value
+            defer { onFinished?() }
             guard let self, !Task.isCancelled, !self.isAppExiting else { return }
             await mutation()
+        }
+    }
+
+    /// Holds the process awake just long enough for ActivityKit to dismiss
+    /// the standby Live Activity. Without it, dropping `UIBackgroundModes`
+    /// audio lets iOS suspend mid-end and the island keeps showing a window
+    /// that has already finished.
+    private final class BackgroundAssertion: @unchecked Sendable {
+        private let lock = NSLock()
+        private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+        @MainActor
+        func begin() {
+            let identifier = UIApplication.shared.beginBackgroundTask(
+                withName: "quick-dictation-standby-end"
+            ) { [weak self] in
+                self?.end()
+            }
+            lock.lock()
+            self.identifier = identifier
+            lock.unlock()
+        }
+
+        func end() {
+            lock.lock()
+            let identifier = self.identifier
+            self.identifier = .invalid
+            lock.unlock()
+            guard identifier != .invalid else { return }
+            Task { @MainActor in
+                UIApplication.shared.endBackgroundTask(identifier)
+            }
         }
     }
 

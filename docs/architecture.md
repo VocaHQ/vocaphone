@@ -62,8 +62,9 @@ After Finish, the app can rearm a Quick Dictation window without
 tearing down its `AVAudioEngine`, but only while vocaphone is in the
 foreground. The app does not declare `UIBackgroundModes` audio, so iOS can
 suspend after the scene reaches `.background`. Reaching `.background`
-clears the availability marker and ends the standby Live Activity immediately
-— the same teardown as pausing, without flipping the durable Settings toggle.
+clears the availability marker synchronously and holds a short background task
+so ActivityKit can dismiss the standby Live Activity before suspension — the
+same teardown as pausing, without flipping the durable Settings toggle.
 Transient `.inactive` (Control Center, alerts) does not clear standby.
 Returning to the foreground re-arms if Quick Dictation is still enabled.
 

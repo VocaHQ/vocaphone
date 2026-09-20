@@ -216,9 +216,9 @@ struct ReliabilityFeatureTests {
     /// `RecordingCoordinator` is not in the test target, so the contract is
     /// pinned here: reaching `.background` calls suspend, a pure `.inactive`
     /// path does not, suspend clears readiness without writing the durable
-    /// switch, background teardown skips `endGrace` and ends the Live Activity
-    /// immediately, and arming refuses to rebuild standby once iOS has already
-    /// backgrounded us.
+    /// switch, background teardown skips `endGrace` and holds a short
+    /// background task so ActivityKit can dismiss the Live Activity, and
+    /// arming refuses to rebuild standby once iOS has already backgrounded us.
     @Test func leavingTheForegroundClearsStandbyFromTheScenePhaseHook() throws {
         let app = try Self.source("VocaPhoneApp/App/VocaPhoneApp.swift")
         let coordinator = try Self.source(
@@ -266,10 +266,23 @@ struct ReliabilityFeatureTests {
         let elseAt = try #require(afterImmediate.range(of: "} else {"))
         let immediateBody = String(afterImmediate[..<elseAt.lowerBound])
         let deferredBody = String(afterImmediate[elseAt.upperBound...])
+        #expect(immediateBody.contains("BackgroundAssertion"))
+        #expect(immediateBody.contains("assertion.begin()"))
+        let beginAt = try #require(immediateBody.range(of: "assertion.begin()"))
+        let endAllAt = try #require(immediateBody.range(of: "endAll("))
+        #expect(beginAt.lowerBound < endAllAt.lowerBound)
         #expect(immediateBody.contains("endAll("))
         #expect(immediateBody.contains("dismissalPolicy: .immediate"))
+        #expect(immediateBody.contains("assertion.end()"))
         #expect(!immediateBody.contains("scheduleEndAll("))
         #expect(deferredBody.contains("scheduleEndAll("))
+        #expect(!deferredBody.contains("BackgroundAssertion"))
+        #expect(liveActivity.contains("beginBackgroundTask"))
+        #expect(liveActivity.contains("quick-dictation-standby-end"))
+        let enqueue = try #require(
+            Self.instanceMethod(named: "enqueueActivityMutation", in: liveActivity)
+        )
+        #expect(enqueue.contains("defer { onFinished?() }"))
 
         let disable = try #require(
             Self.instanceMethod(named: "disableQuickDictation", in: coordinator)
@@ -296,7 +309,8 @@ struct ReliabilityFeatureTests {
         #expect(!architecture.contains("leaves `.active`"))
         #expect(!architecture.contains("Leaving the foreground"))
         #expect(architecture.contains("clears the availability marker"))
-        #expect(architecture.contains("ends the standby Live Activity immediately"))
+        #expect(architecture.contains("short background task"))
+        #expect(architecture.contains("dismiss the standby Live Activity"))
         #expect(architecture.contains("Transient `.inactive`"))
         #expect(privacy.contains("does not keep microphone input"))
         #expect(privacy.contains("across background suspension"))
