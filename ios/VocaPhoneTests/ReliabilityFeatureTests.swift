@@ -216,12 +216,16 @@ struct ReliabilityFeatureTests {
     /// `RecordingCoordinator` is not in the test target, so the contract is
     /// pinned here: reaching `.background` calls suspend, a pure `.inactive`
     /// path does not, suspend clears readiness without writing the durable
-    /// switch, and arming refuses to rebuild standby once iOS has already
+    /// switch, background teardown skips `endGrace` and ends the Live Activity
+    /// immediately, and arming refuses to rebuild standby once iOS has already
     /// backgrounded us.
     @Test func leavingTheForegroundClearsStandbyFromTheScenePhaseHook() throws {
         let app = try Self.source("VocaPhoneApp/App/VocaPhoneApp.swift")
         let coordinator = try Self.source(
             "VocaPhoneApp/Sessions/RecordingCoordinator.swift"
+        )
+        let liveActivity = try Self.source(
+            "VocaPhoneApp/Sessions/LiveActivityManager.swift"
         )
 
         let leavingActive = try #require(
@@ -241,9 +245,31 @@ struct ReliabilityFeatureTests {
         let suspend = try #require(
             Self.instanceMethod(named: "suspendQuickDictationForBackground", in: coordinator)
         )
-        #expect(suspend.contains("clearQuickDictationReadiness(deactivateAudioSession: true)"))
+        #expect(suspend.contains("clearQuickDictationReadiness("))
+        #expect(suspend.contains("deactivateAudioSession: true"))
+        #expect(suspend.contains("endLiveActivityImmediately: true"))
         #expect(!suspend.contains("quickDictationEnabled"))
         #expect(suspend.contains(".leftForeground"))
+
+        let clear = try #require(
+            Self.instanceMethod(named: "clearQuickDictationReadiness", in: coordinator)
+        )
+        #expect(clear.contains("endLiveActivityImmediately: Bool = false"))
+        #expect(clear.contains("liveActivity.stopStandby(immediate: endLiveActivityImmediately)"))
+
+        let stopStandby = try #require(
+            Self.instanceMethod(named: "stopStandby", in: liveActivity)
+        )
+        #expect(stopStandby.contains("immediate: Bool = false"))
+        let immediateAt = try #require(stopStandby.range(of: "if immediate {"))
+        let afterImmediate = String(stopStandby[immediateAt.lowerBound...])
+        let elseAt = try #require(afterImmediate.range(of: "} else {"))
+        let immediateBody = String(afterImmediate[..<elseAt.lowerBound])
+        let deferredBody = String(afterImmediate[elseAt.upperBound...])
+        #expect(immediateBody.contains("endAll("))
+        #expect(immediateBody.contains("dismissalPolicy: .immediate"))
+        #expect(!immediateBody.contains("scheduleEndAll("))
+        #expect(deferredBody.contains("scheduleEndAll("))
 
         let disable = try #require(
             Self.instanceMethod(named: "disableQuickDictation", in: coordinator)
@@ -267,11 +293,20 @@ struct ReliabilityFeatureTests {
         let decisions = try Self.repoFile("docs/decisions.md")
 
         #expect(!architecture.contains("background input is active"))
+        #expect(!architecture.contains("leaves `.active`"))
+        #expect(!architecture.contains("Leaving the foreground"))
         #expect(architecture.contains("clears the availability marker"))
+        #expect(architecture.contains("ends the standby Live Activity immediately"))
+        #expect(architecture.contains("Transient `.inactive`"))
         #expect(privacy.contains("does not keep microphone input"))
         #expect(privacy.contains("across background suspension"))
+        #expect(privacy.contains("is backgrounded"))
+        #expect(!privacy.contains("leaves the foreground"))
         #expect(!deviceSetup.contains("still Ready well past 10 minutes"))
+        #expect(!deviceSetup.contains("leaves the foreground"))
         #expect(!decisions.contains("background microphone readiness"))
+        #expect(!decisions.contains("leaves the foreground"))
+        #expect(decisions.contains("cleared when backgrounded"))
     }
 
     /// Both new preferences are absent for everyone upgrading, and the defaults

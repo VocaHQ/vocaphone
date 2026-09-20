@@ -61,9 +61,10 @@ the gateway wire format changed.
 After Finish, the app can rearm a Quick Dictation window without
 tearing down its `AVAudioEngine`, but only while vocaphone is in the
 foreground. The app does not declare `UIBackgroundModes` audio, so iOS can
-suspend as soon as the scene leaves `.active`. Leaving the foreground
-therefore clears the availability marker and ends the standby Live Activity —
-the same teardown as pausing, without flipping the durable Settings toggle.
+suspend after the scene reaches `.background`. Reaching `.background`
+clears the availability marker and ends the standby Live Activity immediately
+— the same teardown as pausing, without flipping the durable Settings toggle.
+Transient `.inactive` (Control Center, alerts) does not clear standby.
 Returning to the foreground re-arms if Quick Dictation is still enabled.
 
 The window length is a preference — 10 minutes, 20 minutes, or "until I close
@@ -74,7 +75,7 @@ active and deliberately discards every standby buffer. The shared availability
 file contains only activation and expiry timestamps. It is cleared before
 active recording, on expiry, on audio failure, when the user turns the feature
 off, when the Live Activity's Pause button ends the current window, and when
-the containing app leaves the foreground. Pausing sets a flag that the next
+the containing app is backgrounded. Pausing sets a flag that the next
 foreground clears; only the Settings toggle is durable.
 
 Persisting `inserting` before touching the document intentionally favors

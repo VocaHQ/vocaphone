@@ -11,8 +11,9 @@ recommended so the recording and token are protected in transit.
 When Quick Dictation is enabled and vocaphone is in the foreground, the
 containing app may keep microphone input active so a later Dictate tap does
 not need another app handoff. The window is the user's choice — 10 minutes by
-default, 20 minutes, or until vocaphone is closed — and it ends as soon as
-vocaphone leaves the foreground. The app does not keep microphone input
+default, 20 minutes, or until vocaphone is closed — and it ends when
+vocaphone is backgrounded, not when Control Center or a system alert
+briefly takes the screen. The app does not keep microphone input
 across background suspension. The system's orange microphone indicator
 remains visible while standby is armed. Audio buffers captured while waiting
 are discarded in memory: they are not written to disk, placed in shared

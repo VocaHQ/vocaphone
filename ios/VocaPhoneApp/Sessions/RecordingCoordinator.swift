@@ -569,17 +569,21 @@ final class RecordingCoordinator {
         clearQuickDictationReadiness(deactivateAudioSession: true)
     }
 
-    /// iOS can suspend this process as soon as the scene leaves the
-    /// foreground: there is no `UIBackgroundModes` audio to keep it running.
-    /// Standby and its Live Activity have to end here, while we can still
-    /// talk to ActivityKit. The durable Quick Dictation preference is left
-    /// alone; the next foreground re-arms through
+    /// iOS can suspend this process as soon as the scene reaches
+    /// `.background`: there is no `UIBackgroundModes` audio to keep it running.
+    /// Standby and its Live Activity have to end here immediately, while we
+    /// can still talk to ActivityKit — a deferred end after `endGrace` often
+    /// never runs once we are suspended. The durable Quick Dictation
+    /// preference is left alone; the next foreground re-arms through
     /// ``prepareQuickDictationIfEnabled()``.
     func suspendQuickDictationForBackground() {
         guard !isInert else { return }
         let hadWindow = quickDictationExpiresAt != nil
             || (try? store.loadQuickDictationAvailability()) != nil
-        clearQuickDictationReadiness(deactivateAudioSession: true)
+        clearQuickDictationReadiness(
+            deactivateAudioSession: true,
+            endLiveActivityImmediately: true
+        )
         guard hadWindow else { return }
         DiagnosticLog.record(
             .quickDictationStopped,
@@ -1688,10 +1692,13 @@ final class RecordingCoordinator {
         }
     }
 
-    private func clearQuickDictationReadiness(deactivateAudioSession: Bool) {
+    private func clearQuickDictationReadiness(
+        deactivateAudioSession: Bool,
+        endLiveActivityImmediately: Bool = false
+    ) {
         clearQuickDictationMarker()
         recorder.stopStandby(deactivateAudioSession: deactivateAudioSession)
-        liveActivity.stopStandby()
+        liveActivity.stopStandby(immediate: endLiveActivityImmediately)
         // The window the model was kept warm for has ended — by expiry, by the
         // switch in the keyboard, or by the Live Activity. Nothing is coming
         // that needs it, and the next dictation starts by opening this app

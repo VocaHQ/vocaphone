@@ -145,7 +145,14 @@ final class LiveActivityManager: @unchecked Sendable {
 
     /// Removes the standby Live Activity when Quick Dictation releases the
     /// microphone. An active recording keeps its own activity until completion.
-    func stopStandby() {
+    ///
+    /// Pass `immediate` when the scene has already reached `.background`.
+    /// The default path waits ``endGrace`` so a dictation that starts in the
+    /// same second can take the island over. Once we are backgrounded there
+    /// is no next presentation coming, and without `UIBackgroundModes` audio
+    /// iOS can suspend before that deferred end runs — leaving the island
+    /// showing a window that has already ended.
+    func stopStandby(immediate: Bool = false) {
         standbyRequested = false
         standbyExpiresAt = nil
         pendingStandbyTask?.cancel()
@@ -153,14 +160,19 @@ final class LiveActivityManager: @unchecked Sendable {
         guard activeSessionID == nil else { return }
 
         beginTransition()
-        scheduleEndAll(
-            state: VocaPhoneActivityAttributes.ContentState(
-                status: "Quick Dictation off",
-                canFinish: false,
-                phase: .finished
-            ),
-            dismissalPolicy: .immediate
+        let state = VocaPhoneActivityAttributes.ContentState(
+            status: "Quick Dictation off",
+            canFinish: false,
+            phase: .finished
         )
+        if immediate {
+            endAll(state: state, dismissalPolicy: .immediate)
+        } else {
+            scheduleEndAll(
+                state: state,
+                dismissalPolicy: .immediate
+            )
+        }
         DiagnosticLog.record(
             .liveActivityEnded,
             metadata: .reason(.quickDictationOff)
