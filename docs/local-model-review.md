@@ -8,7 +8,7 @@ working memory, language coverage, and download size are separate evidence.
 
 | Choice | Assessment |
 | --- | --- |
-| Moonshine v2 Tiny and Base English | Keep both: different download budgets, with the two-graph export supported by the pinned Sherpa runtime. The PR's earlier arm64 timing measurements are desktop evidence, not iPhone or Android measurements. |
+| Moonshine v2 Tiny and Base English | Remove both: retired onto Parakeet TDT-CTC 110M English, now the English starter and small English pick. Both Moonshine builds return empty transcripts for inputs of 9.4 s or more under the pinned runtime; the app windows up to 14 s. Even on shorter clips Base is less accurate. |
 | Parakeet v2 English and v3 multilingual | Keep: English specialization and 25-language automatic recognition serve different needs. NVIDIA's GPU long-audio limits are not phone memory guarantees. |
 | Canary 180M Flash | Keep: compact English/German/Spanish/French recognition plus translation involving English. Published WER does not establish that it beats every regional model. |
 | SenseVoice and small Paraformer | Keep: SenseVoice covers five East Asian/English languages; Paraformer remains a smaller Chinese download. The previous export comparison supports the SenseVoice repin, but was not repeated on a phone in this review. |
