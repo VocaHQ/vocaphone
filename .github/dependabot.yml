@@ -46,6 +46,8 @@ updates:
     directory: /ios
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       swift:
         patterns: ['*']

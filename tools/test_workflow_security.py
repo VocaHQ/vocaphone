@@ -54,6 +54,16 @@ class WorkflowSecurityTests(unittest.TestCase):
                         walk(child)
             walk(yaml.safe_load(path.read_text()))
 
+    def test_gate_policy_is_pinned_independently(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
+        scope = workflow['jobs']['scope']['steps']
+        gate = workflow['jobs']['gate']['steps']
+        policy = next(step for step in scope if step.get('with', {}).get('path') == '.ci-policy')
+        self.assertRegex(policy['with']['ref'], r'^[0-9a-f]{40}$')
+        self.assertEqual(policy['with']['repository'], 'VocaHQ/vocaphone')
+        self.assertEqual(gate[0]['with']['ref'], policy['with']['ref'])
+        self.assertEqual(scope[-1]['run'], 'python3 .ci-policy/tools/ci_scope.py select')
+
 
 if __name__ == "__main__":
     unittest.main()

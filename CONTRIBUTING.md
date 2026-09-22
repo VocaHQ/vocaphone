@@ -123,6 +123,11 @@ or unexpectedly skipped checks. Mark drafts ready for review to run the full
 app checks. An independent code-owner approval and resolved conversations are
 also required; see [governance](GOVERNANCE.md) for emergency exceptions.
 
+Scope and verdict logic run from an immutable reviewed commit, independently of
+the PR checkout. To change that policy, review and merge the script change first,
+then update both policy pins in `.github/workflows/ci.yml` in a follow-up PR.
+Workflow edits themselves require code-owner review.
+
 Each application has one recipe that runs everything its workflow gates on.
 Run the one for what you changed:
 

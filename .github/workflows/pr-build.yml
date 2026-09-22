@@ -581,6 +581,7 @@ jobs:
             esac
             test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Info.plist")" = "$expected"
             cp "$target/$target.entitlements" "$bundle/archived-expanded-entitlements.xcent"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' "$bundle/archived-expanded-entitlements.xcent")" = group.com.vocahq
             codesign --force --sign - --generate-entitlement-der \
               --entitlements "$target/$target.entitlements" "$bundle"
           done

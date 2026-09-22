@@ -32,11 +32,18 @@ jobs:
           fetch-depth: 0
           filter: blob:none
           persist-credentials: false
+      - name: Load reviewed CI policy independently of the PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: VocaHQ/vocaphone
+          ref: 5c81a7babc87dff2de19fc6702013c22a5df254d
+          path: .ci-policy
+          persist-credentials: false
       - id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python3 tools/ci_scope.py select
+        run: python3 .ci-policy/tools/ci_scope.py select
 
   android:
     needs: scope
@@ -76,6 +83,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: VocaHQ/vocaphone
+          ref: 5c81a7babc87dff2de19fc6702013c22a5df254d
           persist-credentials: false
       - env:
           NEEDS: ${{ toJSON(needs) }}
