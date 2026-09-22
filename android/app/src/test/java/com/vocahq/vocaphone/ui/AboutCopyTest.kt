@@ -116,6 +116,7 @@ class AboutCopyTest {
         assertTrue(ABOUT_FAMILY_NOTE.contains("beta"))
         assertTrue(ABOUT_FAMILY_NOTE.contains("VocaWin"))
         assertTrue(ABOUT_FAMILY_NOTE.contains("VocaWin is in beta"))
+        assertFalse(ABOUT_FAMILY_NOTE.contains("VocaMac is in beta"))
         assertTrue(ABOUT_FAMILY_NOTE.contains("Google Play"))
         assertFalse(ABOUT_FAMILY_NOTE.contains("Android beta"))
         assertFalse(ABOUT_FAMILY_NOTE.contains("developer alpha", ignoreCase = true))
