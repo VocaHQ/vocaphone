@@ -345,35 +345,245 @@ object LocalModelCatalog {
      * still covers that language, deduplicated and capped at four.
      *
      * The first entry leads: the phone's own language decides which of the
-     * roles that is.
+     * roles that is. Callers that know every spoken language should use
+     * [recommendations] with that list so two keyboards can lead with a
+     * covering model.
      */
-    fun recommendations(profile: DeviceProfile): List<ModelPick> {
-        val english = bestEnglish(profile)
-        val multilingual = bestMultilingual(profile)
-        val regional = starterForLanguage(profile.language)?.takeIf { profile.fits(it) }
-        val compact = smallestCovering(profile)
+    fun recommendations(profile: DeviceProfile): List<ModelPick> =
+        recommendations(profile, listOf(profile.language))
 
-        // First role wins when two roles land on the same model, which is why
-        // the order these are added in is the order the picker shows.
-        val picks = LinkedHashMap<String, ModelPick>()
+    /**
+     * [languages] is the enabled-keyboard list from [spokenLanguages].
+     * Each non-English code gets its compact specialist (GigaAM for `ru`,
+     * Paraformer for `zh`, ...). A language that is not on a keyboard must not
+     * appear here.
+     */
+    fun recommendations(profile: DeviceProfile, languages: List<String>): List<ModelPick> {
+        val needed = uniqueLanguageCodes(languages).ifEmpty {
+            listOf(
+                normalizedLanguageCode(profile.language)
+                    ?: profile.language.lowercase(Locale.ROOT).ifBlank { "en" },
+            )
+        }
+        val lead = needed.first()
+        val english = bestEnglish(profile)
+        val multilingual = bestMultilingual(profile, needed)
+        val leadMultilingual = bestMultilingual(profile, listOf(lead))
+        val compact = smallestCovering(profile, lead)
+
+        val picks = ArrayList<ModelPick>()
         fun add(role: ModelPickRole, model: LocalModelDescriptor?) {
             if (model == null) return
-            picks.putIfAbsent(model.id, ModelPick(role, model))
+            if (picks.any { it.model.id == model.id }) return
+            picks.add(ModelPick(role, model))
         }
-        if (profile.language.lowercase(Locale.ROOT) == "en") {
+        // Two keyboard languages mean no single-language specialist can serve
+        // them both, so a model that covers them can lead. Only when that model
+        // is also the one the lead language would pick on its own: Parakeet v3
+        // covering English and Russian is a first-rate English model; Dolphin
+        // covering English and Hindi is not.
+        if (needed.size > 1 && multilingual != null && multilingual.id == leadMultilingual?.id) {
+            add(ModelPickRole.MULTILINGUAL, multilingual)
+        }
+        if (lead == "en") {
             add(ModelPickRole.ENGLISH, english)
-            add(ModelPickRole.MULTILINGUAL, multilingual)
         } else {
-            add(ModelPickRole.REGIONAL, regional)
-            add(ModelPickRole.MULTILINGUAL, multilingual)
+            add(ModelPickRole.REGIONAL, starterForLanguage(lead)?.takeIf { profile.fits(it) })
+        }
+        add(ModelPickRole.MULTILINGUAL, multilingual)
+        for (language in needed.drop(1)) {
+            if (language != "en") {
+                add(ModelPickRole.REGIONAL, starterForLanguage(language)?.takeIf { profile.fits(it) })
+            }
+        }
+        if (lead != "en") {
             add(ModelPickRole.ENGLISH, english)
         }
         add(ModelPickRole.COMPACT, compact)
 
-        val ordered = picks.values.toList().take(4)
+        // One card per language on top of the usual four, so a phone with
+        // several keyboards still sees each language's specialist in Settings.
+        val ordered = picks.take(maxOf(4, needed.size + 1))
         return ordered.ifEmpty {
             listOf(ModelPick(ModelPickRole.COMPACT, lastResort(profile)))
         }
+    }
+
+    /**
+     * The three cards on Choose model: only models at the top for accuracy.
+     *
+     * [recommendations] answers several questions at once, and two of its
+     * answers, the smallest download and a wide model that merely covers a
+     * language, are the ones that dictate worst. First run is where someone
+     * decides whether dictation works, so it offers only the lowest word error
+     * rates this phone can hold, and leaves the rest to Browse.
+     *
+     * Falls back to the plain recommendations on a phone that fits none of
+     * them, because an empty page is worse than a smaller model.
+     */
+    fun onboardingRecommendations(
+        profile: DeviceProfile,
+        languages: List<String>,
+        priority: ModelGuidancePriority = ModelGuidancePriority.BALANCED,
+        limit: Int = 3,
+    ): List<ModelPick> {
+        val needed = uniqueLanguageCodes(languages).ifEmpty {
+            listOf(
+                normalizedLanguageCode(profile.language)
+                    ?: profile.language.lowercase(Locale.ROOT).ifBlank { "en" },
+            )
+        }
+        val lead = needed.first()
+        val base = recommendations(profile, needed)
+        val picks: List<ModelPick> = when (priority) {
+            ModelGuidancePriority.BALANCED -> {
+                val chosen = ArrayList<ModelPick>()
+                for (pick in base) {
+                    if (needed.any { isHighAccuracy(pick.model, it) }) chosen.add(pick)
+                }
+                // Lead language first: its best models fill the page before a
+                // second keyboard's do.
+                for (language in needed) {
+                    for (id in accuracyRanking(language)) {
+                        if (chosen.size >= limit) break
+                        val model = find(id) ?: continue
+                        if (!profile.fits(model) || !model.coversLanguage(language)) continue
+                        if (chosen.any { it.model.id == id }) continue
+                        val role = when {
+                            model.englishOnly -> ModelPickRole.ENGLISH
+                            model.languageCodes.size == 1 -> ModelPickRole.REGIONAL
+                            else -> ModelPickRole.MULTILINGUAL
+                        }
+                        chosen.add(ModelPick(role, model))
+                    }
+                }
+                chosen
+            }
+            ModelGuidancePriority.LIGHTER ->
+                // Smallest first, among models that are actually for this
+                // language. Paraformer lists English, but it is a Mandarin
+                // model, and the smallest English download should not be one.
+                fitting(profile)
+                    .filter {
+                        it.coversLanguage(lead) &&
+                            INCIDENTAL_COVERAGE[it.id]?.contains(lead) != true
+                    }
+                    .sortedWith(compareBy({ it.sizeBytes }, { it.id }))
+                    .fold(ArrayList<LocalModelDescriptor>()) { kept, model ->
+                        val family = model.displayName.substringBefore(" · ")
+                        if (kept.none { it.displayName.substringBefore(" · ") == family }) {
+                            kept.add(model)
+                        }
+                        kept
+                    }
+                    .map { ModelPick(ModelPickRole.COMPACT, it) }
+            ModelGuidancePriority.MULTILINGUAL -> {
+                val candidates = MANY_LANGUAGES_PREFERENCE.mapNotNull(::find).filter {
+                    profile.fits(it) &&
+                        !it.englishOnly &&
+                        it.coversLanguage(lead) &&
+                        INCIDENTAL_COVERAGE[it.id]?.contains(lead) != true
+                }
+                val coversAll = candidates.filter { model -> needed.all { model.coversLanguage(it) } }
+                val rest = candidates.filter { model -> coversAll.none { it.id == model.id } }
+                (coversAll + rest).map { ModelPick(ModelPickRole.MULTILINGUAL, it) }
+            }
+        }
+        val chosen = picks.take(limit)
+        return chosen.ifEmpty { base.take(limit) }
+    }
+
+    /** Whether [model] is among the most accurate for [language]. */
+    fun isHighAccuracy(model: LocalModelDescriptor, language: String): Boolean =
+        model.coversLanguage(language) && model.id in accuracyRanking(language)
+
+    /**
+     * The most accurate models for a language, lowest word error rate first,
+     * from the published benchmarks for each family. Whisper large-v3 closes
+     * every list: it is the accurate answer for any language it covers, and
+     * the specialists above it beat it on theirs.
+     *
+     * A ranking, not measured numbers. Small, tiny and base builds are left
+     * out on purpose. IDs are the Android catalog's, not WhisperKit's.
+     */
+    fun accuracyRanking(language: String): List<String> {
+        val code = language.lowercase(Locale.ROOT)
+        val largeV3 = listOf("large-v3-turbo-q5_0", "large-v3-turbo-q8_0")
+        return when (code) {
+            "en" -> listOf(
+                "parakeet-tdt-0.6b-v2-en",
+                "parakeet-tdt-0.6b-v3",
+                "canary-180m-flash",
+            ) + largeV3
+            "ru" -> listOf("giga-am-ctc-ru", "parakeet-tdt-0.6b-v3") + largeV3
+            "ja" -> listOf("parakeet-tdt-ctc-ja", "sense-voice") + largeV3
+            "zh", "yue", "ko" -> listOf("sense-voice") + largeV3
+            "de", "es", "fr" -> listOf("parakeet-tdt-0.6b-v3", "canary-180m-flash") + largeV3
+            else -> when {
+                code in PARAKEET_V3_LANGUAGES -> listOf("parakeet-tdt-0.6b-v3") + largeV3
+                code in DOLPHIN_STARTER_LANGUAGES -> listOf("dolphin-small-ctc") + largeV3
+                else -> largeV3
+            }
+        }
+    }
+
+    /**
+     * Languages that should drive the model picker.
+     *
+     * [keyboards] is primary-language tags from enabled IMEs (and test
+     * fixtures that look like them). One enabled Russian keyboard must
+     * recommend Russian, and must not recommend Chinese.
+     */
+    fun spokenLanguages(
+        device: String,
+        keyboards: List<String>,
+        explicit: String = "",
+    ): List<String> {
+        val deviceCode = normalizedLanguageCode(device) ?: "en"
+        val keyboardCodes = uniqueLanguageCodes(keyboards)
+        val needed = ArrayList<String>()
+        fun append(code: String) {
+            if (code !in needed) needed.add(code)
+        }
+        normalizedLanguageCode(explicit)?.let(::append)
+        // The phone's own language leads when it is also typed. It is still
+        // not a keyboard on its own: a Chinese phone with Russian and English
+        // layouts gets neither Paraformer nor SenseVoice.
+        if (deviceCode in keyboardCodes) append(deviceCode)
+        keyboardCodes.forEach(::append)
+        if (needed.isEmpty()) append(deviceCode)
+        return needed
+    }
+
+    /** BCP-47 / keyboard locale tag to catalog code (`ru`, `zh`, `en`). */
+    fun normalizedLanguageCode(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val lowered = raw.lowercase(Locale.ROOT)
+        if ("emoji" in lowered || "dictation" in lowered) return null
+        if ("vocaphone" in lowered) return null
+        val localePart = raw.substringBefore('@')
+        if ('.' in localePart) return null
+        val bcp47 = localePart.replace('_', '-')
+        var code = Locale.forLanguageTag(bcp47).language.lowercase(Locale.ROOT).ifBlank {
+            localePart.split('-', '_').firstOrNull()?.lowercase(Locale.ROOT)
+                ?: localePart.lowercase(Locale.ROOT)
+        }
+        if (code.startsWith("zh")) code = "zh"
+        if (code == "yue") return "yue"
+        if (code == "fil") code = TranscriptionLanguage.FILIPINO.wireValue
+        if (code == TranscriptionLanguage.AUTOMATIC.wireValue) return null
+        if (code == "und" || code == "mul") return null
+        if (code !in PICKER_LANGUAGES) return null
+        return code
+    }
+
+    private fun uniqueLanguageCodes(raw: List<String>): List<String> {
+        val codes = ArrayList<String>()
+        for (item in raw) {
+            val code = normalizedLanguageCode(item) ?: continue
+            if (code !in codes) codes.add(code)
+        }
+        return codes
     }
 
     /**
@@ -389,15 +599,52 @@ object LocalModelCatalog {
 
     /** The widest-coverage model that still covers this phone's own language. */
     internal fun bestMultilingual(profile: DeviceProfile): LocalModelDescriptor? =
-        MULTILINGUAL_PREFERENCE.firstNotNullOfOrNull { id ->
-            find(id)?.takeIf { profile.fits(it) && it.coversLanguage(profile.language) }
-        } ?: whisper.filter { profile.fits(it) && !it.englishOnly }
-            .maxByOrNull { scoreModel(it, profile) }
+        bestMultilingual(profile, listOf(profile.language))
 
-    /** The lightest download that still transcribes this phone's language. */
-    private fun smallestCovering(profile: DeviceProfile): LocalModelDescriptor? =
-        all.filter { profile.fits(it) && it.coversLanguage(profile.language) }
+    /**
+     * Widest model that still transcribes the lead language (`languages[0]`).
+     * Extra keyboard languages only widen coverage; they must not elect
+     * SenseVoice just because it hits more of {zh, ja, ko} than Parakeet hits
+     * of Russian.
+     */
+    internal fun bestMultilingual(
+        profile: DeviceProfile,
+        languages: List<String>,
+    ): LocalModelDescriptor? {
+        val needed = uniqueLanguageCodes(languages)
+        val lead = needed.firstOrNull() ?: return bestMultilingualForLanguage(profile, profile.language)
+        if (needed.size == 1) return bestMultilingualForLanguage(profile, lead)
+        val candidates = MULTILINGUAL_PREFERENCE.mapNotNull(::find).filter {
+            profile.fits(it) && it.coversLanguage(lead)
+        }
+        candidates.firstOrNull { model -> needed.all { model.coversLanguage(it) } }?.let { return it }
+        return candidates.maxWithOrNull(
+            compareBy<LocalModelDescriptor> { model -> needed.count { model.coversLanguage(it) } }
+                .thenBy { coverageBreadth(it) },
+        ) ?: bestMultilingualForLanguage(profile, lead)
+    }
+
+    private fun bestMultilingualForLanguage(
+        profile: DeviceProfile,
+        language: String,
+    ): LocalModelDescriptor? {
+        val ranked = profile.copy(language = language)
+        return MULTILINGUAL_PREFERENCE.firstNotNullOfOrNull { id ->
+            find(id)?.takeIf { profile.fits(it) && it.coversLanguage(language) }
+        } ?: whisper.filter { profile.fits(it) && !it.englishOnly }
+            .maxByOrNull { scoreModel(it, ranked) }
+    }
+
+    /** The lightest download that still transcribes [language]. */
+    private fun smallestCovering(
+        profile: DeviceProfile,
+        language: String = profile.language,
+    ): LocalModelDescriptor? =
+        all.filter { profile.fits(it) && it.coversLanguage(language) }
             .minByOrNull { it.sizeBytes }
+
+    private fun fitting(profile: DeviceProfile): List<LocalModelDescriptor> =
+        all.filter { profile.fits(it) }
 
     private fun firstFitting(
         profile: DeviceProfile,
@@ -541,6 +788,32 @@ private val MULTILINGUAL_PREFERENCE = listOf(
     "sense-voice",
     "dolphin-base-ctc",
 )
+
+/** Several languages in one model, the accurate ones first. */
+private val MANY_LANGUAGES_PREFERENCE = listOf(
+    "parakeet-tdt-0.6b-v3",
+    "large-v3-turbo-q5_0",
+    "canary-180m-flash",
+    "dolphin-small-ctc",
+    "sense-voice",
+    "small-q5_1",
+    "dolphin-base-ctc",
+    "base-q5_1",
+    "tiny-q5_1",
+)
+
+/** A language a model transcribes on paper but was not built for. */
+private val INCIDENTAL_COVERAGE: Map<String, Set<String>> = mapOf(
+    "paraformer-zh-small" to setOf("en"),
+    "dolphin-base-ctc" to setOf("en"),
+    "dolphin-small-ctc" to setOf("en"),
+)
+
+private fun coverageBreadth(model: LocalModelDescriptor): Int = when {
+    model.englishOnly -> 1
+    model.languageCodes.isEmpty() -> Int.MAX_VALUE
+    else -> model.languageCodes.size
+}
 
 /** Indic and nearby languages Dolphin actually covers well at first-run size. */
 internal val DOLPHIN_STARTER_LANGUAGES = setOf(
