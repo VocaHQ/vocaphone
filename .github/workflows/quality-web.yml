@@ -6,6 +6,8 @@ on:
     paths:
       - 'web/**'
       - '!web/**.md'
+      - 'docs/**'
+      - 'docs-site/**'
       - '.github/actions/report-size/**'
       - '.github/workflows/quality-web.yml'
   workflow_call:
@@ -35,6 +37,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install docs tools
+        working-directory: docs-site
+        run: npm ci
 
       - name: Check site
         working-directory: web

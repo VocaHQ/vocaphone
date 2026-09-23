@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 4173 --directory .",
-    "check": "node --test tests/site.test.mjs"
+    "check:site": "node --test tests/site.test.mjs",
+    "check": "npm --prefix ../docs-site ci && npm --prefix ../docs-site run build && npm run check:site"
   }
 }
