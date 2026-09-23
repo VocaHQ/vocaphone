@@ -433,7 +433,7 @@ final class LocalModelManager {
     /// Stat-only pass, safe to run on the main actor during launch.
     func refresh() {
         RetiredLocalModels.migrateStoredSelection()
-        deleteRetiredModelFiles()
+        scheduleRetiredModelCleanup()
         var verified: Set<String> = []
         var needsDigestCheck: [LocalModelDescriptor] = []
         for descriptor in LocalModelCatalog.all {
@@ -465,15 +465,21 @@ final class LocalModelManager {
     /// newer one the user downgraded from, and guessing there would delete a
     /// model they are about to want back. Tokenizers are left alone -- they are
     /// a few megabytes and shared across the sizes of one variant.
-    private func deleteRetiredModelFiles() {
+    private func scheduleRetiredModelCleanup() {
         guard let root = modelsDirectory else { return }
-        for id in RetiredLocalModels.replacements.keys
-        where LocalModelCatalog.descriptor(for: id) == nil {
-            let folder = root.appendingPathComponent(id, isDirectory: true)
-            guard FileManager.default.fileExists(atPath: folder.path) else { continue }
-            try? FileManager.default.removeItem(at: folder)
-            downloadedModelIDs.remove(id)
-            removePersistedPath(for: id)
+        let retiredIDs = RetiredLocalModels.replacements.keys.filter {
+            LocalModelCatalog.descriptor(for: $0) == nil
+        }
+        Task { [self] in
+            let result = await Task.detached(priority: .utility) {
+                RetiredModelFileCleanup.delete(in: root, ids: retiredIDs)
+            }.value
+            for id in result.deleted {
+                removePersistedPath(for: id)
+            }
+            if !result.failed.isEmpty {
+                DiagnosticLog.record(.operationFailed, metadata: .error(.localModelCleanupFailed))
+            }
         }
     }
 
@@ -2277,7 +2283,6 @@ final class LocalModelManager {
         return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
     }
 }
-
 
 #if DEBUG
 /// Append-only record of a model download's life, readable off the device

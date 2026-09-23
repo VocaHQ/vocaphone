@@ -121,6 +121,21 @@ object RetiredModels {
         return fitting?.let(Outcome::Replaced) ?: Outcome.Cleared
     }
 
+    /** Apply the launch decision through the settings store's atomic writes. */
+    suspend fun migrate(
+        stored: String,
+        totalRamGB: Long,
+        sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
+        replace: suspend (String) -> Unit,
+        clear: suspend () -> Unit,
+    ): Outcome = resolve(stored, totalRamGB, sherpaAvailable).also { outcome ->
+        when (outcome) {
+            is Outcome.Unchanged -> Unit
+            is Outcome.Replaced -> replace(outcome.id)
+            is Outcome.Cleared -> clear()
+        }
+    }
+
     /**
      * The id [stored] should become, or null when it is retired and nothing
      * fits. Kept for callers that only want the replacement.

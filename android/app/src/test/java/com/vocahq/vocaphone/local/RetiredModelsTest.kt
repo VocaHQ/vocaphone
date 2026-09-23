@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.local
 
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -17,6 +18,41 @@ class RetiredModelsTest {
 
     private val phone = 8L
     private val smallPhone = 4L
+
+    @Test
+    fun `launch migration writes replacement and notice together`() = runTest {
+        var selected = "medium-q5_0"
+        var notice = ""
+        var enabled = true
+        val outcome = RetiredModels.migrate(
+            stored = selected,
+            totalRamGB = 8,
+            replace = { replacement -> selected = replacement; notice = replacement },
+            clear = { selected = ""; enabled = false; notice = "" },
+        )
+        assertEquals(RetiredModels.Outcome.Replaced("large-v3-turbo-q8_0"), outcome)
+        assertEquals("large-v3-turbo-q8_0", selected)
+        assertEquals(selected, notice)
+        assertTrue(enabled)
+    }
+
+    @Test
+    fun `launch migration clears an unavailable local route`() = runTest {
+        var selected = "dolphin-base-ctc"
+        var notice = "dolphin-base-ctc"
+        var enabled = true
+        val outcome = RetiredModels.migrate(
+            stored = selected,
+            totalRamGB = 2,
+            sherpaAvailable = true,
+            replace = { replacement -> selected = replacement; notice = replacement },
+            clear = { selected = ""; enabled = false; notice = "" },
+        )
+        assertEquals(RetiredModels.Outcome.Cleared, outcome)
+        assertEquals("", selected)
+        assertEquals("", notice)
+        assertFalse(enabled)
+    }
 
     /**
      * `LocalModelCatalog.sherpaAvailable` reads `Build.SUPPORTED_ABIS`, which is

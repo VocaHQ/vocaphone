@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 /// Shrinking the catalog is only safe if everyone it stranded lands somewhere
@@ -5,6 +6,59 @@ import Testing
 /// selection, and the app re-derives a first-run recommendation, so an iPhone
 /// deliberately running a large model comes back on the smallest one.
 struct RetiredLocalModelsTests {
+
+    @Test func launchMigrationPersistsTheReplacementAndDownloadNotice() throws {
+        let suite = "RetiredLocalModelsTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: LocalTranscriptionPreferences.enabledKey)
+        defaults.set("openai_whisper-medium", forKey: LocalTranscriptionPreferences.modelKey)
+
+        RetiredLocalModels.migrateStoredSelection(deviceMemoryGB: 8, defaults: defaults)
+
+        #expect(defaults.bool(forKey: LocalTranscriptionPreferences.enabledKey))
+        #expect(defaults.string(forKey: LocalTranscriptionPreferences.modelKey)
+            == "openai_whisper-large-v3-v20240930_626MB")
+        #expect(defaults.string(forKey: LocalTranscriptionPreferences.retiredModelReplacementKey)
+            == "openai_whisper-large-v3-v20240930_626MB")
+    }
+
+    @Test func launchMigrationTurnsOffAnUnreplaceableLocalRoute() throws {
+        let suite = "RetiredLocalModelsTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: LocalTranscriptionPreferences.enabledKey)
+        defaults.set("dolphin-base-ctc", forKey: LocalTranscriptionPreferences.modelKey)
+
+        RetiredLocalModels.migrateStoredSelection(deviceMemoryGB: 2, defaults: defaults)
+
+        #expect(!defaults.bool(forKey: LocalTranscriptionPreferences.enabledKey))
+        #expect(defaults.string(forKey: LocalTranscriptionPreferences.modelKey) == nil)
+        #expect(defaults.string(forKey: LocalTranscriptionPreferences.retiredModelReplacementKey) == nil)
+    }
+
+    @Test func retiredFileCleanupDeletesOnlyNamedFoldersAndReportsFailures() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let retired = root.appendingPathComponent("openai_whisper-medium")
+        let newer = root.appendingPathComponent("newer-model")
+        try FileManager.default.createDirectory(at: retired, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newer, withIntermediateDirectories: true)
+
+        let failed = RetiredModelFileCleanup.delete(in: root, ids: ["openai_whisper-medium"]) { _ in
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        #expect(failed.deleted.isEmpty)
+        #expect(failed.failed == ["openai_whisper-medium"])
+        #expect(FileManager.default.fileExists(atPath: retired.path))
+
+        let completed = RetiredModelFileCleanup.delete(in: root, ids: ["openai_whisper-medium"])
+        #expect(completed.deleted == ["openai_whisper-medium"])
+        #expect(completed.failed.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: retired.path))
+        #expect(FileManager.default.fileExists(atPath: newer.path))
+    }
 
     @Test func everyRetiredIDIsGoneAndEveryReplacementExists() {
         for (retired, replacements) in RetiredLocalModels.replacements {

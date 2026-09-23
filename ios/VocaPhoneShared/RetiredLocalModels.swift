@@ -154,28 +154,33 @@ enum RetiredLocalModels {
     /// the catalog out of the keyboard process, which shares this value and has
     /// no reason to know it.
     static func migrateStoredSelection(
-        deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB
+        deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
+        defaults: UserDefaults? = UserDefaults(suiteName: AppConfiguration.appGroupIdentifier)
     ) {
-        guard let stored = LocalTranscriptionPreferences.modelIdentifier else { return }
+        guard let defaults,
+              let stored = defaults.string(forKey: LocalTranscriptionPreferences.modelKey)
+        else { return }
         switch resolve(stored, deviceMemoryGB: deviceMemoryGB) {
         case .unchanged:
             break
         case let .replaced(id):
-            // The marker goes second because setting the selection clears it.
-            // Interrupted in between, the selection has moved without the
-            // notice, which the before-recording check still covers.
-            LocalTranscriptionPreferences.modelIdentifier = id
+            // Clear any old marker, then write the selection and its notice.
+            // Interrupted in between, the before-recording check still covers
+            // a replacement that has not been downloaded yet.
+            defaults.removeObject(forKey: LocalTranscriptionPreferences.retiredModelReplacementKey)
+            defaults.set(id, forKey: LocalTranscriptionPreferences.modelKey)
             // Remembered so the picker can say why the model changed and offer
             // the download.
-            LocalTranscriptionPreferences.retiredModelReplacement = id
+            defaults.set(id, forKey: LocalTranscriptionPreferences.retiredModelReplacementKey)
         case .cleared:
             // The switch goes off first. `UserDefaults` has no transaction, so
             // these two writes can in principle be separated -- and only one
             // order is safe to be interrupted in. Off with a stale id left
             // behind is a route nobody takes; a cleared id with the switch still
             // on is the state that records a dictation and then fails.
-            LocalTranscriptionPreferences.enabled = false
-            LocalTranscriptionPreferences.modelIdentifier = nil
+            defaults.set(false, forKey: LocalTranscriptionPreferences.enabledKey)
+            defaults.removeObject(forKey: LocalTranscriptionPreferences.modelKey)
+            defaults.removeObject(forKey: LocalTranscriptionPreferences.retiredModelReplacementKey)
         }
     }
 }

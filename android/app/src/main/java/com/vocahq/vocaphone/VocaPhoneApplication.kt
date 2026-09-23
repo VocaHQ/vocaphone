@@ -170,21 +170,13 @@ class AppContainer(context: Context) {
      */
     private suspend fun migrateRetiredModelSelection() {
         val stored = settings.settings.first().localModelId
-        when (
-            val outcome = RetiredModels.resolve(
-                stored = stored,
-                totalRamGB = localModels.totalRamGB(),
-            )
-        ) {
-            is RetiredModels.Outcome.Unchanged -> Unit
-            is RetiredModels.Outcome.Replaced -> settings.replaceRetiredLocalModel(outcome.id)
-            // Nothing that replaces the retired model fits this phone. Clearing
-            // the selection alone would leave on-device transcription switched
-            // on with nothing behind it, and every dictation would record and
-            // then fail. The switch goes off with it, so setup says so before
-            // recording rather than after.
-            is RetiredModels.Outcome.Cleared -> settings.clearLocalModelSelection()
-        }
+        RetiredModels.migrate(
+            stored = stored,
+            totalRamGB = localModels.totalRamGB(),
+            replace = settings::replaceRetiredLocalModel,
+            // No fitting replacement: turn the switch off with the selection.
+            clear = settings::clearLocalModelSelection,
+        )
     }
 
     private companion object {
