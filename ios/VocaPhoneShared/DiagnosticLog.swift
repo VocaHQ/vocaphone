@@ -96,6 +96,7 @@ enum DiagnosticErrorCode: String, Codable, Sendable {
     case diagnosticExportFailed
     case gatewayNotConfigured
     case languageUnsupported
+    case localModelCleanupFailed
     case microphonePermissionDenied
     /// Recording succeeded but another app held the input, so it captured only
     /// silence. Distinct from a permission problem, which the user fixes once.
