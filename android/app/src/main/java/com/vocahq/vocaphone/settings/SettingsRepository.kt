@@ -217,6 +217,8 @@ data class VocaPhoneSettings(
     val audioRetention: AudioRetention = AudioRetention.DEFAULT,
     val modelIdleTimeout: ModelIdleTimeout = ModelIdleTimeout.DEFAULT,
     val onboardingComplete: Boolean = false,
+    /** The first-run page to reopen on; blank until the welcome has been left. */
+    val onboardingStage: String = "",
     val lastEngine: String = "",
     val lastEngineReady: Boolean = false,
     val lastStreamingSupported: Boolean = false,
@@ -408,6 +410,8 @@ class SettingsRepository(private val context: Context) {
         put(Keys.MODEL_IDLE_TIMEOUT, timeout.storedValue)
 
     suspend fun setOnboardingComplete(complete: Boolean) = put(Keys.ONBOARDING_COMPLETE, complete)
+
+    suspend fun setOnboardingStage(stage: String) = put(Keys.ONBOARDING_STAGE, stage)
 
     suspend fun setLocalTranscriptionEnabled(enabled: Boolean) =
         put(Keys.LOCAL_TRANSCRIPTION_ENABLED, enabled)
@@ -620,6 +624,7 @@ class SettingsRepository(private val context: Context) {
         audioRetention = AudioRetention.fromHours(this[Keys.RETENTION_HOURS]),
         modelIdleTimeout = ModelIdleTimeout.fromStored(this[Keys.MODEL_IDLE_TIMEOUT]),
         onboardingComplete = this[Keys.ONBOARDING_COMPLETE] ?: false,
+        onboardingStage = this[Keys.ONBOARDING_STAGE].orEmpty(),
         lastEngine = this[Keys.LAST_ENGINE].orEmpty(),
         lastEngineReady = this[Keys.LAST_ENGINE_READY] ?: false,
         lastStreamingSupported = this[Keys.LAST_STREAMING] ?: false,
@@ -668,6 +673,7 @@ class SettingsRepository(private val context: Context) {
         val RETENTION_HOURS = intPreferencesKey("audio_retention_hours")
         val MODEL_IDLE_TIMEOUT = stringPreferencesKey("model_idle_timeout")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
+        val ONBOARDING_STAGE = stringPreferencesKey("onboarding_stage")
         val LAST_ENGINE = stringPreferencesKey("last_engine")
         val LAST_ENGINE_READY = booleanPreferencesKey("last_engine_ready")
         val LAST_STREAMING = booleanPreferencesKey("last_streaming_supported")
