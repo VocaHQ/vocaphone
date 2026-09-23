@@ -40,6 +40,9 @@ enum class MissingPermission {
     MICROPHONE,
     NOTIFICATIONS,
     GATEWAY_NOT_CONFIGURED,
+    MODEL_DOWNLOADING,
+    MODEL_PREPARING,
+    MODEL_MISSING,
     ;
 
     val title: String
@@ -47,6 +50,9 @@ enum class MissingPermission {
             MICROPHONE -> "Microphone access"
             NOTIFICATIONS -> "Notifications"
             GATEWAY_NOT_CONFIGURED -> "Gateway address and token"
+            MODEL_DOWNLOADING -> "Model download"
+            MODEL_PREPARING -> "Model preparation"
+            MODEL_MISSING -> "On-device model"
         }
 }
 
@@ -64,6 +70,7 @@ data class DictationFailure(
 data class DictationState(
     val sessionId: UUID? = null,
     val phase: DictationPhase = DictationPhase.IDLE,
+    val modelDownloadProgress: Int? = null,
     val language: TranscriptionLanguage = TranscriptionLanguage.DEFAULT,
     val style: WritingStyle = WritingStyle.DEFAULT,
     val startedAtElapsedMillis: Long = 0L,
@@ -109,4 +116,13 @@ data class DictationState(
         /** A one-minute warning before the cap stops the recording for them. */
         const val RECORDING_WARNING_MILLIS = 4 * 60 * 1000L
     }
+
+    val repairHint: String
+        get() = when {
+            MissingPermission.MODEL_PREPARING in missingPermissions -> "Preparing model…"
+            MissingPermission.MODEL_DOWNLOADING in missingPermissions ->
+                modelDownloadProgress?.let { "Model downloading · $it%" } ?: "Model downloading"
+            MissingPermission.MODEL_MISSING in missingPermissions -> "Open VocaPhone to choose a model"
+            else -> "Open VocaPhone to finish setup"
+        }
 }

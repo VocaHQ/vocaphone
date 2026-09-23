@@ -133,6 +133,7 @@ fun SettingsScreen(
     onClipboardChip: (Boolean) -> Unit,
     onClipboardHistory: (Boolean) -> Unit,
     localModels: LocalModelState,
+    deviceLanguages: List<String> = emptyList(),
     onLocalTranscriptionEnabled: (Boolean) -> Unit,
     onLocalModel: (LocalModelDescriptor) -> Unit,
     onDownloadLocalModel: (LocalModelDescriptor) -> Unit,
@@ -360,6 +361,7 @@ fun SettingsScreen(
                     onCancelDownload = onCancelLocalModelDownload,
                     onDelete = onDeleteLocalModel,
                     guidanceLanguage = settings.language.wireValue,
+                    languages = deviceLanguages,
                     onGuidanceLanguage = { onLanguage(TranscriptionLanguage.fromWire(it)) },
                 )
             }

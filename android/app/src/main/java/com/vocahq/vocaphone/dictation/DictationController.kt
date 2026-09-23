@@ -32,6 +32,7 @@ import com.vocahq.vocaphone.gateway.GatewayAudioStream
 import com.vocahq.vocaphone.gateway.GatewayStreamingPolicy
 import com.vocahq.vocaphone.gateway.StreamingUnavailableException
 import com.vocahq.vocaphone.local.LocalModelManager
+import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.local.LocalTranscription
 import com.vocahq.vocaphone.local.SherpaIncrementalSession
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
@@ -61,7 +62,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -181,6 +184,25 @@ class DictationController(
                     missingPermissions = setOf(MissingPermission.GATEWAY_NOT_CONFIGURED),
                 )
                 return@launch
+            }
+            if (configuration.localTranscriptionEnabled) {
+                val models = localModels.state.value
+                val repair = modelRepair(configuration.localModelId, models)
+                if (repair != null) {
+                    diagnostics.recordError("setup", source.name)
+                    _state.value = DictationState(
+                        phase = DictationPhase.PERMISSION_REPAIR,
+                        missingPermissions = setOf(repair),
+                        modelDownloadProgress = models.progress.takeIf { repair == MissingPermission.MODEL_DOWNLOADING },
+                    )
+                    val target = models.pendingUse ?: models.downloading
+                    if (target != null &&
+                        (repair == MissingPermission.MODEL_DOWNLOADING || repair == MissingPermission.MODEL_PREPARING)
+                    ) {
+                        followDownload(target = target)
+                    }
+                    return@launch
+                }
             }
             runDictation(source, configuration, token, UUID.randomUUID(), generation)
         }
@@ -1061,6 +1083,54 @@ class DictationController(
         _state.value = DictationState()
     }
 
+    private suspend fun followDownload(target: String) {
+        val (outcome, latest, configuredId) = combine(
+            localModels.state,
+            settings.settings.map { it.localModelId }.distinctUntilChanged(),
+        ) { latest, configuredId ->
+            Triple(
+                downloadOutcome(latest, target, configuredId).also { result ->
+                    when (result) {
+                        DownloadOutcome.WAITING -> _state.update { state ->
+                            state.copy(
+                                missingPermissions = setOf(MissingPermission.MODEL_DOWNLOADING),
+                                modelDownloadProgress = latest.progress,
+                            )
+                        }
+                        DownloadOutcome.PREPARING -> _state.update { state ->
+                            state.copy(
+                                missingPermissions = setOf(MissingPermission.MODEL_PREPARING),
+                                modelDownloadProgress = null,
+                            )
+                        }
+                        else -> Unit
+                    }
+                },
+                latest,
+                configuredId,
+            )
+        }.first { it.first != DownloadOutcome.WAITING && it.first != DownloadOutcome.PREPARING }
+        when (outcome) {
+            DownloadOutcome.LANDED -> reset()
+            DownloadOutcome.DIED -> {
+                val repair = modelRepair(configuredId, latest)
+                if (repair == null) {
+                    reset()
+                } else {
+                    _state.update {
+                        it.copy(
+                            missingPermissions = setOf(repair),
+                            modelDownloadProgress = latest.progress.takeIf {
+                                repair == MissingPermission.MODEL_DOWNLOADING
+                            },
+                        )
+                    }
+                }
+            }
+            DownloadOutcome.WAITING, DownloadOutcome.PREPARING -> Unit
+        }
+    }
+
     /**
      * How far the dictation got, from the error that ended it.
      *
@@ -1141,3 +1211,35 @@ class DictationController(
         const val STREAM_FRAME_BUFFER_CAPACITY = 96
     }
 }
+
+internal fun modelRepair(configuredId: String, models: LocalModelState): MissingPermission? {
+    val target = models.pendingUse ?: configuredId.takeIf { it.isNotEmpty() }
+    return when {
+        configuredId.isNotEmpty() && configuredId in models.downloaded -> null
+        target != null && models.downloading == target -> MissingPermission.MODEL_DOWNLOADING
+        // On disk but the id is not persisted: adoption is loading it. A
+        // wait, never a pass — dictating now would read an empty id.
+        target != null && target in models.downloaded && models.pendingUse == target ->
+            MissingPermission.MODEL_PREPARING
+        else -> MissingPermission.MODEL_MISSING
+    }
+}
+
+internal enum class DownloadOutcome { WAITING, PREPARING, LANDED, DIED }
+
+internal fun downloadOutcome(
+    latest: LocalModelState,
+    target: String,
+    configuredId: String,
+): DownloadOutcome =
+    when {
+        // On disk, pending gone, and settings actually name this model.
+        target in latest.downloaded && latest.pendingUse != target && configuredId == target ->
+            DownloadOutcome.LANDED
+        // On disk and pending gone, but this id was never persisted: prep failed,
+        // or the user picked something else. Not ready.
+        target in latest.downloaded && latest.pendingUse != target -> DownloadOutcome.DIED
+        target in latest.downloaded -> DownloadOutcome.PREPARING
+        latest.downloading == target -> DownloadOutcome.WAITING
+        else -> DownloadOutcome.DIED
+    }
