@@ -88,7 +88,7 @@ the active cursor. A gateway is never required for on-device mode.
 | Platform | Project | Website | Source | Status |
 | --- | --- | --- | --- | --- |
 | Linux | VocaLinux | [vocalinux.com](https://vocalinux.com) | [VocaHQ/vocalinux](https://github.com/VocaHQ/vocalinux) | Available now |
-| macOS | VocaMac | [vocamac.com](https://vocamac.com) | [VocaHQ/vocamac](https://github.com/VocaHQ/vocamac) | Beta |
+| macOS | VocaMac | [vocamac.com](https://vocamac.com) | [VocaHQ/vocamac](https://github.com/VocaHQ/vocamac) | Available now |
 | Windows | VocaWin | [vocawin.com](https://vocawin.com) | [VocaHQ/vocawin](https://github.com/VocaHQ/vocawin) | Beta · [v0.1.0-beta.1](https://github.com/VocaHQ/vocawin/releases/tag/v0.1.0-beta.1) |
 | iOS / Android | VocaPhone | [vocaphone.vocahq.com](https://vocaphone.vocahq.com) | [VocaHQ/vocaphone](https://github.com/VocaHQ/vocaphone) | Google Play / iOS TestFlight |
 | Gateway | VocaGateway | [vocagateway.vocahq.com](https://vocagateway.vocahq.com) | [VocaHQ/vocagateway](https://github.com/VocaHQ/vocagateway) | Early |
@@ -292,6 +292,9 @@ request expectations. [SUPPORT.md](SUPPORT.md) is where to ask for help and what
 to include (or omit). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is Contributor
 Covenant 2.1. [SECURITY.md](SECURITY.md) is the private vulnerability-reporting
 process.
+
+[Governance](GOVERNANCE.md) identifies maintainers and decision-making;
+[starter contributions](docs/starter-contributions.md) lists approachable work.
 
 Report suspected microphone, recording, token, gateway, or tailnet
 vulnerabilities through the private process in [SECURITY.md](SECURITY.md), not a
