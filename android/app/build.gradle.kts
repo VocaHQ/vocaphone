@@ -189,6 +189,9 @@ android {
             System.getProperty("vocaphone.modelE2E.model")?.let {
                 test.systemProperty("vocaphone.modelE2E.model", it)
             }
+            System.getProperty("vocaphone.modelE2E.report")?.let {
+                test.systemProperty("vocaphone.modelE2E.report", it)
+            }
             System.getProperty("vocaphone.whisperLibrary")?.let {
                 test.systemProperty("java.library.path", it)
             }

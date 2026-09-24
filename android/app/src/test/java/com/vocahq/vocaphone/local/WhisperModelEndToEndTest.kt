@@ -10,6 +10,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.AfterClass
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -29,12 +30,27 @@ import org.junit.Test
  */
 class WhisperModelEndToEndTest {
 
+    /**
+     * With `vocaphone.modelE2E.report` set, records each scenario's missing
+     * words to that file instead of failing. CI uses that to compare a
+     * re-pinned model with the pin it replaces: a weaker model mishearing a
+     * word is not a regression, the new pin doing worse than the old one is.
+     */
     @Test
     fun everySentenceIsTyped() = runBlocking {
-        val failures = scenarios().mapNotNull { scenario ->
+        val missingByScenario = scenarios().associate { scenario ->
             val text = dictate(scenario.samples())
-            val missing = scenario.markers.filterNot { text.lowercase().contains(it) }
-            if (missing.isEmpty()) null else "${scenario.name}: missing $missing in \"$text\""
+            scenario.name to (scenario.markers.filterNot { text.lowercase().contains(it) } to text)
+        }
+        System.getProperty("vocaphone.modelE2E.report")?.let { path ->
+            val report = JSONObject()
+            missingByScenario.forEach { (name, result) -> report.put(name, JSONArray(result.first)) }
+            File(path).writeText(report.toString(2))
+            return@runBlocking
+        }
+        val failures = missingByScenario.mapNotNull { (name, result) ->
+            val (missing, text) = result
+            if (missing.isEmpty()) null else "$name: missing $missing in \"$text\""
         }
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
