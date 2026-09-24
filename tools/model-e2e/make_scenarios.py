@@ -99,6 +99,9 @@ def main() -> None:
         # No pauses at all: the window sweep needs speech under every offset.
         continuous = speak(" ".join(text for text, _ in FIRST), workdir)
         opening = speak(FIRST[0][0], workdir)
+        # Spoken on its own so the long pause sits exactly between two
+        # sentences, not at a guessed offset into a separate rendering.
+        rest = speak(PAUSE.join(text for text, _ in FIRST[1:]), workdir)
         short = speak(SHORT[0], workdir)
 
     if len(first) < 31 * RATE:
@@ -120,7 +123,7 @@ def main() -> None:
         "quiet_throughout": (noisy(first, gain=0.1), first_markers),
         # A long think between the first sentence and the rest.
         "long_pause": (
-            noisy(opening) + room(4 * RATE) + noisy(first[len(opening):]),
+            noisy(opening) + room(4 * RATE) + noisy(rest),
             first_markers,
         ),
         "three_windows": (noisy(first) + room(RATE // 2) + noisy(second), first_markers + second_markers),

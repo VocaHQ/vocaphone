@@ -33,12 +33,21 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+# Every pinned file is on Hugging Face. Anything else -- another host, or a
+# `file:` URL, which urllib would happily read -- is refused before it is opened.
+ALLOWED_PREFIX = "https://huggingface.co/"
+
+
 def fetch(url: str, destination: Path, size: int, expected: str) -> None:
+    if not url.startswith(ALLOWED_PREFIX):
+        sys.exit(f"Refusing to download from {url}: pinned models come only from {ALLOWED_PREFIX}")
     if destination.exists() and destination.stat().st_size == size and sha256(destination) == expected:
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".part")
-    with urllib.request.urlopen(url) as response, partial.open("wb") as handle:
+    # The prefix check above pins the scheme and host; the digest check below
+    # rejects anything that is not the pinned file.
+    with urllib.request.urlopen(url) as response, partial.open("wb") as handle:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         while block := response.read(1 << 20):
             handle.write(block)
     actual = sha256(partial)
@@ -80,7 +89,8 @@ def main() -> None:
     for file in pinned["files"]:
         fetch(
             f"https://huggingface.co/{tokenizer}/resolve/{pinned['revision']}/{file['path']}",
-            out / "Tokenizers" / tokenizer.split("/")[-1] / file["path"],
+            # As `LocalModelManager.tokenizerFolderName` names it on the phone.
+            out / "Tokenizers" / tokenizer.replace("/", "_") / file["path"],
             file["size"],
             file["sha256"],
         )

@@ -90,19 +90,16 @@ enum ModelEndToEnd {
     private static func loadedEngine() async throws -> WhisperKit {
         if let engine { return engine }
         let directory = try #require(directory)
-        // `openai_whisper-small_216MB` uses the `whisper-small` tokenizer, and
-        // the large model `whisper-large-v3`: the longest name that prefixes it.
-        let tokenizers = directory.appendingPathComponent("Tokenizers")
-        let tokenizerName = try #require(
-            try FileManager.default.contentsOfDirectory(atPath: tokenizers.path)
-                .filter { model.hasPrefix("openai_\($0)") }
-                .max { $0.count < $1.count }
+        // The folder the app itself keeps this model's tokenizer in.
+        let repository = try #require(LocalModelCatalog.descriptor(for: model)?.tokenizerRepository)
+        let tokenizerFolder = directory.appendingPathComponent(
+            "Tokenizers/\(repository.replacingOccurrences(of: "/", with: "_"))"
         )
         let loaded = try await WhisperKit(
             WhisperTranscription.engineConfig(
                 model: model,
                 folder: directory.appendingPathComponent(model),
-                tokenizerFolder: tokenizers.appendingPathComponent(tokenizerName),
+                tokenizerFolder: tokenizerFolder,
                 prewarm: false
             )
         )

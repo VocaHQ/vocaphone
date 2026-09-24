@@ -161,6 +161,12 @@ jobs:
       # with the real pinned model, so it runs when a pull request touches
       # anything between the recording and the typed text, or WhisperKit's
       # version, and on a manual run. It reuses the build above.
+      #
+      # The filter lists what the pipeline reads: conditioning, the decode
+      # options and quality, the catalog, and everything
+      # DictatedTranscript.finished calls. KeyboardPreferences is left out
+      # although it declares WritingStyle, because nearly every keyboard change
+      # touches it and a style change is covered by the unit tests.
       - name: Decide whether to run the on-device model tests
         id: model-scope
         env:
@@ -178,7 +184,7 @@ jobs:
           fi
           git fetch --no-tags --depth=1 origin "${BASE_SHA}"
           changed=$(git diff --name-only "${BASE_SHA}" HEAD)
-          pattern='^(ios/VocaPhone\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved|ios/project\.yml|ios/VocaPhoneApp/Models/|ios/VocaPhoneShared/(SpeechAudioConditioning|DictatedTranscript|Transcript[A-Za-z]*|CustomVocabulary|Spoken[A-Za-z]*)\.swift|ios/VocaPhoneTests/LocalModelEndToEndTests\.swift|tools/model-e2e/|\.github/workflows/quality-ios\.yml)'
+          pattern='^(ios/VocaPhone\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved|ios/project\.yml|ios/VocaPhoneApp/Models/|ios/VocaPhoneShared/(SpeechAudioConditioning|DictatedTranscript|Transcript[A-Za-z]*|CustomVocabulary|Spoken[A-Za-z]*|SentencePunctuation|ProtectedSpans|Snippet[A-Za-z]*|EmojiTable|LocalModelCatalog|ModelLanguageSupport)\.swift|ios/VocaPhoneTests/LocalModelEndToEndTests\.swift|tools/model-e2e/|\.github/workflows/quality-ios\.yml)'
           if printf '%s\n' "${changed}" | grep -Eq "${pattern}"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
@@ -219,6 +225,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             test-without-building
+
+          # A suite whose input did not arrive is skipped, not failed, and a
+          # skipped suite passes. So require that tests ran and none skipped.
+          summary=$(xcrun xcresulttool get test-results summary --path "${RESULT_BUNDLE}" --compact)
+          echo "${summary}"
+          python3 -c 'import json, sys
+          s = json.loads(sys.argv[1])
+          ran, skipped = s.get("passedTests", 0) + s.get("failedTests", 0), s.get("skippedTests", 0)
+          sys.exit(0 if ran > 0 and skipped == 0 else f"model tests ran {ran}, skipped {skipped}")' "${summary}"
 
       - name: Upload the test result bundle
         if: failure()
