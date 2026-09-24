@@ -112,6 +112,22 @@ struct WhisperTranscriptionTests {
         #expect((reported.first?.milliseconds ?? 0) > 15_000)
     }
 
+    /// Speech with no pause anywhere leaves no quiet frames to measure a floor
+    /// from; a window like that must still count as speech.
+    @Test func continuousSpeechThatDecodesToNothingIsReported() async throws {
+        let unbroken = (0..<(20 * 16_000)).map { index in
+            sin(Float(index) * 0.2) * (0.25 + 0.05 * sin(Float(index) * 0.001))
+        }
+        #expect(WhisperTranscription.soundsLikeSpeech(unbroken))
+        var reported = 0
+        _ = try await WhisperTranscription.transcribe(
+            samples: unbroken,
+            options: DecodingOptions(),
+            emptyWindow: { _ in reported += 1 }
+        ) { _, _ in [] }
+        #expect(reported == 1)
+    }
+
     @Test func silenceThatDecodesToNothingIsNotReported() async throws {
         var reported = 0
         _ = try await WhisperTranscription.transcribe(

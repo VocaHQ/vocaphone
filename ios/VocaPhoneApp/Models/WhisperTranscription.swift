@@ -219,7 +219,12 @@ enum WhisperTranscription {
             levels.append((sum / Float(frame)).squareRoot())
             start += frame
         }
-        let floor = levels.sorted()[levels.count / 10]
+        // The quietest tenth of the window is its noise floor -- unless the
+        // window is speech from end to end, with no pause to measure, when that
+        // tenth is speech too. A room is never louder than 0.01 RMS even after
+        // levelling, so the floor is capped there; otherwise a window with no
+        // pause in it could never count as speech however loud it was.
+        let floor = min(levels.sorted()[levels.count / 10], 0.01)
         let threshold = max(0.01, floor * 4)
         return levels.filter { $0 >= threshold }.count >= 10
     }
