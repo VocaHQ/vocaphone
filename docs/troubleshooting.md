@@ -352,8 +352,8 @@ opening, the end, or a sentence in the middle. Nothing reported an error.
 - Otherwise, note the dictation's length and export diagnostics (iPhone) or keep
   `just android logs` running (Android), then follow
   [Reading the evidence](on-device-transcription-checks.md#reading-the-evidence).
-  A long dictation that decoded unusually fast is the telltale sign of a
-  dropped window.
+  A long dictation that decoded unusually fast is worth a closer look, though
+  speed alone does not prove a window was dropped.
 
 ## Transcript did not insert
 

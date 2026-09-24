@@ -7,9 +7,10 @@ or after iOS killed it, memory, and a real microphone. Run this after changing
 native code, audio conditioning or transcript finishing, and after any
 WhisperKit, whisper.cpp or sherpa-onnx bump.
 
-The model tests catch a decoder that drops or garbles speech in minutes, on
-a Mac or in CI, and should pass first: `just ios model-test` (#330, #334) and
-`just android model-test` (#333). This page is for everything they can't reach.
+Model tests that decode synthesized speech with the real pinned models, on a
+Mac or in CI, are in review (#330, #333, #334). Once they merge, run
+`just ios model-test` and `just android model-test` first; until then those
+recipes do not exist. This page is for what no such test can reach.
 
 ## How to run a check
 
@@ -33,10 +34,10 @@ memory check.
 | # | Scenario | Do | Expect |
 | --- | --- | --- | --- |
 | 1 | Warm | Two 5 s dictations back to back from the keyboard in Notes | Both insert. The second has no `localEngineLoaded`: the model stayed loaded |
-| 2 | Long | One 45–60 s dictation | Every numbered sentence, in order. No `localWindowEmpty` (#331) |
+| 2 | Long | One 45–60 s dictation | Every numbered sentence, in order. Once #331 merges, also no `localWindowEmpty` in the export |
 | 3 | Idle unload | Wait 11 minutes (`localEngineReleased` appears at 10), then dictate 40 s and **finish from the keyboard without opening vocaphone** | Full text. `localEngineLoaded` with `appInForeground: false` and no `operationFailed` |
 | 4 | Standby ended | Let the Quick Dictation window run out (`liveActivityEnded quickDictationOff`), then tap Dictate: vocaphone opens; speak 40 s after the start cue | Full text from the cue on. Words spoken *before* the cue are not recorded, by design |
-| 5 | Relaunched | Leave the phone overnight, or open several heavy apps until iOS closes vocaphone, then dictate | `appStarted` right before `launchingApp`, and full text |
+| 5 | Relaunched | Leave the phone overnight, or open several heavy apps until iOS closes vocaphone, then dictate | Full text. The export shows the keyboard's `launchingApp`, then `appStarted`, then the app's own `launchingApp` |
 | 6 | Background finish | Start, switch to Safari, speak 40 s, Finish from the keyboard | Full text inserted back into the right field |
 | 7 | Interruption | Take a call or invoke Siri mid-dictation | Audio before the interruption is kept and transcribed |
 | 8 | Memory | The largest model you ship (Large v3) on the oldest phone, a 60 s dictation | No crash, no `JetsamEvent` for VocaPhoneApp (see below) |
@@ -52,7 +53,7 @@ Select a Whisper model (Base or Small), then repeat with Parakeet 110M on the
 | 2 | Long | One 45–60 s dictation | Every numbered sentence, including the one spoken around 30 s (#332) |
 | 3 | Idle unload | Wait 3 minutes (the engine unloads after 2), then dictate 40 s | Full text. The log shows a fresh "Loading model" |
 | 4 | Screen off | Start, lock the phone, speak 40 s, unlock, finish | Full text. The microphone foreground service keeps the recording alive |
-| 5 | Memory | Large v3 Turbo on the oldest phone, 60 s | No crash, and no `lowmemorykiller` line for `com.vocahq.vocaphone` in logcat |
+| 5 | Memory | The largest model the app offers on the oldest supported phone (it hides models the phone lacks the memory for), 60 s | No crash, and no `lowmemorykiller` line for `com.vocahq.vocaphone` in logcat |
 
 ## Reading the evidence
 
@@ -67,17 +68,20 @@ captureStopped                    capture ended; recording length = the gap betw
 sessionStateChanged transcribing
 localEngineLoaded                 only when the model had to be loaded:
                                   milliseconds, appInForeground, megabytesAvailable
-localWindowEmpty                  a window that held speech decoded to nothing (#331)
+localWindowEmpty                  once #331 merges: a window that held speech
+                                  decoded to nothing
 localEngineRetried                the first attempt failed; operationFailed just before it
                                   carries errorDomain / errorNumber
 transcriptReady / readyToInsert   done
 ```
 
 - **Decode time** is `readyToInsert` minus `localEngineLoaded`, or minus
-  `transcribing` when nothing was loaded. It should grow with recording length.
-  **A longer dictation that decodes faster than a shorter one lost a window.**
-  That is how the WhisperKit 1.1.0 regression (#329) showed up, before
-  `localWindowEmpty` existed.
+  `transcribing` when nothing was loaded. With the same model and settings it
+  grows with recording length, so a longer dictation that decoded faster than a
+  shorter one is a reason to check its transcript against what was said. It is
+  a clue, not proof: a different model, quality setting or engine changes the
+  speed too. It is how the WhisperKit 1.1.0 regression (#329) was first
+  noticed.
 - `localEngineReleased` means the model was dropped. The next dictation pays a
   cold load, which is what scenarios 3 and 4 exercise.
 - `appStarted` between two sessions means the app was relaunched, most often
@@ -106,7 +110,8 @@ Transcribing <n> samples with <t> threads, beam=…, audio_ctx=…
 Transcription finished in <ms> ms (status=0, segments=<k>)
 ```
 
-`<n>` / 16000 is the recording length in seconds. A 60 s dictation that
-finishes with one or two segments, or much faster than a 30 s one, dropped
-speech. A non-zero `status` is a decode failure, which the app reports as an
-error rather than an empty transcript.
+`<n>` / 16000 is the recording length in seconds. The segment count is not a
+measure of completeness: how whisper.cpp splits segments depends on its
+settings, and a complete dictation can have only one or two. Check the numbered
+sentences in the text instead. A non-zero `status` is a decode failure, which
+the app reports as an error rather than an empty transcript.
