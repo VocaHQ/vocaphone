@@ -200,13 +200,17 @@ enum WhisperTranscription {
     }
 
     /// Whether a window carries at least half a second of sound well above its
-    /// own noise floor.
+    /// own quietest stretch.
     ///
-    /// Relative, not absolute: the app levels a quiet recording by up to eight
-    /// times before decoding, which lifts a room's hiss past any fixed
-    /// threshold, while speech still stands far above it. Deliberately loose —
-    /// a false "this was speech" costs one log line; a missed one hides a lost
-    /// stretch of dictation.
+    /// Movement, not level. Speech rises and falls with every syllable even
+    /// when it never pauses: across the model tests' continuous speech the
+    /// loudest tenth of 50 ms frames sits 12 to 16 times above the quietest.
+    /// Hiss, hum and a fan hold their level, at 1.06 times whatever it is, and
+    /// the app levels a quiet recording by up to eight times before decoding,
+    /// so no absolute threshold can tell those apart from speech. Frames at
+    /// two and a half times the quietest tenth can. Deliberately loose within
+    /// that: a false "this was speech" costs one log line; a missed one hides
+    /// a lost stretch of dictation.
     static func soundsLikeSpeech(_ samples: [Float]) -> Bool {
         let frame = WhisperKit.sampleRate / 20
         guard samples.count >= frame * 10 else { return false }
@@ -219,13 +223,8 @@ enum WhisperTranscription {
             levels.append((sum / Float(frame)).squareRoot())
             start += frame
         }
-        // The quietest tenth of the window is its noise floor -- unless the
-        // window is speech from end to end, with no pause to measure, when that
-        // tenth is speech too. A room is never louder than 0.01 RMS even after
-        // levelling, so the floor is capped there; otherwise a window with no
-        // pause in it could never count as speech however loud it was.
-        let floor = min(levels.sorted()[levels.count / 10], 0.01)
-        let threshold = max(0.01, floor * 4)
+        let floor = levels.sorted()[levels.count / 10]
+        let threshold = max(0.01, floor * 2.5)
         return levels.filter { $0 >= threshold }.count >= 10
     }
 }
