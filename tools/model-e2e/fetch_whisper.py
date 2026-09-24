@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
-import urllib.request
 from pathlib import Path
 
 PINS = Path(__file__).resolve().parents[2] / "ios/VocaPhoneApp/Models/local_model_pins.json"
@@ -33,8 +33,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-# Every pinned file is on Hugging Face. Anything else -- another host, or a
-# `file:` URL, which urllib would happily read -- is refused before it is opened.
+# Every pinned file is on Hugging Face, which answers with a redirect to its CDN.
 ALLOWED_PREFIX = "https://huggingface.co/"
 
 
@@ -45,11 +44,18 @@ def fetch(url: str, destination: Path, size: int, expected: str) -> None:
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".part")
-    # The prefix check above pins the scheme and host; the digest check below
-    # rejects anything that is not the pinned file.
-    with urllib.request.urlopen(url) as response, partial.open("wb") as handle:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-        while block := response.read(1 << 20):
-            handle.write(block)
+    # curl rather than urllib, which also opens `file:` and `ftp:` URLs:
+    # `--proto` allows HTTPS alone, and `--proto-redir` holds the CDN redirect
+    # to the same, so nothing but an HTTPS server can answer.
+    subprocess.run(
+        [
+            "curl", "--proto", "=https", "--proto-redir", "=https",
+            "--fail", "--location", "--max-redirs", "5", "--retry", "3",
+            "--silent", "--show-error", "--output", str(partial), url,
+        ],
+        check=True,
+    )
+    # Whatever answered, only the pinned bytes are kept.
     actual = sha256(partial)
     if actual != expected:
         partial.unlink()
