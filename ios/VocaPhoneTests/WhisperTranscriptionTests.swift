@@ -55,4 +55,44 @@ struct WhisperTranscriptionTests {
         #expect(calls == 2)
         #expect(speechSamples == 30 * 16_000 + 4_000)
     }
+
+    @Test func failedAttemptIsRetriedOnceOnAFreshEngine() async throws {
+        var attempts = 0
+        var resets = 0
+        let value = try await WhisperTranscription.retryingOnce {
+            attempts += 1
+            if attempts == 1 { throw Failure.decoder }
+            return "second"
+        } prepareRetry: { _ in
+            #expect(attempts == 1)
+            resets += 1
+        }
+        #expect(value == "second")
+        #expect(attempts == 2)
+        #expect(resets == 1)
+    }
+
+    @Test func secondFailureIsNotHidden() async {
+        var attempts = 0
+        await #expect(throws: Failure.self) {
+            _ = try await WhisperTranscription.retryingOnce {
+                attempts += 1
+                throw Failure.decoder
+            } prepareRetry: { _ in }
+        }
+        #expect(attempts == 2)
+    }
+
+    @Test func cancellationIsNeverRetried() async {
+        var attempts = 0
+        var resets = 0
+        await #expect(throws: CancellationError.self) {
+            _ = try await WhisperTranscription.retryingOnce {
+                attempts += 1
+                throw CancellationError()
+            } prepareRetry: { _ in resets += 1 }
+        }
+        #expect(attempts == 1)
+        #expect(resets == 0)
+    }
 }

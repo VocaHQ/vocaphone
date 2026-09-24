@@ -6,6 +6,28 @@ import WhisperKit
 /// failed chunks when collecting results, potentially returning partial success.
 @MainActor
 enum WhisperTranscription {
+    /// Runs `operation`, and after any failure but cancellation, calls
+    /// `prepareRetry` and runs it exactly once more.
+    ///
+    /// One retry, because the failure this exists for is the first dictation
+    /// after the model was dropped: a cold Core ML load in a backgrounded app
+    /// that fails where the very next attempt succeeds. `prepareRetry` is where
+    /// the caller throws the half-built engine away so the second attempt starts
+    /// from nothing. A second failure is a real one and is not hidden.
+    static func retryingOnce<T>(
+        _ operation: () async throws -> T,
+        prepareRetry: (Error) -> Void
+    ) async throws -> T {
+        do {
+            return try await operation()
+        } catch {
+            if error is CancellationError || Task.isCancelled { throw error }
+            prepareRetry(error)
+            try Task.checkCancellation()
+            return try await operation()
+        }
+    }
+
     static func transcribe(
         samples: [Float],
         options: DecodingOptions,
