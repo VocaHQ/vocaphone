@@ -1991,13 +1991,9 @@ final class LocalModelManager {
             // model. Asking it for another target is not a smaller version of
             // the same feature; it is nothing at all.
             let translateTo = descriptor.resolvedTranslationTarget
-            // Load and decode are retried together, on a fresh engine: a cold
-            // Core ML load in a backgrounded app can hand back an engine that
-            // fails its first decode as readily as it can fail to load at all.
-            let results = try await WhisperTranscription.retryingOnce {
-                let whisperKit: WhisperKit
+            let results = try await WhisperTranscription.transcribe(samples: samples) {
                 do {
-                    whisperKit = try await self.ensureWhisperKit(
+                    return try await self.ensureWhisperKit(
                         descriptor: descriptor,
                         folder: folder,
                         tokenizerFolder: tokenizerFolder
@@ -2006,12 +2002,13 @@ final class LocalModelManager {
                     self.recordEngineFailure(.localEngineLoadFailed, error)
                     throw error
                 }
+            } options: { whisperKit in
                 // Tokenized here rather than stored, because the tokens only mean
                 // anything against the tokenizer of the model that is loaded.
                 let promptTokens = promptText.isEmpty
                     ? nil
                     : whisperKit.tokenizer?.encode(text: promptText)
-                let options = DecodingOptions(
+                return DecodingOptions(
                     task: translateTo.isEmpty ? .transcribe : .translate,
                     language: requested,
                     temperature: 0,
@@ -2034,22 +2031,19 @@ final class LocalModelManager {
                     suppressBlank: true,
                     concurrentWorkerCount: 1
                 )
-                do {
-                    return try await WhisperTranscription.transcribe(
-                        samples: samples, options: options
-                    ) { window, options in
-                        try await whisperKit.transcribe(audioArray: window, decodeOptions: options)
-                    }
-                } catch {
-                    self.recordEngineFailure(.localDecodeFailed, error)
-                    throw error
-                }
-            } prepareRetry: { _ in
+            } discard: { _ in
                 DiagnosticLog.record(.localEngineRetried)
                 // Rebuilt from nothing, and prewarmed: the failed attempt may be
                 // exactly a load that skipped specialization it turned out to need.
                 self.releaseLoadedEngines()
                 self.forgetWhisperKitSpecialization(for: descriptor.id)
+            } decode: { whisperKit, window, options in
+                do {
+                    return try await whisperKit.transcribe(audioArray: window, decodeOptions: options)
+                } catch {
+                    self.recordEngineFailure(.localDecodeFailed, error)
+                    throw error
+                }
             }
             let text = results.map(\.text).joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2090,6 +2084,14 @@ final class LocalModelManager {
             // and reporting them as one thing is what made a device report
             // unable to say whether the empty-result repair is working.
             if let failure = outcome.nativeFailure {
+                DiagnosticLog.record(
+                    .operationFailed,
+                    metadata: .sherpaDecodeFailure(
+                        failure,
+                        appInForeground: KeyboardPreferences.containingAppIsForeground,
+                        megabytesAvailable: Self.megabytesAvailable
+                    )
+                )
                 throw LocalModelManagerError.engineDecodeFailed(failure.rawValue)
             }
             let decoded = outcome.transcriptOrEmpty

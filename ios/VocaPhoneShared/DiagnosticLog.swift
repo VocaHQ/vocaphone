@@ -122,6 +122,8 @@ enum DiagnosticErrorCode: String, Codable, Sendable {
 enum DiagnosticErrorDomain: String, Codable, Sendable {
     case coreML
     case whisperKit
+    /// A sherpa-onnx native status, from the bridge rather than an `Error`.
+    case sherpa
     case localModel
     case audio
     case cocoa
@@ -255,6 +257,22 @@ struct DiagnosticMetadata: Codable, Equatable, Sendable {
             errorNumber: outer.code,
             underlyingErrorDomain: hasUnderlying ? DiagnosticErrorDomain(innermost) : nil,
             underlyingErrorNumber: hasUnderlying ? innermost.code : nil,
+            appInForeground: appInForeground
+        )
+    }
+
+    /// A sherpa decode that failed natively. The bridge returns a status, not an
+    /// `Error`, so the status itself is the number; one it does not name has none.
+    static func sherpaDecodeFailure(
+        _ failure: SherpaNativeFailure,
+        appInForeground: Bool,
+        megabytesAvailable: Int
+    ) -> DiagnosticMetadata {
+        DiagnosticMetadata(
+            errorCode: .localDecodeFailed,
+            megabytesAvailable: megabytesAvailable,
+            errorDomain: .sherpa,
+            errorNumber: failure.status.map(Int.init),
             appInForeground: appInForeground
         )
     }

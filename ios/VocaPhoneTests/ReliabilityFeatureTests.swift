@@ -452,6 +452,22 @@ struct ReliabilityFeatureTests {
         #expect(metadata.underlyingErrorNumber == nil)
     }
 
+    @Test func sherpaDecodeFailureRecordsTheNativeStatus() {
+        let named = DiagnosticMetadata.sherpaDecodeFailure(
+            .outputTruncated, appInForeground: false, megabytesAvailable: 300
+        )
+        #expect(named.errorCode == .localDecodeFailed)
+        #expect(named.errorDomain == .sherpa)
+        #expect(named.errorNumber == -4)
+        #expect(SherpaNativeFailure.forStatus(-4).status == -4)
+
+        let unnamed = DiagnosticMetadata.sherpaDecodeFailure(
+            .forStatus(-99), appInForeground: true, megabytesAvailable: 300
+        )
+        #expect(unnamed.errorDomain == .sherpa)
+        #expect(unnamed.errorNumber == nil)
+    }
+
     @Test func entriesWrittenBeforeTheErrorFieldsStillDecode() throws {
         let legacy = """
         {"appVersion":"1.0","buildNumber":"1","event":"operationFailed",\
