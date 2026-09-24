@@ -12,6 +12,8 @@ class SetupPageTest {
 
     @Test
     fun `relaunch resumes the first real missing requirement in page order`() {
+        // The welcome is a teaching screen; setup recovery never treats it as a requirement.
+        assertTrue(SetupPage.WELCOME.isSatisfied(SetupStatus()))
         assertEquals(SetupPage.KEYBOARD, SetupPage.resume(SetupStatus()))
         assertEquals(SetupPage.MICROPHONE, SetupPage.resume(SetupStatus(keyboard = true)))
         assertEquals(SetupPage.NOTIFICATIONS, SetupPage.resume(ready.copy(notifications = false)))
@@ -43,11 +45,13 @@ class SetupPageTest {
 
     @Test
     fun `back and forward preserve the ordered journey without granting readiness`() {
-        assertEquals(SetupPage.KEYBOARD, SetupPage.KEYBOARD.previous())
+        assertEquals(SetupPage.WELCOME, SetupPage.WELCOME.previous())
+        assertEquals(SetupPage.WELCOME, SetupPage.KEYBOARD.previous())
+        assertEquals(SetupPage.KEYBOARD, SetupPage.WELCOME.next())
         assertEquals(SetupPage.READY, SetupPage.READY.next())
         SetupPage.entries.dropLast(1).forEach { page ->
             assertEquals(page, page.next().previous())
-            assertFalse(page.isSatisfied(SetupStatus()))
+            if (page != SetupPage.WELCOME) assertFalse(page.isSatisfied(SetupStatus()))
         }
     }
 }

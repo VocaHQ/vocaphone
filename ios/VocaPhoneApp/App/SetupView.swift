@@ -102,8 +102,6 @@ struct SetupView: View {
     /// Back from Settings on Set up keyboard with vocaphone still not in the
     /// list. iOS Settings can show a stale page without Keyboards on it.
     @State private var keyboardMissingAfterSettings = false
-    /// Tallest welcome card's content, which every welcome card takes.
-    @State private var welcomeCardHeights: [Int: CGFloat] = [:]
     /// Full-screen "Microphone ready" or "Ready to dictate".
     @State private var readyFlash: OnboardingReadyFlash = .none
     /// Title frozen while `readyFlash` fades out so the stack does not collapse.
@@ -598,12 +596,6 @@ struct SetupView: View {
     @ViewBuilder
     private func onboardingHeaderBlock(for page: OnboardingStage) -> some View {
         VStack(alignment: .leading, spacing: VocaMetrics.grouping) {
-            if showsWelcomeHeroSlot(for: page) {
-                ZStack(alignment: .leading) {
-                    Color.clear.frame(height: OnboardingWelcomeVisual.height)
-                    OnboardingWelcomeVisual(reduceMotion: reduceMotion)
-                }
-            }
             if let header = onboardingHeader(for: page) {
                 OnboardingStageHeader(title: header.title, subtitle: header.subtitle)
             }
@@ -798,21 +790,11 @@ struct SetupView: View {
         }
     }
 
-    /// Waveform lives on welcome only. Other pages start with the title
-    /// under the chrome, the same as Choose model.
-    private func showsWelcomeHeroSlot(for page: OnboardingStage) -> Bool {
-        guard !dynamicTypeSize.isAccessibilitySize else { return false }
-        switch page {
-        case .welcome: return true
-        default: return false
-        }
-    }
-
     /// Lifted out of each page so the title does not jump when the stage changes.
     private func onboardingHeader(for page: OnboardingStage) -> (title: String, subtitle: String)? {
         switch page {
         case .welcome:
-            ("Dictate into any app", "A keyboard that types what you say.")
+            ("Your words, your way", "Speak naturally in the language that feels right.")
         case .source:
             ("Choose where speech becomes text", "On this iPhone, or a gateway you run.")
         case .model:
@@ -951,37 +933,13 @@ struct SetupView: View {
 
     private var welcomeStage: some View {
         VStack(alignment: .leading, spacing: VocaMetrics.related + VocaMetrics.tight) {
-            welcomeCard(
-                0,
-                symbol: "lock.fill",
-                title: "Your voice stays on this iPhone",
-                detail: "That's the default. A gateway you run is a separate choice."
-            )
-            welcomeCard(
-                1,
-                symbol: "infinity",
-                title: "No subscriptions or limits",
-                detail: "Dictate as much as you want, whenever you want."
-            )
-            welcomeCard(
-                2,
-                symbol: "keyboard",
-                title: "Works anywhere you can type",
-                detail: "Use it in any app with a keyboard."
-            )
-        }
-    }
+            OnboardingWelcomeVisual(reduceMotion: reduceMotion)
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 220 : 300)
 
-    /// One of three equal cards. Heights are measured unconstrained and the
-    /// tallest wins; a card that later grows (Dynamic Type) raises the rest.
-    private func welcomeCard(_ index: Int, symbol: String, title: String, detail: String) -> some View {
-        OnboardingBoardCard(
-            minContentHeight: welcomeCardHeights.values.max() ?? 0,
-            onContentHeight: { height in
-                if welcomeCardHeights[index] != height { welcomeCardHeights[index] = height }
-            }
-        ) {
-            OnboardingFeatureCopy(layout: .inline, symbol: symbol, title: title, detail: detail)
+            Text("Dictate wherever you type. Choose a model on this iPhone, or connect a gateway you run.")
+                .font(.subheadline)
+                .foregroundStyle(Color.vocaSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -2968,54 +2926,118 @@ private struct SettingsReferenceCard: View {
     }
 }
 
-/// Compact brand waveform on the welcome screen. No caption — the bars
-/// are the whole visual.
+/// A choreographed greeting flow, shown before microphone permission. The
+/// pulse is an illustration, never an indicator that recording has started.
 private struct OnboardingWelcomeVisual: View {
     let reduceMotion: Bool
 
-    static let height: CGFloat = 56
-
     @State private var origin = Date()
 
-    private static let barCount = 21
-    private static let barWidth: CGFloat = 4
-    private static let barSpacing: CGFloat = 3
-    private static let waveformHeight: CGFloat = 56
-    private static let minBarHeight: CGFloat = 8
-    /// ~1.5× slower than the original 3.1 / 7.4 oscillators.
-    private static let timeScale: Double = 0.68
+    private struct Greeting: Identifiable, Sendable {
+        let id: Int
+        let language: String
+        let word: String
+        let endX: CGFloat
+        let endY: CGFloat
+    }
+
+    private static let greetings: [Greeting] = [
+        .init(id: 0, language: "English", word: "Hello", endX: -88, endY: -72),
+        .init(id: 1, language: "हिन्दी", word: "नमस्ते", endX: 84, endY: -60),
+        .init(id: 2, language: "Español", word: "Hola", endX: -94, endY: 26),
+        .init(id: 3, language: "العربية", word: "مرحبا", endX: 91, endY: 40),
+        .init(id: 4, language: "日本語", word: "こんにちは", endX: -68, endY: 96),
+        .init(id: 5, language: "Français", word: "Bonjour", endX: 72, endY: 96),
+        .init(id: 6, language: "ਪੰਜਾਬੀ", word: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ", endX: -99, endY: -20),
+        .init(id: 7, language: "Italiano", word: "Ciao", endX: 99, endY: -16),
+    ]
+
+    private let accent = Color(BrandPalette.dark)
+    private let deepCanvas = Color(red: 17 / 255, green: 26 / 255, blue: 21 / 255)
+    private let paleText = Color(red: 232 / 255, green: 247 / 255, blue: 235 / 255)
 
     var body: some View {
         TimelineView(.animation(minimumInterval: reduceMotion ? 60 : 1 / 24, paused: reduceMotion)) { context in
-            waveform(at: context.date.timeIntervalSince(origin))
-                .frame(height: Self.waveformHeight)
-        }
-        .frame(maxWidth: .infinity, minHeight: Self.height, maxHeight: Self.height, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Sound waveform")
-    }
+            let elapsed = max(0, context.date.timeIntervalSince(origin))
+            GeometryReader { geometry in
+                let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2 + 12)
+                let active = reduceMotion ? 0 : Int(elapsed / 0.95) % Self.greetings.count
 
-    private func waveform(at time: TimeInterval) -> some View {
-        HStack(alignment: .center, spacing: Self.barSpacing) {
-            ForEach(0..<Self.barCount, id: \.self) { index in
-                Capsule()
-                    .fill(Color.brand)
-                    .frame(width: Self.barWidth, height: barHeight(for: index, at: time))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(deepCanvas)
+
+                    ForEach([222.0, 172.0, 122.0], id: \.self) { diameter in
+                        Circle()
+                            .strokeBorder(accent.opacity(0.18), lineWidth: 1)
+                            .frame(width: diameter, height: diameter)
+                            .position(center)
+                    }
+
+                    ForEach(Self.greetings) { greeting in
+                        let progress = wordProgress(for: greeting.id, elapsed: elapsed)
+                        if progress < 1 {
+                            Text(greeting.word)
+                                .font(.system(size: greeting.word.count > 8 ? 15 : 18, weight: .medium))
+                                .foregroundStyle(greeting.id.isMultiple(of: 3) ? accent : paleText)
+                                .fixedSize()
+                                .opacity(min(1, progress * 6) * min(1, (1 - progress) * 4))
+                                .position(
+                                    x: center.x + greeting.endX * progress,
+                                    y: center.y + greeting.endY * progress
+                                )
+                        }
+                    }
+
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 86, height: 86)
+                        .position(center)
+
+                    HStack(alignment: .center, spacing: 3) {
+                        ForEach(0..<7, id: \.self) { index in
+                            Capsule()
+                                .fill(Color(BrandPalette.ink))
+                                .frame(width: 3, height: barHeight(at: index, elapsed: elapsed))
+                        }
+                    }
+                    .position(center)
+
+                    VStack(spacing: 3) {
+                        Text(Self.greetings[active].language.uppercased())
+                            .font(.caption2.weight(.bold))
+                            .tracking(2)
+                            .foregroundStyle(accent)
+                        Text(Self.greetings[active].word)
+                            .font(.system(.title3, design: .serif))
+                            .foregroundStyle(paleText)
+                    }
+                    .frame(maxWidth: geometry.size.width - 24)
+                    .position(x: center.x, y: 47)
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "Animated greetings in English, Hindi, Spanish, Arabic, Japanese, French, Punjabi, and Italian"
+        )
     }
 
-    private func barHeight(for index: Int, at time: TimeInterval) -> CGFloat {
-        let position = CGFloat(index) / CGFloat(Self.barCount - 1)
-        let envelope = 0.32 + 0.68 * sin(position * .pi)
-        let range = Self.waveformHeight - Self.minBarHeight
-        if reduceMotion {
-            return Self.minBarHeight + range * envelope * 0.55
-        }
-        let t = time * Self.timeScale
-        let speak = 0.52 + 0.48 * sin(t * 3.1 + Double(position) * 6.8)
-        let detail = 0.85 + 0.15 * sin(t * 7.4 + Double(index) * 1.7)
-        return Self.minBarHeight + range * envelope * CGFloat(speak * detail)
+    private func wordProgress(for index: Int, elapsed: TimeInterval) -> CGFloat {
+        if reduceMotion { return index < 4 ? 0.75 : 2 }
+        let loop = Double(Self.greetings.count) * 0.95
+        let shifted = (elapsed - Double(index) * 0.95).truncatingRemainder(dividingBy: loop)
+        let phase = shifted < 0 ? shifted + loop : shifted
+        return CGFloat(phase / 2.85)
+    }
+
+    private func barHeight(at index: Int, elapsed: TimeInterval) -> CGFloat {
+        let envelope: [CGFloat] = [11, 19, 27, 33, 23, 16, 10]
+        if reduceMotion { return envelope[index] }
+        let pulse = 0.7 + 0.3 * sin(elapsed * 5 + Double(index) * .pi / 2)
+        return envelope[index] * CGFloat(pulse)
     }
 }
 

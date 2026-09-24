@@ -342,6 +342,7 @@ fun VocaPhoneApp(
                 telemetryPendingCount = viewModel::telemetryPendingCount,
                 telemetryDeliveryStatus = viewModel::telemetryDeliveryStatus,
                 onFinish = { viewModel.setOnboardingComplete(true) },
+                onIntroSeen = viewModel::setOnboardingIntroSeen,
                 onRefreshSetup = viewModel::refreshSetup,
                 onWarmLocalModel = viewModel::warmSelectedLocalModel,
                 modifier = content,
