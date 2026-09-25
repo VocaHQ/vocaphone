@@ -8,33 +8,51 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import java.util.Locale
-import kotlin.math.PI
+import kotlin.math.pow
 import kotlin.math.sin
 
 private data class WelcomeWord(
@@ -42,122 +60,223 @@ private data class WelcomeWord(
     val greeting: String,
     val endX: Float,
     val endY: Float,
+    val scale: Float,
 )
 
 private val welcomeWords = listOf(
-    WelcomeWord("English", "Hello", -86f, -71f),
-    WelcomeWord("हिन्दी", "नमस्ते", 82f, -58f),
-    WelcomeWord("Español", "Hola", -91f, 27f),
-    WelcomeWord("العربية", "مرحبا", 88f, 39f),
-    WelcomeWord("日本語", "こんにちは", -68f, 91f),
-    WelcomeWord("Français", "Bonjour", 71f, 94f),
-    WelcomeWord("ਪੰਜਾਬੀ", "ਸਤ ਸ੍ਰੀ ਅਕਾਲ", -99f, -18f),
-    WelcomeWord("Italiano", "Ciao", 99f, -13f),
+    WelcomeWord("English", "Hello", -92f, -90f, 0.88f),
+    WelcomeWord("हिन्दी", "नमस्ते", 88f, -73f, 0.92f),
+    WelcomeWord("Español", "Hola", -110f, 24f, 0.79f),
+    WelcomeWord("العربية", "مرحبا", 102f, 36f, 0.84f),
+    WelcomeWord("日本語", "こんにちは", -75f, 100f, 0.8f),
+    WelcomeWord("Français", "Bonjour", 64f, 108f, 0.87f),
+    WelcomeWord("ਪੰਜਾਬੀ", "ਸਤ ਸ੍ਰੀ ਅਕਾਲ", -126f, -27f, 0.75f),
+    WelcomeWord("Italiano", "Ciao", 120f, -22f, 0.8f),
 )
 
-/** An illustration of multilingual speech. It never opens the microphone. */
+private val introCanvas = Color(0xFF111A15)
+private val introMint = Color(0xFFA5EFC8)
+private val introPaper = Color(0xFFECF5ED)
+
+/** First-launch invitation before the existing how-it-works and setup pages. */
 @Composable
-internal fun OnboardingWordFlow(modifier: Modifier = Modifier) {
+internal fun OnboardingWordFlow(onContinue: () -> Unit, modifier: Modifier = Modifier) {
     val motionEnabled = remember { ValueAnimator.areAnimatorsEnabled() }
-    if (motionEnabled) {
-        val transition = rememberInfiniteTransition(label = "Welcome words")
-        val time by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = welcomeWords.size.toFloat(),
-            animationSpec = infiniteRepeatable(
-                tween(durationMillis = welcomeWords.size * 950, easing = LinearEasing),
-            ),
-            label = "Greeting flow",
-        )
-        WelcomeWordFlowFrame(time = time, moving = true, modifier = modifier)
-    } else {
-        WelcomeWordFlowFrame(time = 0f, moving = false, modifier = modifier)
+    val activity = LocalContext.current.findActivity()
+    var advancing by remember { mutableStateOf(false) }
+
+    DisposableEffect(activity) {
+        val controller = activity?.let { WindowCompat.getInsetsController(it.window, it.window.decorView) }
+        val oldLightStatus = controller?.isAppearanceLightStatusBars
+        val oldLightNavigation = controller?.isAppearanceLightNavigationBars
+        controller?.isAppearanceLightStatusBars = false
+        controller?.isAppearanceLightNavigationBars = false
+        onDispose {
+            if (oldLightStatus != null) controller.isAppearanceLightStatusBars = oldLightStatus
+            if (oldLightNavigation != null) controller.isAppearanceLightNavigationBars = oldLightNavigation
+        }
+    }
+
+    BoxWithConstraints(modifier.fillMaxSize().background(introCanvas)) {
+        // Reserve the headline and bottom action so the button is visible
+        // without scrolling on a normal phone. Short screens can still scroll.
+        val stageHeight = (maxHeight - 400.dp).coerceAtLeast(255.dp)
+        Column(
+            modifier = Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 25.dp)
+                .padding(top = 24.dp, bottom = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(
+                    modifier = Modifier.width(27.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    listOf(10, 18, 25, 18, 10).forEach { height ->
+                        Box(Modifier.size(width = 2.dp, height = height.dp).background(introMint, CircleShape))
+                    }
+                }
+                Text("voca.", color = introMint, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Text(
+                buildAnnotatedString {
+                    append("Your words,\n")
+                    withStyle(SpanStyle(color = introMint)) { append("your way.") }
+                },
+                modifier = Modifier.padding(top = 25.dp),
+                color = introPaper,
+                fontFamily = FontFamily.Serif,
+                fontSize = 43.sp,
+                lineHeight = 44.sp,
+                letterSpacing = (-2).sp,
+            )
+            Text(
+                "Speak naturally. We'll keep up, whichever language feels right.",
+                modifier = Modifier.padding(top = 12.dp).width(300.dp),
+                color = Color(0xFFAEC1B0),
+                fontSize = 15.sp,
+                lineHeight = 23.sp,
+            )
+
+            WelcomeWordStage(
+                motionEnabled = motionEnabled,
+                modifier = Modifier.fillMaxWidth().height(stageHeight),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Box(Modifier.size(6.dp).background(introMint, CircleShape))
+                Text(
+                    "A place for every voice",
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = Color(0xFF85A58F),
+                    fontSize = 12.sp,
+                    letterSpacing = 0.9.sp,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(56.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(introMint)
+                    .clickable(role = Role.Button, enabled = !advancing) {
+                        advancing = true
+                        onContinue()
+                    }
+                    .padding(horizontal = 21.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Get started", color = Color(0xFF14261A), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("↗", color = Color(0xFF14261A), fontSize = 24.sp)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(width = 17.dp, height = 5.dp).background(introMint, CircleShape))
+                Spacer(Modifier.width(6.dp))
+                repeat(2) {
+                    Box(Modifier.size(5.dp).background(Color(0xFF49634D), CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                }
+            }
+        }
     }
 }
 
+/** A speech illustration. It never opens the microphone. */
 @Composable
-private fun WelcomeWordFlowFrame(time: Float, moving: Boolean, modifier: Modifier) {
-    val accent = Color(0xFF77D0B2)
-    val canvas = Color(0xFF111A15)
-    val word = welcomeWords[time.toInt().coerceIn(welcomeWords.indices)]
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(296.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(canvas)
-            .clearAndSetSemantics {
-                contentDescription = "Animated greetings in English, Hindi, Spanish, Arabic, Japanese, French, Punjabi, and Italian"
-            },
+private fun WelcomeWordStage(motionEnabled: Boolean, modifier: Modifier = Modifier) {
+    val time = if (motionEnabled) {
+        val transition = rememberInfiniteTransition(label = "Welcome word flow")
+        val value by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = welcomeWords.size.toFloat(),
+            animationSpec = infiniteRepeatable(tween(welcomeWords.size * 950, easing = LinearEasing)),
+            label = "Greeting sequence",
+        )
+        value
+    } else 0f
+    val active = welcomeWords[time.toInt().coerceIn(welcomeWords.indices)]
+
+    BoxWithConstraints(
+        modifier = modifier.clearAndSetSemantics {
+            contentDescription = "Greetings in English, Hindi, Spanish, Arabic, Japanese, French, Punjabi, and Italian flow around a voice pulse"
+        },
     ) {
-        listOf(220.dp, 170.dp, 122.dp).forEach { diameter ->
+        val diameter = minOf(228.dp, maxWidth - 20.dp, maxHeight * 0.77f)
+        val scale = diameter.value / 228f
+        val centerShift = maxHeight * 0.03f
+
+        listOf(1f, 0.83f, 0.62f).forEach { ring ->
             Box(
-                Modifier.align(Alignment.Center)
-                    .size(diameter)
-                    .border(1.dp, accent.copy(alpha = 0.18f), CircleShape),
+                Modifier.align(Alignment.Center).offset(y = centerShift)
+                    .size(diameter * ring)
+                    .border(1.dp, Color(0xFF416B4B).copy(alpha = 0.45f), CircleShape),
             )
         }
 
-        // Words begin at the pulse, move out, then fade before reaching the edge.
-        if (moving) {
-            welcomeWords.forEachIndexed { index, item ->
-                val phase = (time - index + welcomeWords.size) % welcomeWords.size
-                if (phase < 3f) {
-                    val progress = (phase / 3f).coerceIn(0f, 1f)
-                    val opacity = (progress * 5f).coerceAtMost(1f) *
-                        ((1f - progress) * 3f).coerceAtMost(1f)
-                    Text(
-                        text = item.greeting,
-                        modifier = Modifier.align(Alignment.Center)
-                            .offset(x = (item.endX * progress).dp, y = (item.endY * progress).dp)
-                            .graphicsLayer { alpha = opacity },
-                        color = if (index % 3 == 0) accent else Color(0xFFE8F7EB),
-                        fontSize = if (item.greeting.length > 8) 15.sp else 17.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                    )
-                }
+        welcomeWords.forEachIndexed { index, item ->
+            val phase = (time - index + welcomeWords.size) % welcomeWords.size
+            val progress = if (motionEnabled) (phase / (3.3f / 0.95f)).coerceIn(0f, 2f)
+                else if (index < 4) 0.82f else 2f
+            if (progress < 1f) {
+                val travel = progress.pow(0.65f)
+                val opacity = (progress * 8f).coerceAtMost(1f) * ((1f - progress) * 4f).coerceAtMost(1f)
+                Text(
+                    text = item.greeting,
+                    modifier = Modifier.align(Alignment.Center)
+                        .offset(
+                            x = (item.endX * scale * travel).dp,
+                            y = centerShift + (item.endY * scale * travel).dp,
+                        )
+                        .graphicsLayer {
+                            alpha = opacity
+                            scaleX = 0.58f + (item.scale - 0.58f) * travel
+                            scaleY = scaleX
+                        },
+                    color = if (index % 3 == 0) introMint else Color(0xFFE8F7EB),
+                    fontSize = if (item.greeting.length > 8) 15.sp else 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
             }
         }
 
+        Box(Modifier.align(Alignment.Center).offset(y = centerShift)
+            .size((136 * scale).dp).background(introMint.copy(alpha = 0.06f), CircleShape))
+        Box(Modifier.align(Alignment.Center).offset(y = centerShift)
+            .size((106 * scale).dp).background(introMint.copy(alpha = 0.09f), CircleShape))
         Box(
-            modifier = Modifier.align(Alignment.Center)
-                .size(86.dp)
-                .background(accent, CircleShape),
+            modifier = Modifier.align(Alignment.Center).offset(y = centerShift)
+                .size((88 * scale).dp).background(introMint, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                repeat(7) { index ->
-                    val envelope = listOf(11f, 19f, 27f, 33f, 23f, 16f, 10f)[index]
-                    val pulse = if (moving) {
-                        0.7f + 0.3f * sin(time.toDouble() * 5 + index * PI / 2).toFloat()
-                    } else 1f
-                    Box(
-                        Modifier.size(width = 3.dp, height = (envelope * pulse).dp)
-                            .background(Color(0xFF173C29), CircleShape),
-                    )
+            Row(horizontalArrangement = Arrangement.spacedBy((3 * scale).dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                listOf(12f, 21f, 31f, 18f, 26f, 14f, 23f).forEachIndexed { index, envelope ->
+                    val pulse = if (motionEnabled) 0.7f +
+                        0.3f * sin(time.toDouble() * 0.95 * 6 + index * 1.4).toFloat() else 1f
+                    Box(Modifier.size(width = (3 * scale).dp, height = (envelope * pulse * scale).dp)
+                        .background(Color(0xFF1C3D29), CircleShape))
                 }
             }
         }
 
-        Text(
-            text = word.language.uppercase(Locale.ROOT),
-            modifier = Modifier.align(Alignment.TopCenter).offset(y = 18.dp),
-            color = accent,
-            style = MaterialTheme.typography.labelMedium,
-            letterSpacing = 2.sp,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = word.greeting,
-            modifier = Modifier.align(Alignment.TopCenter).offset(y = 39.dp),
-            color = Color(0xFFE8F7EB),
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-        )
+        Column(
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(active.language.uppercase(Locale.ROOT), color = introMint,
+                fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Text(active.greeting, modifier = Modifier.padding(top = 4.dp), color = introPaper,
+                fontFamily = FontFamily.Serif, fontSize = 21.sp, textAlign = TextAlign.Center)
+        }
     }
 }

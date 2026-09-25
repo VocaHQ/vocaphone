@@ -147,6 +147,10 @@ fun SetupScreen(
         }
         return
     }
+    if (!settings.onboardingIntroSeen) {
+        OnboardingWordFlow(onContinue = onIntroSeen, modifier = modifier)
+        return
+    }
     val context = LocalContext.current
     val activity = context.findActivity()
     val requestPermission = rememberLauncherForActivityResult(
@@ -156,17 +160,10 @@ fun SetupScreen(
     var askingUsageReporting by remember { mutableStateOf(false) }
     val recentlyReady = rememberRecentlyReadySteps(status)
 
-    var stage by rememberSaveable {
-        mutableStateOf(if (settings.onboardingIntroSeen) SetupPage.resume(status) else SetupPage.WELCOME)
-    }
-    LaunchedEffect(settings.onboardingIntroSeen) {
-        if (settings.onboardingIntroSeen && stage == SetupPage.WELCOME) {
-            stage = SetupPage.resume(status)
-        }
-    }
+    var stage by rememberSaveable { mutableStateOf(SetupPage.resume(status)) }
     val scrollState = rememberScrollState()
     LaunchedEffect(stage) { scrollState.scrollTo(0) }
-    BackHandler(enabled = stage != SetupPage.WELCOME) { stage = stage.previous() }
+    BackHandler(enabled = stage != SetupPage.KEYBOARD) { stage = stage.previous() }
     // Load the model while the user reads the Ready page, and again on every
     // return to it: leaving the app is when the system takes it back. Without
     // this the practice dictation carried the whole load.
@@ -199,14 +196,13 @@ fun SetupScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (stage == SetupPage.WELCOME) "Welcome"
-                        else if (stage == SetupPage.READY) {
+                        if (stage == SetupPage.READY) {
                             if (status.isReadyToDictate) "Setup complete" else "Setup needs attention"
-                        } else "Step ${stage.ordinal} of 4",
+                        } else "Step ${stage.ordinal + 1} of 4",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
-                    if (stage != SetupPage.WELCOME) {
+                    if (stage != SetupPage.KEYBOARD) {
                         TextButton(onClick = { stage = stage.previous() }) { Text("Back") }
                     }
                 }
@@ -228,14 +224,6 @@ fun SetupScreen(
             }
 
             when (stage) {
-                SetupPage.WELCOME -> {
-                    OnboardingWordFlow()
-                    Text(
-                        "Dictate wherever you type. Choose a model on this phone, or connect a gateway you run.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 SetupPage.KEYBOARD -> {
                     Notice {
                         Text("Your voice, wherever you type", style = MaterialTheme.typography.titleMedium)
@@ -372,16 +360,12 @@ fun SetupScreen(
             if (stage.isSatisfied(status) || stage == SetupPage.READY) {
                 PrimaryButton(
                     text = when {
-                        stage == SetupPage.WELCOME -> "Get started"
                         stage == SetupPage.READY && !status.isReadyToDictate -> "Review remaining setup"
                         stage == SetupPage.READY -> SetupCopy.START
                         else -> "Continue"
                     },
                     onClick = {
-                        if (stage == SetupPage.WELCOME) {
-                            onIntroSeen()
-                            stage = SetupPage.resume(status)
-                        } else if (stage != SetupPage.READY) stage = stage.next()
+                        if (stage != SetupPage.READY) stage = stage.next()
                         else if (!status.isReadyToDictate) stage = SetupPage.resume(status)
                         else if (askUsageReporting) askingUsageReporting = true
                         else onFinish()
@@ -390,8 +374,7 @@ fun SetupScreen(
                 )
             }
             Text(
-                if (stage == SetupPage.WELCOME) "Your setup choices come next."
-                else if (stage == SetupPage.READY) "You can change your setup in Settings."
+                if (stage == SetupPage.READY) "You can change your setup in Settings."
                 else "${status.completedStepCount} of ${status.stepCount} requirements ready. Your progress is kept when you leave.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -173,11 +173,14 @@ fun VocaPhoneApp(
     }
 
     val showSetup = !settings.onboardingComplete && !showingGateway
+    val showingMotionIntro = showSetup && !settings.onboardingIntroSeen
     val imeVisible = WindowInsets.isImeVisible
 
     Scaffold(
+        containerColor = if (showingMotionIntro) Color(0xFF111A15) else MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
+            if (!showingMotionIntro) {
             TopAppBar(
                 colors = if (selectingHistory) {
                     TopAppBarDefaults.topAppBarColors(
@@ -280,6 +283,7 @@ fun VocaPhoneApp(
                     }
                 },
             )
+            }
         },
         bottomBar = {
             if (!showSetup && !showingGateway && !imeVisible) {
