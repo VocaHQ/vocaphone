@@ -76,17 +76,21 @@ struct OnboardingMotionIntroView: View {
                 .frame(maxWidth: .infinity, maxHeight: flexibleStage ? .infinity : nil)
                 .padding(.top, flexibleStage ? 0 : 12)
 
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(mint)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: mint.opacity(0.7), radius: 5)
-                Text("A place for every voice")
-                    .font(.system(size: 12))
-                    .tracking(0.9)
-                    .foregroundStyle(Color(red: 133 / 255, green: 165 / 255, blue: 143 / 255))
+            TimelineView(.animation(minimumInterval: 1 / 60, paused: reduceMotion)) { context in
+                let blink = reduceMotion ? 1.0 : 0.35 + 0.65 * abs(cos(context.date.timeIntervalSinceReferenceDate * .pi / 1.8))
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(mint)
+                        .frame(width: 6, height: 6)
+                        .opacity(blink)
+                        .shadow(color: mint.opacity(0.7), radius: 5)
+                    Text("A place for every voice")
+                        .font(.system(size: 12))
+                        .tracking(0.9)
+                        .foregroundStyle(Color(red: 133 / 255, green: 165 / 255, blue: 143 / 255))
+                }
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
             .padding(.bottom, 18)
 
             Button(action: onContinue) {
@@ -153,7 +157,7 @@ private struct OnboardingMotionWordStage: View {
     private let paper = Color(red: 232 / 255, green: 247 / 255, blue: 235 / 255)
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 24, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: 1 / 60, paused: reduceMotion)) { context in
             let elapsed = max(0, context.date.timeIntervalSince(startedAt))
             GeometryReader { geometry in
                 let diameter = min(228, geometry.size.width - 20, geometry.size.height * 0.77)
@@ -162,25 +166,29 @@ private struct OnboardingMotionWordStage: View {
                 let active = reduceMotion ? 0 : Int(elapsed / 0.95) % Self.greetings.count
 
                 ZStack {
-                    ForEach([1.0, 0.83, 0.62], id: \.self) { ring in
+                    ForEach([1.0, 190.0 / 228, 142.0 / 228], id: \.self) { ring in
                         Circle()
-                            .strokeBorder(Color(red: 65 / 255, green: 107 / 255, blue: 75 / 255)
-                                .opacity(0.45), lineWidth: 1)
+                            .strokeBorder(ring == 1
+                                ? Color(red: 65 / 255, green: 107 / 255, blue: 75 / 255)
+                                : Color(red: 53 / 255, green: 88 / 255, blue: 60 / 255), lineWidth: 1)
                             .frame(width: diameter * ring, height: diameter * ring)
+                            .scaleEffect(reduceMotion ? 1 : 0.96 + 0.11 * breathing(elapsed))
+                            .opacity(reduceMotion ? 0.62 : 0.42 + 0.36 * breathing(elapsed))
                             .position(center)
                     }
 
                     ForEach(Self.greetings) { greeting in
                         let progress = progress(for: greeting.id, elapsed: elapsed)
                         if progress < 1 {
-                            let travel = pow(progress, 0.65)
+                            let travel = cubicBezier(progress, x1: 0.17, y1: 0.68, x2: 0.21, y2: 1)
                             Text(greeting.word)
                                 .font(.system(size: greeting.word.count > 8 ? 15 : 18,
                                               weight: .medium))
                                 .foregroundStyle(greeting.id.isMultiple(of: 3) ? mint : paper)
                                 .fixedSize()
                                 .scaleEffect(0.58 + (greeting.scale - 0.58) * travel)
-                                .opacity(min(1, progress * 8) * min(1, (1 - progress) * 4))
+                                .opacity(reduceMotion ? 0.72 : wordOpacity(progress))
+                                .shadow(color: Color(red: 11 / 255, green: 16 / 255, blue: 14 / 255), radius: 12, x: 0, y: 1)
                                 .position(
                                     x: center.x + greeting.x * scale * travel,
                                     y: center.y + greeting.y * scale * travel
@@ -233,6 +241,7 @@ private struct OnboardingMotionWordStage: View {
     private func progress(for index: Int, elapsed: TimeInterval) -> CGFloat {
         if reduceMotion { return index < 4 ? 0.82 : 2 }
         let cycle = Double(Self.greetings.count) * 0.95
+        if elapsed < Double(index) * 0.95 { return 2 }
         let shifted = (elapsed - Double(index) * 0.95).truncatingRemainder(dividingBy: cycle)
         let phase = shifted < 0 ? shifted + cycle : shifted
         return CGFloat(phase / 3.3)
@@ -241,7 +250,44 @@ private struct OnboardingMotionWordStage: View {
     private func barHeight(index: Int, elapsed: TimeInterval) -> CGFloat {
         let envelope: [CGFloat] = [12, 21, 31, 18, 26, 14, 23]
         if reduceMotion { return envelope[index] }
-        return envelope[index] * CGFloat(0.7 + 0.3 * sin(elapsed * 6 + Double(index) * 1.4))
+        let bar = index + 1
+        let delay = bar.isMultiple(of: 3) ? 0.57 : (bar.isMultiple(of: 2) ? 0.33 : 0)
+        let phase = (elapsed + delay).truncatingRemainder(dividingBy: 1)
+        let travel = phase < 0.5 ? phase * 2 : (1 - phase) * 2
+        return envelope[index] * (0.48 + 0.8 * cubicBezier(travel, x1: 0.42, y1: 0, x2: 0.58, y2: 1))
+    }
+
+    private func breathing(_ elapsed: TimeInterval) -> CGFloat {
+        let phase = elapsed.truncatingRemainder(dividingBy: 4) / 4
+        let travel = phase < 0.5 ? phase * 2 : (1 - phase) * 2
+        return cubicBezier(travel, x1: 0.42, y1: 0, x2: 0.58, y2: 1)
+    }
+
+    private func wordOpacity(_ progress: CGFloat) -> CGFloat {
+        if progress < 0.12 {
+            return 0.95 * cubicBezier(progress / 0.12, x1: 0.17, y1: 0.68, x2: 0.21, y2: 1)
+        }
+        if progress < 0.72 {
+            let eased = cubicBezier((progress - 0.12) / 0.6, x1: 0.17, y1: 0.68, x2: 0.21, y2: 1)
+            return 0.95 - 0.1 * eased
+        }
+        let eased = cubicBezier((progress - 0.72) / 0.28, x1: 0.17, y1: 0.68, x2: 0.21, y2: 1)
+        return 0.85 * (1 - eased)
+    }
+
+    private func cubicBezier(_ progress: CGFloat, x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) -> CGFloat {
+        let target = min(max(progress, 0), 1)
+        var low: CGFloat = 0
+        var high: CGFloat = 1
+        for _ in 0..<12 {
+            let t = (low + high) / 2
+            let inverse = 1 - t
+            let x = 3 * inverse * inverse * t * x1 + 3 * inverse * t * t * x2 + t * t * t
+            if x < target { low = t } else { high = t }
+        }
+        let t = (low + high) / 2
+        let inverse = 1 - t
+        return 3 * inverse * inverse * t * y1 + 3 * inverse * t * t * y2 + t * t * t
     }
 }
 

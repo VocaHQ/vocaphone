@@ -1,11 +1,6 @@
 package com.vocahq.vocaphone.ui
 
 import android.animation.ValueAnimator
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,14 +24,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -44,6 +43,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -52,8 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import java.util.Locale
-import kotlin.math.pow
-import kotlin.math.sin
+import kotlin.math.floor
+import kotlinx.coroutines.isActive
 
 private data class WelcomeWord(
     val language: String,
@@ -150,7 +150,7 @@ internal fun OnboardingWordFlow(onContinue: () -> Unit, modifier: Modifier = Mod
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
             ) {
-                Box(Modifier.size(6.dp).background(introMint, CircleShape))
+                WelcomeBlinkDot(motionEnabled)
                 Text(
                     "A place for every voice",
                     modifier = Modifier.padding(start = 8.dp),
@@ -190,20 +190,36 @@ internal fun OnboardingWordFlow(onContinue: () -> Unit, modifier: Modifier = Mod
     }
 }
 
+@Composable
+private fun WelcomeBlinkDot(motionEnabled: Boolean) {
+    var elapsed by remember { mutableStateOf(0f) }
+    LaunchedEffect(motionEnabled) {
+        if (motionEnabled) {
+            val started = withFrameNanos { it }
+            while (isActive) {
+                withFrameNanos { frame -> elapsed = (frame - started) / 1_000_000_000f }
+            }
+        }
+    }
+    val blink = if (motionEnabled) {
+        0.35f + 0.65f * kotlin.math.abs(kotlin.math.cos((elapsed * Math.PI / 1.8))).toFloat()
+    } else 1f
+    Box(Modifier.size(6.dp).graphicsLayer { alpha = blink }.background(introMint, CircleShape))
+}
+
 /** A speech illustration. It never opens the microphone. */
 @Composable
 private fun WelcomeWordStage(motionEnabled: Boolean, modifier: Modifier = Modifier) {
-    val time = if (motionEnabled) {
-        val transition = rememberInfiniteTransition(label = "Welcome word flow")
-        val value by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = welcomeWords.size.toFloat(),
-            animationSpec = infiniteRepeatable(tween(welcomeWords.size * 950, easing = LinearEasing)),
-            label = "Greeting sequence",
-        )
-        value
-    } else 0f
-    val active = welcomeWords[time.toInt().coerceIn(welcomeWords.indices)]
+    var elapsed by remember { mutableStateOf(0f) }
+    LaunchedEffect(motionEnabled) {
+        if (motionEnabled) {
+            val started = withFrameNanos { it }
+            while (isActive) {
+                withFrameNanos { frame -> elapsed = (frame - started) / 1_000_000_000f }
+            }
+        }
+    }
+    val active = welcomeWords[(floor(elapsed / 0.95f).toInt() % welcomeWords.size)]
 
     BoxWithConstraints(
         modifier = modifier.clearAndSetSemantics {
@@ -214,21 +230,31 @@ private fun WelcomeWordStage(motionEnabled: Boolean, modifier: Modifier = Modifi
         val scale = diameter.value / 228f
         val centerShift = maxHeight * 0.03f
 
-        listOf(1f, 0.83f, 0.62f).forEach { ring ->
+        val ringTravel = if (motionEnabled) breathe(elapsed, 4f) else 0f
+        val ringScale = if (motionEnabled) 0.96f + 0.11f * ringTravel else 1f
+        val ringOpacity = if (motionEnabled) 0.42f + 0.36f * ringTravel else 0.62f
+        listOf(1f, 190f / 228f, 142f / 228f).forEachIndexed { index, ring ->
             Box(
                 Modifier.align(Alignment.Center).offset(y = centerShift)
                     .size(diameter * ring)
-                    .border(1.dp, Color(0xFF416B4B).copy(alpha = 0.45f), CircleShape),
+                    .graphicsLayer {
+                        scaleX = ringScale
+                        scaleY = ringScale
+                        alpha = ringOpacity
+                    }
+                    .border(1.dp, if (index == 0) Color(0xFF416B4B) else Color(0xFF35583C), CircleShape),
             )
         }
 
         welcomeWords.forEachIndexed { index, item ->
-            val phase = (time - index + welcomeWords.size) % welcomeWords.size
-            val progress = if (motionEnabled) (phase / (3.3f / 0.95f)).coerceIn(0f, 2f)
+            val sinceSpawn = elapsed - index * 0.95f
+            val progress = if (motionEnabled) {
+                if (sinceSpawn < 0f) 2f else (sinceSpawn % (welcomeWords.size * 0.95f)) / 3.3f
+            }
                 else if (index < 4) 0.82f else 2f
             if (progress < 1f) {
-                val travel = progress.pow(0.65f)
-                val opacity = (progress * 8f).coerceAtMost(1f) * ((1f - progress) * 4f).coerceAtMost(1f)
+                val travel = cubicBezier(progress, 0.17f, 0.68f, 0.21f, 1f)
+                val opacity = if (motionEnabled) wordOpacity(progress) else 0.72f
                 Text(
                     text = item.greeting,
                     modifier = Modifier.align(Alignment.Center)
@@ -242,6 +268,7 @@ private fun WelcomeWordStage(motionEnabled: Boolean, modifier: Modifier = Modifi
                             scaleY = scaleX
                         },
                     color = if (index % 3 == 0) introMint else Color(0xFFE8F7EB),
+                    style = TextStyle(shadow = Shadow(Color(0xFF0B100E), Offset(0f, 1f), 12f)),
                     fontSize = if (item.greeting.length > 8) 15.sp else 18.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -261,8 +288,9 @@ private fun WelcomeWordStage(motionEnabled: Boolean, modifier: Modifier = Modifi
             Row(horizontalArrangement = Arrangement.spacedBy((3 * scale).dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 listOf(12f, 21f, 31f, 18f, 26f, 14f, 23f).forEachIndexed { index, envelope ->
-                    val pulse = if (motionEnabled) 0.7f +
-                        0.3f * sin(time.toDouble() * 0.95 * 6 + index * 1.4).toFloat() else 1f
+                    val bar = index + 1
+                    val delay = if (bar % 3 == 0) 0.57f else if (bar % 2 == 0) 0.33f else 0f
+                    val pulse = if (motionEnabled) 0.48f + 0.8f * breathe(elapsed + delay, 1f) else 1f
                     Box(Modifier.size(width = (3 * scale).dp, height = (envelope * pulse * scale).dp)
                         .background(Color(0xFF1C3D29), CircleShape))
                 }
@@ -279,4 +307,31 @@ private fun WelcomeWordStage(motionEnabled: Boolean, modifier: Modifier = Modifi
                 fontFamily = FontFamily.Serif, fontSize = 21.sp, textAlign = TextAlign.Center)
         }
     }
+}
+
+private fun breathe(elapsed: Float, duration: Float): Float {
+    val phase = (elapsed % duration) / duration
+    val travel = if (phase < 0.5f) phase * 2f else (1f - phase) * 2f
+    return cubicBezier(travel, 0.42f, 0f, 0.58f, 1f)
+}
+
+private fun wordOpacity(progress: Float): Float = when {
+    progress < 0.12f -> 0.95f * cubicBezier(progress / 0.12f, 0.17f, 0.68f, 0.21f, 1f)
+    progress < 0.72f -> 0.95f - 0.1f * cubicBezier((progress - 0.12f) / 0.6f, 0.17f, 0.68f, 0.21f, 1f)
+    else -> 0.85f * (1f - cubicBezier((progress - 0.72f) / 0.28f, 0.17f, 0.68f, 0.21f, 1f))
+}
+
+private fun cubicBezier(progress: Float, x1: Float, y1: Float, x2: Float, y2: Float): Float {
+    val target = progress.coerceIn(0f, 1f)
+    var low = 0f
+    var high = 1f
+    repeat(12) {
+        val t = (low + high) / 2f
+        val inverse = 1f - t
+        val x = 3f * inverse * inverse * t * x1 + 3f * inverse * t * t * x2 + t * t * t
+        if (x < target) low = t else high = t
+    }
+    val t = (low + high) / 2f
+    val inverse = 1f - t
+    return 3f * inverse * inverse * t * y1 + 3f * inverse * t * t * y2 + t * t * t
 }
