@@ -1121,19 +1121,25 @@ internal fun VoiceShortcutListeningChrome(
 ) {
     LaunchedEffect(Unit) { onReadyToListen() }
     VocaPhoneTheme(dynamicColor = settings.dynamicColorEnabled) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerLowest,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+        // fillMaxWidth only: fillMaxHeight would keep the leftover-tall IME window.
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            VoiceShortcutListeningBar(
-                state = dictationState,
-                editor = editor,
-                barHeight = settings.keyboardHeight.dictationBarDp.dp,
-                isPreferenceWritePending = isPreferenceWritePending,
-                rejectGuidance = rejectGuidance,
-                onMicTap = onMicTap,
-                onMicLongPress = onMicLongPress,
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                VoiceShortcutListeningBar(
+                    state = dictationState,
+                    editor = editor,
+                    barHeight = settings.keyboardHeight.dictationBarDp.dp,
+                    isPreferenceWritePending = isPreferenceWritePending,
+                    rejectGuidance = rejectGuidance,
+                    onMicTap = onMicTap,
+                    onMicLongPress = onMicLongPress,
+                )
+            }
         }
     }
 }
