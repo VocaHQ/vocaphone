@@ -219,6 +219,8 @@ data class VocaPhoneSettings(
     val onboardingComplete: Boolean = false,
     /** The opening animation has been acknowledged, even if setup is unfinished. */
     val onboardingIntroSeen: Boolean = false,
+    /** The how-it-works page has been read; unfinished setup can resume at its next requirement. */
+    val onboardingWelcomeSeen: Boolean = false,
     val lastEngine: String = "",
     val lastEngineReady: Boolean = false,
     val lastStreamingSupported: Boolean = false,
@@ -442,6 +444,8 @@ class SettingsRepository(private val context: Context) {
     suspend fun setOnboardingComplete(complete: Boolean) = put(Keys.ONBOARDING_COMPLETE, complete)
 
     suspend fun setOnboardingIntroSeen(seen: Boolean) = put(Keys.ONBOARDING_INTRO_SEEN, seen)
+
+    suspend fun setOnboardingWelcomeSeen(seen: Boolean) = put(Keys.ONBOARDING_WELCOME_SEEN, seen)
 
     suspend fun setLocalTranscriptionEnabled(enabled: Boolean) =
         put(Keys.LOCAL_TRANSCRIPTION_ENABLED, enabled)
@@ -695,6 +699,7 @@ class SettingsRepository(private val context: Context) {
         modelIdleTimeout = ModelIdleTimeout.fromStored(this[Keys.MODEL_IDLE_TIMEOUT]),
         onboardingComplete = this[Keys.ONBOARDING_COMPLETE] ?: false,
         onboardingIntroSeen = this[Keys.ONBOARDING_INTRO_SEEN] ?: false,
+        onboardingWelcomeSeen = this[Keys.ONBOARDING_WELCOME_SEEN] ?: false,
         lastEngine = this[Keys.LAST_ENGINE].orEmpty(),
         lastEngineReady = this[Keys.LAST_ENGINE_READY] ?: false,
         lastStreamingSupported = this[Keys.LAST_STREAMING] ?: false,
@@ -745,6 +750,7 @@ class SettingsRepository(private val context: Context) {
         val MODEL_IDLE_TIMEOUT = stringPreferencesKey("model_idle_timeout")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
         val ONBOARDING_INTRO_SEEN = booleanPreferencesKey("onboarding_intro_seen")
+        val ONBOARDING_WELCOME_SEEN = booleanPreferencesKey("onboarding_welcome_seen")
         val LAST_ENGINE = stringPreferencesKey("last_engine")
         val LAST_ENGINE_READY = booleanPreferencesKey("last_engine_ready")
         val LAST_STREAMING = booleanPreferencesKey("last_streaming_supported")

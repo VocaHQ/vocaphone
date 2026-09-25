@@ -130,6 +130,7 @@ fun SetupScreen(
     telemetryDeliveryStatus: () -> String,
     onFinish: () -> Unit,
     onIntroSeen: () -> Unit,
+    onWelcomeSeen: () -> Unit,
     onRefreshSetup: () -> Unit,
     onWarmLocalModel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -160,12 +161,18 @@ fun SetupScreen(
     var askingUsageReporting by remember { mutableStateOf(false) }
     val recentlyReady = rememberRecentlyReadySteps(status)
 
-    var welcomeAcknowledged by rememberSaveable { mutableStateOf(false) }
+    var welcomeAcknowledged by rememberSaveable { mutableStateOf(settings.onboardingWelcomeSeen) }
     var stage by rememberSaveable {
         mutableStateOf(
-            if (welcomeAcknowledged) SetupPage.resume(status, welcomeAcknowledged)
+            if (settings.onboardingWelcomeSeen) SetupPage.resume(status)
             else SetupPage.WELCOME
         )
+    }
+    LaunchedEffect(settings.onboardingWelcomeSeen) {
+        if (settings.onboardingWelcomeSeen && !welcomeAcknowledged) {
+            welcomeAcknowledged = true
+            if (stage == SetupPage.WELCOME) stage = SetupPage.resume(status)
+        }
     }
     val scrollState = rememberScrollState()
     LaunchedEffect(stage) { scrollState.scrollTo(0) }
@@ -391,6 +398,7 @@ fun SetupScreen(
                     onClick = {
                         if (stage == SetupPage.WELCOME) {
                             welcomeAcknowledged = true
+                            onWelcomeSeen()
                             stage = stage.next()
                         } else if (stage != SetupPage.READY) stage = stage.next()
                         else if (!status.isReadyToDictate) stage = SetupPage.resume(status)
