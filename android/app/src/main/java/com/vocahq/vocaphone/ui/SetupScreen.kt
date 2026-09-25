@@ -161,12 +161,14 @@ fun SetupScreen(
     var askingUsageReporting by remember { mutableStateOf(false) }
     val recentlyReady = rememberRecentlyReadySteps(status)
 
-    var welcomeAcknowledged by rememberSaveable { mutableStateOf(settings.onboardingWelcomeSeen) }
+    // Seed from DataStore so a cold start after Continue resumes the first
+    // unmet step instead of replaying the explanation. rememberSaveable keeps
+    // the in-session ack across config change until the settings flow emits.
+    var welcomeAcknowledged by rememberSaveable {
+        mutableStateOf(settings.onboardingWelcomeSeen)
+    }
     var stage by rememberSaveable {
-        mutableStateOf(
-            if (settings.onboardingWelcomeSeen) SetupPage.resume(status)
-            else SetupPage.WELCOME
-        )
+        mutableStateOf(SetupPage.afterIntro(status, welcomeAcknowledged))
     }
     LaunchedEffect(settings.onboardingWelcomeSeen) {
         if (settings.onboardingWelcomeSeen && !welcomeAcknowledged) {
@@ -176,7 +178,8 @@ fun SetupScreen(
     }
     val scrollState = rememberScrollState()
     LaunchedEffect(stage) { scrollState.scrollTo(0) }
-    BackHandler(enabled = stage != SetupPage.WELCOME) { stage = stage.previous() }
+    val backPage = stage.previous(welcomeAcknowledged)
+    BackHandler(enabled = backPage != stage) { stage = backPage }
     // Load the model while the user reads the Ready page, and again on every
     // return to it: leaving the app is when the system takes it back. Without
     // this the practice dictation carried the whole load.
@@ -218,8 +221,8 @@ fun SetupScreen(
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
-                    if (stage != SetupPage.WELCOME) {
-                        TextButton(onClick = { stage = stage.previous() }) { Text("Back") }
+                    if (backPage != stage) {
+                        TextButton(onClick = { stage = backPage }) { Text("Back") }
                     }
                 }
                 LinearProgressIndicator(
@@ -399,7 +402,7 @@ fun SetupScreen(
                         if (stage == SetupPage.WELCOME) {
                             welcomeAcknowledged = true
                             onWelcomeSeen()
-                            stage = stage.next()
+                            stage = SetupPage.resume(status, welcomeAcknowledged = true)
                         } else if (stage != SetupPage.READY) stage = stage.next()
                         else if (!status.isReadyToDictate) stage = SetupPage.resume(status)
                         else if (askUsageReporting) askingUsageReporting = true

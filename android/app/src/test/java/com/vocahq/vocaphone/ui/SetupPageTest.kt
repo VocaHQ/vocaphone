@@ -27,6 +27,20 @@ class SetupPageTest {
     }
 
     @Test
+    fun `after intro cold start uses welcome until it is persisted then resumes`() {
+        val midSetup = SetupStatus(keyboard = true)
+        assertEquals(SetupPage.WELCOME, SetupPage.afterIntro(SetupStatus(), welcomeSeen = false))
+        assertEquals(SetupPage.KEYBOARD, SetupPage.afterIntro(SetupStatus(), welcomeSeen = true))
+        assertEquals(SetupPage.MICROPHONE, SetupPage.afterIntro(midSetup, welcomeSeen = true))
+        assertEquals(SetupPage.READY, SetupPage.afterIntro(ready, welcomeSeen = true))
+        // Continue after welcome must resume, not hardcode KEYBOARD.
+        assertEquals(
+            SetupPage.MICROPHONE,
+            SetupPage.resume(midSetup, welcomeAcknowledged = true),
+        )
+    }
+
+    @Test
     fun `enabled but unselected keyboard cannot advance`() {
         val status = ready.copy(keyboard = false, ime = ImeSetupStatus(enabled = true))
         assertFalse(SetupPage.KEYBOARD.isSatisfied(status))
@@ -63,5 +77,12 @@ class SetupPageTest {
                 assertFalse(page.isSatisfied(SetupStatus()))
             }
         }
+    }
+
+    @Test
+    fun `back from first requirement skips welcome once it is acknowledged`() {
+        assertEquals(SetupPage.KEYBOARD, SetupPage.KEYBOARD.previous(welcomeAcknowledged = true))
+        assertEquals(SetupPage.WELCOME, SetupPage.KEYBOARD.previous(welcomeAcknowledged = false))
+        assertEquals(SetupPage.KEYBOARD, SetupPage.MICROPHONE.previous(welcomeAcknowledged = true))
     }
 }

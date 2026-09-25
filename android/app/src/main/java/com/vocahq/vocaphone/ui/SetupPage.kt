@@ -14,11 +14,27 @@ internal enum class SetupPage(val title: String, val detail: String, private val
         READY -> status.isReadyToDictate
         else -> status.isSatisfied(requireNotNull(step))
     }
-    fun previous(): SetupPage = entries[(ordinal - 1).coerceAtLeast(0)]
+
+    /**
+     * Step back one page. Once the how-it-works welcome is acknowledged, it is
+     * not in the back path: returning users must not land on WELCOME again.
+     */
+    fun previous(welcomeAcknowledged: Boolean = false): SetupPage {
+        val prev = entries[(ordinal - 1).coerceAtLeast(0)]
+        return if (prev == WELCOME && welcomeAcknowledged) this else prev
+    }
+
     fun next(): SetupPage = entries[(ordinal + 1).coerceAtMost(entries.lastIndex)]
 
     companion object {
         fun resume(status: SetupStatus, welcomeAcknowledged: Boolean = true): SetupPage =
             entries.firstOrNull { !it.isSatisfied(status, welcomeAcknowledged) } ?: READY
+
+        /**
+         * Page after the motion intro on a cold start: show the one-shot welcome
+         * until it is persisted, otherwise the first unmet requirement.
+         */
+        fun afterIntro(status: SetupStatus, welcomeSeen: Boolean): SetupPage =
+            if (welcomeSeen) resume(status, welcomeAcknowledged = true) else WELCOME
     }
 }

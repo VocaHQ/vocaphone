@@ -9,4 +9,11 @@ class VocaPhoneSettingsTest {
     fun dynamicColorDefaultsOffSoBrandTealStays() {
         assertFalse(VocaPhoneSettings().dynamicColorEnabled)
     }
+
+    @Test
+    fun onboardingWelcomeDefaultsUnseenLikeIntro() {
+        val defaults = VocaPhoneSettings()
+        assertFalse(defaults.onboardingIntroSeen)
+        assertFalse(defaults.onboardingWelcomeSeen)
+    }
 }
