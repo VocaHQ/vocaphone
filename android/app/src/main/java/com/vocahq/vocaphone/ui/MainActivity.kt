@@ -173,7 +173,7 @@ fun VocaPhoneApp(
     }
 
     val showSetup = !settings.onboardingComplete && !showingGateway
-    val showingMotionIntro = showSetup && !settings.onboardingIntroSeen
+    val showingMotionIntro = showSetup && setup.isLoaded && !settings.onboardingIntroSeen
     val imeVisible = WindowInsets.isImeVisible
 
     Scaffold(
