@@ -893,7 +893,7 @@ struct SetupView: View {
             nil
         } else {
         switch page {
-        case .welcome: ("Get started", advance)
+        case .welcome: ("Continue", advance)
         case .source:
             if localTranscriptionEnabled {
                 ("Next", advance)
