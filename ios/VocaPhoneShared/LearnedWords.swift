@@ -161,8 +161,18 @@ final class LearnedWordStore: @unchecked Sendable {
         return done.wait(timeout: .now() + timeout) == .success
     }
 
+    /// Forgets every word and returns only once the empty list is on disk.
+    ///
+    /// Unlike a learned word, this is something the user asked for and was
+    /// told had happened. Queued like a word, a reset the app was suspended
+    /// before writing left the old file in place, and every word came back.
     func removeAll() {
-        update { $0.removeAll() }
+        queue.sync {
+            cached.removeAll()
+            pending = nil
+        }
+        // Behind any write already queued, so an older list cannot land after.
+        writer.sync { write(LearnedWords()) }
     }
 
     private func write(_ words: LearnedWords) {

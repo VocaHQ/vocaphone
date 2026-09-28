@@ -408,8 +408,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             isVisible: isKeyboardVisible,
             isInserting: isPerformingInsertion
         ) else { return }
-        // Never exit over a word still on its way to disk.
-        guard learnedWordsLanded else { return }
+        // A word still on its way to disk gets longer to land, the same as the
+        // log line below; past that the process ends regardless.
+        if !learnedWordsLanded { typing.flushPendingWrites(timeout: .milliseconds(500)) }
         DiagnosticLog.record(.keyboardRecycled, metadata: .megabytesAvailable(available))
         // Longer than a dismissal ever waits elsewhere, because the keyboard is
         // already off screen and the line explains the next cold start. But

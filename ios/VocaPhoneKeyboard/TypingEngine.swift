@@ -346,8 +346,8 @@ final class TypingEngine {
     /// For a process about to end: learned words are written behind the
     /// keystroke, and a queued write would not survive `exit`.
     @discardableResult
-    func flushPendingWrites() -> Bool {
-        learned.flush()
+    func flushPendingWrites(timeout: DispatchTimeInterval = .milliseconds(150)) -> Bool {
+        learned.flush(timeout: timeout)
     }
 
     // MARK: - Document

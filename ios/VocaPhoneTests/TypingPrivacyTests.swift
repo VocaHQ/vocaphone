@@ -135,4 +135,17 @@ struct TypingPrivacyTests {
         let reopened = LearnedWordStore(containerURL: directory).snapshot()
         for word in ["alpha", "bravo", "charlie", "delta"] { #expect(reopened.contains(word)) }
     }
+
+    /// Forgetting is written before it returns: the user was told it happened.
+    @Test func forgettingIsOnDiskWhenItReturns() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = LearnedWordStore(containerURL: directory)
+        store.update { $0.learn("forgettable") }
+        store.removeAll()
+        #expect(LearnedWordStore(containerURL: directory).snapshot().count == 0)
+    }
 }
