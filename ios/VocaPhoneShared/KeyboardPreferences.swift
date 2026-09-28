@@ -276,6 +276,17 @@ enum TranscriptionLanguage: String, Codable, CaseIterable, Identifiable, Sendabl
         self == .automatic ? "Auto" : rawValue.uppercased()
     }
 
+    /// Only iOS 26 can ask AirPods for full-bandwidth recording, so only there
+    /// is it promised; older systems are told plainly what a headset costs.
+    static func automaticDetail(fullQualityAirPods: Bool) -> String {
+        let headsets = fullQualityAirPods
+            ? "AirPods that support it record at full quality; other headsets send "
+            : "A headset sends "
+        return "iOS chooses the input and may use a Bluetooth headset's microphone when "
+            + "connected. " + headsets + "telephone-quality audio, which on-device models "
+            + "transcribe less accurately than the iPhone's own microphone."
+    }
+
     var detail: String {
         switch self {
         case .automatic:
@@ -299,13 +310,24 @@ enum MicrophonePreference: String, Codable, CaseIterable, Identifiable, Sendable
         }
     }
 
+    /// Only iOS 26 can ask AirPods for full-bandwidth recording, so only there
+    /// is it promised; older systems are told plainly what a headset costs.
+    static func automaticDetail(fullQualityAirPods: Bool) -> String {
+        let headsets = fullQualityAirPods
+            ? "AirPods that support it record at full quality; other headsets send "
+            : "A headset sends "
+        return "iOS chooses the input and may use a Bluetooth headset's microphone when "
+            + "connected. " + headsets + "telephone-quality audio, which on-device models "
+            + "transcribe less accurately than the iPhone's own microphone."
+    }
+
     var detail: String {
         switch self {
         case .automatic:
-            "iOS chooses the input and may use a Bluetooth headset's microphone when "
-                + "connected. Recent AirPods record at full quality; other headsets send "
-                + "telephone-quality audio, which on-device models transcribe less "
-                + "accurately than the iPhone's own microphone."
+            Self.automaticDetail(fullQualityAirPods: {
+                if #available(iOS 26.0, *) { return true }
+                return false
+            }())
         case .iPhone:
             "Always request the microphone built into this iPhone."
         }
