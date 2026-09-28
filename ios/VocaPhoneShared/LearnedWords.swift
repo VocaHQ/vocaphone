@@ -121,11 +121,27 @@ final class LearnedWordStore: @unchecked Sendable {
         queue.sync { cached }
     }
 
+    /// Applies `change` at once and writes the file behind it.
+    ///
+    /// The write used to happen inside the same `sync`, so the keyboard's main
+    /// thread encoded up to two thousand entries and wrote the file atomically
+    /// before the next keystroke — once for every new word typed. Queued
+    /// behind the change instead, it keeps the order of writes and stops
+    /// holding a finger up; ``flush()`` is for a process about to end.
     func update(_ change: @Sendable (inout LearnedWords) -> Void) {
-        queue.sync {
+        let words = queue.sync {
             change(&cached)
-            write(cached)
+            return cached
         }
+        queue.async { [self] in write(words) }
+    }
+
+    /// Waits for queued writes to reach the file, for at most `timeout`.
+    @discardableResult
+    func flush(timeout: DispatchTimeInterval = .milliseconds(150)) -> Bool {
+        let done = DispatchSemaphore(value: 0)
+        queue.async { done.signal() }
+        return done.wait(timeout: .now() + timeout) == .success
     }
 
     func removeAll() {

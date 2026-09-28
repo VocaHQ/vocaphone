@@ -403,6 +403,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             isVisible: isKeyboardVisible,
             isInserting: isPerformingInsertion
         ) else { return }
+        typing.flushPendingWrites()
         DiagnosticLog.record(.keyboardRecycled, metadata: .megabytesAvailable(available))
         // Longer than a dismissal ever waits elsewhere, because the keyboard is
         // already off screen and the line explains the next cold start. But

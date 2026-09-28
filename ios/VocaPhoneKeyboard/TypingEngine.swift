@@ -343,6 +343,12 @@ final class TypingEngine {
 
     var learnedWordCount: Int { learned.snapshot().count }
 
+    /// For a process about to end: learned words are written behind the
+    /// keystroke, and a queued write would not survive `exit`.
+    func flushPendingWrites() {
+        learned.flush()
+    }
+
     // MARK: - Document
 
     /// Adopts the current field. Resets everything document-scoped: a new field

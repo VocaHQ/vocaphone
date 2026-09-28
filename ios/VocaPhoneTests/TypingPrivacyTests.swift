@@ -110,6 +110,9 @@ struct TypingPrivacyTests {
         let first = LearnedWordStore(containerURL: directory)
         #expect(first.isPersistent)
         first.update { $0.learn("persistent") }
+        // The write is queued behind the change; a new process sees it once it
+        // has landed.
+        first.flush()
 
         let second = LearnedWordStore(containerURL: directory)
         #expect(second.snapshot().contains("persistent"))
