@@ -101,6 +101,7 @@ struct EmojiCatalogTests {
         #expect(Self.toned.toneVariants(of: "👍🏾") == Self.toned.toneVariants(of: "👍"))
         // Two people in two different tones is not a row of six.
         #expect(Self.toned.toneVariants(of: "🧑‍🤝‍🧑").isEmpty)
+        #expect(Self.toned.toneVariants(of: "🧑🏻‍🤝‍🧑🏿").isEmpty)
         #expect(Self.toned.toneVariants(of: "🐻").isEmpty)
     }
 
@@ -111,10 +112,11 @@ struct EmojiCatalogTests {
 
     @Test func searchOffersTheDefaultAndReachesTonesOnlyWhenAsked() {
         #expect(Self.toned.search("thumbs").map(\.glyph) == ["👍"])
-        // Nothing untoned matches "dark", so the toned forms are the results.
+        // Nothing untoned matches "dark", so the toned forms are the results —
+        // one per emoji, with the rest a long press away.
         let dark = Self.toned.search("dark").map(\.glyph)
         #expect(dark.contains("🧑🏻‍🤝‍🧑🏿"))
-        #expect(dark.contains("👍🏿"))
+        #expect(dark.filter { EmojiSkinTones.key(of: $0) == "👍" }.count == 1)
     }
 
     /// The real file, which both platforms read. Tolerant assertions: this
@@ -134,6 +136,10 @@ struct EmojiCatalogTests {
         #expect(catalog.entries.count < 2_200)
         #expect(catalog.toneVariants(of: "👍").count == 6)
         #expect(catalog.toneVariants(of: "🧑‍💻").count == 6)
+        // The real file has both the uniform pairs and the mixed ones: a mixed
+        // pair must not open the uniform row.
+        #expect(catalog.toneVariants(of: "🧑‍🤝‍🧑").count == 6)
+        #expect(catalog.toneVariants(of: "🧑🏻‍🤝‍🧑🏿").isEmpty)
         // Every browsable category has something in it, or its tab would open
         // onto an empty grid.
         for category in EmojiCategory.browsable {

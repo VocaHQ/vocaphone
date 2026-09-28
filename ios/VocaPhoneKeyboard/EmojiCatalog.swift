@@ -137,8 +137,15 @@ struct EmojiCatalog: Sendable {
     /// has no tones. The catalog's own sequences first, so a person with an
     /// occupation gets the forms Unicode defines rather than a guess; the
     /// single-scalar rule covers an emoji the file does not list.
+    ///
+    /// A pair in two different tones has no row: the row is one tone across,
+    /// and offering it from 🧑🏻‍🤝‍🧑🏿 would offer everything but what was pressed.
     func toneVariants(of glyph: String) -> [String] {
-        tones[EmojiSkinTones.key(of: glyph)] ?? EmojiSkinTones.variants(of: glyph)
+        guard let row = tones[EmojiSkinTones.key(of: glyph)] else {
+            return EmojiSkinTones.variants(of: glyph)
+        }
+        let toned = !EmojiSkinTones.modifiers(in: glyph).isEmpty
+        return !toned || row.contains(glyph) ? row : []
     }
 
     /// Local search over the CLDR annotations.
@@ -155,13 +162,15 @@ struct EmojiCatalog: Sendable {
         var leading: [EmojiEntry] = []
         var trailing: [EmojiEntry] = []
         var matchedKeys: Set<String> = []
-        func consider(_ entry: EmojiEntry) {
-            guard entry.keywords.contains(needle) else { return }
+        @discardableResult
+        func consider(_ entry: EmojiEntry) -> Bool {
+            guard entry.keywords.contains(needle) else { return false }
             if entry.keywords.split(separator: " ").contains(where: { $0.hasPrefix(needle) }) {
                 leading.append(entry)
             } else {
                 trailing.append(entry)
             }
+            return true
         }
         for entry in entries {
             consider(entry)
@@ -170,9 +179,11 @@ struct EmojiCatalog: Sendable {
         for entry in leading + trailing {
             matchedKeys.insert(EmojiSkinTones.key(of: entry.glyph))
         }
+        // One toned form per emoji: the long press holds the others.
         for entry in toned where leading.count < limit {
-            guard !matchedKeys.contains(EmojiSkinTones.key(of: entry.glyph)) else { continue }
-            consider(entry)
+            let key = EmojiSkinTones.key(of: entry.glyph)
+            guard !matchedKeys.contains(key) else { continue }
+            if consider(entry) { matchedKeys.insert(key) }
         }
         return Array((leading + trailing).prefix(limit))
     }
