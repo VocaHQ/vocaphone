@@ -302,7 +302,10 @@ enum MicrophonePreference: String, Codable, CaseIterable, Identifiable, Sendable
     var detail: String {
         switch self {
         case .automatic:
-            "iOS chooses the input and may use an AirPods microphone when connected."
+            "iOS chooses the input and may use a Bluetooth headset's microphone when "
+                + "connected. Recent AirPods record at full quality; other headsets send "
+                + "telephone-quality audio, which on-device models transcribe less "
+                + "accurately than the iPhone's own microphone."
         case .iPhone:
             "Always request the microphone built into this iPhone."
         }
