@@ -323,6 +323,18 @@ struct LocalModelCatalogTests {
         #expect(choices.allSatisfy { $0.model.covers("hr") && $0.model.minimumRamGB <= 3 })
     }
 
+    /// Size never outranks accuracy among the smaller choices. Italian's
+    /// ranked list has nothing under the cut, so the choice falls to the
+    /// size-ordered list, where Whisper Base comes first and Whisper Small is
+    /// the better answer.
+    @Test func theSmallerChoiceIsTheMostAccurateSaving() {
+        let choices = LocalModelCatalog.modelChoices(deviceMemoryGB: 6, languages: ["it"])
+        let smaller = choices.first { $0.kind == .smaller }?.model
+        #expect(smaller?.id == "openai_whisper-small_216MB")
+        let english = LocalModelCatalog.modelChoices(deviceMemoryGB: 6, languages: ["en"])
+        #expect(english.first { $0.kind == .smaller }?.model.id == "parakeet-tdt-ctc-110m-en")
+    }
+
     @Test func croatianIsOfferedTheEuropeanModelFirst() {
         let choices = LocalModelCatalog.modelChoices(deviceMemoryGB: 6, languages: ["hr", "hi"])
         #expect(choices.first?.model.id == "parakeet-tdt-0.6b-v3")

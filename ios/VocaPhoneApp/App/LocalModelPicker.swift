@@ -20,6 +20,9 @@ struct LocalModelPicker: View {
     /// Onboarding only: the row the docked button downloads or continues
     /// with. Setup owns it because the button lives outside this view.
     var selection: Binding<String?> = .constant(nil)
+    /// All models inside onboarding: a Get or Use there is the page's pick
+    /// too, so the docked button acts on it rather than on the old row.
+    var onPick: (LocalModelDescriptor) -> Void = { _ in }
 
 #if DEBUG
     /// Which model a `#Preview` should draw as "In use". Production leaves this
@@ -34,8 +37,6 @@ struct LocalModelPicker: View {
     @State private var guidanceLanguageOverride: String?
     @State private var isShowingLanguages = false
     @State private var isShowingAllModels = false
-    /// What was on this iPhone or on its way when All models opened.
-    @State private var modelsBeforeAllModels: Set<String> = []
 
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
@@ -294,14 +295,15 @@ struct LocalModelPicker: View {
         }
         .onChange(of: onboardingRows.map(\.model.id)) { _, _ in reconcileSelection() }
         .sheet(isPresented: $isShowingLanguages) { languageSheet }
-        .sheet(isPresented: $isShowingAllModels, onDismiss: selectModelGotFromAllModels) {
+        .sheet(isPresented: $isShowingAllModels) {
             NavigationStack {
                 List {
                     LocalModelPicker(
                         manager: manager,
                         onChange: onChange,
                         guidanceLanguage: guidanceLanguageOverride ?? guidanceLanguage,
-                        expandsAvailableModels: true
+                        expandsAvailableModels: true,
+                        onPick: { selection.wrappedValue = $0.id }
                     )
                 }
                 .navigationTitle("All models")
@@ -319,14 +321,6 @@ struct LocalModelPicker: View {
             modelLoadTask?.cancel()
             modelLoadTask = nil
         }
-    }
-
-    /// A model fetched from All models is the one picked: Get there is a
-    /// choice, and the docked button should not then offer a different
-    /// download.
-    private func selectModelGotFromAllModels() {
-        let got = installedModels.first { !modelsBeforeAllModels.contains($0.id) }
-        if let got { selection.wrappedValue = got.id }
     }
 
     /// Keeps the docked button pointed at a row that is on the page. Coming
@@ -395,9 +389,12 @@ struct LocalModelPicker: View {
             if onboarding {
                 // A new language is a new question: its best answer is the
                 // one to offer, not whatever was picked for the last one —
-                // unless a download is already on its way.
+                // unless a download already on its way hears that language.
+                // An English model mid-download is no answer for Croatian.
                 let best = Self.choices(preferred: code).first?.model
-                let arriving = installedModels.first { manager.isDownloading($0.id) || manager.isQueued($0.id) }
+                let arriving = installedModels.first {
+                    (manager.isDownloading($0.id) || manager.isQueued($0.id)) && $0.covers(code)
+                }
                 selection.wrappedValue = (arriving ?? best)?.id
             }
         }
@@ -530,7 +527,6 @@ struct LocalModelPicker: View {
 
     private var allModelsButton: some View {
         Button {
-            modelsBeforeAllModels = Set(installedModels.map(\.id))
             isShowingAllModels = true
         } label: {
             HStack(spacing: VocaMetrics.tight) {
@@ -762,7 +758,7 @@ struct LocalModelPicker: View {
         Group {
             if state == .ready {
                 Button {
-                    prepare(model)
+                    use(model)
                 } label: {
                     compactRowContent(model, kind: kind, detailed: detailed, state: state)
                 }
@@ -785,7 +781,7 @@ struct LocalModelPicker: View {
         .contextMenu {
             if state == .ready {
                 Button {
-                    prepare(model)
+                    use(model)
                 } label: {
                     Label("Use this model", systemImage: "checkmark.circle")
                 }
@@ -917,12 +913,20 @@ struct LocalModelPicker: View {
 
     // MARK: - Actions
 
+    /// A tap on a ready row: load it, and tell a surrounding page it was
+    /// picked.
+    private func use(_ model: LocalModelDescriptor) {
+        onPick(model)
+        prepare(model)
+    }
+
     /// Downloads, and makes the model the one in use only if nothing usable is
     /// selected yet. Used from Settings as well as setup: a phone with no model
     /// that finishes downloading one should be able to dictate with it, not
     /// keep saying "No speech-to-text model downloaded" until someone finds
     /// Use. With a model already chosen it changes nothing.
     private func downloadAndUse(_ model: LocalModelDescriptor) {
+        onPick(model)
         manager.startDownload(model) {
             guard manager.isDownloaded(model.id) else {
                 onChange()

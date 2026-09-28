@@ -1289,14 +1289,19 @@ extension LocalModelCatalog {
         let isSaving = { (model: LocalModelDescriptor) in
             model.id != best.id && Double(model.sizeBytes) < ceiling
         }
-        // Rated best first, then the smaller of two equals: English gets the
-        // 131 MB English model rather than the 207 MB four-language one.
-        let savings = accurate.filter(isSaving).sorted {
-            $0.plain.accuracy != $1.plain.accuracy
-                ? $0.plain.accuracy > $1.plain.accuracy
-                : $0.sizeBytes < $1.sizeBytes
-        }
-        if let smaller = savings.first ?? lighter.first(where: isSaving) {
+        // Rated best first, then the smaller of two equals — across both
+        // lists, so size never outranks accuracy: English gets the 131 MB
+        // English model rather than the 207 MB four-language one, and Italian
+        // gets Whisper Small rather than the less accurate Whisper Base.
+        var seen = Set<String>()
+        let savings = (accurate + lighter)
+            .filter { isSaving($0) && seen.insert($0.id).inserted }
+            .sorted {
+                $0.plain.accuracy != $1.plain.accuracy
+                    ? $0.plain.accuracy > $1.plain.accuracy
+                    : $0.sizeBytes < $1.sizeBytes
+            }
+        if let smaller = savings.first {
             choices.append(ModelChoice(kind: .smaller, model: smaller))
         }
 

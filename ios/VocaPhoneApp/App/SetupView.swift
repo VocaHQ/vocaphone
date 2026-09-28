@@ -1874,25 +1874,34 @@ struct SetupView: View {
     private func downloadChosenModelAndContinue() {
         guard let model = chosenOnboardingModel else { return }
         let models = coordinator.localModels
+        let inUseAtRequest = LocalTranscriptionPreferences.modelIdentifier
+        OnboardingDownloadRequests.latest = model.id
         models.startDownload(model) {
             defer { coordinator.refreshSetupStatus() }
             guard models.isDownloaded(model.id),
                   !models.failedIntegrityModelIDs.contains(model.id)
             else { return }
-            // The row picked here is the model, unless something usable is
-            // already in use and the pick has since moved on — then this is
-            // just one more model on the phone.
-            let stillChosen = onboardingModelChoice == nil || onboardingModelChoice == model.id
-            if !stillChosen,
-               let inUse = LocalTranscriptionPreferences.modelIdentifier,
-               inUse != model.id,
-               models.isDownloaded(inUse),
-               !models.failedIntegrityModelIDs.contains(inUse)
-            {
-                return
-            }
+            // Read from storage, not from this page's state: the page is
+            // usually long gone by the time a download finishes.
+            let inUseNow = LocalTranscriptionPreferences.modelIdentifier
+            let adopts = OnboardingPresentation.adoptsOnboardingDownload(
+                modelID: model.id,
+                latestRequestID: OnboardingDownloadRequests.latest,
+                inUseAtRequest: inUseAtRequest,
+                inUseNow: inUseNow,
+                inUseNowIsUsable: inUseNow.map {
+                    models.isDownloaded($0) && !models.failedIntegrityModelIDs.contains($0)
+                } ?? false,
+                adoptedByEarlierDownload: OnboardingDownloadRequests.adopted
+            )
+            guard adopts else { return }
             LocalTranscriptionPreferences.modelIdentifier = model.id
             LocalTranscriptionPreferences.enabled = true
+            if OnboardingDownloadRequests.latest != model.id {
+                // In place only because nothing else was. A later pick that
+                // lands after it may still replace it.
+                OnboardingDownloadRequests.adopted = model.id
+            }
         }
         coordinator.refreshSetupStatus()
         advance()
@@ -3139,3 +3148,14 @@ private struct OnboardingWelcomeVisual: View {
     }
 }
 #endif
+
+/// Choose model's docked downloads, across the life of the process rather
+/// than of the page that started them. See
+/// `OnboardingPresentation.adoptsOnboardingDownload`.
+@MainActor
+enum OnboardingDownloadRequests {
+    /// The model the docked button asked for most recently.
+    static var latest: String?
+    /// A model an earlier download put in use only because nothing was.
+    static var adopted: String?
+}
