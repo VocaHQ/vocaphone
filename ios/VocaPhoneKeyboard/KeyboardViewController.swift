@@ -389,7 +389,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        recycleIfBloated()
+        // Learned words are written behind the keystroke. Off screen is the
+        // moment to make sure the last of them is on disk before iOS suspends
+        // this instance or a new one reads the file; bounded, and the keyboard
+        // has already gone.
+        let learnedWordsLanded = typing.flushPendingWrites()
+        recycleIfBloated(learnedWordsLanded: learnedWordsLanded)
     }
 
     /// Ends this process while it is off screen if it has grown past its share
@@ -398,12 +403,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// Everything a new instance needs survives it: the session and its
     /// insertion target are in the App Group, and a recreated keyboard already
     /// adopts them — that is the path every jetsam kill of this extension took.
-    private func recycleIfBloated() {
+    private func recycleIfBloated(learnedWordsLanded: Bool) {
         guard let available = recycling.headroomIfRecycling(
             isVisible: isKeyboardVisible,
             isInserting: isPerformingInsertion
         ) else { return }
-        typing.flushPendingWrites()
+        // Never exit over a word still on its way to disk.
+        guard learnedWordsLanded else { return }
         DiagnosticLog.record(.keyboardRecycled, metadata: .megabytesAvailable(available))
         // Longer than a dismissal ever waits elsewhere, because the keyboard is
         // already off screen and the line explains the next cold start. But

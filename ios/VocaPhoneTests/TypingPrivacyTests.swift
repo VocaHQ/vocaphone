@@ -117,4 +117,22 @@ struct TypingPrivacyTests {
         let second = LearnedWordStore(containerURL: directory)
         #expect(second.snapshot().contains("persistent"))
     }
+
+    /// A burst of learned words lands as the last of them left it, and reading
+    /// the words never waits for the file.
+    @Test func aBurstOfWordsIsWrittenAsItsLastState() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = LearnedWordStore(containerURL: directory)
+        for word in ["alpha", "bravo", "charlie", "delta"] {
+            store.update { $0.learn(word) }
+            #expect(store.snapshot().contains(word))
+        }
+        #expect(store.flush())
+        let reopened = LearnedWordStore(containerURL: directory).snapshot()
+        for word in ["alpha", "bravo", "charlie", "delta"] { #expect(reopened.contains(word)) }
+    }
 }
