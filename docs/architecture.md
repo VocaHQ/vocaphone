@@ -122,7 +122,8 @@ Three constraints shape the design:
 
    Some memory never comes back while the process lives. Every emoji drawn at
    panel size leaves about 50 KB in Core Text's glyph cache, so the panel's grid
-   and search show each emoji once and offer skin tones on a long press. A
+   and search show each emoji once and offer skin tones on a long press. A pair
+   in two different tones has no row to live in and keeps its own cell. A
    keyboard that leaves the screen at 60% or more of its limit (footprint plus
    available) records `keyboardRecycled` and ends its own process. The next
    field gets a cold start instead of a kill while the user is typing. Session

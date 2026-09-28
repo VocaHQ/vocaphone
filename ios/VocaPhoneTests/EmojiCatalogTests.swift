@@ -81,8 +81,14 @@ struct EmojiCatalogTests {
     )
 
     @Test func tonesStayOutOfTheGrid() {
-        #expect(Self.toned.entries.map(\.glyph) == ["👍", "🏌️‍♂️", "🧑‍🤝‍🧑"])
-        #expect(Self.toned.entries(in: .people).map(\.glyph) == ["👍", "🧑‍🤝‍🧑"])
+        #expect(Self.toned.entries.map(\.glyph) == ["👍", "🏌️‍♂️", "🧑‍🤝‍🧑", "🧑🏻‍🤝‍🧑🏿"])
+    }
+
+    /// A pair in two tones has no long-press row to be found in, so it keeps
+    /// its cell — and search finds it even when the untoned pair matches too.
+    @Test func aMixedTonePairKeepsItsCell() {
+        #expect(Self.toned.entries(in: .people).map(\.glyph).contains("🧑🏻‍🤝‍🧑🏿"))
+        #expect(Self.toned.search("holding hands").map(\.glyph) == ["🧑‍🤝‍🧑", "🧑🏻‍🤝‍🧑🏿"])
     }
 
     @Test func aLongPressOffersEveryUniformTone() {
@@ -105,8 +111,7 @@ struct EmojiCatalogTests {
 
     @Test func searchOffersTheDefaultAndReachesTonesOnlyWhenAsked() {
         #expect(Self.toned.search("thumbs").map(\.glyph) == ["👍"])
-        // Nothing untoned matches "dark", so the toned forms are the results —
-        // which is how a pair in two tones stays reachable.
+        // Nothing untoned matches "dark", so the toned forms are the results.
         let dark = Self.toned.search("dark").map(\.glyph)
         #expect(dark.contains("🧑🏻‍🤝‍🧑🏿"))
         #expect(dark.contains("👍🏿"))
@@ -124,8 +129,9 @@ struct EmojiCatalogTests {
         let catalog = EmojiCatalog.parse(text)
 
         #expect(catalog.entries.count > 1_000)
-        // The grid holds no tones; the long press does.
-        #expect(!catalog.entries.contains { !EmojiSkinTones.modifiers(in: $0.glyph).isEmpty })
+        // The grid holds no tone a long press offers; mixed pairs keep a cell.
+        #expect(!catalog.entries.contains { EmojiSkinTones.modifiers(in: $0.glyph).count == 1 })
+        #expect(catalog.entries.count < 2_200)
         #expect(catalog.toneVariants(of: "👍").count == 6)
         #expect(catalog.toneVariants(of: "🧑‍💻").count == 6)
         // Every browsable category has something in it, or its tab would open

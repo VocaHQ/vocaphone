@@ -63,6 +63,27 @@ enum KeyboardMemoryBudget {
     }
 }
 
+/// The decision a keyboard leaving the screen makes about its own process,
+/// with the readings passed in so every branch can be tested — the simulator
+/// has no memory limit to read.
+struct KeyboardRecycling {
+    var footprint: () -> Int? = { KeyboardMemoryBudget.footprintMegabytes }
+    var available: () -> Int? = { KeyboardMemoryBudget.availableMegabytes }
+
+    /// The headroom left when the process should end, or `nil` to keep it.
+    ///
+    /// Never while the keyboard is on screen or mid-insertion, and never on a
+    /// reading it could not take: an unknown limit is not a reason to exit.
+    func headroomIfRecycling(isVisible: Bool, isInserting: Bool) -> Int? {
+        guard !isVisible, !isInserting,
+              let footprint = footprint(),
+              let available = available(),
+              KeyboardMemoryBudget.shouldRecycle(footprint: footprint, available: available)
+        else { return nil }
+        return available
+    }
+}
+
 /// Turns keystrokes into a strip, without ever making a keystroke wait.
 ///
 /// The obvious design puts the checker on a serial background queue. It cannot

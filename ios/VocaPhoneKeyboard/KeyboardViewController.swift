@@ -99,6 +99,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         palette: palette
     )
     private let dictationSurfaceState = DictationSurfaceState()
+    private let recycling = KeyboardRecycling()
     private var dictationSurfaceHosting: UIHostingController<DictationSurfaceView>?
     private let topBarContainer = UIView()
     private var keyboardHeightConstraint: NSLayoutConstraint?
@@ -398,11 +399,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// insertion target are in the App Group, and a recreated keyboard already
     /// adopts them — that is the path every jetsam kill of this extension took.
     private func recycleIfBloated() {
-        guard !isKeyboardVisible, !isPerformingInsertion,
-              let footprint = KeyboardMemoryBudget.footprintMegabytes,
-              let available = KeyboardMemoryBudget.availableMegabytes,
-              KeyboardMemoryBudget.shouldRecycle(footprint: footprint, available: available)
-        else { return }
+        guard let available = recycling.headroomIfRecycling(
+            isVisible: isKeyboardVisible,
+            isInserting: isPerformingInsertion
+        ) else { return }
         DiagnosticLog.record(.keyboardRecycled, metadata: .megabytesAvailable(available))
         DiagnosticLog.flush()
         exit(0)

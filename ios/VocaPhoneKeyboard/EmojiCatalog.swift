@@ -67,50 +67,62 @@ struct EmojiEntry: Equatable, Sendable {
 ///
 /// The shared file lists every skin tone as an emoji of its own, which is how
 /// the Android panel offers them. This panel offers tones on a long press, as
-/// the system keyboard does, so the toned forms are held apart from the grid.
-/// That is a memory rule as much as a layout one: every glyph drawn at panel
-/// size leaves about 50 KB in a Core Text cache that is never given back, and
-/// People alone was 2,261 cells, 1,875 of them tones. Scrolling it once cost
-/// more than a keyboard extension is allowed to use.
+/// the system keyboard does, so a toned form that a long-press row reaches is
+/// held apart from the grid. That is a memory rule as much as a layout one:
+/// every glyph drawn at panel size leaves about 50 KB in a Core Text cache that
+/// is never given back, and People alone was 2,261 cells, 1,875 of them tones.
+/// Scrolling it once cost more than a keyboard extension is allowed to use.
+///
+/// A pair in two different tones has no row to live in — the row is one tone
+/// across — so it keeps its own cell, where it always was.
 struct EmojiCatalog: Sendable {
-    /// One entry per emoji, in its default tone. What the grid shows.
+    /// What the grid shows: each emoji in its default tone, plus the toned
+    /// forms no long-press row offers.
     let entries: [EmojiEntry]
-    /// Toned entries. Search reaches these only when the base did not match,
-    /// which is how "dark skin" still finds a couple in two different tones.
+    /// Toned entries a long-press row offers. Search reaches these only when
+    /// the default did not match, which is how "dark skin" still finds 👍🏿.
     private let toned: [EmojiEntry]
     /// Keyed by ``EmojiSkinTones/key(of:)``: the default glyph, then one
-    /// variant per tone, lightest first. Only uniform tones: a pair in two
-    /// different tones is a search result, not a row of six.
+    /// variant per tone, lightest first.
     private let tones: [String: [String]]
 
     static let empty = EmojiCatalog(entries: [])
 
     init(entries: [EmojiEntry]) {
-        var bases: [EmojiEntry] = []
-        var toned: [EmojiEntry] = []
+        var defaults: [String: String] = [:]
         var uniform: [String: [Int: String]] = [:]
         for entry in entries {
             let modifiers = EmojiSkinTones.modifiers(in: entry.glyph)
+            let key = EmojiSkinTones.key(of: entry.glyph)
             guard let first = modifiers.first else {
-                bases.append(entry)
+                defaults[key] = defaults[key] ?? entry.glyph
                 continue
             }
-            toned.append(entry)
             if modifiers.allSatisfy({ $0 == first }),
                let index = EmojiSkinTones.modifiers.firstIndex(of: first)
             {
-                uniform[EmojiSkinTones.key(of: entry.glyph), default: [:]][index] = entry.glyph
+                uniform[key, default: [:]][index] = entry.glyph
             }
         }
         var tones: [String: [String]] = [:]
-        for base in bases {
-            let key = EmojiSkinTones.key(of: base.glyph)
-            guard let found = uniform[key],
+        for (key, found) in uniform {
+            guard let base = defaults[key],
                   found.count == EmojiSkinTones.modifiers.count
             else { continue }
-            tones[key] = [base.glyph] + found.keys.sorted().compactMap { found[$0] }
+            tones[key] = [base] + found.keys.sorted().compactMap { found[$0] }
         }
-        self.entries = bases
+        var shown: [EmojiEntry] = []
+        var toned: [EmojiEntry] = []
+        for entry in entries {
+            if !EmojiSkinTones.modifiers(in: entry.glyph).isEmpty,
+               tones[EmojiSkinTones.key(of: entry.glyph)]?.contains(entry.glyph) == true
+            {
+                toned.append(entry)
+            } else {
+                shown.append(entry)
+            }
+        }
+        self.entries = shown
         self.toned = toned
         self.tones = tones
     }
