@@ -179,11 +179,23 @@ struct EmojiCatalog: Sendable {
         for entry in leading + trailing {
             matchedKeys.insert(EmojiSkinTones.key(of: entry.glyph))
         }
-        // One toned form per emoji: the long press holds the others.
-        for entry in toned where leading.count < limit {
+        // One toned form per emoji, the long press holding the others — and
+        // the most specific one: "dark skin" also matches "medium-dark skin",
+        // and the shorter annotation is the tone that was asked for.
+        var bestToned: [String: EmojiEntry] = [:]
+        var order: [String] = []
+        for entry in toned where entry.keywords.contains(needle) {
             let key = EmojiSkinTones.key(of: entry.glyph)
             guard !matchedKeys.contains(key) else { continue }
-            if consider(entry) { matchedKeys.insert(key) }
+            if let current = bestToned[key] {
+                if entry.keywords.count < current.keywords.count { bestToned[key] = entry }
+            } else {
+                bestToned[key] = entry
+                order.append(key)
+            }
+        }
+        for key in order where leading.count < limit {
+            if let entry = bestToned[key] { consider(entry) }
         }
         return Array((leading + trailing).prefix(limit))
     }

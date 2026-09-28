@@ -116,7 +116,9 @@ struct EmojiCatalogTests {
         // one per emoji, with the rest a long press away.
         let dark = Self.toned.search("dark").map(\.glyph)
         #expect(dark.contains("🧑🏻‍🤝‍🧑🏿"))
-        #expect(dark.filter { EmojiSkinTones.key(of: $0) == "👍" }.count == 1)
+        #expect(dark.filter { EmojiSkinTones.key(of: $0) == "👍" } == ["👍🏿"])
+        #expect(Self.toned.search("medium-dark").map(\.glyph).contains("👍🏾"))
+        #expect(Self.toned.search("medium skin").map(\.glyph).contains("👍🏽"))
     }
 
     /// The real file, which both platforms read. Tolerant assertions: this

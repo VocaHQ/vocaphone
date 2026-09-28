@@ -404,10 +404,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             isInserting: isPerformingInsertion
         ) else { return }
         DiagnosticLog.record(.keyboardRecycled, metadata: .megabytesAvailable(available))
-        // A line that has not landed would leave the next cold start without
-        // its explanation. Contention with the app is brief; the next time the
-        // keyboard leaves the screen is soon enough to try again.
-        guard DiagnosticLog.flush() else { return }
+        // Longer than a dismissal ever waits elsewhere, because the keyboard is
+        // already off screen and the line explains the next cold start. But
+        // staying alive past the threshold is what ends in a kill mid-word, so
+        // the process ends whether or not the line made it.
+        DiagnosticLog.flush(timeout: .milliseconds(500))
         exit(0)
     }
 
