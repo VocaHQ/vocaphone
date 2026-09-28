@@ -21,7 +21,9 @@ struct LocalModelPicker: View {
     /// with. Setup owns it because the button lives outside this view.
     var selection: Binding<String?> = .constant(nil)
     /// All models inside onboarding: a Get or Use there is the page's pick
-    /// too, so the docked button acts on it rather than on the old row.
+    /// too, so the docked button acts on it rather than on the old row. Use
+    /// reports only once the model has loaded; a failed load must not leave
+    /// Continue pointing at it.
     var onPick: (LocalModelDescriptor) -> Void = { _ in }
 
 #if DEBUG
@@ -758,7 +760,7 @@ struct LocalModelPicker: View {
         Group {
             if state == .ready {
                 Button {
-                    use(model)
+                    prepare(model)
                 } label: {
                     compactRowContent(model, kind: kind, detailed: detailed, state: state)
                 }
@@ -781,7 +783,7 @@ struct LocalModelPicker: View {
         .contextMenu {
             if state == .ready {
                 Button {
-                    use(model)
+                    prepare(model)
                 } label: {
                     Label("Use this model", systemImage: "checkmark.circle")
                 }
@@ -913,13 +915,6 @@ struct LocalModelPicker: View {
 
     // MARK: - Actions
 
-    /// A tap on a ready row: load it, and tell a surrounding page it was
-    /// picked.
-    private func use(_ model: LocalModelDescriptor) {
-        onPick(model)
-        prepare(model)
-    }
-
     /// Downloads, and makes the model the one in use only if nothing usable is
     /// selected yet. Used from Settings as well as setup: a phone with no model
     /// that finishes downloading one should be able to dictate with it, not
@@ -996,7 +991,12 @@ struct LocalModelPicker: View {
                 // Use is a choice the user is watching happen: it commits only
                 // once the engine has actually loaded, so a failed load does
                 // not quietly switch their model.
-                if commitsAfterLoad { commitSelection(model) }
+                if commitsAfterLoad {
+                    commitSelection(model)
+                    // Only now is it the page's pick too: a failed load
+                    // must not leave Continue pointing at it.
+                    onPick(model)
+                }
             } catch is CancellationError {
                 // The picker does not expose cancellation for engine loading;
                 // cancellation here only prevents a stale selection commit.
