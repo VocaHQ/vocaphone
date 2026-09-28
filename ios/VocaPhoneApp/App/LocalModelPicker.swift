@@ -20,11 +20,12 @@ struct LocalModelPicker: View {
     /// Onboarding only: the row the docked button downloads or continues
     /// with. Setup owns it because the button lives outside this view.
     var selection: Binding<String?> = .constant(nil)
-    /// All models inside onboarding: a Get or Use there is the page's pick
-    /// too, so the docked button acts on it rather than on the old row. Use
-    /// reports only once the model has loaded; a failed load must not leave
-    /// Continue pointing at it.
-    var onPick: (LocalModelDescriptor) -> Void = { _ in }
+    /// All models inside onboarding. When set, Use there loads nothing: it
+    /// hands the model back as the page's pick and closes the sheet, and the
+    /// docked Continue commits and loads it like any row on the page. A load
+    /// started here would finish on its own schedule and could undo whatever
+    /// was picked after it. Get reports its model too, at the tap.
+    var onPick: ((LocalModelDescriptor) -> Void)?
 
 #if DEBUG
     /// Which model a `#Preview` should draw as "In use". Production leaves this
@@ -39,6 +40,7 @@ struct LocalModelPicker: View {
     @State private var guidanceLanguageOverride: String?
     @State private var isShowingLanguages = false
     @State private var isShowingAllModels = false
+    @Environment(\.dismiss) private var dismiss
 
     private var usable: [LocalModelDescriptor] { LocalModelCatalog.usableOnDevice }
 
@@ -760,7 +762,7 @@ struct LocalModelPicker: View {
         Group {
             if state == .ready {
                 Button {
-                    prepare(model)
+                    use(model)
                 } label: {
                     compactRowContent(model, kind: kind, detailed: detailed, state: state)
                 }
@@ -783,7 +785,7 @@ struct LocalModelPicker: View {
         .contextMenu {
             if state == .ready {
                 Button {
-                    prepare(model)
+                    use(model)
                 } label: {
                     Label("Use this model", systemImage: "checkmark.circle")
                 }
@@ -915,13 +917,24 @@ struct LocalModelPicker: View {
 
     // MARK: - Actions
 
+    /// A tap on a ready row: load it and use it — or, inside onboarding, hand
+    /// it back as the page's pick. See `onPick`.
+    private func use(_ model: LocalModelDescriptor) {
+        if let onPick {
+            onPick(model)
+            dismiss()
+        } else {
+            prepare(model)
+        }
+    }
+
     /// Downloads, and makes the model the one in use only if nothing usable is
     /// selected yet. Used from Settings as well as setup: a phone with no model
     /// that finishes downloading one should be able to dictate with it, not
     /// keep saying "No speech-to-text model downloaded" until someone finds
     /// Use. With a model already chosen it changes nothing.
     private func downloadAndUse(_ model: LocalModelDescriptor) {
-        onPick(model)
+        onPick?(model)
         manager.startDownload(model) {
             guard manager.isDownloaded(model.id) else {
                 onChange()
@@ -991,12 +1004,7 @@ struct LocalModelPicker: View {
                 // Use is a choice the user is watching happen: it commits only
                 // once the engine has actually loaded, so a failed load does
                 // not quietly switch their model.
-                if commitsAfterLoad {
-                    commitSelection(model)
-                    // Only now is it the page's pick too: a failed load
-                    // must not leave Continue pointing at it.
-                    onPick(model)
-                }
+                if commitsAfterLoad { commitSelection(model) }
             } catch is CancellationError {
                 // The picker does not expose cancellation for engine loading;
                 // cancellation here only prevents a stale selection commit.
