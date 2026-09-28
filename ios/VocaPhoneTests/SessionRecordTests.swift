@@ -468,7 +468,7 @@ struct SessionRecordTests {
             #expect(!style.example.isEmpty)
             #expect(!style.symbolName.isEmpty)
         }
-        #expect(WritingStyle.raw.example == "ok so  this is VocaPhone. it is a Keyboard")
+        #expect(WritingStyle.raw.example == "ok so  this is vocaphone. it is a Keyboard")
         #expect(WritingStyle.clean.example == "all done for today.")
         #expect(WritingStyle.formal.example == "Please send the report today.")
         #expect(WritingStyle.casual.example == "I'll be there in ten")

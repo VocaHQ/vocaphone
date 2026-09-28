@@ -130,7 +130,7 @@ enum StatsShareComposer {
         if streak > 0 { details.append("🔥 \(streak)-day streak") }
 
         var lines = [
-            "🎤 I’ve spoken \(pluralized(stats.totalWords, "word")) with VocaPhone.",
+            "🎤 I’ve spoken \(pluralized(stats.totalWords, "word")) with vocaphone.",
             details.joined(separator: " · "),
             "Private voice typing on my phone or my own self-hosted gateway. My audio stays mine. 🔒",
             [handle, site].compactMap { $0 }.joined(separator: " · "),

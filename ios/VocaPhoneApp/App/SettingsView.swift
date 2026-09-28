@@ -592,28 +592,58 @@ struct DictationSettingsView: View {
             // Kept next to Language and never hidden. A row that disappears for
             // most models would leave the question unanswered, and "Not
             // supported by this model" is exactly the answer people arrive
-            // looking for.
-            NavigationLink {
-                TranscriptionLanguageList(
-                    selection: $translateToRawValue,
-                    mode: .translation
-                )
-            } label: {
-                LabeledContent(
-                    "Translate to",
-                    value: ModelTranslationSupport.summary(
-                        storedTranslateTo,
-                        targets: KeyboardPreferences.activeModelTranslationTargets,
-                        onDevice: LocalTranscriptionPreferences.enabled,
-                        needsExplicitSource: KeyboardPreferences.activeModelTranslationNeedsSource,
-                        sourceIsAutomatic: KeyboardPreferences.effectiveTranscriptionLanguage
-                            == .automatic
+            // looking for. It only pushes when there is something to pick:
+            // a list with every row greyed out was a dead end.
+            if canTranslate {
+                NavigationLink {
+                    TranscriptionLanguageList(
+                        selection: $translateToRawValue,
+                        mode: .translation
                     )
-                )
+                } label: {
+                    translateToRow
+                }
+            } else {
+                translateToRow
             }
         } footer: {
-            Text(selectedLanguage.detail)
+            VStack(alignment: .leading, spacing: VocaMetrics.related) {
+                Text(selectedLanguage.detail)
+                if !canTranslate, let reason = translationRestriction {
+                    Text(reason)
+                }
+            }
         }
+    }
+
+    private var translationTargets: Set<String> {
+        KeyboardPreferences.activeModelTranslationTargets
+    }
+
+    private var canTranslate: Bool {
+        ModelTranslationSupport.isSupported(translationTargets)
+    }
+
+    /// Why the row does not open, in one sentence. The full explanation is on
+    /// the list itself, which a model that can translate still pushes to.
+    private var translationRestriction: String? {
+        LocalTranscriptionPreferences.enabled
+            ? "This model can't translate. Canary and the multilingual Whisper models can."
+            : "Translation needs an on-device model."
+    }
+
+    private var translateToRow: some View {
+        LabeledContent(
+            "Translate to",
+            value: ModelTranslationSupport.summary(
+                storedTranslateTo,
+                targets: translationTargets,
+                onDevice: LocalTranscriptionPreferences.enabled,
+                needsExplicitSource: KeyboardPreferences.activeModelTranslationNeedsSource,
+                sourceIsAutomatic: KeyboardPreferences.effectiveTranscriptionLanguage
+                    == .automatic
+            )
+        )
     }
 
     private var writingStyleSection: some View {
@@ -1100,7 +1130,7 @@ struct PrivacySettingsView: View {
 
                 switch coordinator.microphoneAccess {
                 case .undetermined:
-                    Button("Continue") {
+                    Button("Allow microphone") {
                         coordinator.requestMicrophonePermission()
                     }
                 case .denied:
@@ -1483,25 +1513,47 @@ struct SnippetsSettingsView: View {
     @State private var snippets: [Snippet] = SnippetStore.snippets
     @State private var isAddingSnippet = false
     @State private var editing: Snippet?
+    @State private var starting: SnippetStarter?
+
+    /// The snippets nearly everyone ends up making, offered on an empty list
+    /// so the feature explains itself by being one tap from working.
+    private struct SnippetStarter: Identifiable {
+        let trigger: String
+        let example: String
+        var id: String { trigger }
+    }
+
+    private static let starters = [
+        SnippetStarter(trigger: "my email", example: "you@example.com"),
+        SnippetStarter(trigger: "my address", example: "1 Market Street, Springfield"),
+        SnippetStarter(trigger: "my phone number", example: "+1 555 0100"),
+    ]
 
     var body: some View {
         List {
-            Section {
-                if snippets.isEmpty {
-                    Text("No snippets yet.")
-                        .foregroundStyle(.secondary)
-                } else {
+            if snippets.isEmpty {
+                Section {
+                    ForEach(Self.starters) { starter in
+                        Button {
+                            starting = starter
+                        } label: {
+                            Label("“\(starter.trigger)”", systemImage: "plus.circle")
+                        }
+                    }
+                } header: {
+                    Text("Start with one")
+                } footer: {
+                    Text("Say “my email” while dictating and vocaphone types your address.")
+                }
+            } else {
+                Section {
                     ForEach(snippets) { snippet in
                         SnippetRow(snippet: snippet) { editing = snippet }
                     }
                     .onDelete(perform: delete)
+                } footer: {
+                    Text("Say a trigger while dictating and it is replaced by its text. Case does not matter.")
                 }
-            } footer: {
-                Text(
-                    "Say a trigger while dictating and vocaphone replaces it with the "
-                        + "expansion. Matching ignores case; the expansion is inserted "
-                        + "exactly as written, including its spacing."
-                )
             }
         }
         .navigationTitle("Snippets")
@@ -1517,6 +1569,17 @@ struct SnippetsSettingsView: View {
         }
         .sheet(isPresented: $isAddingSnippet) {
             SnippetEditorView(title: "Add Snippet", confirmation: "Add") { trigger, expansion in
+                snippets.append(Snippet(trigger: trigger, expansion: expansion))
+                persist()
+            }
+        }
+        .sheet(item: $starting) { starter in
+            SnippetEditorView(
+                title: "Add Snippet",
+                confirmation: "Add",
+                trigger: starter.trigger,
+                expansionPrompt: starter.example
+            ) { trigger, expansion in
                 snippets.append(Snippet(trigger: trigger, expansion: expansion))
                 persist()
             }
@@ -1584,18 +1647,22 @@ private struct SnippetEditorView: View {
     @State private var expansion: String
     let title: String
     let confirmation: String
+    let expansionPrompt: String
     let onSave: (String, String) -> Void
 
     init(
         title: String,
         confirmation: String,
         snippet: Snippet? = nil,
+        trigger: String? = nil,
+        expansionPrompt: String = "Text to insert",
         onSave: @escaping (String, String) -> Void
     ) {
         self.title = title
         self.confirmation = confirmation
+        self.expansionPrompt = expansionPrompt
         self.onSave = onSave
-        _trigger = State(initialValue: snippet?.trigger ?? "")
+        _trigger = State(initialValue: snippet?.trigger ?? trigger ?? "")
         _expansion = State(initialValue: snippet?.expansion ?? "")
     }
 
@@ -1612,7 +1679,9 @@ private struct SnippetEditorView: View {
                         .textInputAutocapitalization(.never)
                 }
                 Section("Expansion") {
-                    TextField("Text to insert", text: $expansion, axis: .vertical)
+                    TextField(text: $expansion, prompt: Text(verbatim: expansionPrompt), axis: .vertical) {
+                        Text("Text to insert")
+                    }
                         .lineLimit(3...6)
                 }
             }

@@ -540,8 +540,8 @@ private struct QuickDictationReturnGuide: View {
             status(
                 title: "Getting Quick Dictation ready",
                 detail: isTakingLong
-                    ? (coordinator.message ?? "VocaPhone could not get the microphone yet.")
-                    : "Keep VocaPhone open for a moment.",
+                    ? (coordinator.message ?? "vocaphone could not get the microphone yet.")
+                    : "Keep vocaphone open for a moment.",
                 showsProgress: true
             ) {
                 EmptyView()
