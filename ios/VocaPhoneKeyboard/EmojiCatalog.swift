@@ -64,10 +64,56 @@ struct EmojiEntry: Equatable, Sendable {
 }
 
 /// The shipped emoji list, and the search over it.
+///
+/// The shared file lists every skin tone as an emoji of its own, which is how
+/// the Android panel offers them. This panel offers tones on a long press, as
+/// the system keyboard does, so the toned forms are held apart from the grid.
+/// That is a memory rule as much as a layout one: every glyph drawn at panel
+/// size leaves about 50 KB in a Core Text cache that is never given back, and
+/// People alone was 2,261 cells, 1,875 of them tones. Scrolling it once cost
+/// more than a keyboard extension is allowed to use.
 struct EmojiCatalog: Sendable {
+    /// One entry per emoji, in its default tone. What the grid shows.
     let entries: [EmojiEntry]
+    /// Toned entries. Search reaches these only when the base did not match,
+    /// which is how "dark skin" still finds a couple in two different tones.
+    private let toned: [EmojiEntry]
+    /// Keyed by ``EmojiSkinTones/key(of:)``: the default glyph, then one
+    /// variant per tone, lightest first. Only uniform tones: a pair in two
+    /// different tones is a search result, not a row of six.
+    private let tones: [String: [String]]
 
     static let empty = EmojiCatalog(entries: [])
+
+    init(entries: [EmojiEntry]) {
+        var bases: [EmojiEntry] = []
+        var toned: [EmojiEntry] = []
+        var uniform: [String: [Int: String]] = [:]
+        for entry in entries {
+            let modifiers = EmojiSkinTones.modifiers(in: entry.glyph)
+            guard let first = modifiers.first else {
+                bases.append(entry)
+                continue
+            }
+            toned.append(entry)
+            if modifiers.allSatisfy({ $0 == first }),
+               let index = EmojiSkinTones.modifiers.firstIndex(of: first)
+            {
+                uniform[EmojiSkinTones.key(of: entry.glyph), default: [:]][index] = entry.glyph
+            }
+        }
+        var tones: [String: [String]] = [:]
+        for base in bases {
+            let key = EmojiSkinTones.key(of: base.glyph)
+            guard let found = uniform[key],
+                  found.count == EmojiSkinTones.modifiers.count
+            else { continue }
+            tones[key] = [base.glyph] + found.keys.sorted().compactMap { found[$0] }
+        }
+        self.entries = bases
+        self.toned = toned
+        self.tones = tones
+    }
 
     var isEmpty: Bool { entries.isEmpty }
 
@@ -75,10 +121,20 @@ struct EmojiCatalog: Sendable {
         entries.filter { $0.category == category }
     }
 
+    /// The long-press row for `glyph`, default first, or an empty array when it
+    /// has no tones. The catalog's own sequences first, so a person with an
+    /// occupation gets the forms Unicode defines rather than a guess; the
+    /// single-scalar rule covers an emoji the file does not list.
+    func toneVariants(of glyph: String) -> [String] {
+        tones[EmojiSkinTones.key(of: glyph)] ?? EmojiSkinTones.variants(of: glyph)
+    }
+
     /// Local search over the CLDR annotations.
     ///
     /// Prefix matches on a whole keyword first — someone typing "hear" wants
     /// "heart" before "brokenhearted" — then anything else containing the query.
+    /// A toned emoji is a result only when its default did not already match:
+    /// "thumbs" is one thumbs up with a long press, not six of them.
     func search(_ query: String, limit: Int = 90) -> [EmojiEntry] {
         let needle = query
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -86,14 +142,25 @@ struct EmojiCatalog: Sendable {
         guard !needle.isEmpty else { return [] }
         var leading: [EmojiEntry] = []
         var trailing: [EmojiEntry] = []
-        for entry in entries {
-            guard entry.keywords.contains(needle) else { continue }
+        var matchedKeys: Set<String> = []
+        func consider(_ entry: EmojiEntry) {
+            guard entry.keywords.contains(needle) else { return }
             if entry.keywords.split(separator: " ").contains(where: { $0.hasPrefix(needle) }) {
                 leading.append(entry)
             } else {
                 trailing.append(entry)
             }
+        }
+        for entry in entries {
+            consider(entry)
             if leading.count >= limit { break }
+        }
+        for entry in leading + trailing {
+            matchedKeys.insert(EmojiSkinTones.key(of: entry.glyph))
+        }
+        for entry in toned where leading.count < limit {
+            guard !matchedKeys.contains(EmojiSkinTones.key(of: entry.glyph)) else { continue }
+            consider(entry)
         }
         return Array((leading + trailing).prefix(limit))
     }
@@ -179,6 +246,20 @@ enum EmojiSkinTones {
 
     static func hasVariants(of glyph: String) -> Bool {
         !variants(of: glyph).isEmpty
+    }
+
+    /// The tone modifiers in `glyph`, in order. Two for a pair of people.
+    static func modifiers(in glyph: String) -> [Unicode.Scalar] {
+        glyph.unicodeScalars.filter { modifiers.contains($0) }
+    }
+
+    /// What a glyph and each of its toned forms have in common: the glyph
+    /// without tones or variation selectors. Unicode drops the selector after a
+    /// modifier, so "🏌️‍♂️" and "🏌🏽‍♂️" only agree once both are gone.
+    static func key(of glyph: String) -> String {
+        String(String.UnicodeScalarView(
+            glyph.unicodeScalars.filter { !modifiers.contains($0) && $0 != "\u{FE0F}" }
+        ))
     }
 }
 

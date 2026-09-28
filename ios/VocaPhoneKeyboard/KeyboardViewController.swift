@@ -386,6 +386,28 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         KeyboardHaptics.shared.release()
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        recycleIfBloated()
+    }
+
+    /// Ends this process while it is off screen if it has grown past its share
+    /// of the memory limit. See ``KeyboardMemoryBudget/shouldRecycle``.
+    ///
+    /// Everything a new instance needs survives it: the session and its
+    /// insertion target are in the App Group, and a recreated keyboard already
+    /// adopts them — that is the path every jetsam kill of this extension took.
+    private func recycleIfBloated() {
+        guard !isKeyboardVisible, !isPerformingInsertion,
+              let footprint = KeyboardMemoryBudget.footprintMegabytes,
+              let available = KeyboardMemoryBudget.availableMegabytes,
+              KeyboardMemoryBudget.shouldRecycle(footprint: footprint, available: available)
+        else { return }
+        DiagnosticLog.record(.keyboardRecycled, metadata: .megabytesAvailable(available))
+        DiagnosticLog.flush()
+        exit(0)
+    }
+
     /// The containing app has no API for whether this keyboard is installed or
     /// holds Full Access, so this write is the only evidence of either — and
     /// guided setup sits waiting for it. iOS reuses extension instances, so
