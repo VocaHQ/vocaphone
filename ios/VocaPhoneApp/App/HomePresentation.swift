@@ -117,14 +117,18 @@ struct HomeSessionCard: Equatable {
                 isHidden: true
             )
         }
+        let isFinishingInsertion: Bool
+        switch context.state {
+        case .readyToInsert, .inserting, .inserted:
+            isFinishingInsertion = true
+        default:
+            isFinishingInsertion = false
+        }
         let detail: String
         if !context.isReadyToDictate {
-            switch context.state {
-            case .readyToInsert, .inserting, .inserted:
-                detail = "Keep the keyboard open while this dictation finishes."
-            default:
-                detail = "Fix the setup issue above before starting another dictation."
-            }
+            detail = isFinishingInsertion
+                ? "Keep the keyboard open while this dictation finishes."
+                : "Fix the setup issue above before starting another dictation."
         } else if context.isQuickDictationReady, let expiresAt = context.quickDictationExpiresAt {
             // Standby, not recording — and the wording has to make that
             // unmistakable, because the iOS microphone indicator is lit either
@@ -137,13 +141,18 @@ struct HomeSessionCard: Equatable {
             detail = "Tap the field, switch to the vocaphone keyboard with the globe key, then tap Dictate."
         }
         return HomeSessionCard(
-            status: .ready,
-            title: "Try it here",
+            status: context.isReadyToDictate
+                ? .ready : isFinishingInsertion ? .working : .inactive,
+            title: context.isReadyToDictate
+                ? "Try it here" : isFinishingInsertion
+                    ? "Finishing dictation" : "Dictation unavailable",
             detail: detail,
             primary: nil,
             secondary: nil,
             showsTryField: true,
-            quietAction: Action(title: "Test the microphone only", action: .startTest)
+            quietAction: context.isReadyToDictate
+                ? Action(title: "Test the microphone only", action: .startTest)
+                : nil
         )
     }
 

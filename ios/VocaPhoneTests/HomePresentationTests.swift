@@ -182,6 +182,8 @@ struct HomePresentationTests {
             )
             #expect(!card.isHidden)
             #expect(card.showsTryField)
+            #expect(card.status != .ready)
+            #expect(card.quietAction == nil)
         }
     }
 
