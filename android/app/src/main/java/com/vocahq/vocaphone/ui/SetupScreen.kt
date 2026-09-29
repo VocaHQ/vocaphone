@@ -219,7 +219,7 @@ fun SetupScreen(
         }
     }
     fun advance() {
-        stage = stage.advance(status, settings.localTranscriptionEnabled)
+        stage = stage.advance(status)
     }
     BackHandler(enabled = stage != OnboardingStage.WELCOME) { stage = stage.previous() }
     // Load the model while the user reads the Ready page, and again on every
@@ -355,14 +355,6 @@ fun SetupScreen(
                         body = "Use it in any app with a keyboard.",
                     )
                 }
-                OnboardingStage.SOURCE -> {
-                    SpeechSourceCard(
-                        settings = settings,
-                        compact = true,
-                        onOpenGateway = onOpenGateway,
-                        onLocalTranscriptionEnabled = onLocalTranscriptionEnabled,
-                    )
-                }
                 OnboardingStage.MODEL -> {
                     if (settings.localTranscriptionEnabled) {
                         LocalModelPicker(
@@ -386,8 +378,22 @@ fun SetupScreen(
                             languages = deviceLanguages,
                             onGuidanceLanguage = { onLanguage(TranscriptionLanguage.fromWire(it)) },
                         )
+                        TextButton(onClick = {
+                            onLocalTranscriptionEnabled(false)
+                            onOpenGateway()
+                        }) { Text("Use my own gateway instead") }
                     } else {
-                        Notice { Text("Speech goes to your gateway. No model is needed on this phone.") }
+                        Notice { Text("Speech goes to a gateway you run. No model is needed on this phone.") }
+                        if (!status.isSatisfied(SetupStep.GATEWAY)) {
+                            PrimaryButton(
+                                text = "Set up gateway",
+                                onClick = onOpenGateway,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        TextButton(onClick = { onLocalTranscriptionEnabled(true) }) {
+                            Text("Use a model on this phone instead")
+                        }
                     }
                 }
                 OnboardingStage.KEYBOARD_READY -> {
@@ -518,7 +524,6 @@ fun SetupScreen(
                 PrimaryButton(
                     text = when (stage) {
                         OnboardingStage.WELCOME -> "Get started"
-                        OnboardingStage.SOURCE -> "Next"
                         OnboardingStage.READY -> readyPageButtonLabel(
                             readyPresentation,
                             localModels.takeIf { it.downloading != null }?.let(::downloadProgressLine),
@@ -542,7 +547,7 @@ fun SetupScreen(
             Text(
                 when (stage) {
                     OnboardingStage.READY -> "You can change your setup in Settings."
-                    OnboardingStage.WELCOME -> "Next, choose how speech becomes text."
+                    OnboardingStage.WELCOME -> "Next, choose a voice model."
                     OnboardingStage.KEYBOARD_READY -> ""
                     else -> "${status.completedStepCount} of ${status.stepCount} requirements ready. Your progress is kept when you leave."
                 },
