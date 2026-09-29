@@ -184,8 +184,13 @@ struct HomePresentationTests {
             #expect(card.showsTryField)
             #expect(card.status != .ready)
             #expect(card.quietAction == nil)
-            #expect(card.title == "Finishing dictation")
-            #expect(card.detail == "Keep the keyboard open while this dictation finishes.")
+            if state == .targetContextChanged {
+                #expect(card.title == "Waiting to insert")
+                #expect(card.detail == "Return to the keyboard. Go back to the original field, or choose Insert here.")
+            } else {
+                #expect(card.title == "Finishing dictation")
+                #expect(card.detail == "Keep the keyboard open while this dictation finishes.")
+            }
         }
     }
 

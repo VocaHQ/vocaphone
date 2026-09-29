@@ -126,28 +126,42 @@ struct HomeSessionCard: Equatable {
                 isHidden: true
             )
         }
+        // Parked on a field change still needs the field; insertion waits
+        // for the original field or Insert here.
+        let isParkedForFieldChange = context.state == .targetContextChanged
         let detail: String
-        if !context.isReadyToDictate {
-            detail = isFinishingInsertion
-                ? "Keep the keyboard open while this dictation finishes."
-                : "Fix the setup issue above before starting another dictation."
-        } else if context.isQuickDictationReady, let expiresAt = context.quickDictationExpiresAt {
-            // Standby, not recording — and the wording has to make that
-            // unmistakable, because the iOS microphone indicator is lit either
-            // way. See `QuickDictationAvailability`.
-            let duration = context.quickDictationDuration ?? .tenMinutes
-            detail = "Quick Dictation is on standby "
-                + duration.standbyDescription(expiringAt: expiresAt)
-                + ". Nothing is being recorded."
+        let title: String
+        let status: VocaStatus
+        if context.isReadyToDictate {
+            status = .ready
+            title = "Try it here"
+            if context.isQuickDictationReady, let expiresAt = context.quickDictationExpiresAt {
+                // Standby, not recording — and the wording has to make that
+                // unmistakable, because the iOS microphone indicator is lit either
+                // way. See `QuickDictationAvailability`.
+                let duration = context.quickDictationDuration ?? .tenMinutes
+                detail = "Quick Dictation is on standby "
+                    + duration.standbyDescription(expiringAt: expiresAt)
+                    + ". Nothing is being recorded."
+            } else {
+                detail = "Tap the field, switch to the vocaphone keyboard with the globe key, then tap Dictate."
+            }
+        } else if isParkedForFieldChange {
+            status = .working
+            title = "Waiting to insert"
+            detail = "Return to the keyboard. Go back to the original field, or choose Insert here."
+        } else if isFinishingInsertion {
+            status = .working
+            title = "Finishing dictation"
+            detail = "Keep the keyboard open while this dictation finishes."
         } else {
-            detail = "Tap the field, switch to the vocaphone keyboard with the globe key, then tap Dictate."
+            status = .inactive
+            title = "Dictation unavailable"
+            detail = "Fix the setup issue above before starting another dictation."
         }
         return HomeSessionCard(
-            status: context.isReadyToDictate
-                ? .ready : isFinishingInsertion ? .working : .inactive,
-            title: context.isReadyToDictate
-                ? "Try it here" : isFinishingInsertion
-                    ? "Finishing dictation" : "Dictation unavailable",
+            status: status,
+            title: title,
             detail: detail,
             primary: nil,
             secondary: nil,
