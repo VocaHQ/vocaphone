@@ -10,6 +10,7 @@ struct HomePresentationTests {
         canRetry: Bool = false,
         startedInApp: Bool = true,
         isTryFieldSession: Bool = false,
+        isTryFieldFocused: Bool = false,
         quickDictationReady: Bool = false,
         quickDictationDuration: QuickDictationDuration = .tenMinutes,
         readyToDictate: Bool = true,
@@ -30,6 +31,7 @@ struct HomePresentationTests {
                 canRetry: canRetry,
                 startedInApp: startedInApp,
                 isTryFieldSession: isTryFieldSession,
+                isTryFieldFocused: isTryFieldFocused,
                 isReadyToDictate: readyToDictate,
                 showTranscriptOnSession: showTranscriptOnSession
             )
@@ -192,6 +194,52 @@ struct HomePresentationTests {
                 #expect(card.detail == "Keep the keyboard open while this dictation finishes.")
             }
         }
+    }
+
+    /// Done, Clear, Settings and scroll-to-dismiss read this. It holds from
+    /// Dictate until the text lands, and lets go once it has, once it cannot
+    /// (a failure), or while insertion is parked on a field change.
+    @Test func theTryFieldIsLockedOnlyWhileTheKeyboardStillHasToInsert() {
+        for state in [
+            SessionState.launchingApp, .awaitingReturn, .recording,
+            .finalizing, .uploading, .transcribing, .readyToInsert,
+            .inserting, .inserted,
+        ] {
+            #expect(Self.card(state, isTryFieldSession: true).locksTryField)
+            #expect(Self.card(
+                state, isTryFieldSession: true, readyToDictate: false
+            ).locksTryField)
+            // A microphone test or another app's dictation has no field here.
+            #expect(!Self.card(state).locksTryField)
+            #expect(!Self.card(state, startedInApp: false).locksTryField)
+        }
+        for state in [
+            SessionState.idle, .targetContextChanged, .completed, .canceled,
+            .serverUnavailable, .transcriptionFailedRecoverable,
+            .permissionDenied, .transcriptionFailedPermanent,
+        ] {
+            #expect(!Self.card(state, isTryFieldSession: true).locksTryField)
+        }
+    }
+
+    /// With the keyboard already up, "tap the field" describes a step the
+    /// user has taken, and a microphone test would drop the keyboard.
+    @Test func aFocusedTryFieldTalksAboutTheKeyboardInFront() {
+        let focused = Self.card(.idle, isTryFieldFocused: true)
+        #expect(focused.showsTryField)
+        #expect(focused.quietAction == nil)
+        #expect(focused.detail?.hasPrefix("Tap Dictate on the vocaphone keyboard") == true)
+
+        let unfocused = Self.card(.idle)
+        #expect(unfocused.quietAction?.action == .startTest)
+        #expect(unfocused.detail?.hasPrefix("Tap the field") == true)
+    }
+
+    @Test func recordingIntoTheTryFieldSaysWhereTheTextGoes() {
+        let card = Self.card(.recording, isTryFieldSession: true, isTryFieldFocused: true)
+        #expect(card.title == "Listening")
+        #expect(card.detail == "Tap Finish here or on the keyboard. The text goes into the field.")
+        #expect(Self.card(.recording).detail == "Tap Finish when you are done.")
     }
 
     /// After cancel or complete the coordinator still holds the try-field

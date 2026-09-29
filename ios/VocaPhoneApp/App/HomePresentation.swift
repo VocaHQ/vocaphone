@@ -40,6 +40,10 @@ struct HomeSessionCard: Equatable {
     var isHidden = false
     /// A field to dictate into right here, the real thing rather than a test.
     var showsTryField = false
+    /// The keyboard is dictating into that field and has not inserted yet.
+    /// Dismissing it now drops the document proxy and loses the transcript,
+    /// so Done, Clear, Settings and scroll-to-dismiss all stand down.
+    var locksTryField = false
     /// A plain, non-destructive link under the card.
     var quietAction: Action?
 
@@ -59,6 +63,9 @@ struct HomeSessionCard: Equatable {
         /// field mounted while the session changes state so iOS can retain its
         /// first responder and the keyboard can insert the finished text.
         var isTryFieldSession = false
+        /// The try field has the keyboard. The instructions then describe the
+        /// keyboard in front of the user rather than how to raise it.
+        var isTryFieldFocused = false
         /// Whether all required setup steps are complete. Idle uses this; a
         /// finished transcript does not depend on today's setup state.
         var isReadyToDictate = true
@@ -67,6 +74,26 @@ struct HomeSessionCard: Equatable {
     }
 
     static func make(_ context: Context, now: Date = Date()) -> HomeSessionCard {
+        var card = derive(context, now: now)
+        card.locksTryField = card.showsTryField && context.isTryFieldSession
+            && awaitsInsertion(context.state)
+        return card
+    }
+
+    /// Every state from tapping Dictate until the text is in the field. A
+    /// field change is not one of them: insertion is parked there until the
+    /// user goes back to the field or chooses Insert here.
+    private static func awaitsInsertion(_ state: SessionState) -> Bool {
+        switch state {
+        case .launchingApp, .awaitingReturn, .recording, .finalizing,
+             .uploading, .transcribing, .readyToInsert, .inserting, .inserted:
+            true
+        default:
+            false
+        }
+    }
+
+    private static func derive(_ context: Context, now: Date) -> HomeSessionCard {
         switch context.state {
         case .launchingApp, .awaitingReturn:
             return starting(context)
@@ -143,6 +170,8 @@ struct HomeSessionCard: Equatable {
                 detail = "Quick Dictation is on standby "
                     + duration.standbyDescription(expiringAt: expiresAt)
                     + ". Nothing is being recorded."
+            } else if context.isTryFieldFocused {
+                detail = "Tap Dictate on the vocaphone keyboard. If another keyboard is up, switch with the globe key."
             } else {
                 detail = "Tap the field, switch to the vocaphone keyboard with the globe key, then tap Dictate."
             }
@@ -166,7 +195,9 @@ struct HomeSessionCard: Equatable {
             primary: nil,
             secondary: nil,
             showsTryField: true,
-            quietAction: context.isReadyToDictate
+            // A microphone test takes the card over and drops the keyboard, so
+            // it waits until the field is let go.
+            quietAction: context.isReadyToDictate && !context.isTryFieldFocused
                 ? Action(title: "Test the microphone only", action: .startTest)
                 : nil
         )
@@ -190,7 +221,9 @@ struct HomeSessionCard: Equatable {
         HomeSessionCard(
             status: .recording,
             title: "Listening",
-            detail: context.startedInApp
+            detail: context.isTryFieldSession
+                ? "Tap Finish here or on the keyboard. The text goes into the field."
+                : context.startedInApp
                 ? "Tap Finish when you are done."
                 : "Recording continues while you return to the app you were typing in.",
             primary: Action(title: "Finish recording", action: .finish, symbol: "stop.fill"),

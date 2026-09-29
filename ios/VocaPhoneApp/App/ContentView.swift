@@ -94,23 +94,37 @@ struct ContentView: View {
     }
 
     private var home: some View {
-        NavigationStack {
-            ScrollView {
-                // Before setup: one checklist. After: somewhere to dictate,
-                // what was dictated, and one line of how it is going. Which
-                // engine runs is a setting, not a task, so it lives there.
-                VStack(alignment: .leading, spacing: VocaMetrics.grouping) {
-                    setupChecklistCard
-                    modelDownloadCard
-                    quickDictationOfferCard
-                    sessionCard
-                    if !isTryFieldFocused {
-                        recentCard
-                        statsLine
+        let session = card
+        return NavigationStack {
+            ScrollViewReader { scroll in
+                ScrollView {
+                    // Before setup: one checklist. After: somewhere to dictate,
+                    // what was dictated, and one line of how it is going. Which
+                    // engine runs is a setting, not a task, so it lives there.
+                    VStack(alignment: .leading, spacing: VocaMetrics.grouping) {
+                        setupChecklistCard
+                        modelDownloadCard
+                        quickDictationOfferCard
+                        sessionCard(session)
+                            .id(Self.sessionCardID)
+                        if !isTryFieldFocused {
+                            recentCard
+                            statsLine
+                        }
+                    }
+                    .padding(.horizontal, VocaMetrics.padding)
+                    .padding(.vertical, VocaMetrics.grouping)
+                }
+                // Dragging the page must not drop the keyboard before it inserts.
+                .scrollDismissesKeyboard(session.locksTryField ? .never : .interactively)
+                // Cards above can push the field under the keyboard. Bring the
+                // session card to the top so the field and its status stay in view.
+                .onChange(of: isTryFieldFocused) { _, focused in
+                    guard focused else { return }
+                    withAnimation(reduceMotion ? nil : .snappy) {
+                        scroll.scrollTo(Self.sessionCardID, anchor: .top)
                     }
                 }
-                .padding(.horizontal, VocaMetrics.padding)
-                .padding(.vertical, VocaMetrics.grouping)
             }
             .background(Color.vocaCanvas)
             .navigationTitle("vocaphone")
@@ -120,12 +134,21 @@ struct ContentView: View {
             // button that did nothing, and the title already names the app.
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        SettingsView()
-                    } label: {
-                        Image(systemName: "gearshape")
+                    if isTryFieldFocused {
+                        // Pushing Settings unmounts the field, so it waits for
+                        // Done, and Done waits for the transcript.
+                        if !session.locksTryField {
+                            Button("Done") { isTryFieldFocused = false }
+                                .fontWeight(.semibold)
+                        }
+                    } else {
+                        NavigationLink {
+                            SettingsView()
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
+                        .accessibilityLabel("Settings")
                     }
-                    .accessibilityLabel("Settings")
                 }
             }
             .onChange(of: scenePhase) { previousPhase, currentPhase in
@@ -359,9 +382,8 @@ struct ContentView: View {
                 // dictated from another app offer itself for copying here as
                 // though this screen owned it.
                 startedInApp: coordinator.activeRecord.map(Self.startedInApp) ?? true,
-                isTryFieldSession: coordinator.activeRecord.map {
-                    $0.startedInContainingApp == true && $0.sourceDocumentID != "in-app-test"
-                } ?? false,
+                isTryFieldSession: coordinator.activeRecord.map(Self.isTryFieldSession) ?? false,
+                isTryFieldFocused: isTryFieldFocused,
                 isReadyToDictate: attentionStatus.isReadyToDictate
             )
         )
@@ -374,8 +396,14 @@ struct ContentView: View {
         record.sourceDocumentID == "in-app-test" || record.startedInContainingApp == true
     }
 
-    @ViewBuilder private var sessionCard: some View {
-        let model = card
+    /// The keyboard dictating into Home's own field, not a microphone test.
+    private static func isTryFieldSession(_ record: SessionRecord) -> Bool {
+        record.startedInContainingApp == true && record.sourceDocumentID != "in-app-test"
+    }
+
+    private static let sessionCardID = "session"
+
+    @ViewBuilder private func sessionCard(_ model: HomeSessionCard) -> some View {
         if !model.isHidden {
         VocaCard(padding: VocaMetrics.grouping) {
             VStack(alignment: .leading, spacing: VocaMetrics.padding - 2) {
@@ -387,6 +415,13 @@ struct ContentView: View {
                     // others were all the same weight, so it had nowhere to land.
                     isProminent: true
                 )
+
+                // Straight under the status, in every state: the keyboard is
+                // up, and a field that moved down as a meter and buttons
+                // appeared above it slid under the keyboard mid-dictation.
+                if model.showsTryField {
+                    tryField(locked: model.locksTryField)
+                }
 
                 if model.showsMeter {
                     RecordingMeter()
@@ -418,9 +453,6 @@ struct ContentView: View {
                         .disabled(isDisabled(primary.action))
                     }
                 }
-                if model.showsTryField {
-                    tryField
-                }
                 if let secondary = model.secondary {
                     Button(secondary.title, role: .destructive) { perform(secondary.action) }
                         .frame(maxWidth: .infinity)
@@ -439,60 +471,39 @@ struct ContentView: View {
     /// The real thing, on Home: a field that raises whichever keyboard is
     /// current, where the vocaphone keyboard's Dictate works like in any app.
     /// The words stay here; nothing is sent anywhere until Dictate is tapped.
-    private var showsTryFieldEditingControls: Bool {
-        guard isTryFieldFocused else { return false }
-        guard let record = coordinator.activeRecord,
-              record.startedInContainingApp == true,
-              record.sourceDocumentID != "in-app-test"
-        else { return true }
-        // Dismissing the keyboard before it inserts the transcript loses the
-        // document proxy. Failures and canceled sessions can be edited again.
-        switch record.state {
-        case .launchingApp, .awaitingReturn, .recording, .finalizing,
-             .uploading, .transcribing, .readyToInsert, .inserting, .inserted:
-            return false
-        default:
-            return true
-        }
-    }
-
-    private var tryField: some View {
-        VStack(alignment: .leading, spacing: VocaMetrics.related) {
+    ///
+    /// Clear sits inside the field, like a search field's; Done is in the
+    /// navigation bar. A row of buttons under the field cost the card 60
+    /// points while the keyboard left it half the screen.
+    private func tryField(locked: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
             TextField("Tap here, then Dictate", text: $tryText, axis: .vertical)
                 .lineLimit(2...6)
                 .focused($isTryFieldFocused)
                 .padding(VocaMetrics.related + 4)
-                .background(
-                    Color.vocaRecessedSurface,
-                    in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
-                )
-            if showsTryFieldEditingControls {
-                HStack(spacing: VocaMetrics.related) {
-                    Spacer()
-                    if !tryText.isEmpty {
-                        Button {
-                            tryText = ""
-                        } label: {
-                            Label("Clear", systemImage: "xmark")
-                                .frame(minHeight: VocaMetrics.minimumTarget)
-                                .padding(.horizontal, VocaMetrics.related)
-                        }
-                        .tint(Color.vocaSecondaryText)
-                    }
-                    Button {
-                        isTryFieldFocused = false
-                    } label: {
-                        Label("Done", systemImage: "checkmark")
-                            .frame(minHeight: VocaMetrics.minimumTarget)
-                            .padding(.horizontal, VocaMetrics.related)
-                    }
-                    .tint(Color.brand)
+            // Rewriting the text under the keyboard mid-dictation reads as
+            // the user moving to another field, and parks the insertion.
+            if !tryText.isEmpty, !locked {
+                Button {
+                    tryText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.body)
+                        .foregroundStyle(Color.vocaSecondaryText)
+                        .frame(
+                            width: VocaMetrics.minimumTarget,
+                            height: VocaMetrics.minimumTarget
+                        )
+                        .contentShape(Rectangle())
                 }
-                .font(.subheadline.weight(.semibold))
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear text")
             }
         }
+        .background(
+            Color.vocaRecessedSurface,
+            in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
+        )
     }
 
     private func isDisabled(_ action: HomeSessionAction) -> Bool {
