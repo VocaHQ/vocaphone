@@ -31,7 +31,8 @@ internal object SettingsHelp {
                 "so “send me the emoji” is still typed as you said it. The " +
                 "emoji names are English, and work by that name in a transcript in any " +
                 "language.",
-            "None of the three is applied to the Raw writing style.",
+            "Clean up speech and spoken emoji are not applied to the Raw writing " +
+                "style. Write numbers as digits still applies to it when it is on.",
         ),
     )
 

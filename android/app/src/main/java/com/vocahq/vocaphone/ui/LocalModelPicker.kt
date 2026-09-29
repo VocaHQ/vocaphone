@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,7 @@ import com.vocahq.vocaphone.local.ModelGuidanceResult
 import com.vocahq.vocaphone.local.ModelPick
 import com.vocahq.vocaphone.local.ModelPlainLanguage
 import com.vocahq.vocaphone.local.byteLabel
+import com.vocahq.vocaphone.local.coversLanguage
 import com.vocahq.vocaphone.local.downloadSizeProgress
 import com.vocahq.vocaphone.local.downloadTimeRemaining
 import com.vocahq.vocaphone.local.downloadWarning
@@ -1275,17 +1277,22 @@ private fun SetupModelChoices(
     }
     var choosingLanguage by remember { mutableStateOf(false) }
     val choices = remember(profile, language) { ModelChoices.choices(profile, language) }
-    val languageName = remember(profile, language) {
-        ModelGuidance.recommend(profile, ModelGuidanceIntent(language)).languageName
-    }
-    // The choices, then anything else already here or on its way: a model got
-    // from All models has to show up on the page it was chosen for.
-    val rows: List<Pair<LocalModelDescriptor, ModelChoices.Kind?>> = remember(choices, usable, state.downloaded, state.downloading) {
-        val ids = choices.map { it.model.id }.toSet()
-        choices.map { it.model to it.kind } +
-            usable.filter { (it.id in state.downloaded || it.id == state.downloading) && it.id !in ids }
-                .map { it to null }
-    }
+    val guided = remember(profile, language) { ModelGuidance.recommend(profile, ModelGuidanceIntent(language)) }
+    val languageName = guided.languageName
+    // The choices, then anything else already here or on its way — but only
+    // models that hear the chosen language. A model got from All models has
+    // to show up on the page it was chosen for; an English-only one does not
+    // belong on a French page with a "Use this model" button under it.
+    val rows: List<Pair<LocalModelDescriptor, ModelChoices.Kind?>> =
+        remember(choices, usable, state.downloaded, state.downloading, guided.intent.language) {
+            val ids = choices.map { it.model.id }.toSet()
+            choices.map { it.model to it.kind } +
+                usable.filter {
+                    (it.id in state.downloaded || it.id == state.downloading) &&
+                        it.id !in ids &&
+                        it.coversLanguage(guided.intent.language)
+                }.map { it to null }
+        }
     // Whatever is already in use or on its way wins over the suggestion, so
     // coming back to the page does not offer a second download.
     var picked by rememberSaveable(language) {
@@ -1294,6 +1301,12 @@ private fun SetupModelChoices(
                 ?: rows.firstOrNull { it.first.id == state.downloading }?.first?.id
                 ?: rows.firstOrNull()?.first?.id,
         )
+    }
+    // A model put in use, or started, from All models is this page's pick too;
+    // otherwise the radio would mark one model and offer to use another.
+    LaunchedEffect(selectedModelId, state.downloading) {
+        val external = state.downloading ?: selectedModelId.takeIf { it in state.downloaded }
+        if (external != null && rows.any { it.first.id == external }) picked = external
     }
     val pickedModel = rows.firstOrNull { it.first.id == picked }?.first
     val busy = state.downloading != null || state.preparing != null
@@ -1407,7 +1420,9 @@ private fun SetupModelChoiceRow(
         null -> model.plain.title
     }
     val tradeOff = when (kind) {
-        ModelChoices.Kind.BEST -> "The most accurate model for $languageName on this phone."
+        // The balanced pick: accurate, and quick on this phone. Not always the
+        // single most accurate model — More languages can outrate it.
+        ModelChoices.Kind.BEST -> "The best fit for $languageName on this phone."
         ModelChoices.Kind.SMALLER ->
             if (best != null && model.plain.accuracy < best.plain.accuracy) {
                 "Quicker to download. Makes a few more mistakes."
