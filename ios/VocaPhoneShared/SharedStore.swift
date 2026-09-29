@@ -125,10 +125,21 @@ final class SharedStore: @unchecked Sendable {
     /// all — in a product whose whole pitch is that your words stay yours.
     func delete(_ id: UUID) throws {
         let directory = try sessionsDirectory()
-        try? fileManager.removeItem(at: url(for: id, directory: directory))
-        try? fileManager.removeItem(at: meterURL(for: id, directory: directory))
-        try? fileManager.removeItem(at: liveTranscriptURL(for: id, directory: directory))
-        notify(.sessionChanged)
+        var firstError: Error?
+        var removed = false
+        for file in [
+            url(for: id, directory: directory),
+            meterURL(for: id, directory: directory),
+            liveTranscriptURL(for: id, directory: directory)
+        ] {
+            do {
+                removed = try removeIfPresent(file) || removed
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if removed { notify(.sessionChanged) }
+        if let firstError { throw firstError }
     }
 
     /// Removes every stored session. Used by "Delete all", which asks first.
@@ -137,12 +148,29 @@ final class SharedStore: @unchecked Sendable {
         let directory = try sessionsDirectory()
         guard fileManager.fileExists(atPath: directory.path) else { return 0 }
         var removed = 0
+        var firstError: Error?
         for url in try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
-            try? fileManager.removeItem(at: url)
-            removed += 1
+            do {
+                if try removeIfPresent(url) { removed += 1 }
+            } catch {
+                if firstError == nil { firstError = error }
+            }
         }
-        notify(.sessionChanged)
+        if removed > 0 { notify(.sessionChanged) }
+        if let firstError { throw firstError }
         return removed
+    }
+
+    /// Missing files are already deleted. A file that still exists after a
+    /// failed removal must be reported to the user, not counted as removed.
+    private func removeIfPresent(_ url: URL) throws -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else { return false }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch {
+            if fileManager.fileExists(atPath: url.path) { throw error }
+        }
+        return true
     }
 
     /// Deletes transcripts older than the retention the user chose.
@@ -157,21 +185,26 @@ final class SharedStore: @unchecked Sendable {
         let directory = try sessionsDirectory()
         guard fileManager.fileExists(atPath: directory.path) else { return 0 }
         var removed = 0
+        var firstError: Error?
         for url in try sessionFilesByRecency(in: directory) {
             guard let record = decodedRecord(at: url),
                   record.state.isTerminal,
                   now.timeIntervalSince(record.createdAt) > maximumAge
             else { continue }
-            try? fileManager.removeItem(at: url)
-            try? fileManager.removeItem(
-                at: url.deletingPathExtension().appendingPathExtension("meter")
-            )
-            try? fileManager.removeItem(
-                at: url.deletingPathExtension().appendingPathExtension("live")
-            )
-            removed += 1
+            for file in [
+                url,
+                url.deletingPathExtension().appendingPathExtension("meter"),
+                url.deletingPathExtension().appendingPathExtension("live")
+            ] {
+                do {
+                    if try removeIfPresent(file), file == url { removed += 1 }
+                } catch {
+                    if firstError == nil { firstError = error }
+                }
+            }
         }
         if removed > 0 { notify(.sessionChanged) }
+        if let firstError { throw firstError }
         return removed
     }
 

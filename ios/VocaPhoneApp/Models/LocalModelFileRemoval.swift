@@ -8,7 +8,13 @@ enum LocalModelFileRemoval {
         at folder: URL,
         using removeItem: (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }
     ) throws {
-        try removeItem(folder)
+        do {
+            try removeItem(folder)
+        } catch {
+            // A removal may finish and then report an error. The folder's
+            // actual presence is what determines whether it remains usable.
+            if FileManager.default.fileExists(atPath: folder.path) { throw error }
+        }
         if FileManager.default.fileExists(atPath: folder.path) {
             throw CocoaError(.fileWriteUnknown)
         }

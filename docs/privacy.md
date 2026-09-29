@@ -139,7 +139,10 @@ The iOS keyboard completes, corrects and predicts entirely on the device.
   annotation catalog; recents are stored in the App Group.
 - **Transcript retention** is the user's choice — keep everything, 30 days, or
   7 days — under Settings → Privacy and permissions, alongside a way to delete
-  any single transcript or all of them.
+  any single transcript or all of them. If a requested deletion cannot finish,
+  the app reports the error so remaining files can be retried. Automatic
+  retention cleanup records a redacted diagnostic on failure and retries during
+  later housekeeping.
 
 ## Android keyboard
 

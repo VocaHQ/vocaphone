@@ -35,6 +35,7 @@ struct LocalModelPicker: View {
 #endif
 
     @State private var modelLoadTask: Task<Void, Never>?
+    @State private var modelLoadGeneration = 0
     @State private var modelLoadError: String?
     @State private var modelAlert: ModelAlert?
     @State private var guidanceLanguageOverride: String?
@@ -206,7 +207,13 @@ struct LocalModelPicker: View {
             case let .failure(model):
                 Alert(
                     title: Text("Could not delete \(model.plain.title)"),
-                    message: Text("The model is still on this iPhone. Try again."),
+                    message: Text("Some model files may remain. Check the model's status, then retry deletion or download it again."),
+                    dismissButton: .default(Text("OK"))
+                )
+            case let .loadFailure(model, detail):
+                Alert(
+                    title: Text("Could not use \(model.plain.title)"),
+                    message: Text(detail),
                     dismissButton: .default(Text("OK"))
                 )
             }
@@ -217,18 +224,23 @@ struct LocalModelPicker: View {
     private enum ModelAlert: Identifiable {
         case delete(LocalModelDescriptor)
         case failure(LocalModelDescriptor)
+        case loadFailure(LocalModelDescriptor, String)
 
         var id: String {
             switch self {
             case let .delete(model): "delete-\(model.id)"
             case let .failure(model): "failure-\(model.id)"
+            case let .loadFailure(model, _): "load-failure-\(model.id)"
             }
         }
     }
 
     private func delete(_ model: LocalModelDescriptor) {
+        modelLoadGeneration += 1
         modelLoadTask?.cancel()
         Task { @MainActor in
+            guard manager.beginDeletion(model) else { return }
+            onChange()
             let deleted = await manager.deleteReportingResult(model)
             onChange()
             if !deleted { modelAlert = .failure(model) }
@@ -378,6 +390,7 @@ struct LocalModelPicker: View {
         // Leaving Choose model ends this page's claim on the selection. The
         // download itself lives on the manager and carries on.
         .onDisappear {
+            modelLoadGeneration += 1
             modelLoadTask?.cancel()
             modelLoadTask = nil
         }
@@ -1003,6 +1016,8 @@ struct LocalModelPicker: View {
         adoptsOnlyIfUnclaimed: Bool = false
     ) {
         modelLoadError = nil
+        modelLoadGeneration += 1
+        let generation = modelLoadGeneration
         modelLoadTask?.cancel()
         // A finished download is adopted the moment its files are on disk,
         // before the engine is loaded — which is how the rest of the app
@@ -1025,6 +1040,9 @@ struct LocalModelPicker: View {
         }
         let commitsAfterLoad = !adoptsOnlyIfUnclaimed
         modelLoadTask = Task { @MainActor in
+            defer {
+                if modelLoadGeneration == generation { modelLoadTask = nil }
+            }
             do {
                 let requestedLanguage = languageOverride.flatMap(TranscriptionLanguage.init(rawValue:))
                     ?? KeyboardPreferences.transcriptionLanguage
@@ -1036,7 +1054,7 @@ struct LocalModelPicker: View {
                     model,
                     language: language.rawValue
                 )
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, modelLoadGeneration == generation else { return }
                 // Use is a choice the user is watching happen: it commits only
                 // once the engine has actually loaded, so a failed load does
                 // not quietly switch their model.
@@ -1045,10 +1063,14 @@ struct LocalModelPicker: View {
                 // The picker does not expose cancellation for engine loading;
                 // cancellation here only prevents a stale selection commit.
             } catch {
-                modelLoadError = "Could not load \(model.displayName): "
-                    + error.localizedDescription
+                if !Task.isCancelled, modelLoadGeneration == generation {
+                    modelLoadError = "Could not load \(model.displayName): "
+                        + error.localizedDescription
+                    if commitsAfterLoad {
+                        modelAlert = .loadFailure(model, error.localizedDescription)
+                    }
+                }
             }
-            modelLoadTask = nil
         }
     }
 

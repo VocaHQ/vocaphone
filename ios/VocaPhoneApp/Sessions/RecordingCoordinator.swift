@@ -337,24 +337,47 @@ final class RecordingCoordinator {
     /// If it is the session currently on screen, the home card lets go of it
     /// too — a card describing a transcript that no longer exists is worse than
     /// an empty one.
-    func deleteTranscript(_ id: UUID) async {
+    func deleteTranscript(_ id: UUID) async throws {
         guard !isInert else { return }
-        await Task.detached(priority: .userInitiated) {
-            try? SharedStore.shared.delete(id)
-        }.value
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try SharedStore.shared.delete(id)
+            }.value
+        } catch {
+            await clearActiveRecordIfMissing(id)
+            throw error
+        }
         if activeRecord?.sessionID == id {
             activeRecord = nil
             message = nil
         }
     }
 
-    func deleteAllTranscripts() async {
+    func deleteAllTranscripts() async throws {
         guard !isInert else { return }
-        await Task.detached(priority: .userInitiated) {
-            try? SharedStore.shared.deleteAllSessions()
-        }.value
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try SharedStore.shared.deleteAllSessions()
+            }.value
+        } catch {
+            if let id = activeRecord?.sessionID { await clearActiveRecordIfMissing(id) }
+            throw error
+        }
         activeRecord = nil
         message = nil
+    }
+
+    /// A bulk removal can partly succeed. Do not leave Home showing a
+    /// transcript whose record was removed before a different file failed.
+    private func clearActiveRecordIfMissing(_ id: UUID) async {
+        guard activeRecord?.sessionID == id else { return }
+        let exists = await Task.detached(priority: .utility) {
+            (try? SharedStore.shared.load(id)) != nil
+        }.value
+        if !exists {
+            activeRecord = nil
+            message = nil
+        }
     }
 
     nonisolated func loadRecentTranscripts(limit: Int = 50) async -> [SessionRecord] {
@@ -826,7 +849,11 @@ final class RecordingCoordinator {
             // The retention the user chose, which is a promise rather than a
             // storage bound — it deletes finished transcripts however few there
             // are.
-            try? store.pruneTranscripts(olderThan: retention)
+            do {
+                try store.pruneTranscripts(olderThan: retention)
+            } catch {
+                DiagnosticLog.record(.operationFailed, metadata: .error(.transcriptCleanupFailed))
+            }
         }
     }
 
