@@ -175,7 +175,7 @@ struct HomePresentationTests {
     @Test func readinessChangeCannotRemoveTheInsertionTarget() {
         for state in [
             SessionState.readyToInsert, .targetContextChanged,
-            .inserting, .inserted, .completed,
+            .inserting, .inserted,
         ] {
             let card = Self.card(
                 state, isTryFieldSession: true, readyToDictate: false
@@ -184,6 +184,21 @@ struct HomePresentationTests {
             #expect(card.showsTryField)
             #expect(card.status != .ready)
             #expect(card.quietAction == nil)
+            #expect(card.title == "Finishing dictation")
+            #expect(card.detail == "Keep the keyboard open while this dictation finishes.")
+        }
+    }
+
+    /// After cancel or complete the coordinator still holds the try-field
+    /// session, but the field is no longer needed for insertion. Unready setup
+    /// then belongs to the checklist, not a leftover Try it card.
+    @Test func aFinishedTryFieldSessionDoesNotOutliveSetupReadiness() {
+        for state in [SessionState.completed, .idle, .canceled, .expired] {
+            let card = Self.card(
+                state, isTryFieldSession: true, readyToDictate: false
+            )
+            #expect(card.isHidden)
+            #expect(!card.showsTryField)
         }
     }
 

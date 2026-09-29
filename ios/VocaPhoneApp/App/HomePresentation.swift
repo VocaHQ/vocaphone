@@ -107,8 +107,17 @@ struct HomeSessionCard: Equatable {
     // MARK: - States
 
     private static func resting(_ context: Context, now: Date) -> HomeSessionCard {
-        // A missing model is the setup checklist's to explain.
-        guard context.isReadyToDictate || context.isTryFieldSession else {
+        // Unready setup stands down for the checklist. Keep the field only
+        // while this try-field session still needs it for insertion.
+        let isFinishingInsertion: Bool
+        switch context.state {
+        case .readyToInsert, .targetContextChanged, .inserting, .inserted:
+            isFinishingInsertion = true
+        default:
+            isFinishingInsertion = false
+        }
+        let keepFieldForActiveInsertion = context.isTryFieldSession && isFinishingInsertion
+        guard context.isReadyToDictate || keepFieldForActiveInsertion else {
             return HomeSessionCard(
                 status: .inactive,
                 title: "Microphone test",
@@ -116,13 +125,6 @@ struct HomeSessionCard: Equatable {
                 primary: nil,
                 isHidden: true
             )
-        }
-        let isFinishingInsertion: Bool
-        switch context.state {
-        case .readyToInsert, .inserting, .inserted:
-            isFinishingInsertion = true
-        default:
-            isFinishingInsertion = false
         }
         let detail: String
         if !context.isReadyToDictate {
