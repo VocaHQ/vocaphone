@@ -141,12 +141,11 @@ Decoded with sherpa-onnx 1.13.8 on macOS arm64, it returned nothing for English
 or German, answered French in Persian script and Spanish as mixed-script noise,
 and dropped most of a Korean sentence. On synthesized Hindi, Thai, Indonesian,
 Malay and Vietnamese it was usable. Both Dolphin ids now retire onto Whisper
-Large v3 Turbo, then Whisper Small. Large v3 covers every language Dolphin
-did, but Small has no Cantonese, so the migration now reads the chosen
-transcription language: the first fitting rung that covers it wins, then a
-language-only rung (SenseVoice, for Cantonese), then the first fitting rung.
-A 3 GB Cantonese speaker lands on SenseVoice; a 2 GB phone on Automatic is still
-cleared rather than handed a model without its language. iOS now leads with Large v3 Turbo for the old Dolphin starter
+Large v3 Turbo, then Whisper Small, then SenseVoice. Large v3 covers every
+language Dolphin did, but Small has no Cantonese, so the migration prefers a
+fitting replacement that still covers the user's languages. A 3 GB Cantonese
+speaker lands on SenseVoice; English on the same phone still gets Whisper
+Small. iOS now leads with Large v3 Turbo for the old Dolphin starter
 languages where it fits. Android leaves them to Whisper scoring, which keeps its
 874 MB large build off first run. Vietnamese keeps `zipformer-vi`.
 

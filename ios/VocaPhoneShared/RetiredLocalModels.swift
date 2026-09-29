@@ -77,13 +77,18 @@ enum RetiredLocalModels {
         for id in ["moonshine-tiny-en", "moonshine-base-en", "moonshine-v2-tiny-en", "moonshine-v2-base-en"] {
             table[id] = ["parakeet-tdt-ctc-110m-en"]
         }
-        // Both Dolphin builds retire onto Whisper. Dolphin Small listed English
-        // but returned nothing for it, nor for German, and answered French in
-        // Persian script. Large v3 covers every language Dolphin did; Small is
-        // the rung for a phone that cannot hold it. See `languageReplacements`
-        // for the one language Small loses.
+        // Both Dolphin builds prefer Whisper, then SenseVoice. Dolphin Small
+        // listed English but returned nothing for it, nor for German, and
+        // answered French in Persian script. Large v3 covers the languages
+        // Dolphin claimed, including Cantonese; Small does not cover Cantonese,
+        // so a phone that cannot hold Large steps to SenseVoice when that still
+        // covers what the user speaks.
         for id in ["dolphin-base-ctc", "dolphin-small-ctc"] {
-            table[id] = ["openai_whisper-large-v3-v20240930_626MB", "openai_whisper-small_216MB"]
+            table[id] = [
+                "openai_whisper-large-v3-v20240930_626MB",
+                "openai_whisper-small_216MB",
+                "sense-voice"
+            ]
         }
         // SenseVoice is the stronger Mandarin model, also covers Cantonese,
         // and needs the same memory.
@@ -97,18 +102,6 @@ enum RetiredLocalModels {
 
         return table
     }()
-
-    /// A rung taken only for a chosen language that every fitting rung in
-    /// `replacements` would lose.
-    ///
-    /// Whisper Small has no Cantonese, so a 3 GB phone that dictated Cantonese
-    /// on Dolphin goes to SenseVoice. It is not a general rung: offered to a
-    /// Hindi speaker, or to one left on Automatic, it would swap a model that
-    /// has their language for one that does not.
-    static let languageReplacements: [String: [String: String]] = [
-        "dolphin-base-ctc": ["yue": "sense-voice"],
-        "dolphin-small-ctc": ["yue": "sense-voice"],
-    ]
 
     /// Whether `id` names something the catalog used to ship and no longer does.
     static func isRetired(_ id: String) -> Bool { replacements[id] != nil }
@@ -137,9 +130,9 @@ enum RetiredLocalModels {
     static func replacement(
         for stored: String,
         deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
-        language: String = ""
+        languages: [String] = []
     ) -> String? {
-        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, language: language) {
+        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, languages: languages) {
         case .unchanged: return stored
         case let .replaced(id): return id
         case .cleared: return nil
@@ -148,7 +141,7 @@ enum RetiredLocalModels {
 
     /// What to do with `stored` on this device.
     ///
-    /// `cleared` is the case worth being careful about. A 2 GB iPhone on
+    /// `cleared` is the case worth being careful about. A 1 GB iPhone on
     /// `dolphin-base-ctc` has nothing to move to -- every replacement needs more
     /// memory than it has -- and clearing the model alone would leave on-device
     /// transcription still switched on with nothing behind it. Every dictation
@@ -159,41 +152,70 @@ enum RetiredLocalModels {
     /// route it cannot take, and setup says so before recording rather than
     /// after.
     ///
-    /// `language` is the chosen transcription language, empty or `auto` for
-    /// none. The first fitting rung that covers it wins; failing that, its
-    /// `languageReplacements` rung if that fits; failing that, the first
-    /// fitting rung, as before a language was considered.
+    /// `languages` is what the user actually speaks: empty means unknown, and
+    /// then the first fitting candidate wins, which is how English-only and
+    /// legacy migrations behave. When it is set, a fitting candidate that
+    /// covers every requested language is preferred, so Cantonese on a 3 GB
+    /// phone lands on SenseVoice instead of Whisper Small. If none of the
+    /// fitting candidates cover the languages, the first fitting one is kept
+    /// so the phone is not left without a model.
     static func resolve(
         _ stored: String,
         deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
-        language: String = ""
+        languages: [String] = []
     ) -> Outcome {
         if LocalModelCatalog.descriptor(for: stored) != nil { return .unchanged }
         guard let candidates = replacements[stored] else { return .unchanged }
-        func fits(_ model: LocalModelDescriptor) -> Bool { deviceMemoryGB >= model.minimumRamGB }
-        let fitting = candidates.compactMap(LocalModelCatalog.descriptor(for:)).filter(fits)
-        let spoken = language == TranscriptionLanguage.automatic.rawValue ? "" : language
-        let forLanguage = languageReplacements[stored]?[spoken]
-            .flatMap(LocalModelCatalog.descriptor(for:))
-            .flatMap { fits($0) ? $0 : nil }
-        let chosen = fitting.first { $0.covers(spoken) } ?? forLanguage ?? fitting.first
-        return chosen.map { Outcome.replaced($0.id) } ?? .cleared
+        let fitting = candidates
+            .compactMap(LocalModelCatalog.descriptor(for:))
+            .filter { deviceMemoryGB >= $0.minimumRamGB }
+        let covering = fitting.filter { model in languages.allSatisfy { model.covers($0) } }
+        return (covering.first ?? fitting.first).map { Outcome.replaced($0.id) } ?? .cleared
+    }
+
+    /// Languages the launch migration should try to keep covering.
+    ///
+    /// The stored transcription language, the last model-language claim, and
+    /// the phone's preferred languages, each run through the catalog's own
+    /// normaliser so `yue` stays `yue` and `auto` drops out.
+    static func languagesForMigration(
+        transcriptionLanguage: String = KeyboardPreferences.transcriptionLanguage.rawValue,
+        modelLanguages: Set<String> = KeyboardPreferences.modelLanguages,
+        preferredLanguages: [String] = Locale.preferredLanguages
+    ) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for raw in [transcriptionLanguage] + modelLanguages.sorted() + preferredLanguages {
+            guard let code = LocalModelCatalog.normalizedLanguageCode(raw) else { continue }
+            if seen.insert(code).inserted {
+                result.append(code)
+            }
+        }
+        return result
     }
 
     /// Rewrite the stored selection once, at launch, before anything reads it.
     ///
     /// Writing back rather than translating on every read keeps the history of
     /// the catalog out of the keyboard process, which shares this value and has
-    /// no reason to know it.
+    /// no reason to know it. `defaults` stays injectable so tests can drive the
+    /// write without touching the App Group.
     static func migrateStoredSelection(
         deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
+        languages: [String] = [],
         defaults: UserDefaults? = UserDefaults(suiteName: AppConfiguration.appGroupIdentifier)
     ) {
         guard let defaults,
               let stored = defaults.string(forKey: LocalTranscriptionPreferences.modelKey)
         else { return }
-        let language = defaults.string(forKey: KeyboardPreferences.transcriptionLanguageKey) ?? ""
-        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, language: language) {
+        let needed = languages.isEmpty
+            ? languagesForMigration(
+                transcriptionLanguage: defaults.string(forKey: KeyboardPreferences.transcriptionLanguageKey) ?? "",
+                modelLanguages: Set(defaults.stringArray(forKey: KeyboardPreferences.modelLanguagesKey) ?? []),
+                preferredLanguages: []
+            )
+            : languages
+        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, languages: needed) {
         case .unchanged:
             break
         case let .replaced(id):

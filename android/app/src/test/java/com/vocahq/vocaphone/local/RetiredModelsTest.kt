@@ -44,7 +44,7 @@ class RetiredModelsTest {
         val outcome = RetiredModels.migrate(
             stored = selected,
             totalRamGB = 2,
-            sherpaAvailable = true,
+            sherpaAvailable = false,
             replace = { replacement -> selected = replacement; notice = replacement },
             clear = { selected = ""; enabled = false; notice = "" },
         )
@@ -60,8 +60,17 @@ class RetiredModelsTest {
      * the flag is passed. Named rather than positional so it cannot be mistaken
      * for the RAM argument.
      */
-    private fun replacement(id: String, ram: Long = phone, sherpa: Boolean = true) =
-        RetiredModels.replacementFor(id, totalRamGB = ram, sherpaAvailable = sherpa)
+    private fun replacement(
+        id: String,
+        ram: Long = phone,
+        sherpa: Boolean = true,
+        languages: Collection<String> = emptyList(),
+    ) = RetiredModels.replacementFor(
+        id,
+        totalRamGB = ram,
+        sherpaAvailable = sherpa,
+        languages = languages,
+    )
 
     @Test
     fun `every retired id is really gone and every replacement really exists`() {
@@ -137,44 +146,13 @@ class RetiredModelsTest {
             "canary-180m-flash",
             replacement("fast-conformer-ctc-4-lang"),
         )
-        // Both Dolphin builds go to Whisper, which covers every language they
-        // did, and step down to Small where Large does not fit.
+        // Both Dolphin builds prefer Whisper Large, then Small, then SenseVoice.
+        // Empty languages keep the Whisper path, including Small on a 3 GB phone.
         listOf("dolphin-base-ctc", "dolphin-small-ctc").forEach {
             assertEquals(it, "large-v3-turbo-q8_0", replacement(it))
             assertEquals(it, "small-q8_0", replacement(it, ram = 3))
         }
         assertEquals("sense-voice", replacement("paraformer-zh-small", ram = 2))
-    }
-
-    /**
-     * Whisper Small has no Cantonese. A 3 GB phone that dictated Cantonese on
-     * Dolphin moves to SenseVoice, which has it, and a Hindi speaker on the
-     * same phone still gets Small rather than a model without Hindi.
-     */
-    @Test
-    fun `a retired model keeps the chosen language where a rung can hold it`() {
-        fun resolve(language: String, ram: Long = 3) =
-            RetiredModels.resolve("dolphin-small-ctc", ram, sherpaAvailable = true, language = language)
-        assertEquals(RetiredModels.Outcome.Replaced("sense-voice"), resolve("yue"))
-        assertEquals(RetiredModels.Outcome.Replaced("small-q8_0"), resolve("hi"))
-        assertEquals(RetiredModels.Outcome.Replaced("small-q8_0"), resolve("auto"))
-        // Large v3 Turbo has Cantonese, so it still leads where it fits.
-        assertEquals(RetiredModels.Outcome.Replaced("large-v3-turbo-q8_0"), resolve("yue", ram = phone))
-        // SenseVoice is a Cantonese rung only. A 2 GB phone on Automatic still
-        // has nothing to move to, rather than a model without its language.
-        assertEquals(RetiredModels.Outcome.Cleared, resolve("auto", ram = 2))
-        assertEquals(RetiredModels.Outcome.Replaced("sense-voice"), resolve("yue", ram = 2))
-        RetiredModels.languageReplacements.forEach { (retired, rungs) ->
-            assertTrue(RetiredModels.isRetired(retired))
-            rungs.forEach { (language, id) ->
-                assertTrue("$id covers $language", LocalModelCatalog.find(id)?.coversLanguage(language) == true)
-            }
-        }
-        // Without sherpa there is no SenseVoice, and Small is still better than nothing.
-        assertEquals(
-            RetiredModels.Outcome.Replaced("small-q8_0"),
-            RetiredModels.resolve("dolphin-small-ctc", 3, sherpaAvailable = false, language = "yue"),
-        )
         // The Russian model kept its weights family and changed id, so that an
         // already-downloaded v2 is swept rather than failing its SHA-256 check.
         assertEquals("giga-am-v3-ru", replacement("giga-am-ctc-ru"))
@@ -186,8 +164,13 @@ class RetiredModelsTest {
             replacement("fast-conformer-ctc-4-lang", sherpa = false),
         )
         // Whisper replacements are unaffected: that engine is always present,
-        // which is also where the retired Dolphin builds land.
+        // which is also where the retired Dolphin builds land when SenseVoice
+        // cannot run.
         assertEquals("large-v3-turbo-q8_0", replacement("dolphin-small-ctc", sherpa = false))
+        assertEquals(
+            "small-q8_0",
+            replacement("dolphin-small-ctc", ram = 3, sherpa = false, languages = listOf("yue")),
+        )
         assertEquals(
             "small-q8_0",
             replacement("small.en", sherpa = false),
@@ -204,18 +187,57 @@ class RetiredModelsTest {
     }
 
     /**
-     * The case a 2 GB phone on Dolphin Base lands in: every replacement wants
-     * more memory than it has. Clearing the selection alone would leave
-     * on-device transcription switched on with nothing behind it, and
-     * `deliverLocal` would record the audio and then fail on every dictation.
+     * SenseVoice needs 2 GB, so a 2 GB phone with sherpa can land there. The
+     * cleared case is the phone that still has nothing: sherpa is missing, or
+     * the device is smaller than every remaining candidate.
      */
     @Test
     fun `a retired model with no replacement this phone can run clears the selection`() {
         assertEquals(
             RetiredModels.Outcome.Cleared,
-            RetiredModels.resolve("dolphin-base-ctc", totalRamGB = 2, sherpaAvailable = true),
+            RetiredModels.resolve("dolphin-base-ctc", totalRamGB = 2, sherpaAvailable = false),
         )
-        assertNull(replacement("dolphin-base-ctc", ram = 2))
+        assertNull(replacement("dolphin-base-ctc", ram = 2, sherpa = false))
+        assertNull(replacement("dolphin-base-ctc", ram = 1))
+        assertEquals("sense-voice", replacement("dolphin-base-ctc", ram = 2))
+    }
+
+    /**
+     * Whisper Small cannot transcribe Cantonese, so a 3 GB Dolphin install
+     * that was used for `yue` must not stay on Small. SenseVoice covers it
+     * and fits. English, and a migration with no language information, still
+     * prefer Small so SenseVoice does not steal those phones.
+     */
+    @Test
+    fun `dolphin retirement prefers a fitting model that still covers the language`() {
+        listOf("dolphin-base-ctc", "dolphin-small-ctc").forEach { id ->
+            assertEquals(
+                id,
+                "sense-voice",
+                replacement(id, ram = 3, languages = listOf("yue")),
+            )
+            assertEquals(
+                id,
+                "large-v3-turbo-q8_0",
+                replacement(id, ram = 8, languages = listOf("yue")),
+            )
+            assertEquals(
+                id,
+                "small-q8_0",
+                replacement(id, ram = 3, languages = listOf("en")),
+            )
+            assertEquals(
+                id,
+                "small-q8_0",
+                replacement(id, ram = 3, languages = listOf("hi")),
+            )
+            assertEquals(id, "small-q8_0", replacement(id, ram = 3))
+            assertEquals(
+                id,
+                "sense-voice",
+                replacement(id, ram = 2, languages = listOf("yue")),
+            )
+        }
     }
 
     @Test

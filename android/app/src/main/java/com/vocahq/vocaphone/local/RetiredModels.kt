@@ -1,7 +1,5 @@
 package com.vocahq.vocaphone.local
 
-import com.vocahq.vocaphone.core.TranscriptionLanguage
-
 /**
  * Where a stored selection goes when the model it names has left the catalog.
  *
@@ -63,14 +61,15 @@ object RetiredModels {
         // against 6.20); v1 was already behind v2.
         listOf("moonshine-tiny-en", "moonshine-base-en", "moonshine-v2-tiny-en", "moonshine-v2-base-en")
             .forEach { put(it, listOf("parakeet-tdt-ctc-110m-en")) }
-        // Both Dolphin builds retire onto Whisper. Dolphin Small listed
-        // English but returned nothing for it, nor for German, and answered
-        // French in Persian script. Large v3 Turbo covers every language
-        // Dolphin did, and Whisper is the one engine the fdroid flavor has too;
-        // Small is the rung for a phone that cannot hold it. See
-        // [languageReplacements] for the one language Small loses.
+        // Both Dolphin builds prefer Whisper, then SenseVoice. Dolphin Small
+        // listed English but returned nothing for it, nor for German, and
+        // answered French in Persian script. Large v3 covers the languages
+        // Dolphin claimed, including Cantonese; Small does not cover Cantonese,
+        // so a phone that cannot hold Large steps to SenseVoice when that still
+        // covers what the user speaks. Whisper remains the fdroid path because
+        // SenseVoice needs sherpa.
         listOf("dolphin-base-ctc", "dolphin-small-ctc")
-            .forEach { put(it, listOf("large-v3-turbo-q8_0", "small-q8_0")) }
+            .forEach { put(it, listOf("large-v3-turbo-q8_0", "small-q8_0", "sense-voice")) }
         // SenseVoice is the stronger Mandarin model, also covers Cantonese,
         // and needs the same memory.
         put("paraformer-zh-small", listOf("sense-voice"))
@@ -81,20 +80,6 @@ object RetiredModels {
         // Only ever on the unmerged branch, but testers have it downloaded.
         put("giga-am-ctc-v3-ru", listOf("giga-am-v3-ru"))
     }
-
-    /**
-     * A rung taken only for a chosen language that every fitting rung in
-     * [replacements] would lose.
-     *
-     * Whisper Small has no Cantonese, so a 3 GB phone that dictated Cantonese
-     * on Dolphin goes to SenseVoice. It is not a general rung: offered to a
-     * Hindi speaker, or to one left on Automatic, it would swap a model that
-     * has their language for one that does not.
-     */
-    val languageReplacements: Map<String, Map<String, String>> = mapOf(
-        "dolphin-base-ctc" to mapOf("yue" to "sense-voice"),
-        "dolphin-small-ctc" to mapOf("yue" to "sense-voice"),
-    )
 
     /** Whether [id] names something the catalog used to ship and no longer does. */
     fun isRetired(id: String): Boolean = id in replacements
@@ -122,34 +107,39 @@ object RetiredModels {
      * What to do with [stored] on this device.
      *
      * [Outcome.Cleared] is the case worth being careful about. A 2 GB phone on
-     * `dolphin-base-ctc` has nothing to move to -- every replacement needs more
-     * memory than it has -- and clearing the model alone would leave on-device
-     * transcription still switched on with nothing behind it. `deliverLocal`
-     * would then record the audio and fail at the end of every dictation with
-     * "Choose and download an on-device model first", forever. Turning the
-     * switch off with the selection sends the same person to
-     * `GATEWAY_NOT_CONFIGURED` setup *before* recording instead, which is the
-     * honest answer and the actionable one.
+     * `dolphin-base-ctc` with sherpa unavailable has nothing to move to --
+     * Whisper Large and Small need more memory, and SenseVoice is not on that
+     * build -- and clearing the model alone would leave on-device transcription
+     * still switched on with nothing behind it. `deliverLocal` would then
+     * record the audio and fail at the end of every dictation with "Choose and
+     * download an on-device model first", forever. Turning the switch off with
+     * the selection sends the same person to `GATEWAY_NOT_CONFIGURED` setup
+     * *before* recording instead, which is the honest answer and the
+     * actionable one.
+     *
+     * [languages] is what the user actually speaks: empty means unknown, and
+     * then the first fitting candidate wins, which is how English-only and
+     * legacy migrations behave. When it is set, a fitting candidate that
+     * covers every requested language is preferred, so Cantonese on a 3 GB
+     * phone lands on SenseVoice instead of Whisper Small. If none of the
+     * fitting candidates cover the languages, the first fitting one is kept
+     * so the phone is not left without a model.
      */
     fun resolve(
         stored: String,
         totalRamGB: Long,
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
-        language: String = "",
+        languages: Collection<String> = emptyList(),
     ): Outcome {
         if (stored.isEmpty()) return Outcome.Unchanged
         if (LocalModelCatalog.find(stored) != null) return Outcome.Unchanged
         val candidates = replacements[stored] ?: return Outcome.Unchanged
-        fun usable(id: String) = LocalModelCatalog.find(id)
-            ?.takeIf { LocalModelCatalog.isUsableOnDevice(it, totalRamGB, sherpaAvailable) }
-        val fitting = candidates.mapNotNull(::usable)
-        // The first fitting rung that covers the chosen language wins; failing
-        // that, its [languageReplacements] rung if that fits; failing that, the
-        // first fitting rung, as before a language was considered.
-        val spoken = if (language == TranscriptionLanguage.AUTOMATIC.wireValue) "" else language
-        val chosen = fitting.firstOrNull { it.coversLanguage(spoken) }
-            ?: languageReplacements[stored]?.get(spoken)?.let(::usable)
-            ?: fitting.firstOrNull()
+        val fitting = candidates.mapNotNull { id ->
+            LocalModelCatalog.find(id)
+                ?.takeIf { LocalModelCatalog.isUsableOnDevice(it, totalRamGB, sherpaAvailable) }
+        }
+        val covering = fitting.filter { it.coversAll(languages.toList()) }
+        val chosen = covering.firstOrNull() ?: fitting.firstOrNull()
         return chosen?.id?.let(Outcome::Replaced) ?: Outcome.Cleared
     }
 
@@ -158,10 +148,10 @@ object RetiredModels {
         stored: String,
         totalRamGB: Long,
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
-        language: String = "",
+        languages: Collection<String> = emptyList(),
         replace: suspend (String) -> Unit,
         clear: suspend () -> Unit,
-    ): Outcome = resolve(stored, totalRamGB, sherpaAvailable, language).also { outcome ->
+    ): Outcome = resolve(stored, totalRamGB, sherpaAvailable, languages).also { outcome ->
         when (outcome) {
             is Outcome.Unchanged -> Unit
             is Outcome.Replaced -> replace(outcome.id)
@@ -183,7 +173,8 @@ object RetiredModels {
         stored: String,
         totalRamGB: Long,
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
-    ): String? = when (val outcome = resolve(stored, totalRamGB, sherpaAvailable)) {
+        languages: Collection<String> = emptyList(),
+    ): String? = when (val outcome = resolve(stored, totalRamGB, sherpaAvailable, languages)) {
         is Outcome.Unchanged -> stored
         is Outcome.Replaced -> outcome.id
         is Outcome.Cleared -> null
