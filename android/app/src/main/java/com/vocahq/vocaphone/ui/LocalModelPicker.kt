@@ -492,7 +492,9 @@ internal fun ModelDownloadCard(state: LocalModelState, onCancelDownload: () -> U
                 )
             }
             state.downloading != null -> {
-                val name = LocalModelCatalog.find(state.downloading)?.displayName
+                // The plain name — "Small English" — the same words the model
+                // was chosen by, not "Parakeet TDT-CTC 110M English".
+                val name = LocalModelCatalog.find(state.downloading)?.plain?.title
                     ?: state.downloading
                 Row(
                     modifier = Modifier.fillMaxWidth(),

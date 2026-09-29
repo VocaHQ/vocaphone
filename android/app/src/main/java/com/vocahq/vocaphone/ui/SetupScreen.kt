@@ -69,8 +69,10 @@ internal object SetupCopy {
     // The last page while a download-and-use is still in flight. The button
     // carries the same progress line as the card above it, and the
     // "preparing" text matches the keyboard's hint for the same second.
-    const val WAITING_TITLE = "Almost there"
-    const val WAITING_DETAIL = "Your model is downloading. Dictation opens as soon as it lands."
+    const val WAITING_TITLE = "You\u2019re set up"
+    const val WAITING_DETAIL = "Your voice model is still downloading. Dictation works the moment it finishes."
+    const val WAITING_DONE = "Done"
+    const val WAITING_FOOTER = "It keeps downloading in the background. You can change your setup in Settings."
     const val WAITING_DOWNLOADING = "Downloading"
     const val WAITING_PREPARING = "Preparing model\u2026"
     const val DOWNLOAD = "Download"
@@ -267,7 +269,7 @@ fun SetupScreen(
                     } else {
                         Spacer(Modifier)
                     }
-                    if (stage == OnboardingStage.READY) {
+                    if (stage == OnboardingStage.READY && readyPresentation != ReadyPagePresentation.WAITING_FOR_MODEL) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -446,6 +448,11 @@ fun SetupScreen(
                     if (settings.localTranscriptionEnabled && localModels.downloading != null) {
                         ModelDownloadCard(state = localModels, onCancelDownload = onCancelLocalModelDownload)
                     }
+                    // What is done and what is coming, instead of an empty
+                    // page and a greyed-out button that repeated the bar.
+                    if (readyPresentation == ReadyPagePresentation.WAITING_FOR_MODEL) {
+                        ReadyChecklist(status)
+                    }
                     // Nothing to try while the model is on its way: the
                     // keyboard would only say "downloading" back.
                     if (readyPresentation == ReadyPagePresentation.READY) {
@@ -531,10 +538,10 @@ fun SetupScreen(
                         )
                         else -> "Continue"
                     },
-                    // Greyed, not hidden: the label is where the progress
-                    // reads, and a button that comes back on its own says
-                    // "wait here" better than an empty bar would.
-                    enabled = stage != OnboardingStage.READY || readyPresentation != ReadyPagePresentation.WAITING_FOR_MODEL,
+                    // Waiting for the model is not a reason to hold someone
+                    // here: the download carries on, and home and the keyboard
+                    // both show it. Done leaves; staying shows the practice
+                    // the moment the model lands.
                     onClick = {
                         if (stage != OnboardingStage.READY) advance()
                         else if (!status.isReadyToDictate) stage = OnboardingStage.firstUnmet(status)
@@ -546,7 +553,12 @@ fun SetupScreen(
             }
             Text(
                 when (stage) {
-                    OnboardingStage.READY -> "You can change your setup in Settings."
+                    OnboardingStage.READY ->
+                        if (readyPresentation == ReadyPagePresentation.WAITING_FOR_MODEL) {
+                            SetupCopy.WAITING_FOOTER
+                        } else {
+                            "You can change your setup in Settings."
+                        }
                     OnboardingStage.WELCOME -> "Next, choose a voice model."
                     OnboardingStage.KEYBOARD_READY -> ""
                     else -> "${status.completedStepCount} of ${status.stepCount} requirements ready. Your progress is kept when you leave."
@@ -738,5 +750,38 @@ private fun KeyboardReadyMoment() {
             modifier = Modifier.size(72.dp),
         )
         Text(OnboardingStage.KEYBOARD_READY.title, style = MaterialTheme.typography.headlineMedium)
+    }
+}
+
+/**
+ * Setup's last page while the model downloads: each requirement as it really
+ * stands, then the model still on its way.
+ */
+@Composable
+private fun ReadyChecklist(status: SetupStatus) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        listOf(SetupStep.MICROPHONE, SetupStep.NOTIFICATIONS, SetupStep.KEYBOARD).forEach { step ->
+            val done = status.isSatisfied(step)
+            ReadyChecklistRow(step.label, isDone = done, state = if (done) "Ready" else "Not set up")
+        }
+        ReadyChecklistRow("Voice model", isDone = false, state = "Downloading")
+    }
+}
+
+@Composable
+private fun ReadyChecklistRow(label: String, isDone: Boolean, state: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(
+            painter = painterResource(if (isDone) R.drawable.ic_step_done else R.drawable.ic_step_pending),
+            contentDescription = null,
+            tint = if (isDone) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(
+            state,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (isDone) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
