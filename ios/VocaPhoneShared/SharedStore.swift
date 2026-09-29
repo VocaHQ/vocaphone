@@ -3,6 +3,7 @@ import Foundation
 enum SharedStoreError: Error {
     case appGroupUnavailable
     case unsupportedSchema(Int)
+    case sessionInProgress
 }
 
 /// A run of microphone levels, written by the app and read by the keyboard.
@@ -125,7 +126,11 @@ final class SharedStore: @unchecked Sendable {
     /// all — in a product whose whole pitch is that your words stay yours.
     func delete(_ id: UUID) throws {
         let directory = try sessionsDirectory()
-        if try removeSessionFiles(at: url(for: id, directory: directory)) {
+        let recordURL = url(for: id, directory: directory)
+        if decodedRecord(at: recordURL)?.state.hasActiveWriter == true {
+            throw SharedStoreError.sessionInProgress
+        }
+        if try removeSessionFiles(at: recordURL) {
             notify(.sessionChanged)
         }
     }
@@ -141,6 +146,13 @@ final class SharedStore: @unchecked Sendable {
         // remain too, so a later Delete all or retention pass can retry it.
         let files = try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .sorted { ($0.pathExtension == "json" ? 1 : 0) < ($1.pathExtension == "json" ? 1 : 0) }
+        // Reject the whole request before removing anything. The recorder can
+        // recreate a live sidecar while its JSON record still says recording.
+        if files.contains(where: {
+            $0.pathExtension == "json" && decodedRecord(at: $0)?.state.hasActiveWriter == true
+        }) {
+            throw SharedStoreError.sessionInProgress
+        }
         for url in files {
             if url.pathExtension == "json" {
                 let base = url.deletingPathExtension()
@@ -283,6 +295,10 @@ final class SharedStore: @unchecked Sendable {
         var removed = 0
         var firstError: Error?
         for (index, url) in try sessionFilesByRecency(in: directory).enumerated() {
+            // The archive bound must not remove a recording that is still
+            // producing meter or live-word updates, even if it is old enough
+            // to fall outside the newest 50 records.
+            guard decodedRecord(at: url)?.state.hasActiveWriter != true else { continue }
             let isBeyondWindow = index >= keepCount
             let isStaleTerminal = !isBeyondWindow && decodedRecord(at: url).map {
                 $0.state.isTerminal && now.timeIntervalSince($0.updatedAt) > maximumAge

@@ -73,6 +73,7 @@ final class RecordingCoordinator {
     private var cancellationMonitorTask: Task<Void, Never>?
     private var quickDictationWatcherTask: Task<Void, Never>?
     private var startingSessionID: UUID?
+    private var transcriptDeletionTask: Task<Int, Error>?
     private var gatewayClient: GatewayClient?
     private var lastMicrophoneName: String?
     private var audioSessionAvailable = true
@@ -95,6 +96,11 @@ final class RecordingCoordinator {
         if isPreviewFixture { return previewIsRecording }
 #endif
         return activeRecord?.state == .recording && recorder.isRecording
+    }
+    var canDeleteAllTranscripts: Bool {
+        transcriptDeletionTask == nil && startingSessionID == nil
+            && !recorder.isRecording && pipelineTask == nil
+            && activeRecord?.state.hasActiveWriter != true
     }
     var hasError: Bool { activeRecord?.error != nil }
     var transcript: String? { activeRecord?.transcript }
@@ -355,16 +361,19 @@ final class RecordingCoordinator {
 
     func deleteAllTranscripts() async throws {
         guard !isInert else { return }
+        guard canDeleteAllTranscripts else { throw SharedStoreError.sessionInProgress }
+        let deletion = Task.detached(priority: .userInitiated) {
+            try SharedStore.shared.deleteAllSessions()
+        }
+        transcriptDeletionTask = deletion
+        defer { transcriptDeletionTask = nil }
         do {
-            try await Task.detached(priority: .userInitiated) {
-                try SharedStore.shared.deleteAllSessions()
-            }.value
+            try await deletion.value
         } catch {
             if let id = activeRecord?.sessionID { await clearActiveRecordIfMissing(id) }
             throw error
         }
-        activeRecord = nil
-        message = nil
+        if let id = activeRecord?.sessionID { await clearActiveRecordIfMissing(id) }
     }
 
     /// A bulk removal can partly succeed. Do not leave Home showing a
@@ -771,6 +780,10 @@ final class RecordingCoordinator {
 
     func startInAppTest() {
         guard !isInert else { return }
+        guard transcriptDeletionTask == nil else {
+            message = "Wait for transcript deletion to finish before recording."
+            return
+        }
         guard !recorder.isRecording else { return }
         var record = SessionRecord(
             state: .idle,
@@ -941,6 +954,9 @@ final class RecordingCoordinator {
     }
 
     private func startSession(id: UUID) async {
+        // A keyboard request arriving during Delete all waits rather than
+        // starting a writer in the middle of the directory sweep.
+        if let transcriptDeletionTask { _ = try? await transcriptDeletionTask.value }
         guard startingSessionID == nil || startingSessionID == id else { return }
         guard startingSessionID != id else { return }
         // A dictation is starting; the model it may need must not be dropped

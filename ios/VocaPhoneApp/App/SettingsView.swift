@@ -1012,13 +1012,16 @@ struct PrivacySettingsView: View {
                 } label: {
                     Label("Delete all transcripts", systemImage: "trash")
                 }
-                .disabled(isDeletingAll)
+                .disabled(isDeletingAll || !coordinator.canDeleteAllTranscripts)
             } header: {
                 Text("What is kept")
             } footer: {
                 VStack(alignment: .leading, spacing: VocaMetrics.related) {
                     Text(retention.detail)
                     Text("Audio is deleted once it's transcribed.")
+                    if !coordinator.canDeleteAllTranscripts && !isDeletingAll {
+                        Text("Finish the current dictation before deleting transcripts.")
+                    }
                 }
             }
 
@@ -1055,6 +1058,8 @@ struct PrivacySettingsView: View {
                     defer { isDeletingAll = false }
                     do {
                         try await coordinator.deleteAllTranscripts()
+                    } catch SharedStoreError.sessionInProgress {
+                        deleteAllError = "Finish the current dictation, then try again."
                     } catch {
                         deleteAllError = "Some transcript files could not be removed. Try again."
                     }

@@ -91,7 +91,7 @@ struct SessionRecordTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let fileManager = FailingRemovalFileManager()
         let store = SharedStore(fileManager: fileManager, rootOverride: root)
-        let record = SessionRecord(state: .recording)
+        let record = SessionRecord(state: .completed)
         try store.save(record)
         try store.saveMeter(MeterSample(sequence: 1, levels: [0.5]), for: record.sessionID)
         let meterName = record.sessionID.uuidString.lowercased() + ".meter"
@@ -109,6 +109,47 @@ struct SessionRecordTests {
         #expect(!FileManager.default.fileExists(
             atPath: root.appendingPathComponent("sessions/\(meterName)").path
         ))
+    }
+
+    @Test func activeRecordingCannotBeDeletedOrStrandedByDeleteAll() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = SharedStore(rootOverride: root)
+        let active = SessionRecord(state: .recording)
+        let finished = SessionRecord(state: .completed)
+        try store.save(active)
+        try store.save(finished)
+        try store.saveLiveTranscript("private words", for: active.sessionID)
+
+        #expect(throws: SharedStoreError.self) { try store.delete(active.sessionID) }
+        #expect(throws: SharedStoreError.self) { try store.deleteAllSessions() }
+        #expect(try store.load(active.sessionID) != nil)
+        #expect(try store.load(finished.sessionID) != nil)
+        #expect(store.liveTranscript(for: active.sessionID) == "private words")
+
+        var stopped = active
+        try stopped.transition(to: .finalizing)
+        try stopped.transition(to: .transcriptionFailedPermanent)
+        try store.save(stopped)
+        #expect(try store.deleteAllSessions() == 2)
+        #expect(try store.load(active.sessionID) == nil)
+        #expect(try store.load(finished.sessionID) == nil)
+        #expect(store.liveTranscript(for: active.sessionID) == nil)
+    }
+
+    @Test func storagePruningLeavesAnActiveRecordingAndItsWordsAlone() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = SharedStore(rootOverride: root)
+        let active = SessionRecord(state: .recording)
+        try store.save(active)
+        try store.saveLiveTranscript("private words", for: active.sessionID)
+
+        #expect(try store.pruneSessions(keeping: 0) == 0)
+        #expect(try store.load(active.sessionID) != nil)
+        #expect(store.liveTranscript(for: active.sessionID) == "private words")
     }
 
     @Test func retentionKeepsRecordUntilPrivateLiveSidecarIsGone() throws {
@@ -262,6 +303,8 @@ struct SessionRecordTests {
         // A preview that lands after the keyboard's Finish is not kept.
         try store.saveLiveTranscript("late", for: record.sessionID)
         #expect(store.liveTranscript(for: record.sessionID) == nil)
+        try record.transition(to: .transcriptionFailedPermanent)
+        try store.save(record)
         try store.delete(record.sessionID)
         #expect(store.liveTranscript(for: record.sessionID) == nil)
         #expect(try store.recent().isEmpty)
@@ -627,6 +670,7 @@ struct SessionRecordTests {
         return try (0..<count).map { index in
             var record = SessionRecord()
             try record.transition(to: .launchingApp)
+            try record.transition(to: .canceled)
             try store.save(record)
             let file = sessions
                 .appendingPathComponent(record.sessionID.uuidString.lowercased())
