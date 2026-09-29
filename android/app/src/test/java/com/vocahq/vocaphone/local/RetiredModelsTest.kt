@@ -137,7 +137,13 @@ class RetiredModelsTest {
             "canary-180m-flash",
             replacement("fast-conformer-ctc-4-lang"),
         )
-        assertEquals("dolphin-small-ctc", replacement("dolphin-base-ctc"))
+        // Both Dolphin builds go to Whisper, which covers every language they
+        // did, and step down to Small where Large does not fit.
+        listOf("dolphin-base-ctc", "dolphin-small-ctc").forEach {
+            assertEquals(it, "large-v3-turbo-q8_0", replacement(it))
+            assertEquals(it, "small-q8_0", replacement(it, ram = 3))
+        }
+        assertEquals("sense-voice", replacement("paraformer-zh-small", ram = 2))
         // The Russian model kept its weights family and changed id, so that an
         // already-downloaded v2 is swept rather than failing its SHA-256 check.
         assertEquals("giga-am-v3-ru", replacement("giga-am-ctc-ru"))
@@ -146,9 +152,11 @@ class RetiredModelsTest {
     @Test
     fun `a sherpa replacement is skipped where sherpa cannot run`() {
         assertNull(
-            replacement("dolphin-base-ctc", sherpa = false),
+            replacement("fast-conformer-ctc-4-lang", sherpa = false),
         )
-        // Whisper replacements are unaffected: that engine is always present.
+        // Whisper replacements are unaffected: that engine is always present,
+        // which is also where the retired Dolphin builds land.
+        assertEquals("large-v3-turbo-q8_0", replacement("dolphin-small-ctc", sherpa = false))
         assertEquals(
             "small-q8_0",
             replacement("small.en", sherpa = false),
@@ -204,7 +212,7 @@ class RetiredModelsTest {
     fun `a retired sherpa model clears the selection where sherpa cannot run`() {
         assertEquals(
             RetiredModels.Outcome.Cleared,
-            RetiredModels.resolve("dolphin-base-ctc", totalRamGB = phone, sherpaAvailable = false),
+            RetiredModels.resolve("fast-conformer-ctc-4-lang", totalRamGB = phone, sherpaAvailable = false),
         )
     }
 }

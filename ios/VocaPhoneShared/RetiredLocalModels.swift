@@ -77,7 +77,17 @@ enum RetiredLocalModels {
         for id in ["moonshine-tiny-en", "moonshine-base-en", "moonshine-v2-tiny-en", "moonshine-v2-base-en"] {
             table[id] = ["parakeet-tdt-ctc-110m-en"]
         }
-        table["dolphin-base-ctc"] = ["dolphin-small-ctc"]
+        // Both Dolphin builds retire onto Whisper. Dolphin Small listed English
+        // but returned nothing for it, nor for German, and answered French in
+        // Persian script. Whisper covers every language Dolphin did, so
+        // whichever one someone was speaking still has a model; Small is the
+        // rung for a phone that cannot hold Large.
+        for id in ["dolphin-base-ctc", "dolphin-small-ctc"] {
+            table[id] = ["openai_whisper-large-v3-v20240930_626MB", "openai_whisper-small_216MB"]
+        }
+        // SenseVoice is the stronger Mandarin model, also covers Cantonese,
+        // and needs the same memory.
+        table["paraformer-zh-small"] = ["sense-voice"]
         // Same weights family, new export: v3 with punctuation. The id changed
         // rather than the pins so an already-downloaded v2 directory is an
         // unknown model to be swept, not a SHA-256 mismatch on a known one.

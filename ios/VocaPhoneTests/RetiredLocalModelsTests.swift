@@ -148,9 +148,21 @@ struct RetiredLocalModelsTests {
             RetiredLocalModels.replacement(for: "fast-conformer-ctc-4-lang", deviceMemoryGB: 8)
                 == "canary-180m-flash"
         )
+        // Both Dolphin builds go to Whisper, which covers every language they
+        // did, and step down to Small where Large does not fit.
+        for id in ["dolphin-base-ctc", "dolphin-small-ctc"] {
+            #expect(
+                RetiredLocalModels.replacement(for: id, deviceMemoryGB: 8)
+                    == "openai_whisper-large-v3-v20240930_626MB"
+            )
+            #expect(
+                RetiredLocalModels.replacement(for: id, deviceMemoryGB: 3)
+                    == "openai_whisper-small_216MB"
+            )
+        }
         #expect(
-            RetiredLocalModels.replacement(for: "dolphin-base-ctc", deviceMemoryGB: 8)
-                == "dolphin-small-ctc"
+            RetiredLocalModels.replacement(for: "paraformer-zh-small", deviceMemoryGB: 2)
+                == "sense-voice"
         )
         // The Russian model kept its weights family and changed id, so that an
         // already-downloaded v2 is swept rather than failing its SHA-256 check.
@@ -170,7 +182,7 @@ struct RetiredLocalModelsTests {
         // It fits on a 3 GB device, so nothing is cleared there.
         #expect(
             RetiredLocalModels.resolve("dolphin-base-ctc", deviceMemoryGB: 3)
-                == .replaced("dolphin-small-ctc")
+                == .replaced("openai_whisper-small_216MB")
         )
     }
 
@@ -196,7 +208,10 @@ struct RetiredLocalModelsTests {
     /// Every sherpa id is shared, so the sherpa half of them has to agree.
     @Test func theSherpaHalfOfTheTableCoversTheSameIDs() {
         let sherpaRetired = Set(
-            ["dolphin-base-ctc", "fast-conformer-ctc-4-lang", "giga-am-ctc-ru"]
+            [
+                "dolphin-base-ctc", "dolphin-small-ctc", "paraformer-zh-small",
+                "fast-conformer-ctc-4-lang", "giga-am-ctc-ru",
+            ]
         )
         #expect(sherpaRetired.isSubset(of: Set(RetiredLocalModels.replacements.keys)))
     }

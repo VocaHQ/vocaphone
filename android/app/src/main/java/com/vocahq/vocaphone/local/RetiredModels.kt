@@ -61,7 +61,16 @@ object RetiredModels {
         // against 6.20); v1 was already behind v2.
         listOf("moonshine-tiny-en", "moonshine-base-en", "moonshine-v2-tiny-en", "moonshine-v2-base-en")
             .forEach { put(it, listOf("parakeet-tdt-ctc-110m-en")) }
-        put("dolphin-base-ctc", listOf("dolphin-small-ctc"))
+        // Both Dolphin builds retire onto Whisper. Dolphin Small listed
+        // English but returned nothing for it, nor for German, and answered
+        // French in Persian script. Whisper covers every language Dolphin did,
+        // so whichever one someone was speaking still has a model -- and it is
+        // the one engine the fdroid flavor has too.
+        listOf("dolphin-base-ctc", "dolphin-small-ctc")
+            .forEach { put(it, listOf("large-v3-turbo-q8_0", "small-q8_0")) }
+        // SenseVoice is the stronger Mandarin model, also covers Cantonese,
+        // and needs the same memory.
+        put("paraformer-zh-small", listOf("sense-voice"))
         // Same weights family, new export: v3 with punctuation. The id changed
         // rather than the pins so an already-downloaded v2 directory is an
         // unknown model to be swept, not a SHA-256 mismatch on a known one.

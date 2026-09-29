@@ -48,7 +48,11 @@ HF = "https://huggingface.co"
 # downloads none of it, and each catalog entry's `sizeBytes` is the sum of the
 # files it does download, so pinning any of it would both overstate the download
 # and turn an unrelated upstream edit into a failed integrity check.
-RUNTIME_SUFFIXES = (".onnx", ".ort", ".txt")
+#
+# `.json` is for the LLM-decoder families: Qwen3-ASR reads a Hugging Face
+# tokenizer directory (`vocab.json`, `merges.txt`, `tokenizer_config.json`) in
+# place of a token table.
+RUNTIME_SUFFIXES = (".onnx", ".ort", ".txt", ".json")
 
 # Sample audio ships beside the weights in every k2-fsa repo, and it carries its
 # own reference transcript -- a .txt the allowlist above would otherwise take
