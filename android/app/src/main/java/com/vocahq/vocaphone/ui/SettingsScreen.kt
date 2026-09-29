@@ -253,7 +253,9 @@ fun SettingsScreen(
                     // Kept next to Language and never hidden. A row that
                     // disappears for most models would leave the question
                     // unanswered, and "not supported by this model" is exactly
-                    // the answer people arrive looking for.
+                    // the answer people arrive looking for. It opens only when
+                    // there is something to pick: a sheet with every language
+                    // greyed out was a dead end.
                     SettingsMenuRow(
                         title = "Translate to",
                         supporting = ModelTranslationSupport.summary(
@@ -265,7 +267,8 @@ fun SettingsScreen(
                                 TranscriptionLanguage.AUTOMATIC,
                         ),
                         icon = R.drawable.ic_language,
-                        onClick = { pickingTranslation = true },
+                        onClick = { pickingTranslation = true }
+                            .takeIf { ModelTranslationSupport.isSupported(settings.activeModelTranslationTargets) },
                     )
                     SettingsMenuDivider()
                     SettingsMenuRow(
@@ -899,20 +902,24 @@ private fun SnippetsSection(
     onDelete: (id: String) -> Unit,
 ) {
     var adding by remember { mutableStateOf(false) }
+    var starting by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Snippet?>(null) }
     var pendingDelete by remember { mutableStateOf<Snippet?>(null) }
 
     Section(
         title = "Your snippets",
-        supporting = "A short trigger that expands to longer text when dictation " +
-            "finishes. Matching ignores case, so \"brb\" and \"BRB\" both work.",
+        supporting = if (snippets.isEmpty()) {
+            "Say \u201Cmy email\u201D while dictating and VocaPhone types your address."
+        } else {
+            "Say a trigger while dictating and it is replaced by its text. Case does not matter."
+        },
     ) {
         if (snippets.isEmpty()) {
-            Text(
-                "No snippets yet.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // The snippets nearly everyone ends up making, one tap from
+            // working, so the feature explains itself.
+            SNIPPET_STARTERS.forEach { trigger ->
+                TextButton(onClick = { starting = trigger }) { Text("+ \u201C$trigger\u201D") }
+            }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 snippets.forEach { snippet ->
@@ -925,6 +932,19 @@ private fun SnippetsSection(
             }
         }
         SecondaryButton(text = "Add snippet", onClick = { adding = true })
+    }
+
+    starting?.let { trigger ->
+        SnippetEditorDialog(
+            title = "Add snippet",
+            initialTrigger = trigger,
+            initialExpansion = "",
+            onDismiss = { starting = null },
+            onSave = { savedTrigger, expansion ->
+                onAdd(savedTrigger, expansion)
+                starting = null
+            },
+        )
     }
 
     if (adding) {
@@ -973,6 +993,8 @@ private fun SnippetsSection(
         )
     }
 }
+
+private val SNIPPET_STARTERS = listOf("my email", "my address", "my phone number")
 
 @Composable
 private fun SnippetRow(
