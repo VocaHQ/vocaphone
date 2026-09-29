@@ -356,6 +356,9 @@ struct ContentView: View {
                 // dictated from another app offer itself for copying here as
                 // though this screen owned it.
                 startedInApp: coordinator.activeRecord.map(Self.startedInApp) ?? true,
+                isTryFieldSession: coordinator.activeRecord.map {
+                    $0.startedInContainingApp == true && $0.sourceDocumentID != "in-app-test"
+                } ?? false,
                 isReadyToDictate: attentionStatus.isReadyToDictate
             )
         )

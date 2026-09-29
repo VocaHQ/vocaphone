@@ -9,6 +9,7 @@ struct HomePresentationTests {
         errorMessage: String? = nil,
         canRetry: Bool = false,
         startedInApp: Bool = true,
+        isTryFieldSession: Bool = false,
         quickDictationReady: Bool = false,
         quickDictationDuration: QuickDictationDuration = .tenMinutes,
         readyToDictate: Bool = true,
@@ -28,6 +29,7 @@ struct HomePresentationTests {
                 errorMessage: errorMessage,
                 canRetry: canRetry,
                 startedInApp: startedInApp,
+                isTryFieldSession: isTryFieldSession,
                 isReadyToDictate: readyToDictate,
                 showTranscriptOnSession: showTranscriptOnSession
             )
@@ -149,6 +151,25 @@ struct HomePresentationTests {
         #expect(inApp.title == "Try it here")
         #expect(!inApp.showsTranscript)
         #expect(inApp.showsTryField)
+    }
+
+    /// Removing the focused field dismisses the keyboard extension before it
+    /// can insert a transcript into Home. Keep it in the view for every state
+    /// between tapping Dictate and receiving the finished text.
+    @Test func dictatingIntoHomeKeepsTheTryFieldMounted() {
+        for state in [
+            SessionState.launchingApp, .awaitingReturn, .recording,
+            .finalizing, .uploading, .transcribing, .readyToInsert,
+            .inserting, .inserted, .completed,
+            .serverUnavailable, .uploadFailedRecoverable,
+            .transcriptionFailedRecoverable, .permissionDenied,
+            .transcriptionFailedPermanent,
+        ] {
+            #expect(Self.card(state, isTryFieldSession: true).showsTryField)
+            if state != .completed {
+                #expect(!Self.card(state, startedInApp: false).showsTryField)
+            }
+        }
     }
 
     /// Ready leads with the real thing — a field to dictate into — and keeps

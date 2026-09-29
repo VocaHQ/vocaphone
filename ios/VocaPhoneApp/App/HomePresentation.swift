@@ -55,6 +55,10 @@ struct HomeSessionCard: Equatable {
         var errorMessage: String?
         var canRetry = false
         var startedInApp = true
+        /// A keyboard dictation targeting Home's own text field. Keep that
+        /// field mounted while the session changes state so iOS can retain its
+        /// first responder and the keyboard can insert the finished text.
+        var isTryFieldSession = false
         /// Whether all required setup steps are complete. Idle uses this; a
         /// finished transcript does not depend on today's setup state.
         var isReadyToDictate = true
@@ -145,7 +149,8 @@ struct HomeSessionCard: Equatable {
             title: "Starting the microphone",
             detail: "The keyboard asked vocaphone to record. Speak once it says Listening.",
             primary: nil,
-            secondary: Action(title: "Cancel", action: .cancel)
+            secondary: Action(title: "Cancel", action: .cancel),
+            showsTryField: context.isTryFieldSession
         )
     }
 
@@ -158,7 +163,8 @@ struct HomeSessionCard: Equatable {
                 : "Recording continues while you return to the app you were typing in.",
             primary: Action(title: "Finish recording", action: .finish, symbol: "stop.fill"),
             secondary: Action(title: "Cancel", action: .cancel),
-            showsMeter: true
+            showsMeter: true,
+            showsTryField: context.isTryFieldSession
         )
     }
 
@@ -188,7 +194,8 @@ struct HomeSessionCard: Equatable {
                     ? "Your gateway is running its speech-to-text model on this recording."
                     : nil,
             primary: nil,
-            secondary: Action(title: "Cancel", action: .cancel)
+            secondary: Action(title: "Cancel", action: .cancel),
+            showsTryField: context.isTryFieldSession
         )
     }
 
@@ -235,7 +242,8 @@ struct HomeSessionCard: Equatable {
             primary: context.canRetry
                 ? Action(title: "Retry", action: .retry, symbol: "arrow.clockwise")
                 : Action(title: "Start microphone test", action: .startTest, symbol: "mic.fill"),
-            secondary: Action(title: "Discard recording", action: .cancel)
+            secondary: Action(title: "Discard recording", action: .cancel),
+            showsTryField: context.isTryFieldSession
         )
     }
 
@@ -252,7 +260,8 @@ struct HomeSessionCard: Equatable {
                 action: .startTest,
                 symbol: "mic.fill"
             ),
-            secondary: nil
+            secondary: nil,
+            showsTryField: context.isTryFieldSession
         )
     }
 }
