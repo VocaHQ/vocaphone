@@ -84,7 +84,9 @@ struct SessionRecordTests {
         try store.save(record)
         #expect(store.liveTranscript(for: record.sessionID) == nil)
 
+        // A preview that lands after the keyboard's Finish is not kept.
         try store.saveLiveTranscript("late", for: record.sessionID)
+        #expect(store.liveTranscript(for: record.sessionID) == nil)
         try store.delete(record.sessionID)
         #expect(store.liveTranscript(for: record.sessionID) == nil)
         #expect(try store.recent().isEmpty)

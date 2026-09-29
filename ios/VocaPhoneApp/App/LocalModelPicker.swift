@@ -225,9 +225,10 @@ struct LocalModelPicker: View {
     /// "147 MB · Basic, most languages": one separator per line, so the
     /// name reads as one thing.
     ///
-    /// The choice rows already say which one is best, so the line drops the
-    /// quality word a plain title starts with: a "More languages" row reading
-    /// "Best, most languages" under a "Best for Hindi" row claimed two bests.
+    /// The choice rows already say which one is best, so the line drops "Best"
+    /// from a plain title: a "More languages" row reading "Best, most
+    /// languages" under a "Best for Hindi" row claimed two bests. "Basic" and
+    /// "Good" stay — they are the cue that a wider row trades accuracy away.
     private func sizeAndName(_ model: LocalModelDescriptor, kind: ModelChoice.Kind?) -> String {
         guard kind != nil else { return model.sizeLabel }
         var parts = model.plain.title.components(separatedBy: " · ")
@@ -236,7 +237,7 @@ struct LocalModelPicker: View {
         return "\(model.sizeLabel) · \(name.prefix(1).uppercased() + name.dropFirst())"
     }
 
-    private static let qualityWords: Set<String> = ["Basic", "Good", "Best"]
+    private static let qualityWords: Set<String> = ["Best"]
 
     private func languagesFact(for model: LocalModelDescriptor) -> String {
         if model.languageCodes.count > 2 { return "\(model.languageCodes.count) languages" }
