@@ -108,7 +108,7 @@ struct HomeSessionCard: Equatable {
 
     private static func resting(_ context: Context, now: Date) -> HomeSessionCard {
         // A missing model is the setup checklist's to explain.
-        guard context.isReadyToDictate else {
+        guard context.isReadyToDictate || context.isTryFieldSession else {
             return HomeSessionCard(
                 status: .inactive,
                 title: "Microphone test",
@@ -118,7 +118,14 @@ struct HomeSessionCard: Equatable {
             )
         }
         let detail: String
-        if context.isQuickDictationReady, let expiresAt = context.quickDictationExpiresAt {
+        if !context.isReadyToDictate {
+            switch context.state {
+            case .readyToInsert, .inserting, .inserted:
+                detail = "Keep the keyboard open while this dictation finishes."
+            default:
+                detail = "Fix the setup issue above before starting another dictation."
+            }
+        } else if context.isQuickDictationReady, let expiresAt = context.quickDictationExpiresAt {
             // Standby, not recording — and the wording has to make that
             // unmistakable, because the iOS microphone indicator is lit either
             // way. See `QuickDictationAvailability`.

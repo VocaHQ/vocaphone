@@ -172,6 +172,19 @@ struct HomePresentationTests {
         }
     }
 
+    @Test func readinessChangeCannotRemoveTheInsertionTarget() {
+        for state in [
+            SessionState.readyToInsert, .targetContextChanged,
+            .inserting, .inserted, .completed,
+        ] {
+            let card = Self.card(
+                state, isTryFieldSession: true, readyToDictate: false
+            )
+            #expect(!card.isHidden)
+            #expect(card.showsTryField)
+        }
+    }
+
     /// Ready leads with the real thing — a field to dictate into — and keeps
     /// the microphone-only test as a quiet link, not a second button.
     @Test func anIdleReadyCardLeadsWithAFieldToDictateInto() {
