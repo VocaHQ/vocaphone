@@ -439,6 +439,23 @@ struct ContentView: View {
     /// The real thing, on Home: a field that raises whichever keyboard is
     /// current, where the vocaphone keyboard's Dictate works like in any app.
     /// The words stay here; nothing is sent anywhere until Dictate is tapped.
+    private var showsTryFieldEditingControls: Bool {
+        guard isTryFieldFocused else { return false }
+        guard let record = coordinator.activeRecord,
+              record.startedInContainingApp == true,
+              record.sourceDocumentID != "in-app-test"
+        else { return true }
+        // Dismissing the keyboard before it inserts the transcript loses the
+        // document proxy. Failures and canceled sessions can be edited again.
+        switch record.state {
+        case .launchingApp, .awaitingReturn, .recording, .finalizing,
+             .uploading, .transcribing, .readyToInsert, .inserting, .inserted:
+            return false
+        default:
+            return true
+        }
+    }
+
     private var tryField: some View {
         VStack(alignment: .leading, spacing: VocaMetrics.related) {
             TextField("Tap here, then Dictate", text: $tryText, axis: .vertical)
@@ -449,17 +466,31 @@ struct ContentView: View {
                     Color.vocaRecessedSurface,
                     in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
                 )
-            if isTryFieldFocused {
-                HStack {
-                    if !tryText.isEmpty {
-                        Button("Clear") { tryText = "" }
-                    }
+            if showsTryFieldEditingControls {
+                HStack(spacing: VocaMetrics.related) {
                     Spacer()
-                    Button("Done") { isTryFieldFocused = false }
+                    if !tryText.isEmpty {
+                        Button {
+                            tryText = ""
+                        } label: {
+                            Label("Clear", systemImage: "xmark")
+                                .frame(minHeight: VocaMetrics.minimumTarget)
+                                .padding(.horizontal, VocaMetrics.related)
+                        }
+                        .tint(Color.vocaSecondaryText)
+                    }
+                    Button {
+                        isTryFieldFocused = false
+                    } label: {
+                        Label("Done", systemImage: "checkmark")
+                            .frame(minHeight: VocaMetrics.minimumTarget)
+                            .padding(.horizontal, VocaMetrics.related)
+                    }
+                    .tint(Color.brand)
                 }
                 .font(.subheadline.weight(.semibold))
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.brand)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
             }
         }
     }
