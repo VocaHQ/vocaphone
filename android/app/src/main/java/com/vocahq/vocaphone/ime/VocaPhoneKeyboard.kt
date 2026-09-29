@@ -1781,13 +1781,25 @@ private fun MicButton(
     onLongPress: () -> Unit,
 ) {
     val view = LocalView.current
-    val processing = state.phase in setOf(
+    val currentState by rememberUpdatedState(state)
+    var tapped by remember { mutableStateOf<DictationState?>(null) }
+    val awaitingTap = tapped?.let { MicDictationControl.awaitingTap(it, state) } == true
+    LaunchedEffect(tapped, awaitingTap) {
+        if (tapped == null) return@LaunchedEffect
+        if (!awaitingTap) {
+            tapped = null
+            return@LaunchedEffect
+        }
+        delay(MicDictationControl.TAP_FEEDBACK_TIMEOUT_MILLIS)
+        tapped = null
+    }
+    val processing = awaitingTap || state.phase in setOf(
         DictationPhase.FINALIZING,
         DictationPhase.UPLOADING,
         DictationPhase.TRANSCRIBING,
         DictationPhase.INSERTING,
     )
-    val recording = state.phase == DictationPhase.LISTENING
+    val recording = state.phase == DictationPhase.LISTENING && !awaitingTap
     val description = when {
         !enabled -> "Dictation unavailable"
         recording -> "Finish dictation. Long-press to discard without inserting"
@@ -1821,6 +1833,7 @@ private fun MicButton(
                 detectTapGestures(
                     onTap = {
                         view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        tapped = currentState
                         onClick()
                     },
                     onLongPress = { _ ->
