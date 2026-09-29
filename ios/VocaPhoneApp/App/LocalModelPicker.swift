@@ -36,7 +36,7 @@ struct LocalModelPicker: View {
 
     @State private var modelLoadTask: Task<Void, Never>?
     @State private var modelLoadError: String?
-    @State private var pendingDeletion: LocalModelDescriptor?
+    @State private var modelAlert: ModelAlert?
     @State private var guidanceLanguageOverride: String?
     @State private var isShowingLanguages = false
     @State private var isShowingAllModels = false
@@ -154,11 +154,13 @@ struct LocalModelPicker: View {
         case verifying
         case failedIntegrity
         case loading
+        case deleting
         case ready
         case selected
     }
 
     private func state(for model: LocalModelDescriptor) -> ModelState {
+        if manager.deletingModelIDs.contains(model.id) { return .deleting }
         if manager.isDownloading(model.id) { return .downloading }
         if manager.isQueued(model.id) { return .waiting }
         if manager.loadingModelID == model.id { return .loading }
@@ -175,18 +177,61 @@ struct LocalModelPicker: View {
 
     @ViewBuilder
     var body: some View {
-        if onboarding {
-            onboardingBody
-        } else if usable.isEmpty {
-            Section {
-                Text("No on-device model fits this iPhone yet.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+        Group {
+            if onboarding {
+                onboardingBody
+            } else if usable.isEmpty {
+                Section {
+                    Text("No on-device model fits this iPhone yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else if expandsAvailableModels {
+                allModelsSections
+            } else {
+                settingsSections
             }
-        } else if expandsAvailableModels {
-            allModelsSections
-        } else {
-            settingsSections
+        }
+        // Present from the picker, not a row that SwiftUI rebuilds when its
+        // swipe action closes or the model changes state.
+        .alert(item: $modelAlert) { alert in
+            switch alert {
+            case let .delete(model):
+                Alert(
+                    title: Text("Delete \(model.plain.title)?"),
+                    message: Text("\(model.sizeLabel) will be freed. You can download it again at any time; dictating offline needs a model on this iPhone."),
+                    primaryButton: .destructive(Text("Delete")) { delete(model) },
+                    secondaryButton: .cancel(Text("Keep"))
+                )
+            case let .failure(model):
+                Alert(
+                    title: Text("Could not delete \(model.plain.title)"),
+                    message: Text("The model is still on this iPhone. Try again."),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
+        }
+        .sheet(isPresented: $isShowingLanguages) { languageSheet }
+    }
+
+    private enum ModelAlert: Identifiable {
+        case delete(LocalModelDescriptor)
+        case failure(LocalModelDescriptor)
+
+        var id: String {
+            switch self {
+            case let .delete(model): "delete-\(model.id)"
+            case let .failure(model): "failure-\(model.id)"
+            }
+        }
+    }
+
+    private func delete(_ model: LocalModelDescriptor) {
+        modelLoadTask?.cancel()
+        Task { @MainActor in
+            let deleted = await manager.deleteReportingResult(model)
+            onChange()
+            if !deleted { modelAlert = .failure(model) }
         }
     }
 
@@ -271,6 +316,8 @@ struct LocalModelPicker: View {
             ("The files did not match. Download it again.", Color.vocaError)
         case .loading:
             (manager.loadingMessage ?? "Loading…", Color.vocaSecondaryText)
+        case .deleting:
+            ("Deleting…", Color.vocaSecondaryText)
         case .ready:
             ("On this iPhone · \(model.sizeLabel)", Color.brand)
         case .selected:
@@ -308,7 +355,6 @@ struct LocalModelPicker: View {
             reconcileSelection()
         }
         .onChange(of: onboardingRows.map(\.model.id)) { _, _ in reconcileSelection() }
-        .sheet(isPresented: $isShowingLanguages) { languageSheet }
         .sheet(isPresented: $isShowingAllModels) {
             NavigationStack {
                 List {
@@ -674,8 +720,6 @@ struct LocalModelPicker: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Changes which models are suggested")
-                // On the row, not the section: one stable presenter.
-                .sheet(isPresented: $isShowingLanguages) { languageSheet }
 
                 let suggestions = choices.filter { state(for: $0.model) == .notDownloaded }
                 if choices.isEmpty {
@@ -788,7 +832,7 @@ struct LocalModelPicker: View {
         .swipeActions(edge: .trailing) {
             if isOnDisk {
                 Button(role: .destructive) {
-                    pendingDeletion = model
+                    modelAlert = .delete(model)
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
@@ -804,31 +848,11 @@ struct LocalModelPicker: View {
             }
             if isOnDisk {
                 Button(role: .destructive) {
-                    pendingDeletion = model
+                    modelAlert = .delete(model)
                 } label: {
                     Label("Delete \(model.sizeLabel)", systemImage: "trash")
                 }
             }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDeletion?.plain.title ?? "this model")?",
-            isPresented: Binding(
-                get: { pendingDeletion == model },
-                set: { if !$0 { pendingDeletion = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                manager.deleteReportingResult(model)
-                pendingDeletion = nil
-                onChange()
-            }
-            Button("Keep", role: .cancel) { pendingDeletion = nil }
-        } message: {
-            Text(
-                "\(model.sizeLabel) will be freed. You can download it again at any "
-                    + "time; dictating offline needs a model on this iPhone."
-            )
         }
     }
 
@@ -912,7 +936,7 @@ struct LocalModelPicker: View {
             .buttonStyle(.borderless)
         case .downloading, .waiting:
             stopDownloadButton(model)
-        case .verifying, .loading:
+        case .verifying, .loading, .deleting:
             ProgressView()
         case .ready:
             Text("Use")
