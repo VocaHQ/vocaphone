@@ -11,7 +11,7 @@ struct HomePresentationTests {
         startedInApp: Bool = true,
         quickDictationReady: Bool = false,
         quickDictationDuration: QuickDictationDuration = .tenMinutes,
-        sourceReady: Bool = true,
+        readyToDictate: Bool = true,
         showTranscriptOnSession: Bool = false
     ) -> HomeSessionCard {
         HomeSessionCard.make(
@@ -28,7 +28,7 @@ struct HomePresentationTests {
                 errorMessage: errorMessage,
                 canRetry: canRetry,
                 startedInApp: startedInApp,
-                isSourceReady: sourceReady,
+                isReadyToDictate: readyToDictate,
                 showTranscriptOnSession: showTranscriptOnSession
             )
         )
@@ -166,10 +166,25 @@ struct HomePresentationTests {
     /// The setup checklist names the hole. A disabled test button beside it
     /// was dead UI, so the idle card stands down entirely.
     @Test func anUnreadyIdleSessionStandsDown() {
-        let card = Self.card(.idle, sourceReady: false)
+        let card = Self.card(.idle, readyToDictate: false)
         #expect(card.isHidden)
         #expect(card.primary == nil)
         #expect(!card.showsTryField)
+    }
+
+    @Test func missingMicrophoneOrKeyboardDoesNotOfferDictation() {
+        for status in [
+            Self.status(microphone: .undetermined),
+            Self.status(microphone: .denied),
+            Self.status(keyboard: .notAdded),
+            Self.status(keyboard: .addedButNeverRun),
+        ] {
+            #expect(status.source.isReady)
+            #expect(!status.isReadyToDictate)
+            let card = Self.card(.idle, readyToDictate: status.isReadyToDictate)
+            #expect(card.isHidden)
+            #expect(!card.showsTryField)
+        }
     }
 
     /// After dictation the session card is the session again, not a second

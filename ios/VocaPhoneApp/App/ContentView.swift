@@ -29,6 +29,7 @@ struct ContentView: View {
         store: KeyboardPreferences.defaults
     ) private var quickDictationOfferPending = false
     @State private var recentTranscripts: [SessionRecord] = []
+    @State private var recentReloadGeneration = 0
     @State private var copiedTranscriptID: UUID?
     @State private var usageStats = UsageStats()
     @State private var tryText = ""
@@ -111,6 +112,7 @@ struct ContentView: View {
             }
             .background(Color.vocaCanvas)
             .navigationTitle("vocaphone")
+            .onAppear { Task { await reloadRecent() } }
             // No logo in the bar: in a circle beside Settings it read as a
             // button that did nothing, and the title already names the app.
             .toolbar {
@@ -155,7 +157,9 @@ struct ContentView: View {
             .navigationDestination(isPresented: $isShowingTranscriptionSettingsFromAttention) {
                 TranscriptionSettingsView()
             }
-            .sheet(isPresented: $isShowingSettings) {
+            .sheet(isPresented: $isShowingSettings, onDismiss: {
+                Task { await reloadRecent() }
+            }) {
                 NavigationStack {
                     SettingsView()
                 }
@@ -352,7 +356,7 @@ struct ContentView: View {
                 // dictated from another app offer itself for copying here as
                 // though this screen owned it.
                 startedInApp: coordinator.activeRecord.map(Self.startedInApp) ?? true,
-                isSourceReady: attentionStatus.source.isReady
+                isReadyToDictate: attentionStatus.isReadyToDictate
             )
         )
     }
@@ -479,7 +483,10 @@ struct ContentView: View {
                         VocaSectionHeader(title: "Recent")
                         Spacer()
                         if !recentTranscripts.isEmpty {
-                            NavigationLink("See all") { TranscriptHistoryView() }
+                            NavigationLink("See all") {
+                                TranscriptHistoryView()
+                                    .onDisappear { Task { await reloadRecent() } }
+                            }
                                 .font(.subheadline.weight(.semibold))
                         }
                     }
@@ -529,49 +536,51 @@ struct ContentView: View {
     }
 
     /// Reread whenever a session changes state, which is when a new transcript
-    /// can have landed.
+    /// can have landed. Returning from History, Stats, or Settings also rereads
+    /// because those screens can delete transcripts or reset statistics.
     private var recentReloadKey: String {
         "\(coordinator.activeRecord?.id.uuidString ?? "")|\(coordinator.activeRecord?.state.rawValue ?? "")|\(coordinator.transcript ?? "")"
     }
 
     /// Stats are folded from the same finished sessions, so they move together.
     private func reloadRecent() async {
-        recentTranscripts = Array(await coordinator.loadRecentTranscripts(limit: 3))
+        recentReloadGeneration += 1
+        let generation = recentReloadGeneration
+        let records = await coordinator.loadRecentTranscripts(limit: 3)
+        guard generation == recentReloadGeneration else { return }
+        recentTranscripts = records
         usageStats = UsageStatsStore.shared.current()
     }
 
     // MARK: - Stats
 
-    /// One line, not a dashboard: how much this week and the streak, with the
-    /// full Stats screen behind it. Absent until there is something to count.
-    @ViewBuilder private var statsLine: some View {
-        if let line = HomeStatsLine.make(usageStats, now: Date()) {
-            NavigationLink {
-                StatsView()
-            } label: {
-                HStack(spacing: VocaMetrics.related) {
-                    Image(systemName: "chart.bar")
-                        .foregroundStyle(Color.brand)
-                        .accessibilityHidden(true)
-                    Text(line)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.vocaPrimaryText)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Color.vocaSecondaryText)
-                        .accessibilityHidden(true)
-                }
-                .padding(.horizontal, VocaMetrics.padding)
-                .frame(minHeight: VocaMetrics.minimumTarget + VocaMetrics.related)
-                .background(
-                    Color.vocaSurface,
-                    in: RoundedRectangle(cornerRadius: VocaMetrics.cardRadius, style: .continuous)
-                )
+    /// Keep Stats reachable before the first dictation and after a reset.
+    private var statsLine: some View {
+        NavigationLink {
+            StatsView()
+                .onDisappear { Task { await reloadRecent() } }
+        } label: {
+            HStack(spacing: VocaMetrics.related) {
+                Image(systemName: "chart.bar")
+                    .foregroundStyle(Color.brand)
+                    .accessibilityHidden(true)
+                Text(HomeStatsLine.make(usageStats, now: Date()) ?? "Stats")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.vocaPrimaryText)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.vocaSecondaryText)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Opens your stats")
+            .padding(.horizontal, VocaMetrics.padding)
+            .frame(minHeight: VocaMetrics.minimumTarget + VocaMetrics.related)
+            .background(
+                Color.vocaSurface,
+                in: RoundedRectangle(cornerRadius: VocaMetrics.cardRadius, style: .continuous)
+            )
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens your stats")
     }
 
     private var keyboardHandoffRecord: SessionRecord? {

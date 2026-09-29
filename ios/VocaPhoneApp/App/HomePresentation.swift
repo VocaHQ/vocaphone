@@ -55,9 +55,9 @@ struct HomeSessionCard: Equatable {
         var errorMessage: String?
         var canRetry = false
         var startedInApp = true
-        /// Whether speech-to-text can actually run. Idle uses this; a finished
-        /// transcript does not — a result is still a result.
-        var isSourceReady = true
+        /// Whether all required setup steps are complete. Idle uses this; a
+        /// finished transcript does not depend on today's setup state.
+        var isReadyToDictate = true
         /// Debug: pin the session card on Transcript ready instead of Ready.
         var showTranscriptOnSession = false
     }
@@ -104,7 +104,7 @@ struct HomeSessionCard: Equatable {
 
     private static func resting(_ context: Context, now: Date) -> HomeSessionCard {
         // A missing model is the setup checklist's to explain.
-        guard context.isSourceReady else {
+        guard context.isReadyToDictate else {
             return HomeSessionCard(
                 status: .inactive,
                 title: "Microphone test",
