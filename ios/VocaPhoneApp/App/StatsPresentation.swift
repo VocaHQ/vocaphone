@@ -10,12 +10,6 @@ enum StatsCopy {
     static let shareTitle = "Share your progress"
     static let shareSubtitle = "A private summary you choose where to post"
     static let shareFootnote = "X opens with your post ready and the card copied. Share sends the card to any app and copies the post text, in case that app leaves it out."
-
-    static func menuDetail(_ stats: UsageStats, now: Date) -> String {
-        guard stats.hasAny else { return "Words, speaking speed and streaks" }
-        return "\(StatsFormat.count(stats.totalWords)) words · "
-            + "\(StatsFormat.streak(stats.currentStreak(at: now))) streak"
-    }
 }
 
 enum StatsFormat {

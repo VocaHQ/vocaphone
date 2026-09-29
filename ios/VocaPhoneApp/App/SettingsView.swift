@@ -31,9 +31,6 @@ struct SettingsView: View {
         SnippetStore.key,
         store: SnippetStore.defaults
     ) private var snippetsData = Data()
-    /// Read once when the hub appears rather than folded here: folding is the
-    /// app's job, and the Stats screen is where it happens.
-    @State private var usageStats = UsageStats()
     #if DEBUG
     @AppStorage(AttentionCardPreview.storageKey)
     private var attentionPreviewRaw = AttentionCardPreview.off.rawValue
@@ -42,7 +39,8 @@ struct SettingsView: View {
     var body: some View {
         List {
             // Grouped by what someone came to do: set up how they dictate,
-            // look after what they have made, or check what is kept.
+            // look after what they have made, or check what is kept. Stats
+            // is a report, not a setting; it is one line on Home.
             Section("Dictation and keyboard") {
                 destination(
                     "Keyboard",
@@ -75,12 +73,6 @@ struct SettingsView: View {
                     detail: nil,
                     symbol: "clock.arrow.circlepath"
                 ) { TranscriptHistoryView() }
-
-                destination(
-                    "Stats",
-                    detail: StatsCopy.menuDetail(usageStats, now: Date()),
-                    symbol: "chart.bar"
-                ) { StatsView() }
             }
 
             Section("Privacy and help") {
@@ -102,7 +94,6 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .task { usageStats = UsageStatsStore.shared.current() }
     }
 
     #if DEBUG
