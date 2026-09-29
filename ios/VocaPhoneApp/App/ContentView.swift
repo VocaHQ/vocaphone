@@ -104,14 +104,17 @@ struct ContentView: View {
                     modelDownloadCard
                     quickDictationOfferCard
                     sessionCard
-                    recentCard
-                    statsLine
+                    if !isTryFieldFocused {
+                        recentCard
+                        statsLine
+                    }
                 }
                 .padding(.horizontal, VocaMetrics.padding)
                 .padding(.vertical, VocaMetrics.grouping)
             }
             .background(Color.vocaCanvas)
             .navigationTitle("vocaphone")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear { Task { await reloadRecent() } }
             // No logo in the bar: in a circle beside Settings it read as a
             // button that did nothing, and the title already names the app.
@@ -437,22 +440,28 @@ struct ContentView: View {
     /// current, where the vocaphone keyboard's Dictate works like in any app.
     /// The words stay here; nothing is sent anywhere until Dictate is tapped.
     private var tryField: some View {
-        TextField("Tap here, then Dictate", text: $tryText, axis: .vertical)
-            .lineLimit(2...6)
-            .focused($isTryFieldFocused)
-            .padding(VocaMetrics.related + 4)
-            .background(
-                Color.vocaRecessedSurface,
-                in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
-            )
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Button("Clear") { tryText = "" }
-                        .disabled(tryText.isEmpty)
+        VStack(alignment: .leading, spacing: VocaMetrics.related) {
+            TextField("Tap here, then Dictate", text: $tryText, axis: .vertical)
+                .lineLimit(2...6)
+                .focused($isTryFieldFocused)
+                .padding(VocaMetrics.related + 4)
+                .background(
+                    Color.vocaRecessedSurface,
+                    in: RoundedRectangle(cornerRadius: VocaMetrics.fieldRadius, style: .continuous)
+                )
+            if isTryFieldFocused {
+                HStack {
+                    if !tryText.isEmpty {
+                        Button("Clear") { tryText = "" }
+                    }
                     Spacer()
                     Button("Done") { isTryFieldFocused = false }
                 }
+                .font(.subheadline.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.brand)
             }
+        }
     }
 
     private func isDisabled(_ action: HomeSessionAction) -> Bool {
