@@ -1,5 +1,7 @@
 package com.vocahq.vocaphone.local
 
+import com.vocahq.vocaphone.core.TranscriptionLanguage
+
 /**
  * Where a stored selection goes when the model it names has left the catalog.
  *
@@ -63,9 +65,10 @@ object RetiredModels {
             .forEach { put(it, listOf("parakeet-tdt-ctc-110m-en")) }
         // Both Dolphin builds retire onto Whisper. Dolphin Small listed
         // English but returned nothing for it, nor for German, and answered
-        // French in Persian script. Whisper covers every language Dolphin did,
-        // so whichever one someone was speaking still has a model -- and it is
-        // the one engine the fdroid flavor has too.
+        // French in Persian script. Large v3 Turbo covers every language
+        // Dolphin did, and Whisper is the one engine the fdroid flavor has too;
+        // Small is the rung for a phone that cannot hold it. See
+        // [languageReplacements] for the one language Small loses.
         listOf("dolphin-base-ctc", "dolphin-small-ctc")
             .forEach { put(it, listOf("large-v3-turbo-q8_0", "small-q8_0")) }
         // SenseVoice is the stronger Mandarin model, also covers Cantonese,
@@ -78,6 +81,20 @@ object RetiredModels {
         // Only ever on the unmerged branch, but testers have it downloaded.
         put("giga-am-ctc-v3-ru", listOf("giga-am-v3-ru"))
     }
+
+    /**
+     * A rung taken only for a chosen language that every fitting rung in
+     * [replacements] would lose.
+     *
+     * Whisper Small has no Cantonese, so a 3 GB phone that dictated Cantonese
+     * on Dolphin goes to SenseVoice. It is not a general rung: offered to a
+     * Hindi speaker, or to one left on Automatic, it would swap a model that
+     * has their language for one that does not.
+     */
+    val languageReplacements: Map<String, Map<String, String>> = mapOf(
+        "dolphin-base-ctc" to mapOf("yue" to "sense-voice"),
+        "dolphin-small-ctc" to mapOf("yue" to "sense-voice"),
+    )
 
     /** Whether [id] names something the catalog used to ship and no longer does. */
     fun isRetired(id: String): Boolean = id in replacements
@@ -118,16 +135,22 @@ object RetiredModels {
         stored: String,
         totalRamGB: Long,
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
+        language: String = "",
     ): Outcome {
         if (stored.isEmpty()) return Outcome.Unchanged
         if (LocalModelCatalog.find(stored) != null) return Outcome.Unchanged
         val candidates = replacements[stored] ?: return Outcome.Unchanged
-        val fitting = candidates.firstNotNullOfOrNull { id ->
-            LocalModelCatalog.find(id)
-                ?.takeIf { LocalModelCatalog.isUsableOnDevice(it, totalRamGB, sherpaAvailable) }
-                ?.id
-        }
-        return fitting?.let(Outcome::Replaced) ?: Outcome.Cleared
+        fun usable(id: String) = LocalModelCatalog.find(id)
+            ?.takeIf { LocalModelCatalog.isUsableOnDevice(it, totalRamGB, sherpaAvailable) }
+        val fitting = candidates.mapNotNull(::usable)
+        // The first fitting rung that covers the chosen language wins; failing
+        // that, its [languageReplacements] rung if that fits; failing that, the
+        // first fitting rung, as before a language was considered.
+        val spoken = if (language == TranscriptionLanguage.AUTOMATIC.wireValue) "" else language
+        val chosen = fitting.firstOrNull { it.coversLanguage(spoken) }
+            ?: languageReplacements[stored]?.get(spoken)?.let(::usable)
+            ?: fitting.firstOrNull()
+        return chosen?.id?.let(Outcome::Replaced) ?: Outcome.Cleared
     }
 
     /** Apply the launch decision through the settings store's atomic writes. */
@@ -135,9 +158,10 @@ object RetiredModels {
         stored: String,
         totalRamGB: Long,
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
+        language: String = "",
         replace: suspend (String) -> Unit,
         clear: suspend () -> Unit,
-    ): Outcome = resolve(stored, totalRamGB, sherpaAvailable).also { outcome ->
+    ): Outcome = resolve(stored, totalRamGB, sherpaAvailable, language).also { outcome ->
         when (outcome) {
             is Outcome.Unchanged -> Unit
             is Outcome.Replaced -> replace(outcome.id)

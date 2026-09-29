@@ -144,6 +144,37 @@ class RetiredModelsTest {
             assertEquals(it, "small-q8_0", replacement(it, ram = 3))
         }
         assertEquals("sense-voice", replacement("paraformer-zh-small", ram = 2))
+    }
+
+    /**
+     * Whisper Small has no Cantonese. A 3 GB phone that dictated Cantonese on
+     * Dolphin moves to SenseVoice, which has it, and a Hindi speaker on the
+     * same phone still gets Small rather than a model without Hindi.
+     */
+    @Test
+    fun `a retired model keeps the chosen language where a rung can hold it`() {
+        fun resolve(language: String, ram: Long = 3) =
+            RetiredModels.resolve("dolphin-small-ctc", ram, sherpaAvailable = true, language = language)
+        assertEquals(RetiredModels.Outcome.Replaced("sense-voice"), resolve("yue"))
+        assertEquals(RetiredModels.Outcome.Replaced("small-q8_0"), resolve("hi"))
+        assertEquals(RetiredModels.Outcome.Replaced("small-q8_0"), resolve("auto"))
+        // Large v3 Turbo has Cantonese, so it still leads where it fits.
+        assertEquals(RetiredModels.Outcome.Replaced("large-v3-turbo-q8_0"), resolve("yue", ram = phone))
+        // SenseVoice is a Cantonese rung only. A 2 GB phone on Automatic still
+        // has nothing to move to, rather than a model without its language.
+        assertEquals(RetiredModels.Outcome.Cleared, resolve("auto", ram = 2))
+        assertEquals(RetiredModels.Outcome.Replaced("sense-voice"), resolve("yue", ram = 2))
+        RetiredModels.languageReplacements.forEach { (retired, rungs) ->
+            assertTrue(RetiredModels.isRetired(retired))
+            rungs.forEach { (language, id) ->
+                assertTrue("$id covers $language", LocalModelCatalog.find(id)?.coversLanguage(language) == true)
+            }
+        }
+        // Without sherpa there is no SenseVoice, and Small is still better than nothing.
+        assertEquals(
+            RetiredModels.Outcome.Replaced("small-q8_0"),
+            RetiredModels.resolve("dolphin-small-ctc", 3, sherpaAvailable = false, language = "yue"),
+        )
         // The Russian model kept its weights family and changed id, so that an
         // already-downloaded v2 is swept rather than failing its SHA-256 check.
         assertEquals("giga-am-v3-ru", replacement("giga-am-ctc-ru"))

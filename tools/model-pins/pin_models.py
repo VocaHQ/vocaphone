@@ -48,11 +48,14 @@ HF = "https://huggingface.co"
 # downloads none of it, and each catalog entry's `sizeBytes` is the sum of the
 # files it does download, so pinning any of it would both overstate the download
 # and turn an unrelated upstream edit into a failed integrity check.
-#
-# `.json` is for the LLM-decoder families: Qwen3-ASR reads a Hugging Face
-# tokenizer directory (`vocab.json`, `merges.txt`, `tokenizer_config.json`) in
-# place of a token table.
-RUNTIME_SUFFIXES = (".onnx", ".ort", ".txt", ".json")
+RUNTIME_SUFFIXES = (".onnx", ".ort", ".txt")
+
+# The LLM-decoder families read a Hugging Face tokenizer directory in place of a
+# token table -- Qwen3-ASR's `tokenizer/vocab.json` and `tokenizer_config.json`
+# beside `merges.txt`. JSON is pinned only there: anywhere else in a repository
+# it is export metadata the phone never opens.
+TOKENIZER_DIRECTORY = "tokenizer/"
+
 
 # Sample audio ships beside the weights in every k2-fsa repo, and it carries its
 # own reference transcript -- a .txt the allowlist above would otherwise take
@@ -124,7 +127,10 @@ def list_files(repo: str, revision: str, prefix: str, everything: bool) -> list[
         blobs = [
             e
             for e in blobs
-            if e["path"].endswith(RUNTIME_SUFFIXES)
+            if (
+                e["path"].endswith(RUNTIME_SUFFIXES)
+                or (e["path"].startswith(TOKENIZER_DIRECTORY) and e["path"].endswith(".json"))
+            )
             and not e["path"].startswith(SKIP_DIRECTORIES)
         ]
     return sorted(blobs, key=lambda e: e["path"])

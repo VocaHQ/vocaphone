@@ -169,10 +169,11 @@ class AppContainer(context: Context) {
      * has no reason to know the catalog's history.
      */
     private suspend fun migrateRetiredModelSelection() {
-        val stored = settings.settings.first().localModelId
+        val current = settings.settings.first()
         RetiredModels.migrate(
-            stored = stored,
+            stored = current.localModelId,
             totalRamGB = localModels.totalRamGB(),
+            language = current.language.wireValue,
             replace = settings::replaceRetiredLocalModel,
             // No fitting replacement: turn the switch off with the selection.
             clear = settings::clearLocalModelSelection,

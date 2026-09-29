@@ -127,10 +127,10 @@ shows up as an actionable repair prompt rather than a silent failure.
    the active engine, whether it is ready, and whether it supports streaming.
 
 The catalog carries four whisper.cpp Q8_0 builds (Tiny, Base, Small and Large
-v3 Turbo) and 10 sherpa-onnx models (Parakeet TDT and CTC, SenseVoice, Canary,
-GigaAM, Omnilingual and the icefall Zipformers) covering English, Chinese,
-Japanese, Korean, Russian, Vietnamese and European sets that small whisper
-builds handle poorly. Only models this phone has the memory for are
+v3 Turbo) and 11 sherpa-onnx models (Parakeet TDT and CTC, SenseVoice, Canary,
+GigaAM, Omnilingual, Qwen3-ASR and the icefall Zipformers) covering English,
+Chinese, Japanese, Korean, Russian, Vietnamese and European sets that small
+whisper builds handle poorly. Only models this phone has the memory for are
 offered, and sherpa-onnx models need an Arm ABI because its JNI library ships
 prebuilt; whisper.cpp is compiled from source and runs on an x86_64 emulator too.
 

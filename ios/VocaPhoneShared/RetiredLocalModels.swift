@@ -79,9 +79,9 @@ enum RetiredLocalModels {
         }
         // Both Dolphin builds retire onto Whisper. Dolphin Small listed English
         // but returned nothing for it, nor for German, and answered French in
-        // Persian script. Whisper covers every language Dolphin did, so
-        // whichever one someone was speaking still has a model; Small is the
-        // rung for a phone that cannot hold Large.
+        // Persian script. Large v3 covers every language Dolphin did; Small is
+        // the rung for a phone that cannot hold it. See `languageReplacements`
+        // for the one language Small loses.
         for id in ["dolphin-base-ctc", "dolphin-small-ctc"] {
             table[id] = ["openai_whisper-large-v3-v20240930_626MB", "openai_whisper-small_216MB"]
         }
@@ -97,6 +97,18 @@ enum RetiredLocalModels {
 
         return table
     }()
+
+    /// A rung taken only for a chosen language that every fitting rung in
+    /// `replacements` would lose.
+    ///
+    /// Whisper Small has no Cantonese, so a 3 GB phone that dictated Cantonese
+    /// on Dolphin goes to SenseVoice. It is not a general rung: offered to a
+    /// Hindi speaker, or to one left on Automatic, it would swap a model that
+    /// has their language for one that does not.
+    static let languageReplacements: [String: [String: String]] = [
+        "dolphin-base-ctc": ["yue": "sense-voice"],
+        "dolphin-small-ctc": ["yue": "sense-voice"],
+    ]
 
     /// Whether `id` names something the catalog used to ship and no longer does.
     static func isRetired(_ id: String) -> Bool { replacements[id] != nil }
@@ -124,9 +136,10 @@ enum RetiredLocalModels {
     /// reason `deleteRetiredModelFiles` deletes only named ids.
     static func replacement(
         for stored: String,
-        deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB
+        deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
+        language: String = ""
     ) -> String? {
-        switch resolve(stored, deviceMemoryGB: deviceMemoryGB) {
+        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, language: language) {
         case .unchanged: return stored
         case let .replaced(id): return id
         case .cleared: return nil
@@ -145,17 +158,26 @@ enum RetiredLocalModels {
     /// already does when it removes the model in use: the app stops claiming a
     /// route it cannot take, and setup says so before recording rather than
     /// after.
+    ///
+    /// `language` is the chosen transcription language, empty or `auto` for
+    /// none. The first fitting rung that covers it wins; failing that, its
+    /// `languageReplacements` rung if that fits; failing that, the first
+    /// fitting rung, as before a language was considered.
     static func resolve(
         _ stored: String,
-        deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB
+        deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
+        language: String = ""
     ) -> Outcome {
         if LocalModelCatalog.descriptor(for: stored) != nil { return .unchanged }
         guard let candidates = replacements[stored] else { return .unchanged }
-        let fitting = candidates
-            .lazy
-            .compactMap(LocalModelCatalog.descriptor(for:))
-            .first { deviceMemoryGB >= $0.minimumRamGB }
-        return fitting.map { Outcome.replaced($0.id) } ?? .cleared
+        func fits(_ model: LocalModelDescriptor) -> Bool { deviceMemoryGB >= model.minimumRamGB }
+        let fitting = candidates.compactMap(LocalModelCatalog.descriptor(for:)).filter(fits)
+        let spoken = language == TranscriptionLanguage.automatic.rawValue ? "" : language
+        let forLanguage = languageReplacements[stored]?[spoken]
+            .flatMap(LocalModelCatalog.descriptor(for:))
+            .flatMap { fits($0) ? $0 : nil }
+        let chosen = fitting.first { $0.covers(spoken) } ?? forLanguage ?? fitting.first
+        return chosen.map { Outcome.replaced($0.id) } ?? .cleared
     }
 
     /// Rewrite the stored selection once, at launch, before anything reads it.
@@ -170,7 +192,8 @@ enum RetiredLocalModels {
         guard let defaults,
               let stored = defaults.string(forKey: LocalTranscriptionPreferences.modelKey)
         else { return }
-        switch resolve(stored, deviceMemoryGB: deviceMemoryGB) {
+        let language = defaults.string(forKey: KeyboardPreferences.transcriptionLanguageKey) ?? ""
+        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, language: language) {
         case .unchanged:
             break
         case let .replaced(id):
