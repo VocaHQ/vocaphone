@@ -227,6 +227,60 @@ struct RetiredLocalModelsTests {
         }
     }
 
+    /// The language someone chose to dictate in outranks the others the
+    /// migration collects, and is never traded for a model without it.
+    @Test func theChosenLanguageOutranksTheOthersAndIsNeverDropped() {
+        for id in ["dolphin-base-ctc", "dolphin-small-ctc"] {
+            // Cantonese chosen, Hindi also on the phone: nothing covers both,
+            // and Small would keep Hindi but lose Cantonese.
+            #expect(
+                RetiredLocalModels.replacement(
+                    for: id, deviceMemoryGB: 3, primaryLanguage: "yue", languages: ["yue", "hi"]
+                ) == "sense-voice",
+                "\(id)"
+            )
+            // The other way round, Small keeps the chosen Hindi.
+            #expect(
+                RetiredLocalModels.replacement(
+                    for: id, deviceMemoryGB: 3, primaryLanguage: "hi", languages: ["hi", "yue"]
+                ) == "openai_whisper-small_216MB",
+                "\(id)"
+            )
+        }
+        // Hindi chosen on a 2 GB phone: only SenseVoice fits, and it has no
+        // Hindi, so the route is cleared as it was before SenseVoice was a rung.
+        #expect(
+            RetiredLocalModels.resolve(
+                "dolphin-base-ctc", deviceMemoryGB: 2, primaryLanguage: "hi", languages: ["hi"]
+            ) == .cleared
+        )
+        // Automatic is not a chosen language.
+        #expect(
+            RetiredLocalModels.resolve("dolphin-base-ctc", deviceMemoryGB: 2, primaryLanguage: "auto")
+                == .replaced("sense-voice")
+        )
+        // A ladder that never covered the language ignores it: a stale German
+        // setting does not strand a Moonshine user.
+        #expect(
+            RetiredLocalModels.replacement(for: "moonshine-base-en", deviceMemoryGB: 2, primaryLanguage: "de")
+                == "parakeet-tdt-ctc-110m-en"
+        )
+    }
+
+    @Test func launchMigrationClearsAHindiDolphinThatNothingFittingCovers() throws {
+        let suite = "RetiredLocalModelsTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: LocalTranscriptionPreferences.enabledKey)
+        defaults.set("dolphin-base-ctc", forKey: LocalTranscriptionPreferences.modelKey)
+        defaults.set("hi", forKey: KeyboardPreferences.transcriptionLanguageKey)
+
+        RetiredLocalModels.migrateStoredSelection(deviceMemoryGB: 2, languages: ["hi", "en"], defaults: defaults)
+
+        #expect(!defaults.bool(forKey: LocalTranscriptionPreferences.enabledKey))
+        #expect(defaults.string(forKey: LocalTranscriptionPreferences.modelKey) == nil)
+    }
+
     @Test func launchMigrationSendsCantoneseDolphinToSenseVoiceOnASmallPhone() throws {
         let suite = "RetiredLocalModelsTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

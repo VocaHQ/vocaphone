@@ -130,9 +130,13 @@ enum RetiredLocalModels {
     static func replacement(
         for stored: String,
         deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
+        primaryLanguage: String? = nil,
         languages: [String] = []
     ) -> String? {
-        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, languages: languages) {
+        switch resolve(
+            stored, deviceMemoryGB: deviceMemoryGB,
+            primaryLanguage: primaryLanguage, languages: languages
+        ) {
         case .unchanged: return stored
         case let .replaced(id): return id
         case .cleared: return nil
@@ -159,18 +163,33 @@ enum RetiredLocalModels {
     /// phone lands on SenseVoice instead of Whisper Small. If none of the
     /// fitting candidates cover the languages, the first fitting one is kept
     /// so the phone is not left without a model.
+    ///
+    /// `primaryLanguage` is the one the user chose to dictate in, nil for
+    /// Automatic, and it outranks the rest: the extra languages can only break
+    /// a tie between models that keep it. A Cantonese speaker who also has a
+    /// Hindi keyboard on a 3 GB phone still lands on SenseVoice, not on Whisper
+    /// Small, which has Hindi but not Cantonese. And when this ladder could
+    /// serve that language but nothing that fits does -- Hindi on a 2 GB phone,
+    /// where only SenseVoice fits -- the selection is cleared rather than
+    /// swapped for a model without it. A ladder that never covered the
+    /// language, such as Moonshine's English-only one under a stale German
+    /// setting, ignores it and behaves as before.
     static func resolve(
         _ stored: String,
         deviceMemoryGB: Int = LocalModelCatalog.deviceMemoryGB,
+        primaryLanguage: String? = nil,
         languages: [String] = []
     ) -> Outcome {
         if LocalModelCatalog.descriptor(for: stored) != nil { return .unchanged }
         guard let candidates = replacements[stored] else { return .unchanged }
-        let fitting = candidates
-            .compactMap(LocalModelCatalog.descriptor(for:))
-            .filter { deviceMemoryGB >= $0.minimumRamGB }
-        let covering = fitting.filter { model in languages.allSatisfy { model.covers($0) } }
-        return (covering.first ?? fitting.first).map { Outcome.replaced($0.id) } ?? .cleared
+        let ladder = candidates.compactMap(LocalModelCatalog.descriptor(for:))
+        var pool = ladder.filter { deviceMemoryGB >= $0.minimumRamGB }
+        if let primary = primaryLanguage.flatMap(LocalModelCatalog.normalizedLanguageCode),
+           ladder.contains(where: { $0.covers(primary) }) {
+            pool = pool.filter { $0.covers(primary) }
+        }
+        let covering = pool.filter { model in languages.allSatisfy { model.covers($0) } }
+        return (covering.first ?? pool.first).map { Outcome.replaced($0.id) } ?? .cleared
     }
 
     /// Languages the launch migration should try to keep covering.
@@ -208,14 +227,17 @@ enum RetiredLocalModels {
         guard let defaults,
               let stored = defaults.string(forKey: LocalTranscriptionPreferences.modelKey)
         else { return }
+        let chosen = defaults.string(forKey: KeyboardPreferences.transcriptionLanguageKey) ?? ""
         let needed = languages.isEmpty
             ? languagesForMigration(
-                transcriptionLanguage: defaults.string(forKey: KeyboardPreferences.transcriptionLanguageKey) ?? "",
+                transcriptionLanguage: chosen,
                 modelLanguages: Set(defaults.stringArray(forKey: KeyboardPreferences.modelLanguagesKey) ?? []),
                 preferredLanguages: []
             )
             : languages
-        switch resolve(stored, deviceMemoryGB: deviceMemoryGB, languages: needed) {
+        switch resolve(
+            stored, deviceMemoryGB: deviceMemoryGB, primaryLanguage: chosen, languages: needed
+        ) {
         case .unchanged:
             break
         case let .replaced(id):

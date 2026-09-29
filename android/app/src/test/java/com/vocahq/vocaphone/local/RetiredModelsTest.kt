@@ -240,6 +240,34 @@ class RetiredModelsTest {
         }
     }
 
+    /**
+     * The language someone chose to dictate in outranks the others the
+     * migration collects, and is never traded for a model without it.
+     */
+    @Test
+    fun `the chosen language outranks the others and is never dropped`() {
+        fun resolve(id: String, ram: Long, primary: String?, languages: List<String> = emptyList()) =
+            RetiredModels.resolve(id, ram, sherpaAvailable = true, languages = languages, primaryLanguage = primary)
+        listOf("dolphin-base-ctc", "dolphin-small-ctc").forEach { id ->
+            // Cantonese chosen, Hindi also on the phone: nothing covers both,
+            // and Small would keep Hindi but lose Cantonese.
+            assertEquals(id, RetiredModels.Outcome.Replaced("sense-voice"), resolve(id, 3, "yue", listOf("yue", "hi")))
+            // The other way round, Small keeps the chosen Hindi.
+            assertEquals(id, RetiredModels.Outcome.Replaced("small-q8_0"), resolve(id, 3, "hi", listOf("hi", "yue")))
+        }
+        // Hindi chosen on a 2 GB phone: only SenseVoice fits, and it has no
+        // Hindi, so the route is cleared as it was before SenseVoice was a rung.
+        assertEquals(RetiredModels.Outcome.Cleared, resolve("dolphin-base-ctc", 2, "hi", listOf("hi")))
+        // Automatic is not a chosen language.
+        assertEquals(RetiredModels.Outcome.Replaced("sense-voice"), resolve("dolphin-base-ctc", 2, "auto"))
+        // A ladder that never covered the language ignores it: a stale German
+        // setting does not strand a Moonshine user.
+        assertEquals(
+            RetiredModels.Outcome.Replaced("parakeet-tdt-ctc-110m-en"),
+            resolve("moonshine-base-en", 2, "de"),
+        )
+    }
+
     @Test
     fun `resolve reports the three outcomes apart`() {
         assertEquals(

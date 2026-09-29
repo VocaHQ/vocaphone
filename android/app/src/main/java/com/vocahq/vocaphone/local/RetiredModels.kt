@@ -124,22 +124,35 @@ object RetiredModels {
      * phone lands on SenseVoice instead of Whisper Small. If none of the
      * fitting candidates cover the languages, the first fitting one is kept
      * so the phone is not left without a model.
+     *
+     * [primaryLanguage] is the one the user chose to dictate in, null for
+     * Automatic, and it outranks the rest: [languages] can only break a tie
+     * between models that keep it. A Cantonese speaker who also has a Hindi
+     * keyboard on a 3 GB phone still lands on SenseVoice, not on Whisper Small,
+     * which has Hindi but not Cantonese. And when this ladder could serve that
+     * language but nothing that fits does -- Hindi on a 2 GB phone, where only
+     * SenseVoice fits -- the selection is cleared rather than swapped for a
+     * model without it. A ladder that never covered the language, such as
+     * Moonshine's English-only one under a stale German setting, ignores it.
      */
     fun resolve(
         stored: String,
         totalRamGB: Long,
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
         languages: Collection<String> = emptyList(),
+        primaryLanguage: String? = null,
     ): Outcome {
         if (stored.isEmpty()) return Outcome.Unchanged
         if (LocalModelCatalog.find(stored) != null) return Outcome.Unchanged
         val candidates = replacements[stored] ?: return Outcome.Unchanged
-        val fitting = candidates.mapNotNull { id ->
-            LocalModelCatalog.find(id)
-                ?.takeIf { LocalModelCatalog.isUsableOnDevice(it, totalRamGB, sherpaAvailable) }
+        val ladder = candidates.mapNotNull(LocalModelCatalog::find)
+        var pool = ladder.filter { LocalModelCatalog.isUsableOnDevice(it, totalRamGB, sherpaAvailable) }
+        val primary = catalogLanguageCode(primaryLanguage)
+        if (primary != null && ladder.any { it.coversLanguage(primary) }) {
+            pool = pool.filter { it.coversLanguage(primary) }
         }
-        val covering = fitting.filter { it.coversAll(languages.toList()) }
-        val chosen = covering.firstOrNull() ?: fitting.firstOrNull()
+        val covering = pool.filter { it.coversAll(languages.toList()) }
+        val chosen = covering.firstOrNull() ?: pool.firstOrNull()
         return chosen?.id?.let(Outcome::Replaced) ?: Outcome.Cleared
     }
 
@@ -149,9 +162,10 @@ object RetiredModels {
         totalRamGB: Long,
         sherpaAvailable: Boolean = LocalModelCatalog.sherpaAvailable,
         languages: Collection<String> = emptyList(),
+        primaryLanguage: String? = null,
         replace: suspend (String) -> Unit,
         clear: suspend () -> Unit,
-    ): Outcome = resolve(stored, totalRamGB, sherpaAvailable, languages).also { outcome ->
+    ): Outcome = resolve(stored, totalRamGB, sherpaAvailable, languages, primaryLanguage).also { outcome ->
         when (outcome) {
             is Outcome.Unchanged -> Unit
             is Outcome.Replaced -> replace(outcome.id)

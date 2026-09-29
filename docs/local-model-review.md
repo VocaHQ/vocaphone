@@ -145,7 +145,10 @@ Large v3 Turbo, then Whisper Small, then SenseVoice. Large v3 covers every
 language Dolphin did, but Small has no Cantonese, so the migration prefers a
 fitting replacement that still covers the user's languages. A 3 GB Cantonese
 speaker lands on SenseVoice; English on the same phone still gets Whisper
-Small. iOS now leads with Large v3 Turbo for the old Dolphin starter
+Small. The language chosen for dictation outranks the phone and keyboard
+languages, and is never traded away: a replacement that fits but lacks it is
+skipped, and if nothing that fits has it (Hindi on a 2 GB phone) the selection
+is cleared, unless the ladder never covered that language at all. iOS now leads with Large v3 Turbo for the old Dolphin starter
 languages where it fits. Android leaves them to Whisper scoring, which keeps its
 874 MB large build off first run. Vietnamese keeps `zipformer-vi`.
 

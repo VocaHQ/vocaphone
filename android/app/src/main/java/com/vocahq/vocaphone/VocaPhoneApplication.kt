@@ -183,6 +183,7 @@ class AppContainer(context: Context) {
             stored = snapshot.localModelId,
             totalRamGB = localModels.totalRamGB(),
             languages = languages,
+            primaryLanguage = snapshot.language.wireValue,
             replace = settings::replaceRetiredLocalModel,
             // No fitting replacement: turn the switch off with the selection.
             clear = settings::clearLocalModelSelection,
