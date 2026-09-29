@@ -225,6 +225,10 @@ fun LocalModelPicker(
     }
 
     if (compact) {
+        var catalogPick by remember { mutableStateOf<Pair<String, Int>?>(null) }
+        val pickFromCatalog: (LocalModelDescriptor) -> Unit = { model ->
+            catalogPick = model.id to ((catalogPick?.second ?: 0) + 1)
+        }
         SetupModelChoices(
             state = state,
             usable = usable,
@@ -236,6 +240,7 @@ fun LocalModelPicker(
             onDownloadAndUse = guardedDownloadAndUse,
             onCancelDownload = onCancelDownload,
             onOpenCatalog = { catalogOpen = true },
+            catalogPick = catalogPick,
         )
         CompactCatalogSheet(
             open = catalogOpen,
@@ -280,8 +285,8 @@ fun LocalModelPicker(
                 selected = selectedModelId == model.id,
                 recommended = false,
                 busy = busy,
-                onSelect = onSelect,
-                onDownloadAndUse = guardedDownloadAndUse,
+                onSelect = { onSelect(it); pickFromCatalog(it) },
+                onDownloadAndUse = { guardedDownloadAndUse(it); pickFromCatalog(it) },
                 onCancelDownload = onCancelDownload,
                 onDelete = onDelete,
                 onDismiss = { inspecting = null },
@@ -1271,6 +1276,8 @@ private fun SetupModelChoices(
     onDownloadAndUse: (LocalModelDescriptor) -> Unit,
     onCancelDownload: () -> Unit,
     onOpenCatalog: () -> Unit,
+    /** The model last used or started from All models, with a counter so a repeat still lands. */
+    catalogPick: Pair<String, Int>?,
 ) {
     var language by rememberSaveable(guidanceLanguage) {
         mutableStateOf(guidanceLanguage.ifBlank { TranscriptionLanguage.AUTOMATIC.wireValue })
@@ -1303,10 +1310,19 @@ private fun SetupModelChoices(
         )
     }
     // A model put in use, or started, from All models is this page's pick too;
-    // otherwise the radio would mark one model and offer to use another.
-    LaunchedEffect(selectedModelId, state.downloading) {
-        val external = state.downloading ?: selectedModelId.takeIf { it in state.downloaded }
-        if (external != null && rows.any { it.first.id == external }) picked = external
+    // otherwise the radio would mark one model and offer to use another. Only
+    // that explicit action moves the pick — not a download finishing or a
+    // model being adopted, which would overwrite a row chosen since.
+    //
+    // Applied once, when its row exists: a download confirmed in a dialog
+    // only becomes a row after the tap that asked for it.
+    var appliedCatalogPick by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    LaunchedEffect(catalogPick, rows) {
+        val pick = catalogPick ?: return@LaunchedEffect
+        if (pick != appliedCatalogPick && rows.any { it.first.id == pick.first }) {
+            picked = pick.first
+            appliedCatalogPick = pick
+        }
     }
     val pickedModel = rows.firstOrNull { it.first.id == picked }?.first
     val busy = state.downloading != null || state.preparing != null
