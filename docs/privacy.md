@@ -142,7 +142,8 @@ The iOS keyboard completes, corrects and predicts entirely on the device.
   any single transcript or all of them. If a requested deletion cannot finish,
   the app reports the error so remaining files can be retried. Automatic
   retention cleanup records a redacted diagnostic on failure and retries during
-  later housekeeping.
+  later housekeeping. It also removes old preview sidecars left without a
+  session record by an earlier interruption or app version.
 
 ## Android keyboard
 

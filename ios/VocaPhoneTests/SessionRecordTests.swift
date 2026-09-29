@@ -69,15 +69,20 @@ struct SessionRecordTests {
         let removed = SessionRecord()
         try store.save(kept)
         try store.save(removed)
-        fileManager.blockedNames = [kept.sessionID.uuidString.lowercased() + ".json"]
+        let liveName = kept.sessionID.uuidString.lowercased() + ".live"
+        let live = root.appendingPathComponent("sessions/\(liveName)")
+        try Data("private words".utf8).write(to: live)
+        fileManager.blockedNames = [liveName]
 
         #expect(throws: CocoaError.self) { try store.deleteAllSessions() }
         #expect(try store.load(kept.sessionID) != nil)
         #expect(try store.load(removed.sessionID) == nil)
+        #expect(FileManager.default.fileExists(atPath: live.path))
 
         fileManager.blockedNames = []
-        #expect(try store.deleteAllSessions() == 1)
+        #expect(try store.deleteAllSessions() == 2)
         #expect(try store.load(kept.sessionID) == nil)
+        #expect(!FileManager.default.fileExists(atPath: live.path))
     }
 
     @Test func partialTranscriptDeletionCanBeRetried() throws {
@@ -93,16 +98,101 @@ struct SessionRecordTests {
         fileManager.blockedNames = [meterName]
 
         #expect(throws: CocoaError.self) { try store.delete(record.sessionID) }
-        #expect(try store.load(record.sessionID) == nil)
+        #expect(try store.load(record.sessionID) != nil)
         #expect(FileManager.default.fileExists(
             atPath: root.appendingPathComponent("sessions/\(meterName)").path
         ))
 
         fileManager.blockedNames = []
         try store.delete(record.sessionID)
+        #expect(try store.load(record.sessionID) == nil)
         #expect(!FileManager.default.fileExists(
             atPath: root.appendingPathComponent("sessions/\(meterName)").path
         ))
+    }
+
+    @Test func retentionKeepsRecordUntilPrivateLiveSidecarIsGone() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileManager = FailingRemovalFileManager()
+        let store = SharedStore(fileManager: fileManager, rootOverride: root)
+        let record = SessionRecord(state: .completed, now: Date(timeIntervalSince1970: 100))
+        try store.save(record)
+        let liveName = record.sessionID.uuidString.lowercased() + ".live"
+        let live = root.appendingPathComponent("sessions/\(liveName)")
+        try Data("private words".utf8).write(to: live)
+        fileManager.blockedNames = [liveName]
+        let now = Date(timeIntervalSince1970: 100 + 3 * 86_400)
+
+        #expect(throws: CocoaError.self) {
+            try store.pruneTranscripts(olderThan: 86_400, now: now)
+        }
+        #expect(try store.load(record.sessionID) != nil)
+        #expect(FileManager.default.fileExists(atPath: live.path))
+
+        fileManager.blockedNames = []
+        #expect(try store.pruneTranscripts(olderThan: 86_400, now: now) == 1)
+        #expect(try store.load(record.sessionID) == nil)
+        #expect(!FileManager.default.fileExists(atPath: live.path))
+    }
+
+    @Test func storagePruningKeepsRecordUntilLiveSidecarIsGone() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileManager = FailingRemovalFileManager()
+        let store = SharedStore(fileManager: fileManager, rootOverride: root)
+        let record = SessionRecord(state: .completed, now: Date(timeIntervalSince1970: 100))
+        try store.save(record)
+        let liveName = record.sessionID.uuidString.lowercased() + ".live"
+        let live = root.appendingPathComponent("sessions/\(liveName)")
+        try Data("private words".utf8).write(to: live)
+        fileManager.blockedNames = [liveName]
+
+        #expect(throws: CocoaError.self) {
+            try store.pruneSessions(keeping: 0)
+        }
+        #expect(try store.load(record.sessionID) != nil)
+
+        fileManager.blockedNames = []
+        #expect(try store.pruneSessions(keeping: 0) == 1)
+        #expect(try store.load(record.sessionID) == nil)
+        #expect(!FileManager.default.fileExists(atPath: live.path))
+    }
+
+    @Test func oldOrphanedLiveSidecarsAreRecoveredWithoutTouchingFreshOnes() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = SharedStore(rootOverride: root)
+        let active = SessionRecord(state: .recording)
+        try store.save(active)
+        let sessions = root.appendingPathComponent("sessions", isDirectory: true)
+        let oldOrphan = sessions.appendingPathComponent("old.live")
+        let freshOrphan = sessions.appendingPathComponent("fresh.live")
+        let activeLive = sessions.appendingPathComponent(active.sessionID.uuidString.lowercased() + ".live")
+        for file in [oldOrphan, freshOrphan, activeLive] {
+            try Data("private words".utf8).write(to: file)
+        }
+        let now = Date(timeIntervalSince1970: 10_000)
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-7_200)],
+            ofItemAtPath: oldOrphan.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-7_200)],
+            ofItemAtPath: activeLive.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-60)],
+            ofItemAtPath: freshOrphan.path
+        )
+
+        #expect(try store.pruneOrphanedSessionSidecars(now: now) == 1)
+        #expect(!FileManager.default.fileExists(atPath: oldOrphan.path))
+        #expect(FileManager.default.fileExists(atPath: freshOrphan.path))
+        #expect(FileManager.default.fileExists(atPath: activeLive.path))
     }
 
     @Test func transcriptRetentionDoesNotCountFailedRemoval() throws {

@@ -125,21 +125,9 @@ final class SharedStore: @unchecked Sendable {
     /// all — in a product whose whole pitch is that your words stay yours.
     func delete(_ id: UUID) throws {
         let directory = try sessionsDirectory()
-        var firstError: Error?
-        var removed = false
-        for file in [
-            url(for: id, directory: directory),
-            meterURL(for: id, directory: directory),
-            liveTranscriptURL(for: id, directory: directory)
-        ] {
-            do {
-                removed = try removeIfPresent(file) || removed
-            } catch {
-                if firstError == nil { firstError = error }
-            }
+        if try removeSessionFiles(at: url(for: id, directory: directory)) {
+            notify(.sessionChanged)
         }
-        if removed { notify(.sessionChanged) }
-        if let firstError { throw firstError }
     }
 
     /// Removes every stored session. Used by "Delete all", which asks first.
@@ -149,7 +137,20 @@ final class SharedStore: @unchecked Sendable {
         guard fileManager.fileExists(atPath: directory.path) else { return 0 }
         var removed = 0
         var firstError: Error?
-        for url in try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+        // Sidecars first, records last. A record whose sidecar remains must
+        // remain too, so a later Delete all or retention pass can retry it.
+        let files = try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .sorted { ($0.pathExtension == "json" ? 1 : 0) < ($1.pathExtension == "json" ? 1 : 0) }
+        for url in files {
+            if url.pathExtension == "json" {
+                let base = url.deletingPathExtension()
+                let meter = base.appendingPathExtension("meter")
+                let live = base.appendingPathExtension("live")
+                if fileManager.fileExists(atPath: meter.path) || fileManager.fileExists(atPath: live.path) {
+                    if firstError == nil { firstError = CocoaError(.fileWriteUnknown) }
+                    continue
+                }
+            }
             do {
                 if try removeIfPresent(url) { removed += 1 }
             } catch {
@@ -173,6 +174,28 @@ final class SharedStore: @unchecked Sendable {
         return true
     }
 
+    /// Delete private sidecars before the record. If either sidecar remains,
+    /// keep the JSON file so explicit deletion and retention can retry it.
+    private func removeSessionFiles(at recordURL: URL) throws -> Bool {
+        let base = recordURL.deletingPathExtension()
+        var firstError: Error?
+        let sidecars = [base.appendingPathExtension("meter"), base.appendingPathExtension("live")]
+        for file in sidecars {
+            do {
+                _ = try removeIfPresent(file)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
+        // A late writer may have recreated a sidecar while the other one was
+        // being removed. Keep the record for a later retry in that case.
+        if sidecars.contains(where: { fileManager.fileExists(atPath: $0.path) }) {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return try removeIfPresent(recordURL)
+    }
+
     /// Deletes transcripts older than the retention the user chose.
     ///
     /// Separate from ``pruneSessions(keeping:terminalOlderThan:now:)``, which is
@@ -191,16 +214,10 @@ final class SharedStore: @unchecked Sendable {
                   record.state.isTerminal,
                   now.timeIntervalSince(record.createdAt) > maximumAge
             else { continue }
-            for file in [
-                url,
-                url.deletingPathExtension().appendingPathExtension("meter"),
-                url.deletingPathExtension().appendingPathExtension("live")
-            ] {
-                do {
-                    if try removeIfPresent(file), file == url { removed += 1 }
-                } catch {
-                    if firstError == nil { firstError = error }
-                }
+            do {
+                if try removeSessionFiles(at: url) { removed += 1 }
+            } catch {
+                if firstError == nil { firstError = error }
             }
         }
         if removed > 0 { notify(.sessionChanged) }
@@ -264,21 +281,49 @@ final class SharedStore: @unchecked Sendable {
         let directory = try sessionsDirectory()
         guard fileManager.fileExists(atPath: directory.path) else { return 0 }
         var removed = 0
+        var firstError: Error?
         for (index, url) in try sessionFilesByRecency(in: directory).enumerated() {
             let isBeyondWindow = index >= keepCount
             let isStaleTerminal = !isBeyondWindow && decodedRecord(at: url).map {
                 $0.state.isTerminal && now.timeIntervalSince($0.updatedAt) > maximumAge
             } == true
             guard isBeyondWindow || isStaleTerminal else { continue }
-            try? fileManager.removeItem(at: url)
-            try? fileManager.removeItem(
-                at: url.deletingPathExtension().appendingPathExtension("meter")
-            )
-            try? fileManager.removeItem(
-                at: url.deletingPathExtension().appendingPathExtension("live")
-            )
-            removed += 1
+            do {
+                if try removeSessionFiles(at: url) { removed += 1 }
+            } catch {
+                if firstError == nil { firstError = error }
+            }
         }
+        if let firstError { throw firstError }
+        return removed
+    }
+
+    /// Recover sidecars stranded by older app versions or an interrupted
+    /// write. The age floor avoids racing a recording that has only just
+    /// created its preview file.
+    @discardableResult
+    func pruneOrphanedSessionSidecars(
+        minimumAge: TimeInterval = 60 * 60,
+        now: Date = Date()
+    ) throws -> Int {
+        let directory = try sessionsDirectory()
+        guard fileManager.fileExists(atPath: directory.path) else { return 0 }
+        var removed = 0
+        var firstError: Error?
+        for file in try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        where file.pathExtension == "meter" || file.pathExtension == "live" {
+            let record = file.deletingPathExtension().appendingPathExtension("json")
+            guard !fileManager.fileExists(atPath: record.path),
+                  now.timeIntervalSince(modificationDate(of: file)) > minimumAge
+            else { continue }
+            do {
+                if try removeIfPresent(file) { removed += 1 }
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if removed > 0 { notify(.sessionChanged) }
+        if let firstError { throw firstError }
         return removed
     }
 

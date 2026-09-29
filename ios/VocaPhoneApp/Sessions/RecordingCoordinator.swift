@@ -844,7 +844,12 @@ final class RecordingCoordinator {
         let store = SharedStore.shared
         let retention = LocalTranscriptionPreferences.transcriptRetention.maximumAge
         Task.detached(priority: .utility) {
-            try? store.pruneSessions()
+            var transcriptCleanupFailed = false
+            do {
+                try store.pruneSessions()
+            } catch {
+                transcriptCleanupFailed = true
+            }
             try? store.pruneOrphanedAudio()
             // The retention the user chose, which is a promise rather than a
             // storage bound — it deletes finished transcripts however few there
@@ -852,6 +857,14 @@ final class RecordingCoordinator {
             do {
                 try store.pruneTranscripts(olderThan: retention)
             } catch {
+                transcriptCleanupFailed = true
+            }
+            do {
+                try store.pruneOrphanedSessionSidecars()
+            } catch {
+                transcriptCleanupFailed = true
+            }
+            if transcriptCleanupFailed {
                 DiagnosticLog.record(.operationFailed, metadata: .error(.transcriptCleanupFailed))
             }
         }
