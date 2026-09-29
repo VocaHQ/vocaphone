@@ -788,7 +788,11 @@ struct SetupView: View {
     /// Skip on Choose model is the no-download answer. Get takes that away.
     private var showsSkip: Bool {
         guard !holdingKeyboardOff, readyFlash == .none else { return false }
-        return OnboardingPresentation.showsSkip(stage: stage, modelIsArriving: modelIsArriving)
+        return OnboardingPresentation.showsSkip(
+            stage: stage,
+            modelIsArriving: modelIsArriving,
+            localTranscriptionEnabled: localTranscriptionEnabled
+        )
     }
 
     @ViewBuilder private var backControl: some View {

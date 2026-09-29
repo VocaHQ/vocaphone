@@ -400,13 +400,18 @@ enum OnboardingPresentation {
         !hasBeenAsked && canFinishSetup(status: status)
     }
 
-    /// Skip on Choose model is the "no download" answer. Once Get has started
-    /// a transfer, that answer is gone — Continue (or waiting later) is.
+    /// Skip on Choose model is the on-device "no download" answer. A gateway
+    /// must be paired before setup can advance. Once Get starts a download,
+    /// Continue (or waiting later) is the on-device path.
     /// Try dictating still offers Skip: that one is about insert proof, not
     /// the download.
-    static func showsSkip(stage: OnboardingStage, modelIsArriving: Bool) -> Bool {
+    static func showsSkip(
+        stage: OnboardingStage,
+        modelIsArriving: Bool,
+        localTranscriptionEnabled: Bool
+    ) -> Bool {
         guard stage.allowsSkip else { return false }
-        if stage == .model, modelIsArriving { return false }
+        if stage == .model, modelIsArriving || !localTranscriptionEnabled { return false }
         return true
     }
 

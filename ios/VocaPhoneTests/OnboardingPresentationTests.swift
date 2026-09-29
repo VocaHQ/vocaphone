@@ -849,10 +849,21 @@ struct OnboardingPresentationTests {
     }
 
     @Test func skipOnChooseModelGoesAwayOnceADownloadStarts() {
-        #expect(OnboardingPresentation.showsSkip(stage: .model, modelIsArriving: false))
-        #expect(!OnboardingPresentation.showsSkip(stage: .model, modelIsArriving: true))
-        #expect(OnboardingPresentation.showsSkip(stage: .practice, modelIsArriving: true))
-        #expect(!OnboardingPresentation.showsSkip(stage: .welcome, modelIsArriving: false))
+        #expect(OnboardingPresentation.showsSkip(
+            stage: .model, modelIsArriving: false, localTranscriptionEnabled: true
+        ))
+        #expect(!OnboardingPresentation.showsSkip(
+            stage: .model, modelIsArriving: true, localTranscriptionEnabled: true
+        ))
+        #expect(!OnboardingPresentation.showsSkip(
+            stage: .model, modelIsArriving: false, localTranscriptionEnabled: false
+        ))
+        #expect(OnboardingPresentation.showsSkip(
+            stage: .practice, modelIsArriving: true, localTranscriptionEnabled: false
+        ))
+        #expect(!OnboardingPresentation.showsSkip(
+            stage: .welcome, modelIsArriving: false, localTranscriptionEnabled: true
+        ))
     }
 
     @Test func usageReportingIsAskedOnceAndOnlyWhenSetupCanFinish() {
