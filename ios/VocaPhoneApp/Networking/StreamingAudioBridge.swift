@@ -21,11 +21,11 @@ private struct RecordingUploadTransport: GatewayRecordingTransport {
     func cancel() { upload.cancel() }
 
     func finish() async throws -> String {
-        _ = try await upload.finish()
+        let uploaded = try await upload.finish()
         DiagnosticLog.record(.uploadCompleted)
         try Task.checkCancellation()
         DiagnosticLog.record(.transcriptionStarted)
-        let result = try await client.finish(sessionID: sessionID)
+        let result = try await client.finishUploaded(sessionID: sessionID, uploaded: uploaded)
         guard let transcript = result.transcript, !transcript.isEmpty else {
             throw GatewayError.api(status: 500, code: result.errorCode ?? "empty_transcript")
         }

@@ -1381,7 +1381,7 @@ final class RecordingCoordinator {
             )
             record.serverJobID = created.jobID
             DiagnosticLog.record(.uploadStarted)
-            _ = try await client.uploadAudio(sessionID: record.sessionID, fileURL: output)
+            let uploaded = try await client.uploadAudio(sessionID: record.sessionID, fileURL: output, finishOnUpload: true)
             DiagnosticLog.record(.uploadCompleted)
             try record.transition(to: .transcribing)
             try store.save(record)
@@ -1390,7 +1390,7 @@ final class RecordingCoordinator {
             liveActivity.update(status: "Transcribing on your gateway", canFinish: false)
 
             DiagnosticLog.record(.transcriptionStarted)
-            let finished = try await client.finish(sessionID: record.sessionID)
+            let finished = try await client.finishUploaded(sessionID: record.sessionID, uploaded: uploaded)
             guard let transcript = finished.transcript, !transcript.isEmpty else {
                 throw GatewayError.api(status: 500, code: finished.errorCode ?? "empty_transcript")
             }

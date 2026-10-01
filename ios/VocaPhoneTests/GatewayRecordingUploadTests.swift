@@ -4,6 +4,34 @@ import Testing
 import os
 
 struct GatewayRecordingUploadTests {
+    @Test(arguments: [true, false])
+    func liveTransportUsesTheUploadTranscriptOrOneLegacyFinish(combined: Bool) async throws {
+        let id = UUID()
+        let completed = "{\"session_id\":\"\(id)\",\"job_id\":\"test\",\"state\":\"completed\",\"transcript\":\"Hello there\"}"
+        let uploaded = "{\"session_id\":\"\(id)\",\"job_id\":\"test\",\"state\":\"uploaded\"}"
+        var replies = ["{\"status\":\"ok\",\"engine_ready\":true,\"engine\":\"test\"}", uploaded, combined ? completed : uploaded]
+        if !combined { replies.append(completed) }
+        let server = try UploadServer(responses: replies)
+        let port = try await server.start()
+        defer { server.cancel() }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let client = GatewayClient(baseURL: URL(string: "http://127.0.0.1:\(port)")!, token: "test-token", session: session)
+        let transport = try await client.recordingTransport(
+            sessionID: id, language: "en", style: "raw", sampleRate: 16_000,
+            attemptTranscriptionStream: false
+        )
+        defer { transport.cancel() }
+        let samples: [Float] = [0, -1, 1]
+        try await transport.send(samples.withUnsafeBytes { Data($0) })
+        #expect(try await transport.finish() == "Hello there")
+        let requests = server.requests.withLock { $0 }
+        #expect(requests.count == (combined ? 3 : 4))
+        #expect(requests[2].lowercased().contains("/audio?finish=true"))
+        #expect(requests[2].hasPrefix("PUT "))
+        if !combined { #expect(requests[3].hasPrefix("POST ")) }
+    }
+
     @Test func audioReachesTheHTTPServerBeforeRecordingFinishes() async throws {
         let server = try UploadServer()
         let port = try await server.start()
@@ -79,6 +107,7 @@ struct GatewayRecordingUploadTests {
         let received = OSAllocatedUnfairLock(initialState: Data())
         let headers = OSAllocatedUnfairLock(initialState: "")
         let finished = OSAllocatedUnfairLock(initialState: false)
+        let requests = OSAllocatedUnfairLock(initialState: [String]())
         private let listener: NWListener
         private let queue = DispatchQueue(label: "vocaphone.test-upload-server")
         private var connection: NWConnection?
@@ -87,16 +116,22 @@ struct GatewayRecordingUploadTests {
         private let reject: Bool
         private let holdResponse: Bool
         private var bodyLength: Int?
+        private let responses: [String]
+        private var responseIndex = 0
 
-        init(reject: Bool = false, holdResponse: Bool = false) throws {
+        init(reject: Bool = false, holdResponse: Bool = false, responses: [String] = []) throws {
             self.reject = reject
             self.holdResponse = holdResponse
+            self.responses = responses
             listener = try NWListener(using: .tcp, on: .any)
         }
 
         func start() async throws -> UInt16 {
             listener.newConnectionHandler = { [self] connection in
                 self.connection = connection
+                wire.removeAll()
+                parsedHeaders = false
+                bodyLength = nil
                 connection.start(queue: queue)
                 receive(connection)
             }
@@ -134,9 +169,13 @@ struct GatewayRecordingUploadTests {
                 guard let range = wire.range(of: Data("\r\n\r\n".utf8)) else { return false }
                 let header = String(decoding: wire[..<range.lowerBound], as: UTF8.self)
                 headers.withLock { $0 = header }
+                requests.withLock { $0.append(header) }
                 if let length = header.lowercased().components(separatedBy: "\r\n")
                     .first(where: { $0.hasPrefix("content-length:") })?.split(separator: ":").last {
                     bodyLength = Int(length.trimmingCharacters(in: .whitespaces))
+                }
+                if bodyLength == nil, !header.lowercased().contains("transfer-encoding: chunked") {
+                    bodyLength = 0
                 }
                 wire.removeSubrange(..<range.upperBound)
                 parsedHeaders = true
@@ -168,7 +207,17 @@ struct GatewayRecordingUploadTests {
         private func respondToUpload(_ connection: NWConnection) {
             finished.withLock { $0 = true }
             guard !holdResponse else { return }
-            let body = "{\"session_id\":\"00000000-0000-0000-0000-000000000001\",\"job_id\":\"test\",\"state\":\"uploaded\"}"
+            let body: String
+            if responses.isEmpty {
+                body = "{\"session_id\":\"00000000-0000-0000-0000-000000000001\",\"job_id\":\"test\",\"state\":\"uploaded\"}"
+            } else {
+                guard responseIndex < responses.count else {
+                    reply(connection, status: 500, body: "{\"error\":{\"code\":\"unexpected_request\"}}")
+                    return
+                }
+                body = responses[responseIndex]
+                responseIndex += 1
+            }
             reply(connection, status: reject ? 503 : 200, body: body)
         }
 

@@ -102,6 +102,7 @@ private struct GatewayModel: Decodable, Sendable {
 }
 
 struct GatewayClient: Sendable {
+    static let finishTimeout: TimeInterval = 540
     let baseURL: URL
     private let token: String
     private let session: URLSession
@@ -141,13 +142,13 @@ struct GatewayClient: Sendable {
         return try await perform(request, as: GatewaySession.self)
     }
 
-    func uploadAudio(sessionID: UUID, fileURL: URL) async throws -> GatewaySession {
+    func uploadAudio(sessionID: UUID, fileURL: URL, finishOnUpload: Bool = false) async throws -> GatewaySession {
         let upload = try await GatewayUploadAudio.prepare(sourceURL: fileURL, temporaryRoot: uploadTemporaryRoot)
         defer { upload.removeTemporaryFile() }
         try Task.checkCancellation()
-        var request = URLRequest(url: endpoint("v1/sessions/\(sessionID.uuidString.lowercased())/audio"))
+        var request = URLRequest(url: audioEndpoint(sessionID: sessionID, finishOnUpload: finishOnUpload))
         request.httpMethod = "PUT"
-        request.timeoutInterval = 30
+        request.timeoutInterval = finishOnUpload ? Self.finishTimeout : 30
         request.setValue(contentType(for: upload.fileURL), forHTTPHeaderField: "Content-Type")
         // Streamed from disk rather than assigned to `httpBody`, which would
         // hold the entire recording in memory and then let URLSession copy it
@@ -160,8 +161,19 @@ struct GatewayClient: Sendable {
         request.httpMethod = "POST"
         // One-shot local engines can spend several minutes loading or compiling
         // a newly selected model before their first transcription completes.
-        request.timeoutInterval = 540
+        request.timeoutInterval = Self.finishTimeout
         return try await perform(request, as: GatewaySession.self)
+    }
+
+    /// Older gateways ignore the optional query and still need one /finish.
+    func finishUploaded(sessionID: UUID, uploaded: GatewaySession) async throws -> GatewaySession {
+        if uploaded.state == "completed" { return uploaded }
+        return try await finish(sessionID: sessionID)
+    }
+
+    private func audioEndpoint(sessionID: UUID, finishOnUpload: Bool) -> URL {
+        let url = endpoint("v1/sessions/\(sessionID.uuidString.lowercased())/audio")
+        return finishOnUpload ? url.appending(queryItems: [URLQueryItem(name: "finish", value: "true")]) : url
     }
 
     func startRecordingUpload(
@@ -172,9 +184,9 @@ struct GatewayClient: Sendable {
         }
         _ = try await createSession(id: sessionID, language: language, style: style)
         try Task.checkCancellation()
-        var request = URLRequest(url: endpoint("v1/sessions/\(sessionID.uuidString.lowercased())/audio"))
+        var request = URLRequest(url: audioEndpoint(sessionID: sessionID, finishOnUpload: true))
         request.httpMethod = "PUT"
-        request.timeoutInterval = 30
+        request.timeoutInterval = Self.finishTimeout
         request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let upload = try GatewayRecordingUpload(request: request, configuration: session.configuration)

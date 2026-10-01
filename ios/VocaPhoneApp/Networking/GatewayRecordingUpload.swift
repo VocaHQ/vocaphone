@@ -29,7 +29,7 @@ final class GatewayRecordingUpload: NSObject, URLSessionDataDelegate, @unchecked
         super.init()
         // Covers the bounded recording plus setup/drain time. Individual writes
         // have a shorter deadline so Finish cannot wait on a stalled producer.
-        configuration.timeoutIntervalForResource = 150
+        configuration.timeoutIntervalForResource = AppConfiguration.maximumRecordingSeconds + GatewayClient.finishTimeout
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         task = session.uploadTask(withStreamedRequest: request)
         writer.sync { output.open() }
