@@ -1,6 +1,7 @@
 import AVFAudio
 import Foundation
 import Testing
+import os
 
 struct GatewayUploadClientTests {
     @Test(arguments: [true, false])
@@ -92,15 +93,20 @@ struct GatewayUploadClientTests {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
         let client = makeClient(port: port, session: session, scratch: scratch)
-        let uploading = Task { try await client.uploadAudio(sessionID: UUID(), fileURL: source) }
+        let notifications = OSAllocatedUnfairLock(initialState: 0)
+        let uploading = Task {
+            try await client.uploadAudio(sessionID: UUID(), fileURL: source, finishOnUpload: true,
+                                         onUploadFinished: { notifications.withLock { $0 += 1 } })
+        }
         let deadline = ContinuousClock.now + .seconds(5)
-        while !server.finished.withLock({ $0 }) {
+        while !server.finished.withLock({ $0 }) || notifications.withLock({ $0 }) != 1 {
             guard ContinuousClock.now < deadline else {
                 uploading.cancel()
                 throw URLError(.timedOut)
             }
             try await Task.sleep(for: .milliseconds(5))
         }
+        #expect(notifications.withLock { $0 } == 1)
         #expect(!(try FileManager.default.contentsOfDirectory(atPath: scratch.path)).isEmpty)
         uploading.cancel()
         do {
@@ -111,6 +117,7 @@ struct GatewayUploadClientTests {
         }
         #expect(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty)
         #expect(try Data(contentsOf: source) == original)
+        #expect(notifications.withLock { $0 } == 1)
     }
 
     private func makeClient(port: UInt16, session: URLSession, scratch: URL) -> GatewayClient {

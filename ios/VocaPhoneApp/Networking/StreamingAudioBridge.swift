@@ -22,9 +22,7 @@ private struct RecordingUploadTransport: GatewayRecordingTransport {
 
     func finish() async throws -> String {
         let uploaded = try await upload.finish()
-        DiagnosticLog.record(.uploadCompleted)
         try Task.checkCancellation()
-        DiagnosticLog.record(.transcriptionStarted)
         let result = try await client.finishUploaded(sessionID: sessionID, uploaded: uploaded)
         guard let transcript = result.transcript, !transcript.isEmpty else {
             throw GatewayError.api(status: 500, code: result.errorCode ?? "empty_transcript")
@@ -36,7 +34,8 @@ private struct RecordingUploadTransport: GatewayRecordingTransport {
 extension GatewayClient {
     func recordingTransport(
         sessionID: UUID, language: String, style: String, sampleRate: Int,
-        attemptTranscriptionStream: Bool
+        attemptTranscriptionStream: Bool,
+        onUploadFinished: @escaping @Sendable () async -> Void = {}
     ) async throws -> any GatewayRecordingTransport {
         if attemptTranscriptionStream {
             do {
@@ -47,7 +46,9 @@ extension GatewayClient {
                 try Task.checkCancellation()
             }
         }
-        let upload = try await startRecordingUpload(sessionID: sessionID, language: language, style: style)
+        let upload = try await startRecordingUpload(
+            sessionID: sessionID, language: language, style: style, onUploadFinished: onUploadFinished
+        )
         return RecordingUploadTransport(upload: upload, client: self, sessionID: sessionID)
     }
 }

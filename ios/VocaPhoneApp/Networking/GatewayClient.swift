@@ -103,6 +103,7 @@ private struct GatewayModel: Decodable, Sendable {
 
 struct GatewayClient: Sendable {
     static let finishTimeout: TimeInterval = 540
+    static let uploadTimeout: TimeInterval = 30
     let baseURL: URL
     private let token: String
     private let session: URLSession
@@ -142,18 +143,22 @@ struct GatewayClient: Sendable {
         return try await perform(request, as: GatewaySession.self)
     }
 
-    func uploadAudio(sessionID: UUID, fileURL: URL, finishOnUpload: Bool = false) async throws -> GatewaySession {
+    func uploadAudio(
+        sessionID: UUID, fileURL: URL, finishOnUpload: Bool = false,
+        onUploadFinished: @escaping @Sendable () async -> Void = {}
+    ) async throws -> GatewaySession {
         let upload = try await GatewayUploadAudio.prepare(sourceURL: fileURL, temporaryRoot: uploadTemporaryRoot)
         defer { upload.removeTemporaryFile() }
         try Task.checkCancellation()
         var request = URLRequest(url: audioEndpoint(sessionID: sessionID, finishOnUpload: finishOnUpload))
         request.httpMethod = "PUT"
-        request.timeoutInterval = finishOnUpload ? Self.finishTimeout : 30
+        request.timeoutInterval = Self.uploadTimeout + (finishOnUpload ? Self.finishTimeout : 0)
         request.setValue(contentType(for: upload.fileURL), forHTTPHeaderField: "Content-Type")
         // Streamed from disk rather than assigned to `httpBody`, which would
         // hold the entire recording in memory and then let URLSession copy it
         // again — on the path taken precisely when the network is struggling.
-        return try await perform(request, as: GatewaySession.self, uploading: upload.fileURL)
+        return try await perform(request, as: GatewaySession.self, uploading: upload.fileURL,
+                                 uploadProgress: GatewayUploadProgress(onUploadFinished: onUploadFinished))
     }
 
     func finish(sessionID: UUID) async throws -> GatewaySession {
@@ -177,7 +182,8 @@ struct GatewayClient: Sendable {
     }
 
     func startRecordingUpload(
-        sessionID: UUID, language: String, style: String
+        sessionID: UUID, language: String, style: String,
+        onUploadFinished: @escaping @Sendable () async -> Void = {}
     ) async throws -> GatewayRecordingUpload {
         guard try await health().engineReady else {
             throw GatewayError.api(status: 503, code: "engine_not_ready")
@@ -186,10 +192,11 @@ struct GatewayClient: Sendable {
         try Task.checkCancellation()
         var request = URLRequest(url: audioEndpoint(sessionID: sessionID, finishOnUpload: true))
         request.httpMethod = "PUT"
-        request.timeoutInterval = Self.finishTimeout
+        request.timeoutInterval = Self.uploadTimeout + Self.finishTimeout
         request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let upload = try GatewayRecordingUpload(request: request, configuration: session.configuration)
+        let upload = try GatewayRecordingUpload(request: request, configuration: session.configuration,
+                                                onUploadFinished: onUploadFinished)
         do {
             try await upload.sendHeader()
             return upload
@@ -262,17 +269,20 @@ struct GatewayClient: Sendable {
         _ original: URLRequest,
         as type: T.Type,
         authenticated: Bool = true,
-        uploading fileURL: URL? = nil
+        uploading fileURL: URL? = nil,
+        uploadProgress: GatewayUploadProgress? = nil
     ) async throws -> T {
+        defer { uploadProgress?.cancel() }
         var request = original
         if authenticated {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let (data, response) = if let fileURL {
-            try await session.upload(for: request, fromFile: fileURL)
+            try await session.upload(for: request, fromFile: fileURL, delegate: uploadProgress)
         } else {
             try await session.data(for: request)
         }
+        await uploadProgress?.waitForNotification()
         return try Self.decode(data, response: response, as: type)
     }
 

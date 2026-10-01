@@ -115,8 +115,11 @@ was trimmed.
    while the session WAV remains available for retry. The gateway already
    accepts M4A and normalizes it through FFmpeg before inference.
    Complete-file fallback and retries request the same combined finalization.
-   Response timeouts allow the ordinary transcription budget, while the live
-   request's total deadline also covers capture. Bounded buffering and the
+   Upload progress switches the session and Live Activity to Transcribing when
+   the body is fully sent, before waiting for the transcript. Diagnostics use
+   that same boundary. Response timeouts allow both upload and transcription
+   budgets, while the live request's total deadline also covers capture.
+   Bounded buffering and the
    eight-second write deadline remain in place.
 8. The app writes `readyToInsert` and deletes its audio only after success.
 9. The keyboard verifies its session context, persists `inserting`, calls

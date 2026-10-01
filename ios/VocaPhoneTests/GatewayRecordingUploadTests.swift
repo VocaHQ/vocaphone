@@ -70,6 +70,48 @@ struct GatewayRecordingUploadTests {
         await #expect(throws: CancellationError.self) { try await upload.send(Data(repeating: 0, count: 4)) }
     }
 
+    @Test func liveUploadReportsBodyCompletionWhileTheTranscriptIsPending() async throws {
+        let server = try UploadServer(holdResponse: true)
+        let port = try await server.start()
+        defer { server.cancel() }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/audio?finish=true")!)
+        request.httpMethod = "PUT"
+        let notifications = OSAllocatedUnfairLock(initialState: 0)
+        let upload = try GatewayRecordingUpload(request: request, configuration: .ephemeral,
+                                                onUploadFinished: { notifications.withLock { $0 += 1 } })
+        defer { upload.cancel() }
+        try await upload.sendHeader()
+        try await upload.send(Data(repeating: 0, count: 6_400))
+        #expect(notifications.withLock { $0 } == 0)
+        let finishing = Task { try await upload.finish() }
+        defer { finishing.cancel() }
+        try await waitUntil { server.finished.withLock { $0 } && notifications.withLock { $0 } == 1 }
+        #expect(notifications.withLock { $0 } == 1)
+        finishing.cancel()
+        await #expect(throws: CancellationError.self) { try await finishing.value }
+        #expect(notifications.withLock { $0 } == 1)
+    }
+
+    @Test func progressWaitsForEOFAndNotifiesOnlyOnce() async {
+        let notifications = OSAllocatedUnfairLock(initialState: 0)
+        let progress = GatewayUploadProgress { notifications.withLock { $0 += 1 } }
+        progress.sent(bytes: 44)
+        await progress.waitForNotification()
+        #expect(notifications.withLock { $0 } == 0)
+        progress.bodyClosed(bytes: 50)
+        progress.sent(bytes: 50)
+        progress.sent(bytes: 50)
+        progress.bodyClosed(bytes: 50)
+        await progress.waitForNotification()
+        #expect(notifications.withLock { $0 } == 1)
+        let cancelled = GatewayUploadProgress { notifications.withLock { $0 += 1 } }
+        cancelled.cancel()
+        cancelled.bodyClosed(bytes: 44)
+        cancelled.sent(bytes: 44)
+        await cancelled.waitForNotification()
+        #expect(notifications.withLock { $0 } == 1)
+    }
+
     @Test func pcmConversionClipsWithoutOverflowAndRejectsInvalidFrames() throws {
         let samples: [Float] = [-2, -1, 0, 0.5, 1, 2]
         let chunk = samples.withUnsafeBytes { Data($0) }
