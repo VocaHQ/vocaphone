@@ -3,14 +3,21 @@ package com.vocahq.vocaphone.gateway
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.Call
+import okhttp3.EventListener
+import okhttp3.OkHttpClient
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -71,6 +78,28 @@ class GatewayUploadClientTest {
         }
     }
 
+    @Test fun `combined deadline retains the upload and full finish budgets`() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val deadline = AtomicLong()
+            val http = OkHttpClient.Builder().eventListener(object : EventListener() {
+                override fun callStart(call: Call) {
+                    deadline.set(TimeUnit.NANOSECONDS.toSeconds(call.timeout().timeoutNanos()))
+                }
+            }).build()
+            val scratch = folder.newFolder()
+            val client = GatewayClient(server.url("/").toString(), "test-token", http,
+                uploadPreparer = { GatewayUploadAudio.prepare(it, scratch, GatewayUploadAudioTest.fakeEncoder) })
+            val source = GatewayUploadAudioTest.recording(folder.root)
+            for (combined in listOf(false, true)) {
+                server.enqueue(MockResponse(body = uploaded))
+                client.uploadAudio(sessionId, source, finishOnUpload = combined)
+                assertEquals(GatewayClient.UPLOAD_TIMEOUT_SECONDS +
+                    (if (combined) GatewayClient.FINISH_TIMEOUT_SECONDS else 0), deadline.get())
+            }
+        }
+    }
+
     @Test fun `HTTP rejection retains the WAV and removes the upload copy`() = runBlocking {
         MockWebServer().use { server ->
             server.start()
@@ -96,11 +125,22 @@ class GatewayUploadClientTest {
                 "http://127.0.0.1:${server.port}", "test-token",
                 uploadPreparer = { GatewayUploadAudio.prepare(it, scratch, GatewayUploadAudioTest.fakeEncoder) },
             )
-            val uploading = async(Dispatchers.IO) { client.uploadAudio(sessionId, source) }
+            val notifications = AtomicInteger()
+            val bodySent = CountDownLatch(1)
+            val uploading = async(Dispatchers.IO) {
+                client.uploadAudio(sessionId, source, finishOnUpload = true, onUploadFinished = {
+                    notifications.incrementAndGet()
+                    bodySent.countDown()
+                })
+            }
             assertTrue(server.eofReceived.await(5, TimeUnit.SECONDS))
+            assertTrue(bodySent.await(5, TimeUnit.SECONDS))
+            assertEquals(1, notifications.get())
+            assertFalse(uploading.isCompleted)
             assertTrue(scratch.listFiles()!!.isNotEmpty())
             uploading.cancelAndJoin()
             assertTrue(uploading.isCancelled)
+            assertEquals(1, notifications.get())
             assertTrue(scratch.listFiles()!!.isEmpty())
             assertArrayEquals(original, source.readBytes())
         }

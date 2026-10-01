@@ -64,10 +64,15 @@ upload. Temporary copies live in the app's private cache and are removed after
 success, failure, or cancellation. The recoverable WAV is deleted only after
 the existing successful transcript flow.
 
+The client switches from Uploading to Transcribing when the last body bytes
+are sent, before the gateway's response arrives. Upload-completed and
+transcription-started diagnostics use that same boundary.
+
 Complete-file fallback and retry uploads request the same combined finalization
 and accept the older response too. The HTTP response timeout includes the normal
-transcription budget; the live call deadline covers the full capture window
-plus that budget. Bounded buffering and eight-second write deadlines still apply.
+upload and transcription budgets; the live call deadline also covers the full
+capture window plus those budgets. Bounded buffering and eight-second write
+deadlines still apply.
 
 On-device WhisperKit transcription uses sequential VAD windows of at most
 30 seconds. VocaPhone propagates a failed window rather than accepting a partial

@@ -56,6 +56,7 @@ private class UploadTransport(
 suspend fun GatewayClient.openRecordingTransport(
     sessionId: UUID, language: String, style: String, sampleRate: Int,
     attemptStreaming: Boolean,
+    onUploadFinished: () -> Unit = {},
 ): GatewayRecordingTransport {
     if (attemptStreaming) {
         val stream = openStream(sessionId, language, style, sampleRate)
@@ -73,5 +74,5 @@ suspend fun GatewayClient.openRecordingTransport(
         }
     }
     currentCoroutineContext().ensureActive()
-    return UploadTransport(startRecordingUpload(sessionId, language, style), this, sessionId)
+    return UploadTransport(startRecordingUpload(sessionId, language, style, onUploadFinished), this, sessionId)
 }
