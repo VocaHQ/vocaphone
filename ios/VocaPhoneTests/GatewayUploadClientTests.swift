@@ -1,58 +1,107 @@
 import AVFAudio
 import Foundation
 import Testing
-import os
 
-@Suite(.serialized)
 struct GatewayUploadClientTests {
-    @Test func clientUploadsCompressedAudioWithTheMatchingContentType() async throws {
-        let source = try makeRecording()
-        defer { try? FileManager.default.removeItem(at: source) }
+    @Test func clientUploadsDecodableAACAndRemovesItsTemporaryCopy() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = try makeRecording(in: directory)
         let original = try Data(contentsOf: source)
-        UploadProtocol.state.withLock { $0 = .init(status: 200) }
-        let session = makeSession()
+        let scratch = directory.appendingPathComponent("scratch")
+        let server = try GatewayRecordingUploadTests.UploadServer()
+        let port = try await server.start()
+        defer { server.cancel() }
+        let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
-        let client = GatewayClient(
-            baseURL: URL(string: "https://gateway.invalid")!,
-            token: String(repeating: "x", count: 32), session: session
-        )
+        let client = makeClient(port: port, session: session, scratch: scratch)
         let result = try await client.uploadAudio(sessionID: UUID(), fileURL: source)
         #expect(result.state == "uploaded")
-        let requests = UploadProtocol.state.withLock { $0.requests }
-        #expect(requests.count == 1)
-        #expect(requests.first?.httpMethod == "PUT")
-        #expect(requests.first?.value(forHTTPHeaderField: "Content-Type") == "audio/mp4")
-        #expect(requests.first?.value(forHTTPHeaderField: "Authorization") == "Bearer " + String(repeating: "x", count: 32))
+        let headers = server.headers.withLock { $0.lowercased() }
+        #expect(headers.hasPrefix("put /v1/sessions/"))
+        #expect(headers.contains("content-type: audio/mp4"))
+        #expect(headers.contains("authorization: bearer " + String(repeating: "x", count: 32)))
+        let body = server.received.withLock { $0 }
+        // M4A has fixed container overhead, which dominates this one-second clip.
+        #expect(body.count < original.count)
+        #expect(String(decoding: body.dropFirst(4).prefix(4), as: UTF8.self) == "ftyp")
+        let received = directory.appendingPathComponent("received.m4a")
+        try body.write(to: received)
+        let decoded = try AVAudioFile(forReading: received)
+        #expect(decoded.processingFormat.sampleRate == 16_000)
+        #expect(abs(decoded.length - 16_000) < 1_024)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty)
         #expect(try Data(contentsOf: source) == original)
     }
 
-    @Test func failedUploadKeepsTheWAVAndDoesNotSendAnotherRequest() async throws {
-        let source = try makeRecording()
-        defer { try? FileManager.default.removeItem(at: source) }
+    @Test func failedUploadKeepsTheWAVAndRemovesItsTemporaryCopy() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = try makeRecording(in: directory)
         let original = try Data(contentsOf: source)
-        UploadProtocol.state.withLock { $0 = .init(status: 503) }
-        let session = makeSession()
+        let scratch = directory.appendingPathComponent("scratch")
+        let server = try GatewayRecordingUploadTests.UploadServer(reject: true)
+        let port = try await server.start()
+        defer { server.cancel() }
+        let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
-        let client = GatewayClient(
-            baseURL: URL(string: "https://gateway.invalid")!,
-            token: String(repeating: "x", count: 32), session: session
-        )
+        let client = makeClient(port: port, session: session, scratch: scratch)
         await #expect(throws: GatewayError.self) {
             try await client.uploadAudio(sessionID: UUID(), fileURL: source)
         }
-        #expect(UploadProtocol.state.withLock { $0.requests.count } == 1)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty)
         #expect(try Data(contentsOf: source) == original)
     }
 
-    private func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [UploadProtocol.self]
-        return URLSession(configuration: configuration)
+    @Test func cancellationWhileAwaitingTheResponseRemovesTheUploadCopy() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = try makeRecording(in: directory)
+        let original = try Data(contentsOf: source)
+        let scratch = directory.appendingPathComponent("scratch")
+        let server = try GatewayRecordingUploadTests.UploadServer(holdResponse: true)
+        let port = try await server.start()
+        defer { server.cancel() }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let client = makeClient(port: port, session: session, scratch: scratch)
+        let uploading = Task { try await client.uploadAudio(sessionID: UUID(), fileURL: source) }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !server.finished.withLock({ $0 }) {
+            guard ContinuousClock.now < deadline else {
+                uploading.cancel()
+                throw URLError(.timedOut)
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(!(try FileManager.default.contentsOfDirectory(atPath: scratch.path)).isEmpty)
+        uploading.cancel()
+        do {
+            _ = try await uploading.value
+            Issue.record("A cancelled upload returned success")
+        } catch {
+            #expect((error as? URLError)?.code == .cancelled || error is CancellationError)
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty)
+        #expect(try Data(contentsOf: source) == original)
     }
 
-    private func makeRecording() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
+    private func makeClient(port: UInt16, session: URLSession, scratch: URL) -> GatewayClient {
+        GatewayClient(
+            baseURL: URL(string: "http://127.0.0.1:\(port)")!,
+            token: String(repeating: "x", count: 32), session: session,
+            uploadTemporaryRoot: scratch
+        )
+    }
+
+    private func makeDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private func makeRecording(in directory: URL) throws -> URL {
+        let url = directory.appendingPathComponent("capture.wav")
         let format = try #require(AVAudioFormat(
             commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
         ))
@@ -66,37 +115,5 @@ struct GatewayUploadClientTests {
         )
         try file.write(from: buffer)
         return url
-    }
-
-    private final class UploadProtocol: URLProtocol, @unchecked Sendable {
-        struct State {
-            let status: Int
-            var requests: [URLRequest] = []
-        }
-        static let state = OSAllocatedUnfairLock(initialState: State(status: 200))
-
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-        override func stopLoading() {}
-
-        override func startLoading() {
-            let status = Self.state.withLock {
-                $0.requests.append(request)
-                return $0.status
-            }
-            let response = HTTPURLResponse(
-                url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            let body = status == 200
-                ? """
-                {"session_id":"00000000-0000-0000-0000-000000000001",
-                 "job_id":"test","state":"uploaded"}
-                """
-                : "{\"error\":{\"code\":\"unavailable\"}}"
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: Data(body.utf8))
-            client?.urlProtocolDidFinishLoading(self)
-        }
     }
 }

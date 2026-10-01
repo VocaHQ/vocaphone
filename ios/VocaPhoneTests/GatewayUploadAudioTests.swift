@@ -93,6 +93,45 @@ struct GatewayUploadAudioTests {
         #expect(FileManager.default.fileExists(atPath: source.path))
     }
 
+    @Test func cancellingAfterEncodedPacketsExistRemovesThePartialM4A() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("capture.wav")
+        try writeTone(to: source, seconds: 120)
+        let original = try Data(contentsOf: source)
+        let scratch = directory.appendingPathComponent("scratch")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let encoding = Task {
+            try await GatewayUploadAudio.prepare(sourceURL: source, temporaryRoot: scratch)
+        }
+        defer { encoding.cancel() }
+        let deadline = ContinuousClock.now + .seconds(5)
+        var sawPackets = false
+        while ContinuousClock.now < deadline {
+            let directories = try FileManager.default.contentsOfDirectory(
+                at: scratch, includingPropertiesForKeys: nil
+            )
+            if let partial = directories.first?.appendingPathComponent("upload.m4a"),
+               let size = try? partial.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+               size > 4_096 {
+                sawPackets = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(sawPackets)
+        encoding.cancel()
+        do {
+            let prepared = try await encoding.value
+            prepared.removeTemporaryFile()
+            Issue.record("Encoding returned a file after cancellation")
+        } catch {
+            #expect(error is CancellationError)
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty)
+        #expect(try Data(contentsOf: source) == original)
+    }
+
     private func makeDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
