@@ -137,14 +137,17 @@ struct GatewayClient: Sendable {
     }
 
     func uploadAudio(sessionID: UUID, fileURL: URL) async throws -> GatewaySession {
+        let upload = try await GatewayUploadAudio.prepare(sourceURL: fileURL)
+        defer { upload.removeTemporaryFile() }
+        try Task.checkCancellation()
         var request = URLRequest(url: endpoint("v1/sessions/\(sessionID.uuidString.lowercased())/audio"))
         request.httpMethod = "PUT"
         request.timeoutInterval = 30
-        request.setValue(contentType(for: fileURL), forHTTPHeaderField: "Content-Type")
+        request.setValue(contentType(for: upload.fileURL), forHTTPHeaderField: "Content-Type")
         // Streamed from disk rather than assigned to `httpBody`, which would
         // hold the entire recording in memory and then let URLSession copy it
         // again — on the path taken precisely when the network is struggling.
-        return try await perform(request, as: GatewaySession.self, uploading: fileURL)
+        return try await perform(request, as: GatewaySession.self, uploading: upload.fileURL)
     }
 
     func finish(sessionID: UUID) async throws -> GatewaySession {

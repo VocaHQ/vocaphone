@@ -98,6 +98,12 @@ was trimmed.
    complete WAV. Batch-only engines receive a structured unsupported response.
 7. The app stops recording and uses the stream result when available. Otherwise
    it creates the idempotent session and runs the normal upload/batch flow.
+   Before uploading, the iPhone encodes its mono 16 kHz WAV to a temporary
+   48 kbps AAC/M4A on a worker task. It sends the smaller file with the matching
+   content type; failed encoding or container overhead on a short recording
+   falls back to WAV. The temporary copy is deleted after the upload attempt,
+   while the session WAV remains available for retry. The gateway already
+   accepts M4A and normalizes it through FFmpeg before inference.
 8. The app writes `readyToInsert` and deletes its audio only after success.
 9. The keyboard verifies its session context, persists `inserting`, calls
    `insertText`, then persists `inserted` and `completed`.

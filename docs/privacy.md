@@ -8,6 +8,12 @@ bearer-authenticated gateway over HTTP or HTTPS, and deletes the iPhone copy
 after a transcript is safely stored. HTTPS or an encrypted private network is
 recommended so the recording and token are protected in transit.
 
+For iPhone batch uploads, the app prepares a temporary mono 16 kHz AAC/M4A
+copy at 48 kbps to reduce transfer size. The recoverable WAV stays on the
+phone until success. The temporary copy is removed when the upload ends,
+including on failure or cancellation; if encoding fails or the copy would be
+larger, the app sends the WAV. On-device transcription uses the WAV.
+
 When Quick Dictation is enabled, the containing app may keep microphone input
 active so later keyboard actions do not need another app handoff. The window is
 the user's choice — 10 minutes by default, 20 minutes, or until vocaphone is
