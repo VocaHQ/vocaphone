@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,6 +44,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -1375,11 +1377,16 @@ private fun RowScope.ToolbarMenuTile(
                 .fillMaxSize()
                 .padding(horizontal = 4.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
         ) {
+            // The label is measured first and the disc takes what is left, up
+            // to 48 dp. A fixed 48 dp disc clipped the label in Compact
+            // without a number row once the font scale went up.
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .weight(1f, fill = false)
+                    .sizeIn(maxWidth = 48.dp, maxHeight = 48.dp)
+                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center,
@@ -1388,7 +1395,7 @@ private fun RowScope.ToolbarMenuTile(
                     painter = painterResource(icon),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.fillMaxSize(0.46f),
                 )
             }
             Text(
@@ -2125,6 +2132,9 @@ private fun ClipboardThumb(
     // screenshot on the clipboard put a file read and a JPEG/PNG decode inside
     // the frame that brought the keyboard up.
     val bitmap by produceState<ImageBitmap?>(null, relativePath) {
+        // produceState keeps its value across a key change, so without this
+        // a new clip shows the previous image until its own has decoded.
+        value = null
         value = withContext(Dispatchers.IO) {
             val file = File(context.filesDir, relativePath)
             if (!file.exists()) {
@@ -2926,13 +2936,15 @@ private fun KeyContent(
                 KeyLabel(displayLabel, tint, utility = false)
             } else {
                 Box(Modifier.fillMaxWidth().fillMaxHeight()) {
+                    // Fixed size, not scaled with the font: at a large font
+                    // the mark grew into the label it annotates.
                     Text(
                         text = hint,
                         color = tint.copy(alpha = 0.38f),
-                        fontSize = 10.sp,
+                        fontSize = with(LocalDensity.current) { 10.dp.toSp() },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(top = 2.dp, end = 4.dp),
+                            .padding(top = 2.dp, end = 3.dp),
                     )
                     Box(Modifier.align(Alignment.Center)) {
                         KeyLabel(displayLabel, tint, utility = false)
