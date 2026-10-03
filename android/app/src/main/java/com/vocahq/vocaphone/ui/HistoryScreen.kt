@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -27,9 +29,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -40,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -105,37 +110,64 @@ fun HistoryScreen(
             .wrapContentWidth(Alignment.CenterHorizontally)
             .widthIn(max = AppContentMaxWidth),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(GroupSpacing),
     ) {
-        if (records.size >= HISTORY_SEARCH_THRESHOLD) {
+        // Stays while a query is set, even if deleting a match takes the list
+        // under the threshold: otherwise the filter would outlive its field.
+        if (showHistorySearch(records.size, query)) {
             item(key = "search") {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text("Search dictations") },
                     leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
+                    trailingIcon = if (query.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(painterResource(R.drawable.ic_cancel), contentDescription = "Clear search")
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = GroupSpacing),
                 )
             }
         }
         if (days.isEmpty()) {
             item(key = "none") { EmptyState("No dictations match “$query”.") }
         }
-        items(days, key = { (day, _) -> day.toEpochDay() }) { (day, dayRecords) ->
-            SettingsGroup(title = historyDayLabel(day, today)) {
-                dayRecords.forEachIndexed { index, record ->
-                    if (index > 0) SettingsDivider()
-                    HistoryRow(
-                        record = record,
-                        time = timeFormat.format(Date(record.createdAt)),
-                        selected = record.sessionId in selectedIds,
-                        selecting = selecting,
-                        onRetry = { onRetry(record.sessionId) },
-                        onOpen = { opened = record.sessionId },
-                        onToggleSelect = { onToggleSelect(record.sessionId) },
-                        onEnterSelect = { onEnterSelect(record.sessionId) },
-                    )
+        // One lazy item per row, not per day: a day can hold many of the
+        // records History loads, and a whole day built at once stalls the
+        // scroll. Each row draws its own slice of the day's rounded card.
+        days.forEachIndexed { dayIndex, (day, dayRecords) ->
+            item(key = "day-${day.toEpochDay()}") {
+                SettingsGroupHeader(
+                    historyDayLabel(day, today),
+                    modifier = Modifier.padding(
+                        top = if (dayIndex == 0) 0.dp else GroupSpacing,
+                        bottom = 8.dp,
+                    ),
+                )
+            }
+            itemsIndexed(dayRecords, key = { _, record -> record.sessionId }) { index, record ->
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = groupSliceShape(first = index == 0, last = index == dayRecords.lastIndex),
+                ) {
+                    Column {
+                        if (index > 0) SettingsDivider()
+                        HistoryRow(
+                            record = record,
+                            time = timeFormat.format(Date(record.createdAt)),
+                            selected = record.sessionId in selectedIds,
+                            selecting = selecting,
+                            onRetry = { onRetry(record.sessionId) },
+                            onOpen = { opened = record.sessionId },
+                            onToggleSelect = { onToggleSelect(record.sessionId) },
+                            onEnterSelect = { onEnterSelect(record.sessionId) },
+                        )
+                    }
                 }
             }
         }
@@ -165,6 +197,22 @@ internal fun historySelectionTitle(count: Int): String = when (count) {
     0 -> "Select items"
     1 -> "1 selected"
     else -> "$count selected"
+}
+
+internal fun showHistorySearch(recordCount: Int, query: String): Boolean =
+    recordCount >= HISTORY_SEARCH_THRESHOLD || query.isNotEmpty()
+
+/** The corners one row of a day's card needs: rounded only at its ends. */
+@Composable
+private fun groupSliceShape(first: Boolean, last: Boolean): Shape {
+    val corner = MaterialTheme.shapes.large.topStart
+    val none = CornerSize(0.dp)
+    return RoundedCornerShape(
+        topStart = if (first) corner else none,
+        topEnd = if (first) corner else none,
+        bottomStart = if (last) corner else none,
+        bottomEnd = if (last) corner else none,
+    )
 }
 
 internal fun historyDay(createdAt: Long, zone: ZoneId): LocalDate =

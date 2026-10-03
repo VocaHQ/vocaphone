@@ -1,6 +1,7 @@
 package com.vocahq.vocaphone.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsSummaryTest {
@@ -42,5 +43,13 @@ class SettingsSummaryTest {
         assertEquals(SettingsPage.HELP, SettingsPage.fromExtra("HELP"))
         assertEquals(SettingsPage.DICTIONARY, SettingsPage.fromExtra("dictionary"))
         assertEquals(SettingsPage.HOME, SettingsPage.fromExtra(null))
+    }
+
+    @Test
+    fun `editing the dictation list never shortens a long phrase`() {
+        val long = "Ministry of Electronics and Information Technology of the Government of India"
+        assertTrue(long.length > 64)
+        assertEquals(listOf(long, "VocaHQ"), editableVocabulary("$long\nVocaHQ\nvocahq\n\n"))
+        assertEquals(listOf("Claude Code", "Tailscale"), editableVocabulary("Claude Code, Tailscale"))
     }
 }

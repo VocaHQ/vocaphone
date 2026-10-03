@@ -446,7 +446,9 @@ fun LocalModelPicker(
         onSize = { sizeFilter = it },
         languageFilter = languageFilter,
         onLanguage = { languageFilter = it },
-        available = filtered.filter { it.id !in state.downloaded },
+        // Every model, installed ones included, so "See all N" finds N and
+        // an installed model can still be searched for and opened.
+        available = filtered,
         filteredEmpty = filtered.isEmpty(),
         state = state,
         selectedModelId = selectedModelId,

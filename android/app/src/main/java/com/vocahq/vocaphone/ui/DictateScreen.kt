@@ -5,8 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -272,9 +272,11 @@ fun DictateScreen(
 
                 val showHint = showScratchpadHint(scratchpad.text, state.phase)
                 val fieldColors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    // The card behind the field draws the fill, so the actions
+                    // row can share it without sitting on top of the text.
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent,
@@ -286,15 +288,18 @@ fun DictateScreen(
                         MaterialTheme.colorScheme.primary
                     },
                 )
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(scratchpadHeight),
+                        .height(scratchpadHeight)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.large),
                 ) {
                     TextField(
                         value = scratchpad,
                         onValueChange = { scratchpad = it },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
                         placeholder = if (showHint) {
                             { ScratchpadHint() }
                         } else {
@@ -304,11 +309,13 @@ fun DictateScreen(
                         colors = fieldColors,
                     )
                     // The pad is for getting text somewhere else, so Copy and
-                    // Share sit with it; Clear is the quiet third.
+                    // Share sit with it; Clear is the quiet third. A row of
+                    // its own under the text, so the buttons never cover the
+                    // last lines or the cursor.
                     if (scratchpad.text.isNotEmpty()) {
                         Row(
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
+                                .align(Alignment.End)
                                 .padding(end = 8.dp, bottom = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {

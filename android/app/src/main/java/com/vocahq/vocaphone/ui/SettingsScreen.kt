@@ -677,6 +677,21 @@ fun SettingsScreen(
     }
 }
 
+/**
+ * The dictation word list as the user wrote it, one entry per line or comma.
+ *
+ * Not [CustomVocabulary.terms]: that one trims each entry to the decoder's
+ * limit, and saving its output back would permanently shorten a long phrase
+ * whenever any other word was added or removed. The limit still applies
+ * where the list is used.
+ */
+internal fun editableVocabulary(raw: String): List<String> {
+    val seen = mutableSetOf<String>()
+    return raw.split('\n', ',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && seen.add(it.lowercase()) }
+}
+
 /** "3 snippets", "1 word", "None yet". */
 internal fun countLabel(count: Int, noun: String): String = when (count) {
     0 -> "None yet"
@@ -826,7 +841,7 @@ private fun PersonalDictionaryPage(
             )
         }
     }
-    val dictationTerms = CustomVocabulary.terms(vocabulary)
+    val dictationTerms = editableVocabulary(vocabulary)
     SettingsGroup(
         title = "Dictation",
         footer = CustomVocabulary.spellingOnlyNote(unsupportedModel),
@@ -844,7 +859,7 @@ private fun PersonalDictionaryPage(
                 words = dictationTerms,
                 placeholder = "Add a word or phrase",
                 validate = { null },
-                onAdd = { added -> onSaveVocabulary((dictationTerms + added).joinToString("\n")) },
+                onAdd = { added -> onSaveVocabulary(editableVocabulary((dictationTerms + added).joinToString("\n")).joinToString("\n")) },
                 onRemove = { removed ->
                     onSaveVocabulary(dictationTerms.filterNot { it == removed }.joinToString("\n"))
                 },

@@ -66,4 +66,13 @@ class HistoryGroupingTest {
         assertEquals(listOf(records[0]), filterHistory(records, "STATION"))
         assertEquals(listOf(records[1]), filterHistory(records, "gateway"))
     }
+
+    @Test
+    fun `the search field stays while a query is set`() {
+        assertEquals(false, showHistorySearch(HISTORY_SEARCH_THRESHOLD - 1, ""))
+        assertEquals(true, showHistorySearch(HISTORY_SEARCH_THRESHOLD, ""))
+        // Deleting a match can drop the count under the threshold; the field
+        // that holds the filter must not vanish with it.
+        assertEquals(true, showHistorySearch(HISTORY_SEARCH_THRESHOLD - 1, "station"))
+    }
 }
