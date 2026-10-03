@@ -711,6 +711,7 @@ internal fun VocaPhoneKeyboard(
                             category = emojiCategory,
                             split = splitKeys,
                             spacerFraction = spacerFraction,
+                            numberRow = settings.numberRowEnabled,
                             onEmoji = onEmojiStable,
                             onKey = onKeyStable,
                             onKeyHold = onKeyHoldStable,
@@ -2169,6 +2170,7 @@ private fun EmojiLayer(
     category: EmojiCategory,
     split: Boolean = false,
     spacerFraction: Float = SplitKeyboardLayout.MIN_SPACER_FRACTION,
+    numberRow: Boolean = false,
     onEmoji: (String) -> Unit,
     onKey: (KeyboardKey) -> Unit,
     onKeyHold: (KeyboardKey, Long) -> Unit = { _, _ -> },
@@ -2176,8 +2178,10 @@ private fun EmojiLayer(
     onPreview: (KeyPreview?) -> Unit = {},
     onLongPressVariant: (String) -> Unit = {},
 ) {
-    val bottomRow = remember(editor.returnKey, editor.leadingPunctuation) {
-        KeyboardLayouts.rows(KeyboardLayer.EMOJI, editor)
+    // Keyed like the letter rows (android/AGENTS.md), so a layout that one day
+    // reads another input here cannot serve a stale row.
+    val bottomRow = remember(layer, editor.returnKey, editor.leadingPunctuation, numberRow) {
+        KeyboardLayouts.rows(KeyboardLayer.EMOJI, editor, numberRow = numberRow)
     }
     val glyphs = when (category) {
         EmojiCategory.RECENTS -> recents

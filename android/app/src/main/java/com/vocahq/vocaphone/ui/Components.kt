@@ -4,6 +4,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -353,7 +354,7 @@ fun ChecklistRow(
         val action = measurables.getOrNull(1)
         if (action == null) {
             val placed = content.measure(loose.copy(minWidth = width))
-            return@Layout layout(width, placed.height) { placed.place(0, 0) }
+            return@Layout layout(width, placed.height) { placed.placeRelative(0, 0) }
         }
         if (action.maxIntrinsicWidth(constraints.maxHeight) <= width * ChecklistActionShare) {
             val button = action.measure(loose)
@@ -362,21 +363,22 @@ fun ChecklistRow(
             )
             val height = maxOf(text.height, button.height)
             layout(width, height) {
-                text.place(0, (height - text.height) / 2)
-                button.place(width - button.width, (height - button.height) / 2)
+                // placeRelative mirrors in RTL: action on the left, text on the right.
+                text.placeRelative(0, (height - text.height) / 2)
+                button.placeRelative(width - button.width, (height - button.height) / 2)
             }
         } else {
             // Under the title, its label lined up with the title's first letter.
             val textStart = (ChecklistIconSize + ChecklistIconGap).roundToPx()
             val buttonInset = ButtonDefaults.TextButtonContentPadding
-                .calculateLeftPadding(layoutDirection)
+                .calculateStartPadding(layoutDirection)
                 .roundToPx()
             val buttonX = (textStart - buttonInset).coerceAtLeast(0)
             val text = content.measure(loose.copy(minWidth = width, maxWidth = width))
             val button = action.measure(loose.copy(maxWidth = width - buttonX))
             layout(width, text.height + button.height) {
-                text.place(0, 0)
-                button.place(buttonX, text.height)
+                text.placeRelative(0, 0)
+                button.placeRelative(buttonX, text.height)
             }
         }
     }
