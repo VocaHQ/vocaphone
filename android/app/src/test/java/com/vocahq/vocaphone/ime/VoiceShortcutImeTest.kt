@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.ime
 
+import android.view.WindowManager
 import com.vocahq.vocaphone.core.DictationPhase
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -651,5 +652,151 @@ class VoiceShortcutImeTest {
             assertNotNull("cannot find $relativeFromApp from ${File("").absolutePath}", walked)
             return walked!!
         }
+    }
+
+    @Test
+    fun `non-shortcut insets pass through the default`() {
+        assertEquals(
+            400,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = false,
+                windowHeightPx = 1000,
+                measuredInputHeightPx = 120,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 400,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets use the measured bar when it is shorter than the leftover window`() {
+        assertEquals(
+            880,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 1000,
+                measuredInputHeightPx = 120,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets use fallback when measured fills the leftover window`() {
+        assertEquals(
+            720,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 800,
+                measuredInputHeightPx = 800,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets use fallback when measured height is zero`() {
+        assertEquals(
+            720,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 800,
+                measuredInputHeightPx = 0,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets pass through default when window height is zero`() {
+        assertEquals(
+            400,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 0,
+                measuredInputHeightPx = 120,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 400,
+            ),
+        )
+    }
+
+    @Test
+    fun `measured height larger than the window is treated as leftover fill`() {
+        assertEquals(
+            720,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 800,
+                measuredInputHeightPx = 900,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets are zero when wrap has already shrunk the window to the bar`() {
+        assertEquals(
+            0,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 100,
+                measuredInputHeightPx = 100,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `shortcut insets are zero when wrap succeeded before measure`() {
+        assertEquals(
+            0,
+            VoiceShortcutIme.contentTopInsetsPx(
+                isVoiceShortcut = true,
+                windowHeightPx = 100,
+                measuredInputHeightPx = 0,
+                fallbackBarHeightPx = 80,
+                defaultContentTopInsetsPx = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `effective bar is the window when wrap succeeded`() {
+        assertEquals(100, VoiceShortcutIme.effectiveBarHeightPx(100, 100, 80))
+    }
+
+    @Test
+    fun `input window is remeasured when entering leaving or staying on the shortcut`() {
+        assertFalse(VoiceShortcutIme.shouldRemeasureInputWindow(false, false))
+        assertTrue(VoiceShortcutIme.shouldRemeasureInputWindow(true, false))
+        assertTrue(VoiceShortcutIme.shouldRemeasureInputWindow(false, true))
+        assertTrue(VoiceShortcutIme.shouldRemeasureInputWindow(true, true))
+    }
+
+    @Test
+    fun `fallback bar height ceilings at tall dictation bar plus listening bar padding`() {
+        assertEquals(10, VoiceShortcutIme.LISTENING_BAR_VERTICAL_PADDING_DP)
+        assertEquals(68, VoiceShortcutIme.FALLBACK_BAR_DP)
+        assertEquals(62, VoiceShortcutIme.fallbackBarDp(52))
+        assertEquals(68, VoiceShortcutIme.fallbackBarDp(58))
+    }
+
+    @Test
+    fun `restored soft-input height uses saved attrs or match parent`() {
+        assertEquals(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            VoiceShortcutIme.restoredSoftInputHeightPx(null),
+        )
+        assertEquals(1200, VoiceShortcutIme.restoredSoftInputHeightPx(1200))
+        assertEquals(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            VoiceShortcutIme.restoredSoftInputHeightPx(WindowManager.LayoutParams.WRAP_CONTENT),
+        )
     }
 }
