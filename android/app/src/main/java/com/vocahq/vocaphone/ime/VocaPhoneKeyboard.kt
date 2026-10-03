@@ -602,7 +602,6 @@ internal fun VocaPhoneKeyboard(
                     },
                     panelActionDestructive = true,
                     onPanelAction = onClearClipboardHistory,
-                    onClosePanel = { preferencePanel = null },
                     onMenuTap = {
                         preferencePanel = if (preferencePanel == PreferencePanel.MENU) {
                             null
@@ -661,7 +660,6 @@ internal fun VocaPhoneKeyboard(
                             preferencePanel = null
                             onOpenSettings(page)
                         },
-                        onClose = { preferencePanel = null },
                     )
                     PreferencePanel.CLIPBOARD -> ClipboardHistoryPanel(
                         items = settings.clipboardHistory,
@@ -672,7 +670,6 @@ internal fun VocaPhoneKeyboard(
                             onPasteClipboard(text)
                         },
                         onRemove = onRemoveClipboardHistory,
-                        onClose = { preferencePanel = null },
                     )
                     PreferencePanel.LANGUAGE -> LanguagePreferencePanel(
                         settings = settings,
@@ -682,7 +679,6 @@ internal fun VocaPhoneKeyboard(
                             preferencePanel = null
                             onLanguageSelected(language)
                         },
-                        onClose = { preferencePanel = null },
                     )
                     PreferencePanel.STYLE -> StylePreferencePanel(
                         selected = settings.style,
@@ -692,7 +688,6 @@ internal fun VocaPhoneKeyboard(
                             preferencePanel = null
                             onStyleSelected(style)
                         },
-                        onClose = { preferencePanel = null },
                     )
                     null -> if (keyboardState.layer == KeyboardLayer.EMOJI) {
                         EmojiLayer(
@@ -904,7 +899,6 @@ private fun DictationBar(
     panelActionLabel: String? = null,
     panelActionDestructive: Boolean = false,
     onPanelAction: () -> Unit = {},
-    onClosePanel: () -> Unit = {},
     onMenuTap: () -> Unit,
     onPaste: () -> Unit,
     onDismissClipboard: () -> Unit,
@@ -1092,9 +1086,6 @@ private fun DictationBar(
                 )
             }
         }
-        if (panelTitle != null) {
-            ToolbarCloseButton(onClick = onClosePanel)
-        }
         if (MicDictationControl.showsSeparateCancel(state.phase)) {
             DictationCancelButton(onClick = onMicLongPress)
         }
@@ -1281,7 +1272,6 @@ private fun ToolbarMenuPanel(
     onStyle: () -> Unit,
     onClipboard: () -> Unit,
     onOpenSettings: (String) -> Unit,
-    onClose: () -> Unit,
 ) {
     PreferencePanelShell(height = height) {
         Column(
@@ -1379,7 +1369,6 @@ private fun ClipboardHistoryPanel(
     enabled: Boolean,
     onPaste: (String) -> Unit,
     onRemove: (String) -> Unit,
-    onClose: () -> Unit,
 ) {
     PreferencePanelShell(height = height) {
         if (items.isEmpty()) {
@@ -1492,7 +1481,6 @@ private fun LanguagePreferencePanel(
     height: Dp,
     enabled: Boolean,
     onSelected: (TranscriptionLanguage) -> Unit,
-    onClose: () -> Unit,
 ) {
     val languages = remember(settings.activeModelLanguages, settings.activeModelDetectsLanguage) {
         TranscriptionLanguage.entries.sortedWith(
@@ -1602,7 +1590,6 @@ private fun StylePreferencePanel(
     height: Dp,
     enabled: Boolean,
     onSelected: (WritingStyle) -> Unit,
-    onClose: () -> Unit,
 ) {
     PreferencePanelShell(height = height) {
         Column(
@@ -1704,33 +1691,6 @@ private fun PreferencePanelShell(
         Column(
             modifier = Modifier.padding(4.dp),
             content = content,
-        )
-    }
-}
-
-@Composable
-private fun ToolbarCloseButton(onClick: () -> Unit) {
-    val view = LocalView.current
-    Box(
-        modifier = Modifier
-            .size(ToolbarControlSize)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .semantics {
-                role = Role.Button
-                contentDescription = "Close"
-            }
-            .clickable {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                onClick()
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_cancel),
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
