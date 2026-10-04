@@ -2078,7 +2078,7 @@ struct MeterPlayback {
 
         let unseen = appendedCount - consumed
         consumed = appendedCount
-        if unseen > 0, !isHeld {
+        if unseen > 0 {
             queue.append(contentsOf: levels.suffix(min(unseen, levels.count)).map { CGFloat($0) })
         }
         if queue.count > Self.maximumBacklog {
@@ -2088,10 +2088,11 @@ struct MeterPlayback {
         let elapsed = lastTime.map { min(max(now - $0, 0), 0.1) } ?? 0
         lastTime = now
 
-        if isHeld {
-            queue = []
-        } else if reduceMotion {
-            // No motion of its own: every level lands where it belongs at once.
+        if isHeld || reduceMotion {
+            // Held: the recording is over, and the shape it holds has to be its
+            // ending — so every level already measured lands now, rather than
+            // being dropped and leaving the bars frozen on an earlier syllable.
+            // Reduce Motion: no motion of its own, so each level lands at once.
             while !queue.isEmpty { release(queue.removeFirst()) }
             display = shaped(released)
             return display

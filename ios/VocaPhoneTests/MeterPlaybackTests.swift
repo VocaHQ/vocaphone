@@ -58,12 +58,19 @@ struct MeterPlaybackTests {
         #expect(playback.queue.count <= MeterPlayback.maximumBacklog)
     }
 
-    @Test func heldBarsStopTakingLevels() {
+    @Test func heldBarsShowTheEndingOfTheRecording() {
         var playback = MeterPlayback(barCount: 15)
         _ = playback.advance(to: 0, levels: [], appendedCount: 0, epoch: 0, isHeld: false, reduceMotion: false)
-        _ = playback.advance(to: 0.1, levels: Self.burst, appendedCount: 5, epoch: 0, isHeld: true, reduceMotion: false)
+        // A burst still queued when the recording ends.
+        _ = playback.advance(to: 0.001, levels: Self.burst, appendedCount: 5, epoch: 0, isHeld: false, reduceMotion: false)
+        #expect(!playback.queue.isEmpty)
+        let held = playback.advance(
+            to: 0.002, levels: Self.burst, appendedCount: 5, epoch: 0, isHeld: true, reduceMotion: false
+        )
         #expect(playback.queue.isEmpty)
-        #expect(playback.released.allSatisfy { $0 == 0 })
+        #expect(playback.released.last == CGFloat(Float(1.0)))
+        // Settled on that shape, not easing towards it under a paused clock.
+        #expect(held[14] > 0.4)
     }
 
     @Test func aKeyboardOpeningMidSessionStartsFromTheLatestLevels() {

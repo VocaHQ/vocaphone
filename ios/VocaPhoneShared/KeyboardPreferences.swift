@@ -746,8 +746,8 @@ enum KeyboardPreferences {
         set { defaults?.set(newValue, forKey: emojiSuggestionsKey) }
     }
 
-    /// Per-key haptics, on by default: the system keyboard taps back, and a
-    /// keyboard that does not feels dead under the thumb. They still need Full
+    /// Per-key haptics, off by default like the system keyboard's own Haptic
+    /// switch — see ``KeyboardDefaults/typingHaptics``. They also need Full
     /// Access; without it the standard input click is what iOS Keyboard Clicks
     /// gives.
     static var typingHapticsEnabled: Bool {

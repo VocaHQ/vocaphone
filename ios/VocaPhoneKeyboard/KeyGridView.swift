@@ -123,7 +123,9 @@ final class KeyGridView: UIView {
     /// tapped straight after `123` is a space on purpose, and stays there.
     private var typedOnCurrentPlane = false
     /// Where a finished batch of touches should leave the grid. Applied after
-    /// the batch, for the same reason as a slide's restored plane.
+    /// the batch, for the same reason as a slide's restored plane. Only ever
+    /// set, never cleared, within a batch: a digit lifting in the same event as
+    /// the space before it must not cancel that space's return to letters.
     private var pendingPlaneReturn: KeyPlane?
 
     /// Which letters are under the fingers. Changing it swaps the three letter
@@ -1219,6 +1221,12 @@ final class KeyGridView: UIView {
             // from; lifting on the plane key itself commits nothing and stays.
             if didCommit, let origin = item.planeToRestore { planeToRestore = origin }
         }
+        endBatch(restoring: planeToRestore)
+    }
+
+    /// Settles the plane once every touch in a batch has been read. Not private,
+    /// so a test can lift two fingers together without a real `UITouch`.
+    func endBatch(restoring planeToRestore: KeyPlane? = nil) {
         if let target = planeToRestore ?? pendingPlaneReturn { plane = target }
         pendingPlaneReturn = nil
     }
@@ -1272,18 +1280,18 @@ final class KeyGridView: UIView {
             // Also what ends a slide off Shift: one capital, then back to
             // lowercase. A locked Shift is a deliberate state and outranks it.
             if shiftState == .on { shiftState = .off }
-            pendingPlaneReturn = Self.planeAfterCommit(
+            if let next = Self.planeAfterCommit(
                 text: text, plane: plane, homePlane: homePlane, typedOnPlane: typedOnCurrentPlane
-            )
+            ) { pendingPlaneReturn = next }
             typedOnCurrentPlane = true
             return true
         case .space:
             recordTyping(isLetter: false)
             feedback.textCommitted()
             delegate?.keyGrid(self, didProduce: .space)
-            pendingPlaneReturn = Self.planeAfterCommit(
+            if let next = Self.planeAfterCommit(
                 text: " ", plane: plane, homePlane: homePlane, typedOnPlane: typedOnCurrentPlane
-            )
+            ) { pendingPlaneReturn = next }
             return true
         case .newline:
             // A field that asked for `enablesReturnKeyAutomatically` has said
