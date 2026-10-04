@@ -2081,10 +2081,6 @@ struct MeterPlayback {
         if unseen > 0 {
             queue.append(contentsOf: levels.suffix(min(unseen, levels.count)).map { CGFloat($0) })
         }
-        if queue.count > Self.maximumBacklog {
-            queue.removeFirst(queue.count - Self.maximumBacklog)
-        }
-
         let elapsed = lastTime.map { min(max(now - $0, 0), 0.1) } ?? 0
         lastTime = now
 
@@ -2097,6 +2093,12 @@ struct MeterPlayback {
             display = shaped(released)
             return display
         } else {
+            // Trimmed only while playing live. A held row shows every level it
+            // was given, so its ending is continuous rather than the last few
+            // levels spliced onto older ones.
+            if queue.count > Self.maximumBacklog {
+                queue.removeFirst(queue.count - Self.maximumBacklog)
+            }
             // Slightly faster than real time while behind, so a late burst is
             // absorbed over a beat rather than leaving the bars a burst behind.
             let interval = queue.count > 5 ? Self.releaseInterval * 0.8 : Self.releaseInterval

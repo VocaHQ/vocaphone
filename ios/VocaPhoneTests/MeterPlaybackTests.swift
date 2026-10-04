@@ -73,6 +73,14 @@ struct MeterPlaybackTests {
         #expect(held[14] > 0.4)
     }
 
+    @Test func aHeldRowKeepsEveryLevelOfALongBacklog() {
+        var playback = MeterPlayback(barCount: 15)
+        _ = playback.advance(to: 0, levels: [], appendedCount: 0, epoch: 0, isHeld: false, reduceMotion: false)
+        let ramp = (1...12).map { Float($0) / 12 }
+        _ = playback.advance(to: 0.001, levels: ramp, appendedCount: 12, epoch: 0, isHeld: true, reduceMotion: false)
+        #expect(Array(playback.released.suffix(12)) == ramp.map { CGFloat($0) })
+    }
+
     @Test func aKeyboardOpeningMidSessionStartsFromTheLatestLevels() {
         var playback = MeterPlayback(barCount: 3)
         let shown = playback.advance(

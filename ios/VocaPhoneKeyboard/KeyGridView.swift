@@ -1227,7 +1227,10 @@ final class KeyGridView: UIView {
     /// Settles the plane once every touch in a batch has been read. Not private,
     /// so a test can lift two fingers together without a real `UITouch`.
     func endBatch(restoring planeToRestore: KeyPlane? = nil) {
-        if let target = planeToRestore ?? pendingPlaneReturn { plane = target }
+        // The space's return outranks a slide's restore: a slide off the
+        // symbols key that types a digit while another finger types a space
+        // would otherwise put the next word on the symbols plane.
+        if let target = pendingPlaneReturn ?? planeToRestore { plane = target }
         pendingPlaneReturn = nil
     }
 

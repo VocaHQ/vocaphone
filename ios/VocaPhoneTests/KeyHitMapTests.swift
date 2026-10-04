@@ -409,6 +409,20 @@ struct KeyHitMapTests {
         #expect(grid.plane == .letters)
     }
 
+    /// A slide off the symbols key that types a digit, lifting with a space:
+    /// the space's return to letters wins over the slide's restore.
+    @Test func aSpaceOutranksASlidesRestore() throws {
+        let grid = Self.makeGrid(feedback: KeyboardFeedbackSpy(), delegate: KeyGridDelegateSpy())
+        grid.plane = .numbers
+        let five = try #require(grid.keyViews.first { $0.spec.cap == KeyCap.character("5") })
+        #expect(grid.completeKeyInteraction(five, shouldCommit: true))
+        grid.endBatch()
+        let space = try #require(grid.keyViews.first { $0.spec.cap == KeyCap.space })
+        #expect(grid.completeKeyInteraction(space, shouldCommit: true))
+        grid.endBatch(restoring: .symbols)
+        #expect(grid.plane == .letters)
+    }
+
     private static func makeGrid(
         feedback: KeyboardFeedbackSpy,
         delegate: KeyGridDelegateSpy
