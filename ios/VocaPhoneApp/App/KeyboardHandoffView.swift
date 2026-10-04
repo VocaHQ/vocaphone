@@ -7,10 +7,12 @@ import SwiftUI
 struct KeyboardHandoffView: View {
     @Environment(RecordingCoordinator.self) private var coordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     let record: SessionRecord
     let presentation: KeyboardHandoffPresentation
-    /// Bumped once when the swipe-back screen arrives.
+    /// Bumped each time the swipe-back screen is actually seen: on appearing
+    /// while vocaphone is on screen, and on vocaphone coming on screen with it.
     @State private var arrivals = 0
 
     var body: some View {
@@ -41,11 +43,15 @@ struct KeyboardHandoffView: View {
         // state change remounts the animation, which is the hitch after the
         // app has already opened on this screen.
         .id("recording-handoff")
-        // The tap that says "your request reached vocaphone". It plays as the
-        // screen appears, which is always while vocaphone is on screen — unlike
-        // the buzz for recording starting, which iOS drops if the user has
-        // already swiped back by then.
-        .onAppear { arrivals += 1 }
+        // The tap that says "your request reached vocaphone", played when the
+        // screen is in front of the user. Appearing is not enough on its own:
+        // iOS can launch vocaphone in the background with the request already
+        // waiting, the screen appears unseen, and a tap played then is dropped
+        // — so it also plays when vocaphone becomes active with it showing.
+        .onAppear { if scenePhase == .active { arrivals += 1 } }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { arrivals += 1 }
+        }
         .sensoryFeedback(.start, trigger: arrivals)
     }
 
