@@ -10,6 +10,8 @@ struct KeyboardHandoffView: View {
 
     let record: SessionRecord
     let presentation: KeyboardHandoffPresentation
+    /// Bumped once when the swipe-back screen arrives.
+    @State private var arrivals = 0
 
     var body: some View {
         ZStack {
@@ -39,6 +41,12 @@ struct KeyboardHandoffView: View {
         // state change remounts the animation, which is the hitch after the
         // app has already opened on this screen.
         .id("recording-handoff")
+        // The tap that says "your request reached vocaphone". It plays as the
+        // screen appears, which is always while vocaphone is on screen — unlike
+        // the buzz for recording starting, which iOS drops if the user has
+        // already swiped back by then.
+        .onAppear { arrivals += 1 }
+        .sensoryFeedback(.start, trigger: arrivals)
     }
 
     private var statusHandoff: some View {
