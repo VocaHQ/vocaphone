@@ -58,6 +58,7 @@ struct SwipeBackScreen: View {
 /// the middle of a phone reads as a drawing mistake.
 private struct SwipeBackPhone: View {
     let reduceMotion: Bool
+    @Environment(\.scenePhase) private var scenePhase
 
     /// 0 — vocaphone is on screen. 1 — the app the user came from is back, with
     /// the keyboard and the cursor still waiting in it.
@@ -125,7 +126,11 @@ private struct SwipeBackPhone: View {
             }
             .frame(width: width, height: proxy.size.height, alignment: .bottom)
         }
-        .task(id: reduceMotion) { await play() }
+        // Restarted when vocaphone comes on screen, so the first pass is one
+        // somebody sees. See `play()`.
+        .task(id: Playback(reduceMotion: reduceMotion, isOnScreen: scenePhase == .active)) {
+            await play()
+        }
         .accessibilityElement()
         .accessibilityLabel(
             "Animation. A finger swipes right along the bottom edge of a phone, "
@@ -192,12 +197,23 @@ private struct SwipeBackPhone: View {
             .opacity(touchOpacity)
     }
 
+    private struct Playback: Equatable {
+        let reduceMotion: Bool
+        let isOnScreen: Bool
+    }
+
     private func play() async {
         guard !reduceMotion else {
             progress = 1
             touchOpacity = 0
             return
         }
+        // Only on screen. The keyboard's request often reaches vocaphone while
+        // it is still coming up, and the screen appears before anyone can see
+        // it: the first pass played to nobody, and the user arrived on a still
+        // picture — the gesture already over — until the loop came round
+        // again, by which time they had usually swiped back without it.
+        guard scenePhase == .active else { return }
 
         // The first pass starts with the screen. A lead-in is fine on the
         // repeats, when the user is watching a loop; on arrival it is dead time

@@ -91,6 +91,18 @@ struct ContentView: View {
                 KeyboardHandoffView(record: record, presentation: presentation)
             }
         }
+        // The swipe-back screen is an overlay on home, and a sheet is drawn
+        // above both. Settings opened from the keyboard's menu is a sheet, so
+        // leaving it open and dictating from another app brought vocaphone up
+        // on Settings with the swipe-back screen hidden underneath it. The
+        // dictation is what the user just asked for; Settings gives way to it
+        // at once rather than sliding off in front of it.
+        .onChange(of: keyboardHandoffRecord?.sessionID) { _, sessionID in
+            guard sessionID != nil, isShowingSettings else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { isShowingSettings = false }
+        }
     }
 
     private var home: some View {
