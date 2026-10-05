@@ -88,7 +88,11 @@ struct ContentView: View {
             if let record = keyboardHandoffRecord,
                let presentation = KeyboardHandoffPresentation.make(record)
             {
-                KeyboardHandoffView(record: record, presentation: presentation)
+                KeyboardHandoffView(
+                    record: record,
+                    presentation: presentation,
+                    isCovered: isShowingSettings
+                )
             }
         }
         // The swipe-back screen is an overlay on home, and a sheet is drawn
