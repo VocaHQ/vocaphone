@@ -12,7 +12,7 @@ A lot of Android users are attached to Gboard, SwiftKey, or the Samsung
 keyboard. VocaPhoneX exists for them: it is the same VocaPhone dictation
 engine, minus the keyboard.
 
-Install it, grant the two permissions it asks for, and a small floating mic
+Install it, grant the permissions it asks for, and a small floating mic
 bubble appears whenever you focus a text field, in any app. Tap the bubble
 to start dictating, tap again to finish, and the transcript is written
 straight into the field you were typing in through the accessibility API.
@@ -31,23 +31,25 @@ package (`com.vocahq.vocaphone.x`), so you can keep both. It is **sideload
 only** and is not being published to Google Play; the Play listing remains
 the full keyboard app.
 
-Because it inserts text by reading the focused field, VocaPhoneX needs an
-accessibility service, and it floats over other apps, so it needs the
-display-over-apps permission. Field contents are read only at the moment of
-insertion, are never stored, logged, or uploaded. The full keyboard builds
-never request these permissions.
+VocaPhoneX asks for four things during setup: display over other apps so
+the bubble can float, the accessibility service so it can see and write into
+the focused field, the microphone to record, and notifications so the
+recording and model-download states are visible. Field contents are read
+only at the moment of insertion, are never stored, logged, or uploaded. The
+full keyboard builds never request the overlay or accessibility
+permissions.
 
 ## Which download is which
 
-- **`vocaphone.apk`** — the VocaPhone you know: the custom keyboard with the
+- **`vocaphone.apk`**: the VocaPhone you know: the custom keyboard with the
   mic built in. Same binary that goes to Google Play (the Play listing gets
   the signed AAB, not this file).
-- **`vocaphone-x.apk`** — VocaPhoneX, the new floating-mic build described
+- **`vocaphone-x.apk`**: VocaPhoneX, the new floating-mic build described
   above. Sideload-only, separate package, installs alongside the main app.
-- **`vocaphone-fdroid.apk`** — the F-Droid flavor: whisper.cpp only and no
+- **`vocaphone-fdroid.apk`**: the F-Droid flavor: whisper.cpp only and no
   telemetry, published as the rebuild reference for F-Droid.
-- **`*.cdx.json`** — CycloneDX software bill of materials for each APK.
-- **checksums and attestations** — verify what you downloaded came from this
+- **`*.cdx.json`**: CycloneDX software bill of materials for each APK.
+- **checksums and attestations**: verify what you downloaded came from this
   tag's CI run.
 
 ## Fixes in 0.2.3
@@ -74,8 +76,9 @@ These controller fixes ride in both the keyboard app and VocaPhoneX:
   transcript inserted, cancel, queued retries). Physical-device validation
   is still recommended before calling it done; an emulator mic is not a
   real phone mic.
-- On first run, VocaPhoneX walks you through the disclosure and the two
-  permissions. If you skip the accessibility grant, the bubble cannot appear.
+- On first run, VocaPhoneX walks you through the disclosure and its
+  permissions. If you skip the accessibility grant, the bubble cannot
+  appear.
 - Stored settings, models, gateway configuration, and history from 0.2.2
   carry over; VocaPhoneX keeps its own separate settings and history.
 - On-device dictation still stays on the phone after model download.
