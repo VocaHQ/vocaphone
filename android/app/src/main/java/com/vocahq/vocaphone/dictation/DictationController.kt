@@ -667,6 +667,9 @@ class DictationController(
                         configuration = configuration,
                         source = source,
                         generation = generation,
+                        // History's recording: a cancelled retry leaves it
+                        // there for the next one.
+                        ownsAudio = false,
                     )
                 } finally {
                     if (modelID != null) {
@@ -698,6 +701,30 @@ class DictationController(
 
     fun clearTransient() {
         if (!_state.value.phase.isBusy) reset()
+    }
+
+    /**
+     * The microphone foreground service could not be started, so [start] was
+     * never reached and nothing was recorded. Without this the tap simply did
+     * nothing: the keyboard kept saying it was ready and the user was left to
+     * guess. Shown as an ordinary failure that clears itself like any other,
+     * and nothing goes to history because there is no audio to retry.
+     */
+    fun microphoneServiceRefused(source: DictationSource) {
+        diagnostics.recordError(MicrophoneForegroundPromote.ERROR_CATEGORY, source.name)
+        val sessionId = UUID.randomUUID()
+        synchronized(sessionLock) {
+            // A session that did get going owns the state; do not paint a
+            // failure over it.
+            val failed = MicrophoneForegroundPromote.refusedState(
+                current = _state.value,
+                sessionId = sessionId,
+                pipelineActive = pipeline?.isActive == true,
+            ) ?: return
+            nextGeneration()
+            _state.value = failed
+        }
+        lingerThenIdle(sessionId, DictationPhase.FAILED, FAILED_LINGER_MILLIS)
     }
 
     /** Removes the last insertion when the exact text is still where it was put. */
@@ -1107,6 +1134,11 @@ class DictationController(
                 _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
                 diagnostics.recordTiming("local_transcription_started", source.name)
                 timingRecorded = true
+                // Finishing can still be loading the model the session was
+                // started against -- a large one, or one an accuracy change
+                // made rebuild -- and that wait deserves the same explanation
+                // the whole-file decode gives it.
+                val progress = showLocalProgress()
                 try {
                     val incremental = session.finish()
                     if (incremental.isSafe) {
@@ -1128,6 +1160,8 @@ class DictationController(
                     throw error
                 } catch (_: Throwable) {
                     incrementalFallback.set(true)
+                } finally {
+                    progress.cancel()
                 }
             }
             if (incrementalSession != null && incrementalFallback.get()) {
@@ -1330,65 +1364,101 @@ class DictationController(
         conditioningStartSample: Int = 0,
         preparedTranscript: LocalTranscription? = null,
         transcriptionTimingRecorded: Boolean = false,
+        ownsAudio: Boolean = true,
     ) {
-        // Loading a model is seconds of silence with nothing on screen to explain
-        // it, and changing the accuracy setting makes it happen again. Mirroring
-        // it into the status line is the difference between a wait and a hang.
-        val preparingJob = scope.launch {
-            localModels.state.collect { models ->
-                _state.update { state ->
-                    state.copy(
-                        statusDetail = models.preparing?.let { "Loading $it… Please wait." }
-                            ?: "Transcribing on this phone… Please wait.",
-                    )
-                }
-            }
-        }
+        val preparingJob = showLocalProgress()
         try {
-            _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
-            if (!transcriptionTimingRecorded) {
-                diagnostics.recordTiming("local_transcription_started", source.name)
-            }
-            val modelID = configuration.localModelId.takeIf { it.isNotEmpty() }
-                ?: error("Choose and download an on-device model first.")
-            // A complete-WAV decode remains the recovery path. The incremental
-            // candidate is only passed here after it proved that every audible
-            // window was decoded with a stable running gain.
-            val local = preparedTranscript ?: localModels.transcribe(
-                wavFile,
-                modelID,
-                language,
-                configuration.transcriptionQuality,
-                configuration.whisperVocabulary,
-                conditioningStartSample,
-                configuration.translationTarget,
-            )
-            val transcript = styleLocalTranscript(local, configuration)
-            if (transcript.isEmpty()) {
-                throw GatewayException.emptyTranscript()
-            }
-            wavFile.delete()
-            deliver(transcript, sessionId, configuration, source)
-        } catch (error: Throwable) {
-            fail(
-                sessionId,
-                GatewayException(
-                    code = if (error is com.vocahq.vocaphone.local.LocalModelIntegrityException) {
-                        "local_model_integrity"
-                    } else {
-                        "local_transcription_failed"
-                    },
-                    userMessage = error.message ?: "On-device transcription failed. Download the model again and retry.",
-                    recoverable = true,
-                ),
-                wavFile,
-                configuration,
-                generation,
+            attemptLocalTranscription(
+                wavFile = wavFile,
+                ownsAudio = ownsAudio,
+                attempt = {
+                    transcribeLocally(
+                        sessionId = sessionId,
+                        wavFile = wavFile,
+                        language = language,
+                        configuration = configuration,
+                        source = source,
+                        conditioningStartSample = conditioningStartSample,
+                        preparedTranscript = preparedTranscript,
+                        transcriptionTimingRecorded = transcriptionTimingRecorded,
+                    )
+                },
+                onFailure = { error ->
+                    fail(
+                        sessionId,
+                        GatewayException(
+                            code = if (error is com.vocahq.vocaphone.local.LocalModelIntegrityException) {
+                                "local_model_integrity"
+                            } else {
+                                "local_transcription_failed"
+                            },
+                            userMessage = error.message
+                                ?: "On-device transcription failed. Download the model again and retry.",
+                            recoverable = true,
+                        ),
+                        wavFile,
+                        configuration,
+                        generation,
+                    )
+                },
             )
         } finally {
             preparingJob.cancel()
             _state.update { it.copy(statusDetail = null) }
         }
+    }
+
+    /**
+     * Loading a model is seconds of silence with nothing on screen to explain
+     * it, and changing the accuracy setting makes it happen again. Mirroring it
+     * into the status line is the difference between a wait and a hang. The
+     * caller cancels the returned job when the wait is over.
+     */
+    private fun showLocalProgress(): Job = scope.launch {
+        localModels.state.collect { models ->
+            _state.update { state ->
+                state.copy(
+                    statusDetail = models.preparing?.let { "Loading $it… Please wait." }
+                        ?: "Transcribing on this phone… Please wait.",
+                )
+            }
+        }
+    }
+
+    private suspend fun transcribeLocally(
+        sessionId: UUID,
+        wavFile: File,
+        language: String,
+        configuration: VocaPhoneSettings,
+        source: DictationSource,
+        conditioningStartSample: Int,
+        preparedTranscript: LocalTranscription?,
+        transcriptionTimingRecorded: Boolean,
+    ) {
+        _state.update { it.copy(phase = DictationPhase.TRANSCRIBING, streaming = false) }
+        if (!transcriptionTimingRecorded) {
+            diagnostics.recordTiming("local_transcription_started", source.name)
+        }
+        val modelID = configuration.localModelId.takeIf { it.isNotEmpty() }
+            ?: error("Choose and download an on-device model first.")
+        // A complete-WAV decode remains the recovery path. The incremental
+        // candidate is only passed here after it proved that every audible
+        // window was decoded with a stable running gain.
+        val local = preparedTranscript ?: localModels.transcribe(
+            wavFile,
+            modelID,
+            language,
+            configuration.transcriptionQuality,
+            configuration.whisperVocabulary,
+            conditioningStartSample,
+            configuration.translationTarget,
+        )
+        val transcript = styleLocalTranscript(local, configuration)
+        if (transcript.isEmpty()) {
+            throw GatewayException.emptyTranscript()
+        }
+        wavFile.delete()
+        deliver(transcript, sessionId, configuration, source)
     }
 
     /**
@@ -1561,13 +1631,7 @@ class DictationController(
     private fun lingerThenIdle(sessionId: UUID, from: DictationPhase, millis: Long) {
         scope.launch {
             delay(millis)
-            _state.update { current ->
-                if (current.sessionId == sessionId && current.phase == from) {
-                    DictationState()
-                } else {
-                    current
-                }
-            }
+            _state.update { current -> afterLinger(current, sessionId, from) }
         }
     }
 
@@ -1742,6 +1806,14 @@ internal fun modelRepair(
     }
 }
 
+/**
+ * What a linger timer leaves behind when it fires: idle only if the state is
+ * still the very one it was started for. A later session, or a newer failure
+ * of the same phase, keeps the screen.
+ */
+internal fun afterLinger(current: DictationState, sessionId: UUID, from: DictationPhase): DictationState =
+    if (current.sessionId == sessionId && current.phase == from) DictationState() else current
+
 internal enum class DownloadOutcome { WAITING, PREPARING, LANDED, DIED }
 
 internal fun downloadOutcome(latest: LocalModelState, target: String): DownloadOutcome =
@@ -1771,3 +1843,35 @@ internal data class RepairInputs(
 /** Whether a showing repair was worked out from settings that have since changed. */
 internal fun repairOutlived(phase: DictationPhase, before: RepairInputs?, now: RepairInputs): Boolean =
     phase == DictationPhase.PERMISSION_REPAIR && before != null && before != now
+
+/**
+ * Runs one on-device transcription and sorts how it ended.
+ *
+ * A cancel is not a failure. Catching it with everything else used to file the
+ * dictation the user had just thrown away as a failed one: a history row
+ * offering Retry, the recording kept for the retention window, and a failure
+ * reported. Cancelled, a recording this attempt owns is deleted, exactly as a
+ * cancel while listening deletes it, and the cancellation carries on up.
+ * [ownsAudio] is false for a retry, whose recording belongs to history.
+ *
+ * An error that arrives once the caller is no longer active is the cancel
+ * surfacing through the engine, not a fault of its own, and is treated as one.
+ */
+internal suspend fun attemptLocalTranscription(
+    wavFile: File,
+    ownsAudio: Boolean,
+    attempt: suspend () -> Unit,
+    onFailure: suspend (Throwable) -> Unit,
+) {
+    try {
+        attempt()
+    } catch (error: Throwable) {
+        if (error !is CancellationException && currentCoroutineContext().isActive) {
+            onFailure(error)
+            return
+        }
+        if (ownsAudio) wavFile.delete()
+        throw error as? CancellationException
+            ?: CancellationException("On-device transcription was cancelled", error)
+    }
+}

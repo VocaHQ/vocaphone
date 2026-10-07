@@ -81,6 +81,13 @@ final class RecordingCoordinator {
     private var lastMicrophoneName: String?
     private var audioSessionAvailable = true
     private var audioLifecycleGeneration = 0
+    /// Whether Quick Dictation was standing by, or recording, when an
+    /// interruption took the audio session. The end of that interruption
+    /// restores it, even in the background. See ``QuickDictationInterruption``.
+    private var quickDictationInterruption = QuickDictationInterruption()
+    /// The capture in progress lost its audio — an interruption, a reset, or
+    /// the input disappearing — so silence in it has a known cause.
+    private var captureLostAudio = false
     private var darwinObservations: [VocaPhoneDarwinObservation] = []
     private let liveActivity = LiveActivityManager.shared
     private let streamingBridge = StreamingAudioBridge()
@@ -103,7 +110,7 @@ final class RecordingCoordinator {
     var canDeleteAllTranscripts: Bool {
         transcriptDeletionTask == nil && startingSessionID == nil
             && !recorder.isRecording && pipelineTask == nil
-            && activeRecord?.state.hasActiveWriter != true
+            && activeRecord?.hasActiveWriter() != true
     }
     var hasError: Bool { activeRecord?.error != nil }
     var transcript: String? { activeRecord?.transcript }
@@ -559,7 +566,7 @@ final class RecordingCoordinator {
         do {
             record.error = nil
             try record.transition(to: .uploading)
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             message = "Retrying with the preserved recording…"
             startPipeline(record)
@@ -666,6 +673,7 @@ final class RecordingCoordinator {
     func disableQuickDictation() {
         guard !isInert else { return }
         KeyboardPreferences.quickDictationEnabled = false
+        quickDictationInterruption.forget()
         clearQuickDictationReadiness(deactivateAudioSession: true)
         message = "Quick Dictation is off. The keyboard will open vocaphone next time."
         DiagnosticLog.record(
@@ -681,6 +689,7 @@ final class RecordingCoordinator {
     /// on, or the keyboard's Start) arms the usual window again.
     func closeFromKeyboard() {
         guard !isInert else { return }
+        quickDictationInterruption.forget()
         clearQuickDictationReadiness(deactivateAudioSession: true)
         DiagnosticLog.record(
             .quickDictationStopped,
@@ -693,6 +702,7 @@ final class RecordingCoordinator {
     func pauseQuickDictation() {
         guard !isInert else { return }
         KeyboardPreferences.quickDictationPausedUntilRelaunch = true
+        quickDictationInterruption.forget()
         clearQuickDictationReadiness(deactivateAudioSession: true)
         message = "Quick Dictation is paused. Opening vocaphone starts a new window."
         DiagnosticLog.record(
@@ -813,10 +823,14 @@ final class RecordingCoordinator {
         DiagnosticLog.record(.finishRequested)
         do {
             try record.transition(to: .finalizing)
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             liveActivity.update(status: "Finishing recording", canFinish: false)
             startPipeline(record)
+        } catch is CancellationError {
+            // Cancelled from the keyboard a moment earlier. The shared-state
+            // signal tears the recording down; finishing it would bring back a
+            // dictation the user threw away.
         } catch {
             message = "Could not finish the recording."
         }
@@ -924,7 +938,12 @@ final class RecordingCoordinator {
            let expired = SessionExpiryPolicy.expireIfStale(record, in: store)
         {
             activeRecord = expired
-            message = "The last dictation timed out and was discarded."
+            // An insertion that never recorded its result may well have put the
+            // text in the field; "discarded" would be wrong, and the transcript
+            // is still in the history either way.
+            message = record.state == .inserting
+                ? "The last insertion was interrupted. Its transcript is in your history."
+                : "The last dictation timed out and was discarded."
             return
         }
         if [.launchingApp, .awaitingReturn].contains(record.state) {
@@ -997,7 +1016,14 @@ final class RecordingCoordinator {
             // Activity can name the same place the whole way through.
             record.processingLocation = Self.selectedProcessingLocation()
         captureClaimedTranscriptionSettings()
-            try? store.save(record)
+            do {
+                try commit(&record)
+            } catch is CancellationError {
+                return
+            } catch {
+                // The claim is advisory; a failed write must not stop the
+                // dictation the user asked for.
+            }
             clearQuickDictationMarker()
             activeRecord = record
             // Before the microphone, not at delivery: a selected model that is
@@ -1011,7 +1037,7 @@ final class RecordingCoordinator {
                     message: unavailable,
                     recoverable: false
                 )
-                try store.save(record)
+                try commit(&record)
                 activeRecord = record
                 message = unavailable
                 return
@@ -1035,17 +1061,28 @@ final class RecordingCoordinator {
                     message: "Enable microphone access in Settings.",
                     recoverable: false
                 )
-                try store.save(record)
+                try commit(&record)
                 activeRecord = record
                 return
             }
 
             let directory = try localAudioDirectory()
             try await recorder.prepareForRecording()
-            await soundFeedback.play(.start)
-            guard let latestRecord = try store.load(id),
-                  [.launchingApp, .awaitingReturn].contains(latestRecord.state)
-            else {
+            // Whether the dictation is still wanted, asked on both sides of the
+            // chime: before it, so one cancelled while the microphone warmed up
+            // does not chime at all, and after it, because the chime is awaited.
+            func stillRequested() throws -> SessionRecord? {
+                guard let latest = try store.load(id),
+                      [.launchingApp, .awaitingReturn].contains(latest.state)
+                else { return nil }
+                return latest
+            }
+            var requested = try stillRequested()
+            if requested != nil {
+                await soundFeedback.play(.start)
+                requested = try stillRequested()
+            }
+            guard let latestRecord = requested else {
                 if KeyboardPreferences.quickDictationArmable, audioSessionAvailable {
                     armQuickDictation()
                 } else {
@@ -1065,6 +1102,7 @@ final class RecordingCoordinator {
             // which would inflate every duration bucket by however long the
             // user waited rather than spoke.
             captureStartedAt = Date()
+            captureLostAudio = false
             let audioURL = try recorder.start(
                 sessionID: record.sessionID,
                 directory: directory,
@@ -1124,9 +1162,13 @@ final class RecordingCoordinator {
                 try record.transition(to: .recording)
             }
             record.localAudioReference = audioURL.lastPathComponent
-            try store.save(record)
+            // The write this whole function waits for, and the one a Cancel
+            // during the waits above used to lose to.
+            try commit(&record)
             activeRecord = record
-            message = record.startedInContainingApp == true
+            message = record.isFromShortcut
+                ? "Recording. Tap Finish when you are done."
+                : record.startedInContainingApp == true
                 ? "Recording. Tap Finish on the keyboard when you are done."
                 : "Recording. Swipe back to the app where you want to type."
             if record.sourceDocumentID != "in-app-test" {
@@ -1147,6 +1189,8 @@ final class RecordingCoordinator {
                 liveActivity.stopStandby()
             }
             beginPolling()
+        } catch is CancellationError {
+            await abandonEndedStart(id)
         } catch {
             recorder.cancelSession(keepAudioSessionActive: false)
             clearQuickDictationReadiness(deactivateAudioSession: true)
@@ -1159,7 +1203,7 @@ final class RecordingCoordinator {
                     message: "The microphone could not start. Try dictating again.",
                     recoverable: false
                 )
-                try? store.save(failedRecord)
+                try? commit(&failedRecord)
                 activeRecord = failedRecord
             }
             DiagnosticLog.record(
@@ -1168,6 +1212,37 @@ final class RecordingCoordinator {
             )
             message = "Recording could not start: \(error.localizedDescription)"
         }
+    }
+
+    /// Writes this coordinator's copy of a session unless the keyboard ended it
+    /// meanwhile; see ``SharedStore/saveUnlessEnded(_:)``. Most writes here
+    /// follow an await, and an ended session throws `CancellationError`, which
+    /// every caller treats as "stop quietly". `record` becomes what was written.
+    private func commit(_ record: inout SessionRecord) throws {
+        record = try store.saveUnlessEnded(record)
+    }
+
+    /// The keyboard cancelled, or expiry retired the session, while it was
+    /// starting. Its record is the truth, so everything this start set going
+    /// stops — the same teardown a Cancel during recording gets. The
+    /// shared-state signal may already have done some of it; all of it is safe
+    /// to repeat.
+    private func abandonEndedStart(_ id: UUID) async {
+        await streamingBridge.cancel()
+        discardIncrementalSession()
+        captureStartedAt = nil
+        let latest = try? store.load(id)
+        let shouldRemainReady = latest.map { shouldKeepQuickDictationReady(after: $0) } ?? false
+        recorder.cancelSession(keepAudioSessionActive: shouldRemainReady)
+        if shouldRemainReady {
+            armQuickDictation()
+        } else {
+            clearQuickDictationReadiness(deactivateAudioSession: true)
+        }
+        if let latest { activeRecord = latest }
+        message = latest?.state == .expired
+            ? "The dictation timed out and was discarded."
+            : "Recording canceled."
     }
 
     private func retrySession(id: UUID) {
@@ -1189,7 +1264,21 @@ final class RecordingCoordinator {
         pipelineSessionID = record.sessionID
         pipelineTask = Task { [weak self] in
             await self?.finalizeAndTranscribe(record)
-            guard let self, self.pipelineSessionID == record.sessionID else { return }
+            guard let self else { return }
+            // A pipeline that stopped because the keyboard cancelled or expired
+            // the session leaves the teardown — the Live Activity, the record
+            // this app shows — to the shared-state signal. Polling stopped when
+            // the pipeline began, so if iOS dropped that Darwin notification
+            // nothing else is watching any more. Ask once now; a signal that
+            // already ran has made `activeRecord` terminal and this is skipped.
+            if let active = self.activeRecord,
+               active.sessionID == record.sessionID, !active.state.isTerminal,
+               let stored = try? self.store.load(record.sessionID),
+               [.canceled, .expired].contains(stored.state)
+            {
+                await self.handleSharedStateSignal()
+            }
+            guard self.pipelineSessionID == record.sessionID else { return }
             self.pipelineSessionID = nil
             self.pipelineTask = nil
             self.scheduleLocalEngineRelease()
@@ -1255,12 +1344,14 @@ final class RecordingCoordinator {
               record.state == .uploading else { return }
         do {
             try record.transition(to: .transcribing)
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             DiagnosticLog.record(.uploadCompleted)
             DiagnosticLog.record(.transcriptionStarted)
             message = "Transcribing on your gateway…"
             liveActivity.update(status: "Transcribing on your gateway", canFinish: false)
+        } catch is CancellationError {
+            // Cancelled while the body was in flight; the pipeline stops too.
         } catch {
             DiagnosticLog.record(.operationFailed)
         }
@@ -1327,12 +1418,22 @@ final class RecordingCoordinator {
                 &record,
                 state: .transcriptionFailedPermanent,
                 code: "microphone_silenced",
-                message: "Another app or a call was using the microphone, so only "
-                    + "silence was recorded. Try again once it has finished.",
+                message: SilentCapturePolicy.failureMessage(audioWasInterrupted: captureLostAudio),
                 recoverable: false
             )
             return
         }
+
+        // Writing the file failed part-way — a full disk, most often — so it
+        // holds only the start of what was said. The streamed copy is whole,
+        // and both routes use it first; where the file is all there is, the
+        // user is told rather than handed a transcript of half a dictation.
+        // Kept on the record, saved just below, so that a retry after some
+        // other failure — one that has no stream left — still tells them.
+        if wasRecording, recorder.lastFileIncomplete {
+            record.fileIncompleteUntold = true
+        }
+        let fileIncomplete = record.fileIncompleteUntold == true
 
         // Re-resolved and persisted before any of finalizing, uploading or
         // transcribing. The route in force *now* is the one about to run, and a
@@ -1341,14 +1442,22 @@ final class RecordingCoordinator {
         record.processingLocation = Self.selectedProcessingLocation()
 
         captureClaimedTranscriptionSettings()
-        try? store.save(record)
+        do {
+            try commit(&record)
+        } catch is CancellationError {
+            await streamingBridge.cancel()
+            discardIncrementalSession()
+            return
+        } catch {
+            // As before: the route is advisory, and the writes below retry it.
+        }
 
         // Local inference deliberately happens before the gateway guard. A
         // device configured for on-device transcription must still work with no
         // gateway URL, token, network, or server health result at all.
         if LocalTranscriptionPreferences.enabled {
             await streamingBridge.cancel()
-            await finalizeLocally(&record, audioURL: output)
+            await finalizeLocally(&record, audioURL: output, fileIncomplete: fileIncomplete)
             return
         }
 
@@ -1367,7 +1476,7 @@ final class RecordingCoordinator {
             if record.state == .finalizing || record.canRetry {
                 try record.transition(to: .uploading)
             }
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             message = "Finishing the recording…"
             liveActivity.update(status: "Finishing recording", canFinish: false)
@@ -1389,7 +1498,7 @@ final class RecordingCoordinator {
                 )
                 record.error = nil
                 try record.transition(to: .readyToInsert)
-                try store.save(record)
+                try commit(&record)
                 activeRecord = record
                 DiagnosticLog.record(.transcriptReady)
                 UserDefaults.standard.set(
@@ -1399,6 +1508,18 @@ final class RecordingCoordinator {
                 try? FileManager.default.removeItem(at: output)
                 markTranscriptDelivered(for: record)
                 liveActivity.end(status: "Transcript ready")
+                return
+            }
+
+            if fileIncomplete {
+                // Told now, so the retry this offers sends what was saved.
+                record.fileIncompleteUntold = nil
+                await fail(
+                    &record,
+                    state: .uploadFailedRecoverable,
+                    code: "audio_missing",
+                    message: Self.incompleteRecordingMessage(retrying: "send")
+                )
                 return
             }
 
@@ -1423,7 +1544,7 @@ final class RecordingCoordinator {
                 style: record.style
             )
             record.serverJobID = created.jobID
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             DiagnosticLog.record(.uploadStarted)
             let sessionID = record.sessionID
@@ -1434,7 +1555,7 @@ final class RecordingCoordinator {
                 }
             )
             try record.transition(to: .transcribing)
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             let finished = try await client.finishUploaded(sessionID: record.sessionID, uploaded: uploaded)
             guard let transcript = finished.transcript, !transcript.isEmpty else {
@@ -1451,7 +1572,7 @@ final class RecordingCoordinator {
             )
             record.error = nil
             try record.transition(to: .readyToInsert)
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             DiagnosticLog.record(.transcriptReady)
             UserDefaults.standard.set(
@@ -1499,17 +1620,29 @@ final class RecordingCoordinator {
         }
     }
 
-    private func finalizeLocally(_ record: inout SessionRecord, audioURL: URL) async {
+    /// The recording file was cut short and nothing whole could stand in for it.
+    private struct IncompleteRecording: Error {}
+
+    private static func incompleteRecordingMessage(retrying verb: String) -> String {
+        "Only part of this recording could be saved — this iPhone may be out of storage. "
+            + "Retry to \(verb) the part that was saved."
+    }
+
+    private func finalizeLocally(
+        _ record: inout SessionRecord,
+        audioURL: URL,
+        fileIncomplete: Bool = false
+    ) async {
         do {
             if record.state == .finalizing || record.canRetry {
                 try record.transition(to: .uploading)
             }
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             message = "Transcribing on this iPhone…"
             liveActivity.update(status: "Transcribing on this iPhone", canFinish: false)
             try record.transition(to: .transcribing)
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
 
             let started = ContinuousClock.now
@@ -1538,9 +1671,14 @@ final class RecordingCoordinator {
                 // missing are invisible in the text it did produce. The retry
                 // levels the gain over the whole recording and splits on
                 // different boundaries, which is what recovers them.
-                if partial.text.isEmpty || incrementalResult.droppedAudibleChunk
+                let needsWholeFile = partial.text.isEmpty || incrementalResult.droppedAudibleChunk
                     || droppedLocalChunks
-                {
+                if needsWholeFile, fileIncomplete {
+                    // The whole-file retry would read only the file's first part.
+                    // What the session heard is the better answer, if it has one.
+                    guard !partial.text.isEmpty else { throw IncompleteRecording() }
+                    transcribed = partial
+                } else if needsWholeFile {
                     do {
                         let wholeFile = try await localModels.transcribe(
                             audioURL: audioURL,
@@ -1564,11 +1702,19 @@ final class RecordingCoordinator {
                 }
             } else {
                 // Its capture is only the recording if none of it was refused.
+                let streamed = droppedLocalChunks ? nil : whisperSession
                 if droppedLocalChunks { await whisperSession?.cancel() }
+                // And only a Whisper model reads it: a dictation started under
+                // Whisper and finished under another engine is decoded from the
+                // file, which is then all there is.
+                if fileIncomplete, streamed == nil || !localModels.selectedModelReadsStreamedCapture {
+                    await whisperSession?.cancel()
+                    throw IncompleteRecording()
+                }
                 transcribed = try await localModels.transcribe(
                     audioURL: audioURL,
                     language: record.language,
-                    whisperSession: droppedLocalChunks ? nil : whisperSession
+                    whisperSession: streamed
                 )
             }
             DiagnosticLog.record(
@@ -1601,7 +1747,7 @@ final class RecordingCoordinator {
             )
             record.error = nil
             try record.transition(to: .readyToInsert)
-            try store.save(record)
+            try commit(&record)
             activeRecord = record
             DiagnosticLog.record(.transcriptReady)
             try? FileManager.default.removeItem(at: audioURL)
@@ -1610,6 +1756,17 @@ final class RecordingCoordinator {
             message = "Transcribed privately on this iPhone."
         } catch {
             if Task.isCancelled || error is CancellationError { return }
+            if error is IncompleteRecording {
+                // Told now, so the retry this offers transcribes what was saved.
+                record.fileIncompleteUntold = nil
+                await fail(
+                    &record,
+                    state: .transcriptionFailedRecoverable,
+                    code: "audio_missing",
+                    message: Self.incompleteRecordingMessage(retrying: "transcribe")
+                )
+                return
+            }
             await fail(
                 &record,
                 state: .transcriptionFailedRecoverable,
@@ -1646,22 +1803,30 @@ final class RecordingCoordinator {
             .operationFailed,
             metadata: .error(diagnosticErrorCode(for: code, state: state))
         )
-        Telemetry.shared.dictationFailed(
-            stage: TelemetryFailureMapping.stage(for: code),
-            reason: TelemetryFailureMapping.reason(for: code),
-            source: record.telemetrySource,
-            model: claimedModel,
-            quality: claimedQuality
-        )
+        // Counted unless the user cancelled first: that dictation did not fail.
+        let countFailure = { [claimedModel, claimedQuality, source = record.telemetrySource] in
+            Telemetry.shared.dictationFailed(
+                stage: TelemetryFailureMapping.stage(for: code),
+                reason: TelemetryFailureMapping.reason(for: code),
+                source: source,
+                model: claimedModel,
+                quality: claimedQuality
+            )
+        }
         do {
             try record.transition(to: state)
             record.error = SessionFailure(code: code, message: failureMessage, recoverable: recoverable)
-            try store.save(record)
+            try commit(&record)
+            countFailure()
             activeRecord = record
             message = failureMessage
             liveActivity.end(status: "Needs attention", dismissAfter: 5)
             beginPolling()
+        } catch is CancellationError {
+            // The user cancelled first. Reporting a failure for a dictation
+            // they already threw away would only contradict them.
         } catch {
+            countFailure()
             message = "The session failed and its state could not be saved."
         }
     }
@@ -1682,6 +1847,8 @@ final class RecordingCoordinator {
         refreshSetupStatus()
         message = record.sourceDocumentID == "in-app-test"
             ? "Transcript ready. Your gateway is working end to end."
+            : record.isFromShortcut
+            ? "Transcript ready. Open a text field and tap Insert on the vocaphone keyboard."
             : "Transcript ready. Return to the keyboard to insert it."
     }
 
@@ -1799,6 +1966,9 @@ final class RecordingCoordinator {
         let duration = KeyboardPreferences.quickDictationDuration
         do {
             try recorder.startStandby()
+            // Running again, so an interruption whose end never arrived has
+            // nothing left to restore.
+            quickDictationInterruption.forget()
             let activatedAt = Date()
             let availability = QuickDictationAvailability(
                 activatedAt: activatedAt,
@@ -2082,6 +2252,10 @@ final class RecordingCoordinator {
         switch event {
         case .interruptionBegan:
             DiagnosticLog.record(.audioInterruptionBegan)
+            // Read before the loss below tears standby down.
+            quickDictationInterruption.began(
+                running: recorder.isStandbyActive || recorder.isRecording
+            )
             handleAudioLoss(reason: "Audio was interrupted. Finishing what was captured.")
         case let .interruptionEnded(shouldResume):
             audioLifecycleGeneration &+= 1
@@ -2090,10 +2264,15 @@ final class RecordingCoordinator {
                 .audioInterruptionEnded,
                 metadata: .reason(shouldResume ? .resumeAllowed : .resumeNotAllowed)
             )
-            if shouldResume,
-               KeyboardPreferences.containingAppIsForeground,
-               KeyboardPreferences.quickDictationEnabled
-            {
+            // The background audio mode lets a session that was running when
+            // the call came resume once iOS says it may. Only foregrounding
+            // vocaphone brought standby back before, and nobody does that
+            // between hanging up and going back to typing.
+            if quickDictationInterruption.ended(
+                shouldResume: shouldResume,
+                quickDictationArmable: KeyboardPreferences.quickDictationArmable,
+                appIsForeground: KeyboardPreferences.containingAppIsForeground
+            ) {
                 prepareQuickDictationIfEnabled()
             }
         case .mediaServicesReset:
@@ -2122,6 +2301,7 @@ final class RecordingCoordinator {
         audioLifecycleGeneration &+= 1
         audioSessionAvailable = false
         if activeRecord?.state == .recording, recorder.isRecording {
+            captureLostAudio = true
             message = reason
             // Ending the activity here retired the manager's session, which
             // then silently dropped every later update: the Dynamic Island

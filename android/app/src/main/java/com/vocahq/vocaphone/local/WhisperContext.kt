@@ -4,16 +4,36 @@ import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.TranscriptionQuality
 import java.util.concurrent.Executors
 import kotlin.math.ceil
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 /** One serialized whisper.cpp context; the native context is not concurrency-safe. */
-internal class WhisperContext private constructor(private var pointer: Long) {
-    private val scope = CoroutineScope(
-        Executors.newSingleThreadExecutor().asCoroutineDispatcher(),
-    )
+internal class WhisperContext private constructor(@Volatile private var pointer: Long) {
+    private val executor = Executors.newSingleThreadExecutor()
+    private val dispatcher = executor.asCoroutineDispatcher()
 
+    /**
+     * Called on the decode thread just before each native decode starts.
+     *
+     * Only the model test sets it: cancelling a decode that is still queued
+     * never reaches whisper.cpp, so a test of the abort has to know the native
+     * call is under way before it cancels.
+     */
+    @Volatile
+    internal var onNativeDecodeStart: (() -> Unit)? = null
+
+    /**
+     * Decodes on this context's own thread, and stops the native decode when
+     * the caller is cancelled.
+     *
+     * whisper.cpp cannot be interrupted from Kotlin: a cancelled coroutine used
+     * to leave the decode running to the end, and the engine lock with it, so
+     * the next dictation sat on "Loading…" behind audio nobody wanted. The
+     * caller now resumes with the cancellation at once and the native call is
+     * told to abort at its next step; anything queued behind it on this thread
+     * -- the next decode, or a release -- waits only for that.
+     */
     suspend fun transcribe(
         samples: FloatArray,
         language: String,
@@ -22,47 +42,78 @@ internal class WhisperContext private constructor(private var pointer: Long) {
         prompt: String,
         cropAudioContext: Boolean,
         threads: Int,
-    ): LocalTranscription =
-        withContext(scope.coroutineContext) {
-            check(pointer != 0L) { "Whisper context has been released" }
-            val status = WhisperLib.fullTranscribe(
-                pointer,
-                threads,
-                samples,
-                if (language == "auto") "auto" else language,
-                translateTo.isNotEmpty(),
-                quality.whisperBeamSize,
-                quality.whisperTemperatureIncrement,
-                if (cropAudioContext) WhisperCpuConfig.whisperAudioContext(samples.size) else 0,
-                prompt,
-            )
-            // A failed decode returns no segments, which would otherwise be
-            // reported as an empty transcript — as though the microphone had
-            // heard nothing rather than the model having run out of room.
-            check(status == 0) {
-                "The on-device model could not decode this recording. " +
-                    "Try the Fast or Balanced accuracy setting, or a smaller model."
-            }
-            LocalTranscription(
-                text = buildString {
-                    repeat(WhisperLib.getTextSegmentCount(pointer)) { index ->
-                        append(WhisperLib.getTextSegment(pointer, index))
-                    }
-                }.trim(),
-                // Detection is meaningful only for Automatic. With an explicit
-                // selection, the user's requested output language remains the
-                // contract even if the engine reports something contradictory.
-                // Translating overrides both: the detected language is the one
-                // that was spoken, and the text on screen is the target.
-                language = ModelLanguageSupport.outputLanguage(
-                    requested = language,
-                    reported = WhisperLib.getDetectedLanguage(pointer),
-                    translateTo = translateTo,
-                ),
+    ): LocalTranscription = suspendCancellableCoroutine { continuation ->
+        // Captured here, while the caller holds the engine: a release can only
+        // be queued behind this decode, so the handle stays valid for as long
+        // as the abort below can reach it.
+        val handle = pointer
+        continuation.invokeOnCancellation {
+            if (handle != 0L) WhisperLib.requestAbort(handle)
+        }
+        executor.execute {
+            // Cleared before the cancellation check, never after it: an abort
+            // requested from here on is one this decode has to honour.
+            if (handle != 0L) WhisperLib.resetAbort(handle)
+            if (!continuation.isActive) return@execute
+            continuation.resumeWith(
+                runCatching {
+                    decode(samples, language, translateTo, quality, prompt, cropAudioContext, threads)
+                },
             )
         }
+    }
 
-    suspend fun release() = withContext(scope.coroutineContext) {
+    private fun decode(
+        samples: FloatArray,
+        language: String,
+        translateTo: String,
+        quality: TranscriptionQuality,
+        prompt: String,
+        cropAudioContext: Boolean,
+        threads: Int,
+    ): LocalTranscription {
+        check(pointer != 0L) { "Whisper context has been released" }
+        onNativeDecodeStart?.invoke()
+        val status = WhisperLib.fullTranscribe(
+            pointer,
+            threads,
+            samples,
+            if (language == "auto") "auto" else language,
+            translateTo.isNotEmpty(),
+            quality.whisperBeamSize,
+            quality.whisperTemperatureIncrement,
+            if (cropAudioContext) WhisperCpuConfig.whisperAudioContext(samples.size) else 0,
+            prompt,
+        )
+        // A failed decode returns no segments, which would otherwise be
+        // reported as an empty transcript — as though the microphone had
+        // heard nothing rather than the model having run out of room. An
+        // aborted one fails too, but its caller has already been cancelled
+        // and never sees this.
+        check(status == 0) {
+            "The on-device model could not decode this recording. " +
+                "Try the Fast or Balanced accuracy setting, or a smaller model."
+        }
+        return LocalTranscription(
+            text = buildString {
+                repeat(WhisperLib.getTextSegmentCount(pointer)) { index ->
+                    append(WhisperLib.getTextSegment(pointer, index))
+                }
+            }.trim(),
+            // Detection is meaningful only for Automatic. With an explicit
+            // selection, the user's requested output language remains the
+            // contract even if the engine reports something contradictory.
+            // Translating overrides both: the detected language is the one
+            // that was spoken, and the text on screen is the target.
+            language = ModelLanguageSupport.outputLanguage(
+                requested = language,
+                reported = WhisperLib.getDetectedLanguage(pointer),
+                translateTo = translateTo,
+            ),
+        )
+    }
+
+    suspend fun release() = withContext(dispatcher) {
         if (pointer != 0L) {
             WhisperLib.freeContext(pointer)
             pointer = 0L
@@ -78,10 +129,36 @@ internal class WhisperContext private constructor(private var pointer: Long) {
 }
 
 internal object WhisperCpuConfig {
+    /** Read once: a phone's core layout does not change while the app runs. */
+    private val performanceCores: Int? by lazy { performanceCoreCount(readCoreMaxKHz()) }
+
     fun preferredThreadCount(modelID: String): Int = whisperThreadCount(
         availableProcessors = Runtime.getRuntime().availableProcessors(),
         modelID = modelID,
+        performanceCores = performanceCores,
     )
+
+    /**
+     * A core clocked this close to the fastest one is counted as a
+     * performance core. 70% puts every prime and big core of the usual layouts
+     * on one side -- Snapdragon 845's 2.8/1.8 GHz, 855's 2.84/2.42/1.78,
+     * Tensor's 2.8/2.25/1.8 -- and their efficiency cores on the other.
+     */
+    private const val PERFORMANCE_CLOCK_RATIO = 0.7
+
+    /**
+     * How many cores run near the fastest one's clock, or null when the phone
+     * does not say.
+     *
+     * Every core has to publish its clock: one that does not -- offline, or
+     * hidden by the vendor -- could be a big core, and counting around it
+     * would undercount exactly the cores this is looking for.
+     */
+    internal fun performanceCoreCount(coreMaxKHz: List<Int>): Int? {
+        if (coreMaxKHz.isEmpty() || coreMaxKHz.any { it <= 0 }) return null
+        val fastest = coreMaxKHz.max()
+        return coreMaxKHz.count { it >= fastest * PERFORMANCE_CLOCK_RATIO }
+    }
 
     /**
      * Quantized Tiny through Small finish soon enough to use six workers
@@ -95,12 +172,30 @@ internal object WhisperCpuConfig {
      * v3 Turbo reaches the lower ceiling. The `-q` test is kept rather than
      * simplified away because it turns on how long the model runs, not on what
      * it is called, and the measurement above is expensive to rediscover.
+     *
+     * Within that, the worker count is capped at the number of
+     * [performanceCores]. ggml splits each graph node across every worker and
+     * waits at a barrier for the slowest, so on an eight-core phone the old
+     * "all but two" made six workers for four fast cores, and two of them ran
+     * wherever the scheduler put them -- an efficiency core, setting the pace
+     * for the rest. This sets only how many workers there are; it pins
+     * nothing, and which cores they run on is still the scheduler's choice,
+     * which with no more workers than fast cores is normally the fast ones.
+     * It never asks for more than the old count, so a phone whose clocks
+     * cannot separate its cores, or that does not publish them, decodes
+     * exactly as before.
      */
-    internal fun whisperThreadCount(availableProcessors: Int, modelID: String): Int {
+    internal fun whisperThreadCount(
+        availableProcessors: Int,
+        modelID: String,
+        performanceCores: Int? = null,
+    ): Int {
         val modelClass = whisperClass(modelID)
         val fullPrecisionSmall = modelClass == 3 && "-q" !in modelID
         val ceiling = if (fullPrecisionSmall || modelClass >= 4) 4 else 6
-        return (availableProcessors - 2).coerceIn(2, ceiling)
+        val allButTwo = availableProcessors - 2
+        val workers = performanceCores?.let { minOf(it, allButTwo) } ?: allButTwo
+        return workers.coerceIn(2, ceiling)
     }
 
     /** 20 ms of audio at 16 kHz, which is one unit of whisper's encoder window. */

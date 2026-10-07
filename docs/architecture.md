@@ -25,6 +25,16 @@ The App Group record is the source of truth. Polling is a wake-up strategy, not
 the data store. Audio references are opaque filenames; tokens, transcripts, and
 absolute paths are never written to ordinary logs.
 
+Every record write takes a short advisory lock beside the sessions directory and
+moves the stored revision forward, even when the writer's copy is stale. The
+containing app writes after an await — the microphone warming, a socket, a
+model — so its writes are conditional: it re-reads the record and writes only if
+the session has not ended, with a compare-and-swap against that revision. A
+Cancel or expiry the keyboard wrote during the wait therefore stands, and the
+app stops the capture it started instead of flipping the session back to
+recording. The lock is never held across an await, and a lock that cannot be
+taken within half a second is skipped rather than waited on.
+
 `SessionRecord.processingLocation` is optional and additive. It is how the
 keyboard and the Live Activity name the place transcription is happening without
 asking the app, and its absence is a real state — a record written before the
@@ -32,6 +42,23 @@ field existed, or a session interrupted before the app claimed it. Every reader
 answers that with neutral wording ("Transcribing") rather than guessing a route,
 and version-1 records without the field continue to decode unchanged. Nothing on
 the gateway wire format changed.
+
+`SessionRecord.targetFingerprint` and `SessionRecord.insertionInterrupted` are
+optional and additive in the same way; records without them decode unchanged
+and keep the earlier behaviour. The keyboard writes `targetFingerprint` when it
+creates a session: the first 64 bits of a SHA-256 over the session ID and the
+text within 24 characters either side of the cursor. Only the hash is stored,
+never the text, and the session ID salt keeps equal text in two sessions from
+producing equal values. A keyboard that adopts the session in a later
+appearance — after an app switch or an extension relaunch, where document
+identifiers are reissued and cannot be compared — computes the same value for
+the field it is in. A mismatch parks the transcript as `targetContextChanged`
+("Insert in this field") instead of inserting it automatically, so a dictation
+started in one app does not land in another. A field iOS has not answered for
+yet is not evidence either way: the transcript waits behind Insert. Two fields
+with the same text around the cursor, such as two empty fields, are
+indistinguishable, and the transcript follows the cursor there as it did
+before. `insertionInterrupted` is described under step 9.
 
 ## Recorded request flow
 
@@ -54,6 +81,10 @@ upload with speech for Whisper. A 64 KiB pipe and the existing 96-frame capture 
 eight seconds; dropped frames, an incomplete handshake, or a failed transport
 use the complete local file. Cancel stops the dictation's upload child and
 aborts the HTTP/socket request. On-device dictation opens no audio transport.
+Cancelling it during transcription asks whisper.cpp to abort at its next
+encoder or decoder step and deletes the recording, as a cancel while listening
+does; it is not recorded as a failure or kept for Retry. Cancelling a Retry
+leaves the recording history already holds.
 
 Completed-file uploads and retries encode the capture WAV to temporary mono
 16 kHz AAC/M4A at 48 kbps with Android's MediaCodec and MediaMuxer on an IO
@@ -164,6 +195,14 @@ was trimmed.
 9. The keyboard verifies its session context, persists `inserting`, calls
    `insertText`, then persists `inserted` and `completed`.
 
+"Start dictation" from Shortcuts, Siri or the Action button writes the same
+`launchingApp` record from inside the app, with `sourceDocumentID` set to
+`shortcut` and `startedInContainingApp` set, so there is no swipe-back screen.
+It gets a Live Activity like any other dictation. The keyboard adopts its
+transcript in the next field it appears in but never inserts it automatically:
+a session started with no field has no field to match, so it waits behind
+Insert.
+
 After Finish, the app can rearm a Quick Dictation window without
 tearing down its `AVAudioEngine`. The window length is a preference — 10
 minutes, 20 minutes, or "until I close vocaphone", which takes a short lease the
@@ -174,9 +213,22 @@ file contains only activation and expiry timestamps. It is cleared before active
 recording, on expiry, on audio failure, when the user turns the feature off, and
 when the Live Activity's Pause button ends the current window. Pausing sets a
 flag that the next foreground clears; only the Settings toggle is durable.
+An audio interruption — a call, Siri — clears the window like any other audio
+failure. When it ends with iOS's `shouldResume` option, the app re-arms the
+window, in the background too, but only if standby or a dictation was running
+when the interruption began; without `shouldResume` it stays off.
 
 Persisting `inserting` before touching the document intentionally favors
-avoiding duplicate text if the extension terminates at the worst moment.
+avoiding duplicate text if the extension terminates at the worst moment. A
+keyboard that later finds a record still `inserting`, more than two seconds old
+and not its own, moves it back to `readyToInsert` with `insertionInterrupted`
+set. That transcript is offered behind Insert and Cancel with "Insertion may
+have been interrupted" and is never inserted automatically, since the text may
+already be in the field. It is not parked by its target fingerprint either: the
+interrupted insertion may itself have changed the text around the cursor, so
+the warning takes precedence over "Insert in this field". `inserting` also expires after 30 seconds, and only
+counts as having an active writer within that window, so delete, Delete all and
+storage pruning can reclaim a record no keyboard came back for.
 
 ## Typing intelligence (iOS keyboard)
 

@@ -126,6 +126,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var lastSelEnd = -1
     private var caseCycleOriginal: String? = null
     private var caseCycleEmitted: String? = null
+    /** Set in onDestroy; posted work checks it before touching the service. */
+    private var destroyed = false
     /** True while the editor still has a composing region we set. */
     private var composingRegionActive = false
 
@@ -413,8 +415,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacks(startVoiceShortcutDictation)
-        mainHandler.removeCallbacks(delayedRejectedHandback)
+        destroyed = true
+        // Everything this service posts — the clipboard read, the coalesced
+        // editor read, the voice shortcut runnables — reads the service or its
+        // connection, and none of it means anything once it is gone.
+        mainHandler.removeCallbacksAndMessages(null)
         voiceShortcutWindowWaits = 0
         voiceShortcutRejectGuidance = false
         stopClipboardWatch()
@@ -435,11 +440,26 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             val connection = currentInputConnection
                 ?: return@withContext InsertionReport(InsertionOutcome.NO_TARGET)
             val cleaned = TranscriptSanitizer.clean(transcript)
-            if (cleaned.isEmpty()) {
+            if (cleaned.isBlank()) {
                 return@withContext InsertionReport(InsertionOutcome.NO_TARGET)
             }
 
-            if (commitDictation(connection, cleaned)) {
+            val committed = commitDictation(
+                connection,
+                cleaned,
+                composingRegionActive,
+                lastSelStart,
+                lastSelEnd,
+            )
+            // The composing region was finished before the commit, so the
+            // half-typed word stays in the field and the keyboard has to drop
+            // it. Cleared here rather than left to onUpdateSelection, whose
+            // EditorCursorSync takes a cursor landing at or one past the old
+            // composing end for the keyboard's own update; the next letter
+            // would then recompose the stale prefix after the transcript.
+            composingRegionActive = false
+            editorConfig = editorConfig.copy(cursorSync = editorConfig.cursorSync + 1)
+            if (committed) {
                 syncShiftFromCursor()
                 refreshEditorText()
                 InsertionReport(InsertionOutcome.INSERTED)
@@ -812,7 +832,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     private fun refreshClipboard() {
+        if (destroyed) return
         mainHandler.post {
+            // The settings collector and the clipboard listener can both get
+            // here in the frame onDestroy runs; the post then lands after it.
+            if (destroyed) return@post
             val settings = visibleSettings.value
             if (editorConfig.sensitive) {
                 visibleClipboard.value = null

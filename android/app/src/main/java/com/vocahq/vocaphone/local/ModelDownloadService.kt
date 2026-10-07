@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.vocahq.vocaphone.NotificationIds
 import com.vocahq.vocaphone.R
 import com.vocahq.vocaphone.VocaPhoneApplication
 import com.vocahq.vocaphone.ui.MainActivity
@@ -107,6 +108,22 @@ class ModelDownloadService : Service() {
         stopSelf(startId)
     }
 
+    /**
+     * Android 15+: a dataSync foreground service gets six hours in a day, then
+     * this, and the app is crashed if it has not stopped a few seconds later.
+     * The download is cancelled through the manager's ordinary path, so the
+     * staging files go and the Models page shows why, and the service stops
+     * now rather than after the usual final-notification linger.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        watcher?.cancel()
+        watcher = null
+        VocaPhoneApplication.container(this).localModels
+            .cancelDownload(DownloadCancelReason.TIME_LIMIT)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onDestroy() {
         watcher?.cancel()
         scope.cancel()
@@ -180,7 +197,7 @@ class ModelDownloadService : Service() {
         const val EXTRA_NAME = "name"
         const val EXTRA_MODEL_ID = "modelId"
         private const val CHANNEL_ID = "vocaphone.model_download"
-        private const val NOTIFICATION_ID = 4102
+        private const val NOTIFICATION_ID = NotificationIds.MODEL_DOWNLOAD
         private const val FINAL_LINGER_MILLIS = 1_500L
         /**
          * Starts the service for a download the manager has already begun.

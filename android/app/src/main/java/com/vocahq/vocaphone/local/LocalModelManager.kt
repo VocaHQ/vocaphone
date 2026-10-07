@@ -104,6 +104,55 @@ internal const val LOCAL_ENGINE_WARM_UNLOAD_MS = 5 * 60 * 1000L
 /** Left over after a speculative load: the keyboard, the recorder, the phone. */
 internal const val LOCAL_ENGINE_WARM_HEADROOM_BYTES = 512L * 1024 * 1024
 
+/** Why a model download was cancelled: what the Models page says afterwards. */
+enum class DownloadCancelReason(val message: String) {
+    USER("Model download canceled."),
+
+    /**
+     * Android 15 allows a dataSync foreground service six hours in a day and
+     * then calls `onTimeout`. Nothing is resumable, so the download stops
+     * cleanly with a line that says why, rather than "canceled" for a
+     * cancel the user never made.
+     */
+    TIME_LIMIT(
+        "Model download stopped: Android limits background downloads to six hours. " +
+            "Try again on a faster connection.",
+    ),
+}
+
+/**
+ * The download in flight and, for each one, why it was cancelled.
+ *
+ * The reason belongs to the job, not to one shared slot: onTimeout can cancel
+ * a download and the user start another before the first has reached its
+ * unwind (it is still holding the download mutex), and a slot reset by that
+ * start made the first report "canceled" instead of the time limit.
+ */
+internal class DownloadJobs {
+    private class Active(val job: Job, val reason: AtomicReference<DownloadCancelReason>)
+
+    private val active = AtomicReference<Active?>(null)
+
+    /** [launch] gets this job's own reason, read by its unwind. */
+    fun start(launch: (cancelReason: () -> DownloadCancelReason) -> Job): Job {
+        val reason = AtomicReference(DownloadCancelReason.USER)
+        val job = launch(reason::get)
+        val entry = Active(job, reason)
+        active.set(entry)
+        job.invokeOnCompletion { active.compareAndSet(entry, null) }
+        return job
+    }
+
+    fun current(): Job? = active.get()?.job
+
+    /** Cancels the job in flight, if any, recording [reason] for its unwind first. */
+    fun cancel(reason: DownloadCancelReason) {
+        val entry = active.getAndSet(null) ?: return
+        entry.reason.set(reason)
+        entry.job.cancel()
+    }
+}
+
 /**
  * Whether loading a model before anyone asked for it is worth the memory.
  *
@@ -179,7 +228,7 @@ class LocalModelManager(
     private var loadedQuality: TranscriptionQuality? = null
     /** The coroutine cannot interrupt a blocking OkHttp execute by itself. */
     private val activeDownloadCall = AtomicReference<Call?>(null)
-    private val activeDownloadJob = AtomicReference<Job?>(null)
+    private val downloads = DownloadJobs()
 
     /**
      * Stat-only pass. Anything present but not yet marked as digest-checked is
@@ -330,7 +379,7 @@ class LocalModelManager(
             scope = scope,
             prepare = { prepareEngine(model, resolved, quality, target) },
             decode = { samples ->
-                decodePreparedSherpa(samples, model.id, resolved, quality, target)
+                decodePreparedSherpa(samples, model, resolved, quality, target)
             },
         )
     }
@@ -341,13 +390,12 @@ class LocalModelManager(
      */
     fun startDownload(model: LocalModelDescriptor, useWhenReady: Boolean = false): Job {
         cancelDownload()
-        val job = downloadScope.launch { download(model, useWhenReady) }
-        activeDownloadJob.set(job)
-        job.invokeOnCompletion { activeDownloadJob.compareAndSet(job, null) }
-        return job
+        return downloads.start { cancelReason ->
+            downloadScope.launch { download(model, useWhenReady, cancelReason) }
+        }
     }
 
-    fun activeDownload(): Job? = activeDownloadJob.get()
+    fun activeDownload(): Job? = downloads.current()
 
     fun markAdopted(id: String) {
         _state.update { if (it.pendingUse == id) it.copy(pendingUse = null) else it }
@@ -356,8 +404,8 @@ class LocalModelManager(
     fun clearPendingUse(id: String) = markAdopted(id)
 
 
-    fun cancelDownload() {
-        activeDownloadJob.getAndSet(null)?.cancel()
+    fun cancelDownload(reason: DownloadCancelReason = DownloadCancelReason.USER) {
+        downloads.cancel(reason)
         activeDownloadCall.get()?.cancel()
     }
 
@@ -373,7 +421,11 @@ class LocalModelManager(
         )
     }
 
-    suspend fun download(model: LocalModelDescriptor, useWhenReady: Boolean = false) = downloadMutex.withLock {
+    suspend fun download(
+        model: LocalModelDescriptor,
+        useWhenReady: Boolean = false,
+        cancelReason: () -> DownloadCancelReason = { DownloadCancelReason.USER },
+    ) = downloadMutex.withLock {
         // Checked here rather than only in the picker: a download reaching 95%
         // and then failing on a full phone is minutes of the user's time and an
         // error that does not say what to delete.
@@ -449,13 +501,13 @@ class LocalModelManager(
                 )
             } catch (error: CancellationException) {
                 staging.deleteRecursively()
-                _state.value = _state.value.copy(message = "Model download canceled.")
+                _state.value = _state.value.copy(message = cancelReason().message)
                     .withoutPendingUse(model.id)
                 throw error
             } catch (error: Throwable) {
                 if (!currentCoroutineContext().isActive) {
                     staging.deleteRecursively()
-                    _state.value = _state.value.copy(message = "Model download canceled.")
+                    _state.value = _state.value.copy(message = cancelReason().message)
                         .withoutPendingUse(model.id)
                     throw CancellationException("Model download canceled", error)
                 }
@@ -718,7 +770,7 @@ class LocalModelManager(
         // reaches, so without this the accuracy control rebuilds a large model
         // to produce an identical one -- a long "Preparing…" and a peak-memory
         // spike for no change in the transcript.
-        val quality = model.sherpaFamily?.effectiveQuality(requestedQuality) ?: requestedQuality
+        val quality = model.loadedQuality(requestedQuality)
         val directory = directoryFor(model)
         // Stat-only: cheap enough to run per dictation, unlike a digest pass.
         withContext(Dispatchers.IO) { LocalModelIntegrity.verifySizes(model, directory) }
@@ -819,16 +871,22 @@ class LocalModelManager(
 
     private suspend fun decodePreparedSherpa(
         samples: FloatArray,
-        modelID: String,
+        model: LocalModelDescriptor,
         resolvedLanguage: String,
-        quality: TranscriptionQuality,
+        requestedQuality: TranscriptionQuality,
         resolvedTranslateTo: String,
     ): SherpaTranscript = engineMutex.withLock {
         check(
-            loadedModelID == modelID &&
-                loadedLanguage == resolvedLanguage &&
-                loadedTranslateTo == resolvedTranslateTo &&
-                loadedQuality == quality,
+            sherpaEngineStillLoaded(
+                model = model,
+                requestedLanguage = resolvedLanguage,
+                requestedQuality = requestedQuality,
+                requestedTranslateTo = resolvedTranslateTo,
+                loadedModelID = loadedModelID,
+                loadedLanguage = loadedLanguage,
+                loadedQuality = loadedQuality,
+                loadedTranslateTo = loadedTranslateTo,
+            ),
         ) {
             "On-device model changed during transcription"
         }
@@ -911,6 +969,45 @@ internal fun shouldReloadLocalEngine(
     if (!languageIsBakedIn) return false
     return loadedLanguage != requestedLanguage || loadedTranslateTo != requestedTranslateTo
 }
+
+/**
+ * The quality this model's engine is built at for [requested].
+ *
+ * What [LocalModelManager] records as loaded, so anything that later compares
+ * against that record has to normalise through here too. Comparing the raw
+ * setting instead failed every streaming window of a greedy sherpa model on
+ * Fast or Accurate -- it is loaded at Balanced -- and sent each of those
+ * dictations to the whole-file decode after Finish.
+ */
+internal fun LocalModelDescriptor.loadedQuality(requested: TranscriptionQuality): TranscriptionQuality =
+    sherpaFamily?.effectiveQuality(requested) ?: requested
+
+/**
+ * Whether the sherpa engine in memory is still the one a streaming window was
+ * prepared for. A different answer means it was reloaded underneath the
+ * dictation and its windows can no longer be trusted.
+ *
+ * Compared on the same terms [shouldReloadLocalEngine] loads on: quality as
+ * the family is built at it, and language and target only where the family
+ * bakes them in. A family with no language field keeps whatever label it was
+ * first loaded under, so a strict comparison there rejected a perfectly good
+ * engine because the user's language had been relabelled since.
+ */
+internal fun sherpaEngineStillLoaded(
+    model: LocalModelDescriptor,
+    requestedLanguage: String,
+    requestedQuality: TranscriptionQuality,
+    requestedTranslateTo: String,
+    loadedModelID: String?,
+    loadedLanguage: String?,
+    loadedQuality: TranscriptionQuality?,
+    loadedTranslateTo: String,
+): Boolean = loadedModelID == model.id &&
+    loadedQuality == model.loadedQuality(requestedQuality) &&
+    (
+        model.sherpaFamily?.acceptsLanguage != true ||
+            (loadedLanguage == requestedLanguage && loadedTranslateTo == requestedTranslateTo)
+        )
 
 /**
  * The translation target this model can actually honour, or empty.
