@@ -91,6 +91,10 @@ targets:
       - path: ../assets/keyboard
         name: SharedKeyboardData
         buildPhase: resources
+        # The full catalog is Android's emoji panel. iOS leaves emoji picking
+        # to the system emoji keyboard and reads only `suggestions.tsv`.
+        excludes:
+          - emoji/catalog.tsv
     resources:
       - VocaPhoneApp/Models/local_model_pins.json
       - VocaPhoneApp/Models/sherpa_model_pins.json
@@ -134,6 +138,10 @@ targets:
       - path: ../assets/keyboard
         name: SharedKeyboardData
         buildPhase: resources
+        # The full catalog is Android's emoji panel. iOS leaves emoji picking
+        # to the system emoji keyboard and reads only `suggestions.tsv`.
+        excludes:
+          - emoji/catalog.tsv
     resources:
       - VocaPhoneKeyboard/PrivacyInfo.xcprivacy
     settings:
@@ -232,7 +240,6 @@ targets:
       # Replacing a swiped word is arithmetic over the space the swipe left
       # behind, and both bugs it replaces were off by exactly that character.
       - path: VocaPhoneKeyboard/SwipeAlternates.swift
-      - path: VocaPhoneKeyboard/EmojiCatalog.swift
       # The state-to-interface mapping for the dictation bar is pure, so every
       # session state can be checked without standing up the extension.
       - path: VocaPhoneKeyboard/DictationPresentation.swift

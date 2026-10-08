@@ -2,8 +2,8 @@ import Foundation
 
 /// The emoji offered for a word as it is typed: "lol" offers 😂, "flamingo" 🦩.
 ///
-/// Not a lookup into ``EmojiCatalog``. The catalog's keywords exist to answer a
-/// deliberate search in the emoji panel. Matched against ordinary prose they
+/// Not a lookup into the full emoji catalog's keywords, which exist to answer a
+/// deliberate search in Android's emoji panel. Matched against ordinary prose they
 /// answer "the" with 🤣, "and" with 🫢, "is" with the flag of Iceland, "dog"
 /// with 💩 and "clock" with 🏫 — because a keyword match says a word appears
 /// somewhere in an emoji's description, not that the emoji is what the word

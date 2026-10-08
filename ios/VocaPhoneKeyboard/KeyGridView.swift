@@ -20,14 +20,6 @@ enum KeyboardOutput {
     case endCursorDrag
     /// A traced word and the alternates that lost to it, for the strip.
     case swipeWord(String, alternates: [String])
-    /// Hold the plane key to reach the emoji panel.
-    ///
-    /// A dedicated emoji key does not fit: the bottom row balances on ten
-    /// columns, and a fourth function key beside the plane switch, the globe and
-    /// the punctuation pair leaves the spacebar about half a key wide. iOS has
-    /// the same problem and answers it by not putting a comma and full stop on
-    /// that row at all — which this keyboard does, and people use them.
-    case emojiPanel
     /// Carries the globe key itself so the keyboard picker can anchor to it.
     case nextInputMode(UIView, UIEvent?)
     /// Step to the next enabled layout, forwards or back. The grid knows which
@@ -279,12 +271,6 @@ final class KeyGridView: UIView {
 
     private(set) var hitMap = KeyHitMap(targets: [])
     private var tracked: [TrackedTouch] = []
-    /// The plane key's hold-for-emoji gesture. Owned by the grid rather than by
-    /// a `TrackedTouch`, because the plane switch it rides on releases those.
-    private var planeHoldTimer: Timer?
-    private weak var planeHoldTouch: UITouch?
-    private var planeHoldOrigin: KeyPlane?
-    private var planeHoldPoint: CGPoint?
     private var deleteTimer: Timer?
     private var spaceTrackpadTimer: Timer?
     /// Whether the keys are currently showing nothing, because a finger is
@@ -693,7 +679,6 @@ final class KeyGridView: UIView {
     private func rebuildBody() {
         hitMap = KeyHitMap(targets: [])
         endDeleteRepeat()
-        cancelPlaneHold()
         releaseTouches()
         for (_, plane) in planeCache {
             plane.views.forEach { $0.removeFromSuperview() }
@@ -849,7 +834,6 @@ final class KeyGridView: UIView {
     /// dismissed, and a popover left behind reappears over the next field.
     func endActiveInteractions() {
         endDeleteRepeat()
-        cancelPlaneHold()
         releaseTouches()
     }
 
@@ -958,10 +942,6 @@ final class KeyGridView: UIView {
             measured("showPreview") { showPreview(for: item) }
             if key.spec.cap == .space { scheduleSpaceTrackpad(for: item) }
             measured("scheduleAlternatives") { scheduleAlternatives(for: item) }
-            if case .plane = key.spec.cap {
-                beginPlaneHold(at: point)
-                planeHoldTouch = touch
-            }
             if key.spec.cap.actsOnTouchDown {
                 let planeBefore = plane
                 performTouchDownAction(for: key, event: event)
@@ -992,12 +972,6 @@ final class KeyGridView: UIView {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
-            if planeHoldTouch === touch, let origin = planeHoldPoint {
-                let point = touch.location(in: self)
-                // Sliding off the plane key is a change of mind about the key,
-                // not a hold — the same 12pt slack the accent popover allows.
-                if hypot(point.x - origin.x, point.y - origin.y) > 12 { cancelPlaneHold() }
-            }
             guard let item = tracked.first(where: { $0.touch === touch }) else { continue }
             // Pinned by a plane switch: the keys it was moving over are gone, so
             // it waits for the lift that commits what it pressed.
@@ -1136,7 +1110,6 @@ final class KeyGridView: UIView {
         // tracking — before they have been read.
         var planeToRestore: KeyPlane?
         for touch in touches.sorted(by: { $0.timestamp < $1.timestamp }) {
-            if planeHoldTouch === touch { cancelPlaneHold() }
             guard let index = tracked.firstIndex(where: { $0.touch === touch }) else {
                 TouchTrace.note(
                     "\(commit ? "end" : "cancel") \(TouchTrace.name(touch)) UNTRACKED"
@@ -1570,46 +1543,6 @@ final class KeyGridView: UIView {
     /// focus model has no finger to hold, and the alternatives are reachable
     /// through the key's accessibility custom actions instead — see
     /// ``KeyView/refresh()``.
-    /// Holding the plane key opens the emoji panel.
-    ///
-    /// The hold cannot hang off the `TrackedTouch` the way the accent popover
-    /// does. The plane key acts on touch-down, and switching planes rebuilds
-    /// the grid and releases every tracked touch — which invalidated this very
-    /// timer before it could ever fire, leaving the gesture unreachable. The
-    /// grid owns it instead, and remembers the plane the hold started from so
-    /// reaching the panel does not also leave a plane switch behind it.
-    /// Arms the hold, remembering the plane it started from. Split from touch
-    /// handling — and from the touch's own identity — so the gesture the plane
-    /// switch used to swallow can be tested without a UIKit-owned `UITouch`.
-    func beginPlaneHold(at point: CGPoint) {
-        guard !UIAccessibility.isVoiceOverRunning else { return }
-        cancelPlaneHold()
-        planeHoldOrigin = plane
-        planeHoldPoint = point
-        planeHoldTimer = Self.scheduleTimer(after: 0.5) { [weak self] in
-            self?.completePlaneHold()
-        }
-    }
-
-    func completePlaneHold() {
-        guard let origin = planeHoldOrigin else { return }
-        cancelPlaneHold()
-        // The tap already switched planes as the finger landed. A hold means
-        // the panel was wanted instead, so the switch is undone rather than
-        // left waiting underneath it.
-        plane = origin
-        feedback.selectionChanged()
-        delegate?.keyGrid(self, didProduce: .emojiPanel)
-    }
-
-    private func cancelPlaneHold() {
-        planeHoldTimer?.invalidate()
-        planeHoldTimer = nil
-        planeHoldTouch = nil
-        planeHoldOrigin = nil
-        planeHoldPoint = nil
-    }
-
     private func scheduleAlternatives(for item: TrackedTouch) {
         guard !UIAccessibility.isVoiceOverRunning,
               metrics.showsPreview,
@@ -1791,8 +1724,8 @@ final class KeyGridView: UIView {
     ///
     /// `Timer.scheduledTimer` installs into `.default` only, which stops firing
     /// the moment UIKit enters tracking mode — which it does whenever a scroll
-    /// view anywhere in this process is being dragged, the typing strip and the
-    /// emoji panel included. Every interaction timer in this view is armed by a
+    /// view anywhere in this process is being dragged, the typing strip
+    /// included. Every interaction timer in this view is armed by a
     /// finger, so a held Delete that quietly stopped repeating, or an accent
     /// popover that never opened, is a keyboard that has frozen as far as the
     /// person holding it is concerned. The session poller was already given
@@ -1987,10 +1920,6 @@ extension KeyGridView: KeyViewAccessibilityDelegate {
     func keyView(_ key: KeyView, didChooseAlternative text: String) {
         delegate?.keyGrid(self, didProduce: .text(text))
         if shiftState == .on { shiftState = .off }
-    }
-
-    func keyViewDidRequestEmojiPanel(_ key: KeyView) {
-        delegate?.keyGrid(self, didProduce: .emojiPanel)
     }
 }
 

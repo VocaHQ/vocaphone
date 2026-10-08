@@ -97,16 +97,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         ),
         palette: palette
     )
-    /// Built the first time it is opened, never at launch.
-    ///
-    /// A `UICollectionView` and ten category buttons is not much on its own, but
-    /// a keyboard extension is killed somewhere around 45–60 MB and this is a
-    /// panel most sessions never open. Everything the keyboard needs to *appear*
-    /// comes first; everything else waits to be asked for.
-    private var emojiPanel: EmojiPanelView?
     private var isMemoryConstrained = false
     private var healthyMemorySamples = 0
-    private var emojiLoadTask: Task<Void, Never>?
     private lazy var keyGrid = KeyGridView(
         metrics: KeyboardMetrics.resolved(for: traitCollection, preference: heightPreference),
         palette: palette
@@ -118,8 +110,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var keyboardHeightConstraint: NSLayoutConstraint?
     private var barHeightConstraint: NSLayoutConstraint?
     private var gridHeightConstraint: NSLayoutConstraint?
-    private var emojiPanelHeightConstraint: NSLayoutConstraint?
-    private var keyboardStack: UIStackView?
 
     var enableInputClicksWhenVisible: Bool { true }
 
@@ -228,18 +218,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         healthyMemorySamples = 0
         typing.reduceMemoryUsage()
         keyGrid.discardHiddenPlanes()
-        if emojiPanel?.isHidden == true { discardEmojiPanel() }
         guard !isMemoryConstrained else { return }
         isMemoryConstrained = true
         VocaPhoneDarwinCenter.post(.keyboardLowOnMemory)
-    }
-
-    private func discardEmojiPanel() {
-        emojiLoadTask?.cancel()
-        emojiLoadTask = nil
-        emojiPanel?.removeFromSuperview()
-        emojiPanel = nil
-        emojiPanelHeightConstraint = nil
     }
 
     /// iOS may terminate an extension without this callback. The headroom
@@ -383,7 +364,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     override func viewWillDisappear(_ animated: Bool) {
         healthyMemorySamples = 0
-        discardEmojiPanel()
         keyGrid.isHidden = surfaceOwnedKeyboard || panelOwnsKeyboard
         isKeyboardVisible = false
         announcesStateChanges = false
@@ -733,8 +713,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             deleteWordBackward()
             typing.resetComposition(document: refreshDocument())
             releaseUndoIfDetached()
-        case .emojiPanel:
-            showEmojiPanel(true)
         case let .swipeWord(word, alternates):
             // A swiped word arrives whole. It is never autocorrected — the
             // recogniser already chose from the dictionary — and the losers go
@@ -775,53 +753,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 advanceToNextInputMode()
             }
         }
-    }
-
-    /// Swaps the key grid for the emoji panel, in the space the grid already
-    /// occupies. The keyboard's height does not change: a panel that grew the
-    /// keyboard would cost the user more of the app they are typing into than
-    /// switching to the system emoji keyboard does.
-    private func showEmojiPanel(_ showing: Bool) {
-        guard showing || emojiPanel != nil else { return }
-        let panel = showing ? makeEmojiPanelIfNeeded() : emojiPanel
-        guard let panel else { return }
-        guard panel.isHidden == showing else { return }
-        keyGrid.endActiveInteractions()
-        keyGrid.isHidden = showing
-        panel.isHidden = !showing
-        panel.palette = palette
-        panel.metrics = KeyboardMetrics.resolved(
-            for: traitCollection,
-            preference: heightPreference
-        )
-        if !showing { discardEmojiPanel() }
-    }
-
-    private func makeEmojiPanelIfNeeded() -> EmojiPanelView? {
-        reportIfLowOnMemory()
-        if let emojiPanel { return emojiPanel }
-        let metrics = KeyboardMetrics.resolved(for: traitCollection, preference: heightPreference)
-        let panel = EmojiPanelView(palette: palette, metrics: metrics)
-        panel.delegate = self
-        panel.isHidden = true
-        keyboardStack?.addArrangedSubview(panel)
-        let height = panel.heightAnchor.constraint(equalToConstant: metrics.gridHeight)
-        height.isActive = true
-        emojiPanelHeightConstraint = height
-        emojiPanel = panel
-        // Four thousand lines, parsed off the main actor, the first time anyone
-        // asks for an emoji — and never if they do not.
-        emojiLoadTask = Task { @MainActor [weak panel] in
-            guard !Task.isCancelled else { return }
-            // Only Sendable catalog data crosses actors; the UIKit panel stays
-            // on the main actor, including its weak reference and delivery.
-            let catalog = await Task.detached(priority: .userInitiated) {
-                EmojiCatalog.load(from: Bundle(for: KeyboardViewController.self))
-            }.value
-            guard !Task.isCancelled else { return }
-            panel?.catalog = catalog
-        }
-        return panel
     }
 
     /// Times one phase of a keystroke into the trace.
@@ -890,9 +821,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// A helper rather than a `defer` written out at each entry point, because
     /// writing it out is exactly what gets forgotten. `applyDocumentTraits` did,
     /// and left a snapshot from `viewWillAppear` for the next keystroke to read
-    /// as though it described the document now; the emoji panel's handlers did
-    /// too, and left one from the emoji they had just inserted. Both are the
-    /// same mistake, and neither is possible through here.
+    /// as though it described the document now. The mistake is not possible
+    /// through here.
     @discardableResult
     private func documentEvent<T>(_ body: () -> T) -> T {
         currentDocument = readDocument()
@@ -1751,13 +1681,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         if surfaceFillsKeyboard {
             keyGrid.endActiveInteractions()
             keyGrid.isHidden = true
-            // The panel is a second full-height view in the same stack. Left
-            // showing, it stands beside a bar that now fills the keyboard.
-            emojiPanel?.isHidden = true
             dictationBar.isHidden = true
             dictationSurfaceHosting?.view.isHidden = false
         } else {
-            keyGrid.isHidden = (emojiPanel?.isHidden == false)
+            keyGrid.isHidden = false
             // One surface owns the keyboard, typing included, so there is no
             // seam between a strip and a session.
             //
@@ -2014,7 +1941,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // given. See `TouchWitness`.
         view.addGestureRecognizer(TouchWitness(label: "view"))
 #endif
-        keyboardStack = stack
         stack.axis = .vertical
         stack.spacing = KeyboardChrome.gapAboveKeys
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -2206,7 +2132,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
         barHeightConstraint?.constant = wantedBarHeight
         gridHeightConstraint?.constant = metrics.gridHeight
-        emojiPanelHeightConstraint?.constant = metrics.gridHeight
         keyboardHeightConstraint?.constant = keyboardHeight
 
         // A panel over the keys hands over their room in one frame. Only when
@@ -2419,41 +2344,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             current: keyGrid.shiftState
         ) else { return }
         keyGrid.shiftState = state
-    }
-}
-
-extension KeyboardViewController: EmojiPanelViewDelegate {
-    func emojiPanel(_ panel: EmojiPanelView, didChoose glyph: String) {
-        documentEvent {
-            textDocumentProxy.insertText(glyph)
-            // An emoji ends a word as surely as a space does, and it is never
-            // something to autocorrect.
-            typing.resetComposition(origin: .suggestion, document: refreshDocument())
-            releaseUndoIfDetached()
-        }
-    }
-
-    func emojiPanelDidRequestDelete(_ panel: EmojiPanelView) {
-        documentEvent {
-            deleteBackward()
-            releaseUndoIfDetached()
-        }
-    }
-
-    func emojiPanelDidRequestReturn(_ panel: EmojiPanelView) {
-        documentEvent {
-            commitComposition(followedBy: "\n")
-            releaseUndoIfDetached()
-        }
-    }
-
-    func emojiPanelDidRequestSpace(_ panel: EmojiPanelView) {
-        documentEvent { insertSpace() }
-    }
-
-    func emojiPanelDidRequestLetters(_ panel: EmojiPanelView) {
-        showEmojiPanel(false)
-        keyGrid.plane = .letters
     }
 }
 
