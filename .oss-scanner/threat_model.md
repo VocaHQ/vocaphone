@@ -68,7 +68,7 @@ The app talks to the gateway over HTTP(S) and WebSocket, using a bearer token.
 
 ## How to exercise it
 - The image has the debug APK built and the Gradle cache filled. From `/src/android`:
-  `./gradlew --offline testFullDebugUnitTest`. The JVM unit tests live in `app/src/test/java` and use
+  `./gradlew --offline testFullDebugUnitTest --rerun`. The JVM unit tests live in `app/src/test/java` and use
   MockWebServer for the gateway client. A single test runs with `--tests '<class>'`.
 - To get a host (x86-64) build of whisper.cpp plus `jni.c`, for harnessing the JNI boundary:
   `cmake -S app/src/test/cpp -B build/host-whisper && cmake --build build/host-whisper -j`.
