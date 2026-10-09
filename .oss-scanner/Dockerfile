@@ -4,7 +4,7 @@
 # Mirrors .github/actions/setup-android: JDK 21 (pinned by
 # android/gradle/gradle-daemon-jvm.properties), NDK 27.2.12479018, CMake 3.22.1.
 # The network is gone after this build, so Gradle runs once here to fill its cache;
-# afterwards `./gradlew --offline testFullDebugUnitTest` works from android/.
+# afterwards `./gradlew --offline testFullDebugUnitTest --rerun` works from android/.
 FROM eclipse-temurin:21-jdk-noble
 
 ENV DEBIAN_FRONTEND=noninteractive \
