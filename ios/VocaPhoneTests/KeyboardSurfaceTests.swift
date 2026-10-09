@@ -350,9 +350,8 @@ struct KeyboardSurfaceTests {
     }
 
     /// A fifth key on a row balanced for four, at Apple's widths, leaves the
-    /// spacebar around two and a half columns — half a plain row's. That is the
-    /// arithmetic behind the note on ``KeyboardOutput/emojiPanel`` explaining
-    /// why there is no emoji key.
+    /// spacebar around two and a half columns — half a plain row's. That is
+    /// why there is no emoji key: the globe reaches the system emoji keyboard.
     ///
     /// Yandex's Russian keyboard carries the same five and answers the same
     /// crowding by trimming the function keys to a column and Return to a

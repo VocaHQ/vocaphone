@@ -8,8 +8,6 @@ protocol KeyViewAccessibilityDelegate: AnyObject {
     /// A VoiceOver user choosing an accented alternative from the key's custom
     /// actions, which is the path that replaces the long-press gesture.
     func keyView(_ key: KeyView, didChooseAlternative text: String)
-    /// VoiceOver's route to the emoji panel, which has no key of its own.
-    func keyViewDidRequestEmojiPanel(_ key: KeyView)
 }
 
 final class KeyView: UIView {
@@ -338,17 +336,6 @@ final class KeyView: UIView {
 
         accessibilityLabel = spec.cap.accessibilityLabel(shift: shift)
         updateAlternativeActions()
-        if case .plane = spec.cap {
-            // The panel has no key of its own, and VoiceOver never receives the
-            // long press, so this is how a screen-reader user reaches it.
-            accessibilityCustomActions = [
-                UIAccessibilityCustomAction(name: "Emoji") { [weak self] _ in
-                    guard let self else { return false }
-                    accessibilityDelegate?.keyViewDidRequestEmojiPanel(self)
-                    return true
-                },
-            ]
-        }
         if case .shift = spec.cap {
             accessibilityValue = switch shift {
             case .off: "Off"

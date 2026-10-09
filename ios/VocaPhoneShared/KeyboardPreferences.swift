@@ -538,6 +538,9 @@ enum KeyboardPreferences {
     /// inherited default from an explicit toggle, so the one-time migration
     /// picks the quieter default and leaves the new control opt-in.
     static let typingHapticsMigrationKey = "typingHapticsMigrationV1"
+    /// The removed emoji panel's recently used emoji, up to thirty glyphs.
+    /// Kept only so ``removeRetiredEmojiRecents()`` has a name to clear.
+    static let retiredEmojiRecentsKey = "recentEmoji"
     static let swipeTypingKey = "swipeTypingEnabled"
     static let numberRowKey = "numberRowEnabled"
     /// Debug-only touch and frame instrumentation. Kept off unless a developer
@@ -769,6 +772,13 @@ enum KeyboardPreferences {
         else { return }
         defaults.removeObject(forKey: legacyKeyboardHapticsKey)
         defaults.set(true, forKey: typingHapticsMigrationKey)
+    }
+
+    /// The keyboard no longer has an emoji panel, so nothing reads its recents
+    /// or offers a way to clear them. What someone picked stays theirs only
+    /// while a feature uses it. Calling this repeatedly is safe.
+    static func removeRetiredEmojiRecents() {
+        defaults?.removeObject(forKey: retiredEmojiRecentsKey)
     }
 
     /// On by default. Tapping still types exactly as before — a swipe only

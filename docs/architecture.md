@@ -264,10 +264,10 @@ Three constraints shape the design:
    bounded cache and a capped learned-word store. While visible, the keyboard
    checks available process memory every second and before system dictionary
    work. Below 25 MiB of headroom, or on a UIKit memory warning, it releases
-   the system checker, suggestion cache, hidden emoji panel and hidden key planes.
-   Cleanup is silent and preserves the visible panel, basic typing, bundled
-   suggestions and correction undo. Emoji panels are also released when closed
-   or when the keyboard disappears; pending catalog delivery is cancelled.
+   the system checker, suggestion cache and hidden key planes. Cleanup is
+   silent and preserves the visible plane, basic typing, bundled suggestions
+   and correction undo. The keyboard has no emoji panel of its own; emoji come
+   from the system emoji keyboard via the globe key.
    System dictionary work resumes lazily after five consecutive one-second
    samples with at least 35 MiB available. These are conservative policy
    thresholds, not platform limits or a measured guarantee. iOS can still terminate an
