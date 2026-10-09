@@ -175,13 +175,13 @@ supported one.
   field. Repeat while a dictation finishes: hidden keyboards must not insert;
   returning to vocaphone's keyboard should resume the pending session once.
 - Long-press `$`, `-`, `?` for symbol alternates, and `.` in a URL field for
-  `.com`. Hold the `123` key to open the emoji panel; the keyboard's height must
-  not change when it does.
+  `.com`. There is no emoji panel on iOS: the globe key reaches the system
+  emoji keyboard.
 - Swipe a few words with **Settings → Keyboard → Swipe to type** on. Decide
   whether the recogniser has earned being on by default; if not, it ships off.
 - VoiceOver: the chips are reachable and activate, candidate changes are *not*
-  announced over every keystroke, and the accent alternates and the emoji panel
-  are reachable through the plane key's custom actions.
+  announced over every keystroke, and the accent alternates are reachable
+  through each key's custom actions.
 - Confirm the whole dictation matrix below still passes. Typing intelligence
   must not have touched hand-off, Quick Dictation, insertion or undo.
 

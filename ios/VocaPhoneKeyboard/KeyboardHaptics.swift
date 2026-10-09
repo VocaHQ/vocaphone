@@ -204,8 +204,8 @@ final class KeyboardHaptics: KeyboardFeedbackProviding {
         perform(.deleteRepeated)
     }
 
-    /// Moving between accent options, entering cursor control, opening the emoji
-    /// panel: the user is choosing rather than committing.
+    /// Moving between accent options or entering cursor control: the user is
+    /// choosing rather than committing.
     func selectionChanged() {
         perform(.selectionChanged)
     }

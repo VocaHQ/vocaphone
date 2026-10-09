@@ -51,4 +51,18 @@ struct KeyboardDefaultsTests {
         #expect(KeyboardPreferences.spokenEmoji == KeyboardDefaults.spokenEmoji)
         #expect(KeyboardPreferences.liveWords == KeyboardDefaults.liveWords)
     }
+
+    /// The emoji panel kept recently used emoji in the App Group. With the
+    /// panel gone, launch clears them rather than leaving them unread.
+    @Test func launchClearsTheRemovedEmojiPanelsRecents() {
+        let defaults = KeyboardPreferences.defaults
+        let key = KeyboardPreferences.retiredEmojiRecentsKey
+        let saved = defaults?.object(forKey: key)
+        defer { defaults?.set(saved, forKey: key) }
+        defaults?.set(["😂", "👍"], forKey: key)
+        KeyboardPreferences.removeRetiredEmojiRecents()
+        #expect(defaults?.object(forKey: key) == nil)
+        KeyboardPreferences.removeRetiredEmojiRecents()
+        #expect(defaults?.object(forKey: key) == nil)
+    }
 }

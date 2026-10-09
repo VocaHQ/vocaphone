@@ -276,25 +276,6 @@ struct KeyHitMapTests {
         #expect(grid.key(at: oldPoint, characterOnly: false)?.spec.cap == .character("1"))
     }
 
-    /// The plane key acts on touch-down, and the switch releases every tracked
-    /// touch. The hold used to hang off that touch, so it was cancelled before
-    /// it could ever fire and the panel was unreachable by its own gesture.
-    @Test func holdingThePlaneKeyOpensTheEmojiPanelAndUndoesTheSwitch() {
-        let feedback = KeyboardFeedbackSpy()
-        let delegate = KeyGridDelegateSpy()
-        let grid = Self.makeGrid(feedback: feedback, delegate: delegate)
-
-        grid.plane = .letters
-        grid.beginPlaneHold(at: .zero)
-        // What the touch-down action does the instant the finger lands.
-        grid.plane = .numbers
-        grid.completePlaneHold()
-
-        #expect(grid.plane == .letters)
-        #expect(delegate.outputs == ["emojiPanel"])
-        #expect(feedback.events == [.selectionChanged])
-    }
-
     /// A held Delete is a stream of deletions. Sounding only the first press
     /// makes a long hold read as a keyboard that has stopped responding.
     @Test func everyDeleteRepeatReportsItsOwnFeedback() {
@@ -493,7 +474,6 @@ private final class KeyGridDelegateSpy: KeyGridViewDelegate {
     func keyGrid(_ grid: KeyGridView, didProduce output: KeyboardOutput) {
         if case let .text(text) = output { insertedText.append(text) }
         switch output {
-        case .emojiPanel: outputs.append("emojiPanel")
         case .deleteBackward: outputs.append("deleteBackward")
         default: break
         }

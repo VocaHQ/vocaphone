@@ -110,6 +110,7 @@ struct VocaPhoneApp: App {
                     KeyboardPreferences.containingAppIsForeground =
                         UIApplication.shared.applicationState == .active
                     KeyboardPreferences.migrateTypingHapticsIfNeeded()
+                    KeyboardPreferences.removeRetiredEmojiRecents()
                     KeyboardPreferences.markQuickDictationRecoveryOfferIfNeeded()
                     Telemetry.shared.appFirstOpen()
                     // Started once here rather than lazily from the setup card:

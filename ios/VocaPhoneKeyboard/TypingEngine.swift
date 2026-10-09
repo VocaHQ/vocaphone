@@ -44,10 +44,11 @@ enum KeyboardMemoryBudget {
     /// suspended and reused.
     ///
     /// Some of what this extension allocates is never given back while the
-    /// process lives: every emoji drawn at panel size leaves about 50 KB in Core
-    /// Text's glyph cache, and no public API empties it. iOS reuses a suspended
-    /// extension for the next field, so that cache carried over from one
-    /// session to the next until a keyboard in use went past its limit and was
+    /// process lives: every emoji drawn at panel size — in the emoji panel this
+    /// keyboard used to have — left about 50 KB in Core Text's glyph cache, and
+    /// no public API empties it. iOS reuses a suspended extension for the next
+    /// field, so that cache carried over from one session to the next until a
+    /// keyboard in use went past its limit and was
     /// killed under the user's fingers — measured on an iPhone 14 Pro at 77 MB,
     /// after suspended snapshots at 52 to 64 MB. Ending the process while it is
     /// off screen turns that into a cold start the next time it opens, which is

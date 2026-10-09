@@ -58,7 +58,6 @@
 		1D96E4B5456A18FA04F5F15D /* GatewayEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0A752EC9784F6FD2274150 /* GatewayEndpoint.swift */; };
 		1EE70552DF2972DCE328ED01 /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA135DE504590121F6D8843 /* DiagnosticLog.swift */; };
 		1EF1A5CDD042058766DFCA5D /* KeyProximity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B90ACCDCBABF9F7412EE906 /* KeyProximity.swift */; };
-		1F45494DE6D2E1E471D446B5 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11816AC1A2219D15E870CE3E /* EmojiCatalog.swift */; };
 		2097F8952081F786F9D6D6EE /* KeyboardMemoryBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4CAA6A710C9EA76EABE051 /* KeyboardMemoryBudgetTests.swift */; };
 		214B0AB3D2362EC3EE656E53 /* SherpaLongAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054B6576EFBD7797C0B0F433 /* SherpaLongAudio.swift */; };
 		21FF5DE4F40DB8D70AC170E2 /* CustomVocabulary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85AA9291707DE7366D08EB0C /* CustomVocabulary.swift */; };
@@ -186,7 +185,6 @@
 		5E7C819783E63C4FC95E706B /* TelemetryFailureMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D81AEA9FD59906139F273D /* TelemetryFailureMapping.swift */; };
 		5F7EDEAB4B450D3C9CFD33EC /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2FEFC0D61FEC4885D5D6C31E /* WhisperKit */; };
 		5FB6858C38350EC77F45EB62 /* BrandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9711C18238B39EA2E842C0F /* BrandPalette.swift */; };
-		5FD3264678E78B2F180A074A /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11816AC1A2219D15E870CE3E /* EmojiCatalog.swift */; };
 		602CD8CB5A40F80A23E5A4A9 /* UsageStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD307AE75D5946FD5D016476 /* UsageStatsTests.swift */; };
 		606AD36CF4F0419AA2850D57 /* CaptureInterruption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88FE2727325EDC0DBFCAEFD7 /* CaptureInterruption.swift */; };
 		612E02043BE5C4F9567D128E /* SwipeAlternatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CF82ECCA1F28AB94B4142DE /* SwipeAlternatesTests.swift */; };
@@ -228,7 +226,6 @@
 		771730250FDC04B40A57E462 /* KeyAlternatives.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0EBA8DE4056FCA3CB7F093C /* KeyAlternatives.swift */; };
 		77E93C2F64DEB6AAB50C09F0 /* TranscriptSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B121356A503DF83BFA0E0D0C /* TranscriptSanitizer.swift */; };
 		78D493F3552BE347D8931376 /* DictationBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE3489C985467C23EB6A90AD /* DictationBarView.swift */; };
-		78FFFEBE9A3319D8D888CBFA /* catalog.tsv in Resources */ = {isa = PBXBuildFile; fileRef = 822DD18B4E8BBF63F64E656C /* catalog.tsv */; };
 		79D51827CA805EB6D890699C /* SherpaLongAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054B6576EFBD7797C0B0F433 /* SherpaLongAudio.swift */; };
 		7AE5598954918484EE8BB6B9 /* KeyboardHandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E5F9C1D93EF4EFB2AF5EA7 /* KeyboardHandoffView.swift */; };
 		7B0D3581B262BEB5AC561C23 /* TelemetryStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D9836F52892447650F0375 /* TelemetryStats.swift */; };
@@ -337,7 +334,6 @@
 		AA2103E195D36B18D25CBF86 /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA135DE504590121F6D8843 /* DiagnosticLog.swift */; };
 		AAA9A144AC2D01685557DD29 /* PauseDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93FB6C9509860E45DDEA1DB5 /* PauseDetector.swift */; };
 		AAD8F3868CD1C6C2338CDA74 /* DownloadReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9500368520DA46E5DE55186E /* DownloadReadinessTests.swift */; };
-		AB11765BF143D832E2B89511 /* catalog.tsv in Resources */ = {isa = PBXBuildFile; fileRef = 822DD18B4E8BBF63F64E656C /* catalog.tsv */; };
 		AC222A4D19661A309FEC32C1 /* SpokenNumbers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E590CFC53039DA367280B8CD /* SpokenNumbers.swift */; };
 		ACDADCAF73BF41FE2355ED15 /* VocaPhoneKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B7028AF4B134C7EDD726891E /* VocaPhoneKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AD2CCDE7DC189E63810890BB /* SwipeRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07C4BD2142E9377F123A8848 /* SwipeRecognizer.swift */; };
@@ -390,7 +386,6 @@
 		C4FBF5B17A8F5C3A564AB244 /* SherpaThreads.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E8A407AEA42CEE6E00BF48 /* SherpaThreads.swift */; };
 		C571D55DDA9D6C70259F0236 /* TouchTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF0FF0280003723E5D64E2A /* TouchTrace.swift */; };
 		C5E88735AB4386DEFEBD2075 /* TelemetryFailureMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D81AEA9FD59906139F273D /* TelemetryFailureMapping.swift */; };
-		C63521DE52DC5A8DCD6847AE /* EmojiPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 348E2313B75BA61D777FA18B /* EmojiPanelView.swift */; };
 		C6408C0FBE97AC8E61B7A373 /* TouchTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF0FF0280003723E5D64E2A /* TouchTrace.swift */; };
 		C6E529713960996E85EFD275 /* SherpaIncrementalSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0A732D03A2951F028DDF6E /* SherpaIncrementalSessionTests.swift */; };
 		C729D3D95B9B597E56C485E7 /* SpokenNumbers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E590CFC53039DA367280B8CD /* SpokenNumbers.swift */; };
@@ -495,7 +490,6 @@
 		F4559E426C64C1D75CA1426A /* ModelDownloadStartDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4ABCA9AE680E3AD5604F718 /* ModelDownloadStartDecision.swift */; };
 		F4917037D6C4FCB243F7F7EA /* UsageStatsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A5908FB5C22FDA5C22F947 /* UsageStatsStore.swift */; };
 		F4E8B1A9D00B14184B01B223 /* SemanticPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6C44F954E7A62974C66109 /* SemanticPalette.swift */; };
-		F50496BCCFCB73757D3DDF13 /* EmojiCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 882F3122E12BD0F2BF44ADC9 /* EmojiCatalogTests.swift */; };
 		F53D8FDB8F64E78B005D5924 /* RetiredLocalModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BC2340A8CCED42A8274C7CD /* RetiredLocalModels.swift */; };
 		F5468739AA5410076BE0C5EF /* SpokenEmojiTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6B7EB27436670B0B1EB1D1 /* SpokenEmojiTests.swift */; };
 		F5C5B0D0978D021F77FF1422 /* RetiredLocalModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BC2340A8CCED42A8274C7CD /* RetiredLocalModels.swift */; };
@@ -575,7 +569,6 @@
 		0DFD83D2BCB84400E7981A4B /* SwipeTrailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeTrailTests.swift; sourceTree = "<group>"; };
 		0F8F5499118EF044F9EC6A07 /* EngineWarmPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineWarmPolicy.swift; sourceTree = "<group>"; };
 		105FC942932DAFE80242473E /* StatsPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsPresentation.swift; sourceTree = "<group>"; };
-		11816AC1A2219D15E870CE3E /* EmojiCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalog.swift; sourceTree = "<group>"; };
 		1247ACC1CA43648BE4449042 /* SnippetExpander.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnippetExpander.swift; sourceTree = "<group>"; };
 		136E505E4C5668F9ACCD30C5 /* EmojiSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSuggestions.swift; sourceTree = "<group>"; };
 		13FF1A5ABC4220C886291309 /* LocalTranscriptionPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTranscriptionPreferences.swift; sourceTree = "<group>"; };
@@ -602,7 +595,6 @@
 		332854D2644CFCE5843E3F31 /* StopQuickDictationIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopQuickDictationIntent.swift; sourceTree = "<group>"; };
 		342F2B3B437269514C969C77 /* SetupStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupStatus.swift; sourceTree = "<group>"; };
 		346B6558EE5557A35C916067 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
-		348E2313B75BA61D777FA18B /* EmojiPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPanelView.swift; sourceTree = "<group>"; };
 		3498C523755A678225152570 /* DarwinNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarwinNotifications.swift; sourceTree = "<group>"; };
 		35552C81906176B144789351 /* HandoffForegroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffForegroundTests.swift; sourceTree = "<group>"; };
 		36767643E0E4AA29BBB3D4FD /* SessionRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRecord.swift; sourceTree = "<group>"; };
@@ -683,12 +675,10 @@
 		7F810558C0B42C924BC6CF21 /* DictatedTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictatedTranscriptTests.swift; sourceTree = "<group>"; };
 		7FED099938C2E7D091FFE2BD /* KeyboardGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardGeometryTests.swift; sourceTree = "<group>"; };
 		8201161064874EF522DF3F70 /* SpokenNumbersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpokenNumbersTests.swift; sourceTree = "<group>"; };
-		822DD18B4E8BBF63F64E656C /* catalog.tsv */ = {isa = PBXFileReference; path = catalog.tsv; sourceTree = "<group>"; };
 		858088F81E12EC57E13F9492 /* KeyboardHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHaptics.swift; sourceTree = "<group>"; };
 		85AA9291707DE7366D08EB0C /* CustomVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomVocabulary.swift; sourceTree = "<group>"; };
 		867A5BD6049E4D6788DB704C /* TypingWordListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingWordListTests.swift; sourceTree = "<group>"; };
 		87F5D76EB1E944F3A323006D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		882F3122E12BD0F2BF44ADC9 /* EmojiCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalogTests.swift; sourceTree = "<group>"; };
 		88548183D3F0AD213E2268E1 /* KeyboardURLLauncher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KeyboardURLLauncher.m; sourceTree = "<group>"; };
 		88FE2727325EDC0DBFCAEFD7 /* CaptureInterruption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureInterruption.swift; sourceTree = "<group>"; };
 		894063AE1B3DDA92C529268D /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
@@ -892,8 +882,6 @@
 				BE3489C985467C23EB6A90AD /* DictationBarView.swift */,
 				9DCCE5FE1A8242B96B8CA9FD /* DictationPresentation.swift */,
 				6CC10480CFBC7D25599BAD55 /* DictationSurfaceView.swift */,
-				11816AC1A2219D15E870CE3E /* EmojiCatalog.swift */,
-				348E2313B75BA61D777FA18B /* EmojiPanelView.swift */,
 				136E505E4C5668F9ACCD30C5 /* EmojiSuggestions.swift */,
 				B973580E9433CC9EC9A76024 /* FrameMonitor.swift */,
 				3785791C0D9A5ABA2506F1B7 /* Info.plist */,
@@ -1102,7 +1090,6 @@
 		8D08E120B30F4F08A393B134 /* emoji */ = {
 			isa = PBXGroup;
 			children = (
-				822DD18B4E8BBF63F64E656C /* catalog.tsv */,
 				9532218075A83B4122807217 /* suggestions.tsv */,
 			);
 			path = emoji;
@@ -1121,7 +1108,6 @@
 				FA83B914C241E5F8BF8F32AC /* DictationBarLayoutTests.swift */,
 				56047A6705008B5F17F003CE /* DictationPresentationTests.swift */,
 				9500368520DA46E5DE55186E /* DownloadReadinessTests.swift */,
-				882F3122E12BD0F2BF44ADC9 /* EmojiCatalogTests.swift */,
 				41C0A3D1DBF6BCF25C37CF24 /* EmojiSuggestionsTests.swift */,
 				73DFDFC8F3D8E3EBFE787F85 /* EngineWarmPolicyTests.swift */,
 				BCED57ED884B29F0570DE4B3 /* GatewayRecordingUploadTests.swift */,
@@ -1412,7 +1398,6 @@
 				06DDF0287EE04B56BDA4C2B5 /* PrivacyInfo.xcprivacy in Resources */,
 				4BCAB0C25D5086B323F7D8B6 /* Settings.bundle in Resources */,
 				D8CF566D7DB99FE6DF979A09 /* SetupKeyboard.mp4 in Resources */,
-				78FFFEBE9A3319D8D888CBFA /* catalog.tsv in Resources */,
 				9849AD694BF003BF6760FE69 /* en-bigrams.txt in Resources */,
 				508FCAE802BD8F630DB54AB7 /* en.txt in Resources */,
 				36A5F07E79173A14F240A47F /* local_model_pins.json in Resources */,
@@ -1436,7 +1421,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				F76D2952E85E8F009A2BC034 /* PrivacyInfo.xcprivacy in Resources */,
-				AB11765BF143D832E2B89511 /* catalog.tsv in Resources */,
 				4C26EF1A498140E6AEE51D86 /* en-bigrams.txt in Resources */,
 				1B6EE0F70EFC9078A48F7EB6 /* en.txt in Resources */,
 				DDA6AC6CD7EC0A3EFE58DE84 /* suggestions.tsv in Resources */,
@@ -1463,8 +1447,6 @@
 				E4187B9A8DA6FBBA6DE095AC /* DictationPresentation.swift in Sources */,
 				C8A0B999624A4CA5DFBD8330 /* DictationSurfaceView.swift in Sources */,
 				22916AAC244D261969A38330 /* DownloadReadiness.swift in Sources */,
-				5FD3264678E78B2F180A074A /* EmojiCatalog.swift in Sources */,
-				C63521DE52DC5A8DCD6847AE /* EmojiPanelView.swift in Sources */,
 				40959874C3AE5396E1177CC4 /* EmojiSuggestions.swift in Sources */,
 				3632C1278A31CC6ADBAC33D5 /* EmojiTable.swift in Sources */,
 				D6C5C2566FDD55046D16D878 /* FrameMonitor.swift in Sources */,
@@ -1781,8 +1763,6 @@
 				CDFE48F60144A96B1C41080A /* DictationSurfaceView.swift in Sources */,
 				F1EC3EE86C05A57F3A42EFF1 /* DownloadReadiness.swift in Sources */,
 				AAD8F3868CD1C6C2338CDA74 /* DownloadReadinessTests.swift in Sources */,
-				1F45494DE6D2E1E471D446B5 /* EmojiCatalog.swift in Sources */,
-				F50496BCCFCB73757D3DDF13 /* EmojiCatalogTests.swift in Sources */,
 				75EC59510885420249491B03 /* EmojiSuggestions.swift in Sources */,
 				CD600A39A4DFB39AD6F0E5E1 /* EmojiSuggestionsTests.swift in Sources */,
 				835DAA1BE436ED79B7C602FC /* EmojiTable.swift in Sources */,

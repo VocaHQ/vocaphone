@@ -7,7 +7,7 @@ import UIKit
 /// Every surface in this extension is a `UIView`, and until now the only way to
 /// look at any of them was to build the extension, install the keyboard, grant
 /// Full Access, switch to it in another app, and then type the exact thing that
-/// produces the state. That is why the strip, the emoji panel and half the
+/// produces the state. That is why the strip and half the
 /// dictation bar's states had never been seen anywhere but a default-size,
 /// left-to-right, English simulator.
 ///

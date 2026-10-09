@@ -5,9 +5,8 @@ on:
     branches: [main]
     paths:
       - 'ios/**'
-      # EmojiCatalogTests asserts against the real shared catalog, so a
-      # change to it has to run this suite. Worth the macOS minutes: it is
-      # the only check that the file both keyboards ship still parses.
+      # The word lists and emoji suggestions both keyboards ship are read by
+      # this suite, so a change to them has to run it.
       - 'assets/keyboard/**'
       # Prose next to the code it documents cannot break the build, and macOS
       # minutes bill at ten times the Linux rate.
