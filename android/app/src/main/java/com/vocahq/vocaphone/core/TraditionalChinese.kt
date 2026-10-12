@@ -67,24 +67,41 @@ object TraditionalChinese {
      * The finished transcript in [script], or unchanged when it is not
      * Chinese.
      *
-     * [language] is the language the text is written in. A pinned language
-     * other than Mandarin or Cantonese is never converted: Japanese is written
-     * with the same characters, and 会社 is not a Chinese word to correct.
-     * With Automatic, text holding any kana or Hangul is left alone for the
-     * same reason.
+     * [language] is the language the text is written in. A language other
+     * than Mandarin or Cantonese is never converted: Japanese is written with
+     * the same characters, and 会社 is not a Chinese word to correct. Text
+     * holding any kana or Hangul is left alone for the same reason, whatever
+     * the language says — a model that detected Chinese in a mixed sentence
+     * has not made the Japanese in it Chinese.
+     *
+     * Web addresses are skipped: a path in Chinese characters names one page,
+     * and its Traditional spelling names another.
      */
     fun apply(text: String, script: ChineseScript, language: String): String {
         if (script == ChineseScript.UNCHANGED || !appliesTo(text, language)) return text
         val loaded = load() ?: return text
-        return loaded.convert(text, script)
+        val output = StringBuilder(text.length)
+        var cursor = 0
+        for (match in WEB_ADDRESS.findAll(text)) {
+            output.append(loaded.convert(text.substring(cursor, match.range.first), script))
+            output.append(match.value)
+            cursor = match.range.last + 1
+        }
+        return output.append(loaded.convert(text.substring(cursor), script)).toString()
     }
 
     fun appliesTo(text: String, language: String): Boolean =
-        when (language.lowercase().substringBefore('-')) {
-            "zh", "yue" -> containsHan(text)
-            "", "auto" -> containsHan(text) && text.codePoints().noneMatch(::isKanaOrHangul)
-            else -> false
-        }
+        language.lowercase().substringBefore('-') in CHINESE_CODES &&
+            containsHan(text) && text.codePoints().noneMatch(::isKanaOrHangul)
+
+    private val CHINESE_CODES = setOf("zh", "yue", "", "auto")
+
+    /**
+     * A scheme and everything up to the next space, as [ProtectedSpans] reads
+     * an address. Bare domains need nothing: they are ASCII, which the tables
+     * leave alone.
+     */
+    private val WEB_ADDRESS = Regex("(?i:https?)://\\S+")
 
     /**
      * Remember the process [AssetManager]. Nothing is read until someone who
@@ -234,11 +251,20 @@ object TraditionalChinese {
      * Lengths are UTF-16 units. A candidate that would split a surrogate pair
      * matches no key, since every key is whole characters, so the units never
      * cut a character in two.
+     *
+     * The longest key is fifteen characters, but most characters begin no key
+     * at all and the rest rarely begin a long one. Bounding the search by the
+     * longest key *starting with that character* turns most positions into a
+     * single map miss rather than fifteen substrings.
      */
     internal class Table(private val entries: Map<String, String>) {
-        private val longest = entries.keys.maxOfOrNull { it.length } ?: 0
+        private val longestFrom: Map<Int, Int> = entries.keys
+            .filter { it.isNotEmpty() }
+            .groupBy({ it.codePointAt(0) }, { it.length })
+            .mapValues { (_, lengths) -> lengths.max() }
 
         fun matchLength(text: String, start: Int): Int {
+            val longest = longestFrom[text.codePointAt(start)] ?: return 0
             var length = minOf(longest, text.length - start)
             while (length > 0) {
                 if (entries.containsKey(text.substring(start, start + length))) return length

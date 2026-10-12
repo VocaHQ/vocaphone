@@ -82,12 +82,47 @@ class TraditionalChineseTest {
         assertEquals(ChineseScript.UNCHANGED, ChineseScript.fromStored("zh-Hant"))
     }
 
+    /** A Chinese path names one page; its Traditional spelling names another. */
+    @Test
+    fun `web addresses are left alone`() {
+        assertEquals(
+            "開啟 https://example.com/软件 看看軟體",
+            TraditionalChinese.apply("打开 https://example.com/软件 看看软件", ChineseScript.TAIWAN, "zh"),
+        )
+    }
+
     /**
-     * Before custom vocabulary and snippets, so both see the characters the
-     * user writes. Also applies to RAW: it is a writing system, not an edit.
+     * A model that reports `zh` for a mixed sentence has not made its Japanese
+     * Chinese: the kana guard holds whatever the language says.
      */
     @Test
-    fun `funnel converts before later stages and for raw`() {
+    fun `kana blocks conversion even when reported as Chinese`() {
+        assertEquals("软件は会社です", TraditionalChinese.apply("软件は会社です", ChineseScript.TAIWAN, "zh"))
+    }
+
+    /**
+     * The trigger is Traditional and the spoken text Simplified, so the snippet
+     * only fires if conversion runs first; and the expansion is Simplified, so
+     * it stays that way only if conversion does not run after.
+     */
+    @Test
+    fun `conversion runs before snippets and not after`() {
+        assertEquals(
+            "简体软件",
+            DictatedTranscript.finished(
+                "软件",
+                style = WritingStyle.RAW,
+                language = "zh",
+                repairSpeech = false,
+                chineseScript = ChineseScript.TAIWAN,
+                snippets = listOf(Snippet(id = "1", trigger = "軟體", expansion = "简体软件")),
+            ),
+        )
+    }
+
+    /** Applies to RAW too: it is a writing system, not an edit. */
+    @Test
+    fun `funnel converts raw`() {
         assertEquals(
             "我們用軟體",
             DictatedTranscript.finished(

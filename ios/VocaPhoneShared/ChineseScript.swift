@@ -45,29 +45,41 @@ enum TraditionalChinese {
     /// The finished transcript in `script`, or unchanged when it is not
     /// Chinese.
     ///
-    /// `language` is the language the text is written in. A pinned language
-    /// other than Mandarin or Cantonese is never converted: Japanese is written
-    /// with the same characters, and 会社 is not a Chinese word to correct.
-    /// With Automatic, text holding any kana or Hangul is left alone for the
-    /// same reason.
+    /// `language` is the language the text is written in. A language other
+    /// than Mandarin or Cantonese is never converted: Japanese is written with
+    /// the same characters, and 会社 is not a Chinese word to correct. Text
+    /// holding any kana or Hangul is left alone for the same reason, whatever
+    /// the language says — a model that detected Chinese in a mixed sentence
+    /// has not made the Japanese in it Chinese.
+    ///
+    /// Web addresses are skipped: a path in Chinese characters names one
+    /// page, and its Traditional spelling names another.
     static func apply(_ text: String, script: ChineseScript, language: String) -> String {
         guard script != .unchanged, appliesTo(text, language: language),
               let tables = tables
         else { return text }
-        return tables.convert(text, region: script)
+        let string = text as NSString
+        var output = ""
+        var cursor = 0
+        for match in webAddress?.matches(in: text, range: NSRange(location: 0, length: string.length)) ?? [] {
+            let before = NSRange(location: cursor, length: match.range.location - cursor)
+            output += tables.convert(string.substring(with: before), region: script)
+            output += string.substring(with: match.range)
+            cursor = match.range.location + match.range.length
+        }
+        return output + tables.convert(string.substring(from: cursor), region: script)
     }
 
     static func appliesTo(_ text: String, language: String) -> Bool {
         let base = language.lowercased().split(separator: "-").first.map(String.init) ?? ""
-        switch base {
-        case "zh", "yue":
-            return containsHan(text)
-        case "", "auto":
-            return containsHan(text) && !text.unicodeScalars.contains(where: isKanaOrHangul)
-        default:
-            return false
-        }
+        guard ["zh", "yue", "", "auto"].contains(base) else { return false }
+        return containsHan(text) && !text.unicodeScalars.contains(where: isKanaOrHangul)
     }
+
+    /// A scheme and everything up to the next space, as ``ProtectedSpans``
+    /// reads an address. Bare domains need nothing: they are ASCII, which
+    /// the tables leave alone.
+    private static let webAddress = try? NSRegularExpression(pattern: "(?i:https?)://\\S+")
 
     /// Read once, on first use, and only by someone who has asked for
     /// Traditional: about a megabyte of tables nobody else should pay for.
@@ -194,21 +206,31 @@ enum TraditionalChinese {
     /// canonical equivalence, and a CJK compatibility ideograph is canonically
     /// equal to the character it normalizes to, which would make the two keys
     /// one.
+    ///
+    /// The longest key is fifteen characters, but most characters begin no key
+    /// at all and the rest rarely begin a long one. Bounding the search by the
+    /// longest key *starting with that character* turns most positions into a
+    /// single dictionary miss rather than fifteen.
     struct Table: Sendable {
         private let entries: [[Unicode.Scalar]: String]
-        private let longest: Int
+        private let longestFrom: [Unicode.Scalar: Int]
 
         init(_ entries: [String: String]) {
             var keyed: [[Unicode.Scalar]: String] = [:]
+            var longestFrom: [Unicode.Scalar: Int] = [:]
             keyed.reserveCapacity(entries.count)
             for (key, value) in entries {
-                keyed[Array(key.unicodeScalars)] = value
+                let scalars = Array(key.unicodeScalars)
+                guard let first = scalars.first else { continue }
+                keyed[scalars] = value
+                longestFrom[first] = max(longestFrom[first] ?? 0, scalars.count)
             }
             self.entries = keyed
-            longest = keyed.keys.map(\.count).max() ?? 0
+            self.longestFrom = longestFrom
         }
 
         func match(_ scalars: [Unicode.Scalar], at start: Int) -> (Int, String)? {
+            guard let longest = longestFrom[scalars[start]] else { return nil }
             var length = min(longest, scalars.count - start)
             while length > 0 {
                 if let value = entries[Array(scalars[start..<start + length])] {

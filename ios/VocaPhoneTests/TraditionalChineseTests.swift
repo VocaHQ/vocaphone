@@ -57,9 +57,41 @@ struct TraditionalChineseTests {
         #expect(TraditionalChinese.apply("Meet at 3pm.", script: .taiwan, language: "auto") == "Meet at 3pm.")
     }
 
-    /// Before custom vocabulary and snippets, so both see the characters the
-    /// user writes. Also applies to `raw`: it is a writing system, not an edit.
-    @Test func funnelConvertsBeforeLaterStagesAndForRaw() {
+    /// A Chinese path names one page; its Traditional spelling names another.
+    @Test func webAddressesAreLeftAlone() {
+        #expect(
+            TraditionalChinese.apply("打开 https://example.com/软件 看看软件", script: .taiwan, language: "zh")
+                == "開啟 https://example.com/软件 看看軟體"
+        )
+    }
+
+    /// A model that reports `zh` for a mixed sentence has not made its
+    /// Japanese Chinese: the kana guard holds whatever the language says.
+    @Test func kanaBlocksConversionEvenWhenReportedAsChinese() {
+        #expect(TraditionalChinese.apply("软件は会社です", script: .taiwan, language: "zh") == "软件は会社です")
+    }
+
+    /// The trigger is Traditional and the spoken text Simplified, so the
+    /// snippet only fires if conversion runs first; and the expansion is
+    /// Simplified, so it stays that way only if conversion does not run after.
+    @Test func conversionRunsBeforeSnippetsAndNotAfter() {
+        #expect(
+            DictatedTranscript.finished(
+                "软件",
+                style: .raw,
+                language: "zh",
+                repairSpeech: false,
+                numbersAsDigits: false,
+                spokenEmoji: false,
+                chineseScript: .taiwan,
+                snippets: [Snippet(trigger: "軟體", expansion: "简体软件")],
+                vocabulary: []
+            ) == "简体软件"
+        )
+    }
+
+    /// Applies to `raw` too: it is a writing system, not an edit.
+    @Test func funnelConvertsRaw() {
         #expect(
             DictatedTranscript.finished(
                 "我们用软件",
