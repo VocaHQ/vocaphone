@@ -98,14 +98,17 @@ internal object AccentPicker {
     }
 }
 
-/** Hold-delete starts on characters, then words, then the rest of the line. */
+/**
+ * Hold-delete starts on characters, then words, then the rest of the line.
+ * Repeat cadence accelerates as chunk size grows.
+ */
 internal object DeleteHold {
     const val REPEAT_DELAY_MS = 380L
     const val CHAR_INTERVAL_MS = 55L
     const val WORD_AFTER_MS = 1_000L
     const val LINE_AFTER_MS = 2_200L
-    const val WORD_INTERVAL_MS = 130L
-    const val LINE_INTERVAL_MS = 200L
+    const val WORD_INTERVAL_MS = 45L
+    const val LINE_INTERVAL_MS = 35L
 
     enum class Stage { CHAR, WORD, LINE }
 
