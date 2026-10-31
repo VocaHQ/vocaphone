@@ -306,11 +306,31 @@ private suspend fun check(container: com.vocahq.vocaphone.AppContainer, text: St
 
 /**
  * Whether the Writing check screen checks [text] at all. Its rules are
- * English ones: on French, "dont" would be "corrected" to "don't". The same
- * test the keyboards make, with the keyboard's word list as [isDictionaryWord].
+ * English ones: on a French sentence, "dont" would be "corrected" to "don't".
+ * So text is left alone only when it is clearly not English, by the test the
+ * keyboards make, with the keyboard's word list as [isDictionaryWord].
+ *
+ * That test is only trusted from [LANGUAGE_TEST_MIN_WORDS] words on. It
+ * calls text English on two marker words, or on two thirds of its words
+ * being in the list, and a misspelling or a name is a word the list does not
+ * know. Below six words a single unknown word is enough to fail it: "please
+ * recieve" is half unknown, and a lone "recieve" has no known word at all.
+ * From six on, English text can carry two (a typo and a name) and still
+ * pass, and a whole French sentence still fails. Shorter text is always
+ * checked: the cost of being wrong there is one suggestion to ignore, and
+ * the cost of skipping is a missed fix on exactly the text, a selected word
+ * or a short message, people most often bring here.
+ *
+ * Mirrors `WritingCheck.applies(to:)` in ios/VocaPhoneShared/Writing/WritingCheckInApp.swift.
  */
-internal fun writingCheckApplies(text: String, isDictionaryWord: (String) -> Boolean): Boolean =
-    text.any(Char::isLetter) && TranscriptRepair.isEnglish(text, "auto", isDictionaryWord)
+internal fun writingCheckApplies(text: String, isDictionaryWord: (String) -> Boolean): Boolean {
+    if (!text.any(Char::isLetter)) return false
+    val words = text.split(Regex("\\s+")).count { chunk -> chunk.any(Char::isLetter) }
+    return words < LANGUAGE_TEST_MIN_WORDS || TranscriptRepair.isEnglish(text, "auto", isDictionaryWord)
+}
+
+/** How many words text needs before the language test decides whether to check it. */
+internal const val LANGUAGE_TEST_MIN_WORDS = 6
 
 /**
  * [checker] over [text], with a second pass after [retryMillis] if the model

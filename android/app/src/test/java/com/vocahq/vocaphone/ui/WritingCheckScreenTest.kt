@@ -1,5 +1,6 @@
 package com.vocahq.vocaphone.ui
 
+import com.vocahq.vocaphone.core.TranscriptRepair
 import com.vocahq.vocaphone.grammar.GrammarFixtures
 import com.vocahq.vocaphone.writing.WritingCheck
 import com.vocahq.vocaphone.writing.WritingFixtures
@@ -23,19 +24,34 @@ class WritingCheckScreenTest {
     }
 
     @Test
-    fun frenchIsNotChecked() {
-        val french = "Je sais dont il parle."
+    fun aFrenchSentenceIsNotChecked() {
+        val french = "C'est le livre dont elle parle."
         // The English rules would offer "don't" here: the language test is
         // what keeps the screen from suggesting it.
         assertTrue(checker.check(french).suggestions.any { it.shownReplacement == "don't" })
         assertFalse(writingCheckApplies(french) { it in english })
-        assertFalse(writingCheckApplies("C'est le livre dont elle parle.") { it in english })
+        assertFalse(writingCheckApplies("Voici la personne dont elle parle souvent.") { it in english })
     }
 
     @Test
     fun englishIsChecked() {
         assertTrue(writingCheckApplies("I dont think this is the right way to do it.") { it in english })
         assertTrue(writingCheckApplies("dont worry") { it in english })
+    }
+
+    @Test
+    fun aSingleMisspelledWordIsChecked() {
+        // What selecting one word and choosing Writing check brings here.
+        assertTrue(writingCheckApplies("recieve") { it in english })
+        assertTrue(checker.check("recieve").suggestions.any { it.shownReplacement == "receive" })
+    }
+
+    @Test
+    fun aShortMessageIsChecked() {
+        // Too short for the language test to tell: half its words are unknown.
+        assertFalse(TranscriptRepair.isEnglish("please recieve", "auto") { it in english })
+        assertTrue(writingCheckApplies("please recieve") { it in english })
+        assertTrue(checker.check("please recieve").suggestions.any { it.shownReplacement == "receive" })
     }
 
     @Test

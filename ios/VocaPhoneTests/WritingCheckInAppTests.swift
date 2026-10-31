@@ -23,19 +23,32 @@ struct WritingCheckInAppTests {
         func add() { lock.withLock { count += 1 } }
     }
 
-    @Test func frenchIsNotChecked() {
-        let french = "Je sais dont il parle."
+    @Test func aFrenchSentenceIsNotChecked() {
+        let french = "C'est le livre dont elle parle."
         // The English rules would offer "don't" here: the language test is
         // what keeps the screen from suggesting it.
         #expect(Self.checker.check(french).suggestions.contains { $0.shownReplacement == "don't" })
         #expect(!Self.applies(french))
-        #expect(!Self.applies("C'est le livre dont elle parle."))
+        #expect(!Self.applies("Voici la personne dont elle parle souvent."))
     }
 
     @Test func englishIsChecked() {
         #expect(!Self.english.isEmpty)
         #expect(Self.applies("I dont think this is the right way to do it."))
         #expect(Self.applies("dont worry"))
+    }
+
+    @Test func aSingleMisspelledWordIsChecked() {
+        // What selecting one word and choosing Writing check brings here.
+        #expect(Self.applies("recieve"))
+        #expect(Self.checker.check("recieve").suggestions.contains { $0.shownReplacement == "receive" })
+    }
+
+    @Test func aShortMessageIsChecked() {
+        // Too short for the language test to tell: half its words are unknown.
+        #expect(!TranscriptRepair.isEnglish("please recieve", isDictionaryWord: Self.english.contains))
+        #expect(Self.applies("please recieve"))
+        #expect(Self.checker.check("please recieve").suggestions.contains { $0.shownReplacement == "receive" })
     }
 
     @Test func textWithoutLettersIsNotChecked() {
