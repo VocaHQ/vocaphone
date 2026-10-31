@@ -412,7 +412,7 @@ class VocaPhoneViewModel @JvmOverloads constructor(
     fun setTypingGrammar(enabled: Boolean) =
         viewModelScope.launch { container.settings.setTypingGrammar(enabled) }
 
-    /** Fetches and verifies the grammar model; [grammarModel] says how it went. */
+    /** Writing check's offer: fetches and verifies the grammar model; [grammarModel] says how it went. */
     fun downloadGrammarModel() = afterGrammarModel {}
 
     fun setGrammarSureOnly(enabled: Boolean) =
@@ -433,8 +433,14 @@ class VocaPhoneViewModel @JvmOverloads constructor(
     fun setTypoAutoFix(enabled: Boolean) =
         viewModelScope.launch { container.settings.setTypoAutoFix(enabled) }
 
+    /**
+     * Every grammar model download the person asks for goes through here, so
+     * this is where their agreement is recorded: app start retries a missing
+     * model (a moved pin, a failed attempt) only for someone who agreed.
+     */
     private fun afterGrammarModel(enable: suspend () -> Unit) {
         container.workScope.launch {
+            container.settings.setGrammarModelRequested()
             // Already verified: no download, and the session the other
             // setting may have loaded is kept rather than thrown away.
             if (container.grammarModel.state.value.ready) {
@@ -449,8 +455,15 @@ class VocaPhoneViewModel @JvmOverloads constructor(
         }
     }
 
-    /** Stops a grammar model download and discards what it fetched; the setting stays off. */
-    fun cancelGrammarDownload() = container.grammarModel.cancel()
+    /**
+     * Stops a grammar model download and discards what it fetched. Changing
+     * your mind withdraws the agreement too, so the next start does not fetch
+     * it anyway, and Fix grammar stays off.
+     */
+    fun cancelGrammarDownload() {
+        container.grammarModel.cancel()
+        container.workScope.launch { container.settings.withdrawGrammarModelRequest() }
+    }
 
     fun setNumbersAsDigits(enabled: Boolean) =
         viewModelScope.launch { container.settings.setNumbersAsDigits(enabled) }

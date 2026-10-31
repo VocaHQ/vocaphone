@@ -19,6 +19,7 @@ import com.vocahq.vocaphone.grammar.GrammarCorrector
 import com.vocahq.vocaphone.ime.VoiceShortcutIme
 import com.vocahq.vocaphone.local.DeviceProfile
 import com.vocahq.vocaphone.local.GrammarModelCatalog
+import com.vocahq.vocaphone.local.GrammarModelConsent
 import com.vocahq.vocaphone.local.GrammarModelStore
 import com.vocahq.vocaphone.local.LocalModelManager
 import com.vocahq.vocaphone.local.RetiredModels
@@ -184,16 +185,23 @@ class AppContainer(context: Context) {
      * Checks the grammar model, replacing one an earlier build downloaded.
      *
      * A new pin is a new folder, so after an update the old model's files are
-     * dead weight and the current one is missing. Whoever had Fix grammar or
-     * Check grammar on agreed to this download already; leaving the switch on
-     * over a missing model would quietly stop correcting anything. A failed
-     * download (offline, or the app stopped mid-way) is retried on every start
-     * while a grammar setting is on and the model is still missing.
+     * dead weight and the current one is missing. Whoever agreed to the model
+     * (Fix grammar, or Writing check's download offer) agreed to this download
+     * already; leaving Fix grammar on over a missing model would quietly stop
+     * correcting anything. A failed download (offline, or the app stopped
+     * mid-way) is retried on every start while that agreement stands and the
+     * model is still missing. "Check while typing" alone is not an agreement:
+     * it works without the model.
      */
     private suspend fun refreshGrammarModel() {
+        // Before restore() sweeps the retired folders: they are what shows an
+        // earlier build's download was agreed to.
+        settings.migrateGrammarModelRequested(filesOnPhone = grammarModel.hasFiles())
         val downloaded = grammarModel.restore(
             wanted = {
-                GrammarModelCatalog.available && settings.current().let { it.fixGrammar || it.typingGrammar }
+                settings.current().let {
+                    GrammarModelConsent.wanted(GrammarModelCatalog.available, it.grammarModelRequested, it.fixGrammar)
+                }
             },
         )
         if (downloaded) grammar.modelChanged()

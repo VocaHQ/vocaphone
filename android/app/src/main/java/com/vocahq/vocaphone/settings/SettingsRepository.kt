@@ -17,6 +17,7 @@ import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.ModelTranslationSupport
 import com.vocahq.vocaphone.core.Snippet
+import com.vocahq.vocaphone.local.GrammarModelConsent
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.core.TranscriptionLanguage
@@ -225,6 +226,14 @@ data class VocaPhoneSettings(
      * downloaded and verified; see [com.vocahq.vocaphone.grammar.GrammarCorrector].
      */
     val fixGrammar: Boolean = false,
+    /**
+     * Whether the person agreed to download the grammar model, from Fix grammar
+     * or Writing check's download offer. App start fetches a missing model
+     * (a moved pin, a failed attempt) only while this or [fixGrammar] is on;
+     * [typingGrammar] alone never downloads it. See
+     * [com.vocahq.vocaphone.local.GrammarModelConsent].
+     */
+    val grammarModelRequested: Boolean = false,
     /**
      * "Only sure fixes": the grammar model offers and applies only the edits
      * it is surest of (a higher KEEP bias). Off means "Balanced". Applies to
@@ -601,6 +610,36 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setFixGrammar(enabled: Boolean) = put(Keys.FIX_GRAMMAR, enabled)
 
+    /** Records that the person agreed to download the grammar model. */
+    suspend fun setGrammarModelRequested() = put(Keys.GRAMMAR_MODEL_REQUESTED, true)
+
+    /**
+     * The person stopped a grammar model download: forget the agreement, and
+     * turn Fix grammar off with it, in one transaction, since it does nothing
+     * without the model and would otherwise ask for it again at the next start.
+     */
+    suspend fun withdrawGrammarModelRequest() {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.GRAMMAR_MODEL_REQUESTED] = false
+            preferences[Keys.FIX_GRAMMAR] = false
+        }
+    }
+
+    /**
+     * Writes [VocaPhoneSettings.grammarModelRequested] for someone whose build
+     * never did ([GrammarModelConsent.requested]); a stored value is kept.
+     * [filesOnPhone] has to be read before the retired grammar folders are swept.
+     */
+    suspend fun migrateGrammarModelRequested(filesOnPhone: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.GRAMMAR_MODEL_REQUESTED] = GrammarModelConsent.requested(
+                stored = preferences[Keys.GRAMMAR_MODEL_REQUESTED],
+                fixGrammar = preferences[Keys.FIX_GRAMMAR] ?: false,
+                filesOnPhone = filesOnPhone,
+            )
+        }
+    }
+
     suspend fun setGrammarSureOnly(enabled: Boolean) = put(Keys.GRAMMAR_SURE_ONLY, enabled)
 
     suspend fun setNumbersAsDigits(enabled: Boolean) = put(Keys.NUMBERS_AS_DIGITS, enabled)
@@ -844,6 +883,7 @@ class SettingsRepository(private val context: Context) {
         syncWhisperDictionary = this[Keys.SYNC_WHISPER_DICTIONARY] ?: true,
         repairSpeech = this[Keys.REPAIR_SPEECH] ?: true,
         fixGrammar = this[Keys.FIX_GRAMMAR] ?: false,
+        grammarModelRequested = this[Keys.GRAMMAR_MODEL_REQUESTED] ?: false,
         grammarSureOnly = this[Keys.GRAMMAR_SURE_ONLY] ?: false,
         numbersAsDigits = this[Keys.NUMBERS_AS_DIGITS] ?: false,
         stopAfterPause = this[Keys.STOP_AFTER_PAUSE] ?: false,
@@ -914,6 +954,7 @@ class SettingsRepository(private val context: Context) {
         val SYNC_WHISPER_DICTIONARY = booleanPreferencesKey("sync_whisper_dictionary")
         val REPAIR_SPEECH = booleanPreferencesKey("repair_speech")
         val FIX_GRAMMAR = booleanPreferencesKey("fix_grammar")
+        val GRAMMAR_MODEL_REQUESTED = booleanPreferencesKey("grammar_model_requested")
         val GRAMMAR_SURE_ONLY = booleanPreferencesKey("grammar_sure_only")
         val NUMBERS_AS_DIGITS = booleanPreferencesKey("numbers_as_digits")
         val CHINESE_SCRIPT = stringPreferencesKey("chinese_script")
