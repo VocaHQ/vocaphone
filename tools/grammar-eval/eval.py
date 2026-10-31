@@ -7,10 +7,10 @@
     python3 eval.py MODEL_DIR --set clean     # clean_en.jsonl, writes results-clean.md
 
 The typed sets are scored the way Writing check offers the model's edits on
-typed text, word edit by word edit: a capital the model puts anywhere but a
-sentence start, or anywhere in text typed in lower case, and a full stop it
-adds where the text stops, are taken back first (see `as_typed` and
-`WritingCheck.offeredOnTypedText` in both apps).
+typed text, filtered one by one as `WritingCheck.offeredOnTypedText` in both
+apps does: a full stop, question or exclamation mark added where a paragraph
+stops is taken back, and so is a capital anywhere but a sentence start, or
+anywhere in text typed in lower case (see `as_typed`).
 """
 
 from __future__ import annotations
@@ -62,93 +62,143 @@ def damaged(src: str, out: str) -> list[str]:
     return lost
 
 
+# `WritingText` in both apps, for the typed-text filter: words (letters and
+# digits, joined across an apostrophe) and single other characters.
+TOKEN = re.compile(r"[^\W_]+(?:['’][^\W_]+)*|\S")
+TERMINALS = {".", "!", "?", "…"}
+CLOSERS = {'"', "'", "”", "’", ")", "]", "»"}
+OPENERS = {'"', "“", "'", "‘", "(", "[", "«"}
+LINE_BREAKS = {"\n", "\r", "\u2028", "\u2029"}
+
+
+def _key(token: str) -> str:
+    return token.lower().replace("’", "'")
+
+
+def _is_word(token: str) -> bool:
+    return bool(re.match(r"[^\W_]", token))
+
+
 def _diff(a: list[str], b: list[str]) -> list[tuple[int, int, int, int]]:
-    """`ModelEdits.diff` in both apps: the changed runs by longest common
-    subsequence once the shared start and end are set aside, ties deleting
-    from `a` first."""
+    """`ModelEdits.diff`: changed runs by longest common subsequence, ties
+    deleting from `a` first, so the hunks match the keyboards'."""
     prefix = 0
     while prefix < len(a) and prefix < len(b) and a[prefix] == b[prefix]:
         prefix += 1
     suffix = 0
     while suffix < len(a) - prefix and suffix < len(b) - prefix and a[-1 - suffix] == b[-1 - suffix]:
         suffix += 1
-    x, y = a[prefix:len(a) - suffix], b[prefix:len(b) - suffix]
-    n, m = len(x), len(y)
-    if not n or not m:
-        return [(prefix, prefix + n, prefix, prefix + m)] if n or m else []
+    n, m = len(a) - prefix - suffix, len(b) - prefix - suffix
+    if n == 0 and m == 0:
+        return []
+    if n == 0 or m == 0:
+        return [(prefix, prefix + n, prefix, prefix + m)]
     lcs = [[0] * (m + 1) for _ in range(n + 1)]
     for i in range(n - 1, -1, -1):
         for j in range(m - 1, -1, -1):
-            lcs[i][j] = lcs[i + 1][j + 1] + 1 if x[i] == y[j] else max(lcs[i + 1][j], lcs[i][j + 1])
-    hunks, i, j, open_ = [], 0, 0, None
+            lcs[i][j] = lcs[i + 1][j + 1] + 1 if a[prefix + i] == b[prefix + j] else max(lcs[i + 1][j], lcs[i][j + 1])
+    hunks, i, j, open_at = [], 0, 0, None
     while i < n or j < m:
-        if i < n and j < m and x[i] == y[j]:
-            if open_:
-                hunks.append((prefix + open_[0], prefix + i, prefix + open_[1], prefix + j))
-                open_ = None
+        if i < n and j < m and a[prefix + i] == b[prefix + j]:
+            if open_at:
+                hunks.append((prefix + open_at[0], prefix + i, prefix + open_at[1], prefix + j))
+                open_at = None
             i, j = i + 1, j + 1
+        elif j >= m or (i < n and lcs[i + 1][j] >= lcs[i][j + 1]):
+            open_at = open_at or (i, j)
+            i += 1
         else:
-            open_ = open_ or (i, j)
-            if j >= m or (i < n and lcs[i + 1][j] >= lcs[i][j + 1]):
-                i += 1
-            else:
-                j += 1
-    if open_:
-        hunks.append((prefix + open_[0], prefix + i, prefix + open_[1], prefix + j))
+            open_at = open_at or (i, j)
+            j += 1
+    if open_at:
+        hunks.append((prefix + open_at[0], prefix + i, prefix + open_at[1], prefix + j))
     return hunks
 
 
 def _hunks(a: list[str], b: list[str]) -> list[tuple[int, int, int, int]]:
-    """`ModelEdits.hunks`: compared without case, so a capital is its own edit,
-    and a run of one-for-one swaps split into one edit per word."""
-    key = lambda w: w.lower().replace("’", "'")
+    """`ModelEdits.hunks`: compared without case, so a capital is its own
+    edit, and a run of one-for-one swaps split into one per word."""
     out, i, j = [], 0, 0
-    for a1, a2, b1, b2 in _diff([key(w) for w in a], [key(w) for w in b]) + [(len(a), len(a), len(b), len(b))]:
-        for k in range(min(a1 - i, b1 - j)):
-            if a[i + k] != b[j + k]:
-                out.append((i + k, i + k + 1, j + k, j + k + 1))
-        if a2 - a1 == b2 - b1 > 1:
-            out += [(a1 + k, a1 + k + 1, b1 + k, b1 + k + 1) for k in range(a2 - a1)]
-        elif (a1, a2, b1, b2) != (len(a), len(a), len(b), len(b)):
-            out.append((a1, a2, b1, b2))
-        i, j = a2, b2
+
+    def case_only(to_i: int, to_j: int) -> None:
+        nonlocal i, j
+        while i < to_i and j < to_j:
+            if a[i] != b[j]:
+                out.append((i, i + 1, j, j + 1))
+            i, j = i + 1, j + 1
+
+    for a0, a1, b0, b1 in _diff([_key(t) for t in a], [_key(t) for t in b]):
+        case_only(a0, b0)
+        if a1 - a0 == b1 - b0 > 1:
+            out += [(a0 + k, a0 + k + 1, b0 + k, b0 + k + 1) for k in range(a1 - a0)]
+        else:
+            out.append((a0, a1, b0, b1))
+        i, j = a1, b1
+    case_only(len(a), len(b))
     return out
+
+
+def _sentence_starts(text: str, spans: list[tuple[int, int]], tokens: list[str]) -> set[int]:
+    """Where each sentence's first word starts, as `WritingText.sentences` splits them."""
+    starts, first, i = set(), 0, 0
+    while i < len(tokens):
+        last, boundary = i, False
+        if tokens[i] in TERMINALS:
+            while last + 1 < len(tokens) and tokens[last + 1] in CLOSERS and spans[last + 1][0] == spans[last][1]:
+                last += 1
+            boundary = last + 1 == len(tokens) or spans[last + 1][0] > spans[last][1]
+        gap = text[spans[last][1]:spans[last + 1][0]] if last + 1 < len(tokens) else ""
+        if boundary or any(c in LINE_BREAKS for c in gap) or last + 1 == len(tokens):
+            k = first
+            while k < last and not (_is_word(tokens[k]) and all(t in OPENERS for t in tokens[first:k])):
+                k += 1
+            starts.add(spans[k][0])
+            first = last + 1
+        i = last + 1
+    return starts
 
 
 def as_typed(src: str, out: str) -> str:
-    """What the keyboard would offer, edit by edit as `WritingCheck.offeredOnTypedText`
-    filters the model's word edits: no full stop, question or exclamation mark
-    added where the text stops, and no capital except at a sentence start in
-    text not typed in lower case ("i" is always capitalised). Replacing a mark
-    the text already has is kept; the dropped edits are taken back from `out`."""
-    a, b = list(WORD.finditer(src)), list(WORD.finditer(out))
-    at, bt = [m.group(0) for m in a], [m.group(0) for m in b]
-    letter = next((c for c in src if c.isalpha()), "")
-    lowercase_style = letter.islower()
-    openers = set("\"“'‘([«")
+    """What the keyboard would offer of the model's `out` for `src`.
 
-    def sentence_start(i: int) -> bool:
-        while i > 0 and at[i - 1] in openers:
-            i -= 1
-        return i == 0 or at[i - 1] in (".", "!", "?", "…") or "\n" in src[a[i - 1].end():a[i].start()]
+    Mirrors `WritingCheck.offeredOnTypedText` (Android and iOS): the model's
+    edits are found the way `ModelEdits` finds them, and two kinds are taken
+    back one by one. A full stop, question or exclamation mark added where a
+    paragraph stops (one that replaces a mark the text has is kept), and a
+    capital other than "I" anywhere but a sentence start, or anywhere at all
+    in text typed in lower case. Every other edit stands as the model made it.
+    """
+    a_matches, b_matches = list(TOKEN.finditer(src)), list(TOKEN.finditer(out))
+    a, b = [m.group() for m in a_matches], [m.group() for m in b_matches]
+    a_spans = [m.span() for m in a_matches]
+    lowercase_style = next((c.islower() for c in src if c.isalpha()), False)
+    starts = _sentence_starts(src, a_spans, a)
 
-    reverts = []  # (start, end, text) spans of `out` to put back
-    for a1, a2, b1, b2 in _hunks(at, bt):
-        removed, added = at[a1:a2], bt[b1:b2]
-        if not removed and added and all(c in ".!?" for w in added for c in w):
-            after = src[a[a1 - 1].end() if a1 else 0:]
+    def offered(a0: int, a1: int, b0: int, b1: int) -> bool:
+        removed, added = a[a0:a1], b[b0:b1]
+        if not removed and added and all(c in ".!?" for c in "".join(added)):
+            # The edit sits after the token before it, or before the first one.
+            at = a_spans[a0 - 1][1] if a0 > 0 else (a_spans[a0][0] if a0 < len(a) else len(src))
+            after = src[at:]
             if not after.strip() or after.lstrip(" \t").startswith("\n"):
-                reverts.append((b[b1].start(), b[b2 - 1].end(), ""))
+                return False
+        capital = removed and len(removed) == len(added) and any(map(_is_word, removed + added)) \
+            and all(_key(x) == _key(y) for x, y in zip(removed, added))
+        if capital and not (_key(removed[0]) == "i" or _key(removed[0]).startswith("i'")):
+            return not lowercase_style and a_spans[a0][0] in starts
+        return True
+
+    # Start from the model's text and put back what the keyboard would not offer.
+    pieces, cursor = [], 0
+    for a0, a1, b0, b1 in _hunks(a, b):
+        if offered(a0, a1, b0, b1):
             continue
-        if removed and len(removed) == len(added) and \
-                all(x.lower().replace("’", "'") == y.lower().replace("’", "'") for x, y in zip(removed, added)):
-            first = removed[0].lower().replace("’", "'")
-            if first != "i" and not first.startswith("i'") and (lowercase_style or not sentence_start(a1)):
-                reverts.append((b[b1].start(), b[b2 - 1].end(), src[a[a1].start():a[a2 - 1].end()]))
-    for start, end, text in sorted(reverts, reverse=True):
-        head = out[:start].rstrip(" \t") if not text else out[:start]
-        out = head + text + out[end:]
-    return out
+        if b1 > b0:
+            pieces.append(out[cursor:b_matches[b0].start()])
+            pieces.append(src[a_spans[a0][0]:a_spans[a1 - 1][1]] if a1 > a0 else "")
+            cursor = b_matches[b1 - 1].end()
+    pieces.append(out[cursor:])
+    return "".join(pieces)
 
 
 def score(tagger: Tagger, cases: list[dict], typed: bool = False) -> dict:
@@ -248,7 +298,7 @@ def main() -> None:
     detail += listing("Error sentences not fixed exactly", main_score["misses"],
                       lambda a, b, e: f"- `{a}` → `{b}` (expected `{e}`)")
     name = "results.md" if not typed else f"results-{args.set}.md"
-    (HERE / name).write_text("\n".join(detail).rstrip("\n") + "\n")
+    (HERE / name).write_text("\n".join(detail).rstrip() + "\n")
 
 
 if __name__ == "__main__":

@@ -60,10 +60,15 @@ Every file is checked against a pinned size and SHA-256 before it is used,
 the same way as a speech model; the model itself is
 `onnx/mindtype_tagger.onnx`, SHA-256
 `cde26b40d62216c0b5680725b5e3f3b438f50cb6d02e05c395bf13059467da76`. An update
-from a build that used v1.5 deletes the old model and, if a grammar setting
-was on, downloads v2.0 in its place; a download that fails is tried again at
-each app start while a grammar setting is on and the model is missing. The
-download sends nothing but the request for those files. Once it is on, the
+from a build that used v1.5 deletes the old model and, if the user had
+downloaded it, downloads v2.0 in its place; a download that fails is tried
+again at each app start while the model is missing for someone who agreed to
+it. On Android that agreement is stored separately from the switches
+(`grammar_model_requested`): it is recorded when the user starts a download
+from Fix grammar or from Writing check's offer, withdrawn if they cancel one,
+and carried over from older builds only for those who had a grammar model on
+the phone or Fix grammar on. "Check while typing" on its own never downloads
+the model. The download sends nothing but the request for those files. Once it is on, the
 finished on-device English transcript is corrected on the phone, in memory,
 before it is styled; the text is never sent anywhere for this, and nothing
 the model produces is stored beyond the transcript itself. It never runs on a

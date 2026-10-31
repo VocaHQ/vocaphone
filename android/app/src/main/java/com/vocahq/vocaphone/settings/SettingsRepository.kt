@@ -17,6 +17,7 @@ import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.ModelTranslationSupport
 import com.vocahq.vocaphone.core.Snippet
+import com.vocahq.vocaphone.local.GrammarModelConsent
 import com.vocahq.vocaphone.local.LocalModelCatalog
 import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.core.TranscriptionLanguage
@@ -226,6 +227,14 @@ data class VocaPhoneSettings(
      */
     val fixGrammar: Boolean = false,
     /**
+     * Whether the person agreed to download the grammar model, from Fix grammar
+     * or Writing check's download offer. App start fetches a missing model
+     * (a moved pin, a failed attempt) only while this or [fixGrammar] is on;
+     * [typingGrammar] alone never downloads it. See
+     * [com.vocahq.vocaphone.local.GrammarModelConsent].
+     */
+    val grammarModelRequested: Boolean = false,
+    /**
      * "Only sure fixes": the grammar model offers and applies only the edits
      * it is surest of (a higher KEEP bias). Off means "Balanced". Applies to
      * dictation and to typed text alike.
@@ -309,12 +318,28 @@ data class VocaPhoneSettings(
     val suggestionsEnabled: Boolean = true,
     val correctionsEnabled: Boolean = true,
     /**
-     * Whether the keyboard checks the sentences just typed with the on-device
-     * grammar model and offers a fix in the strip. Off by default, for the
-     * same reasons as [fixGrammar], whose model it shares; never changes text
-     * without a tap. See [com.vocahq.vocaphone.grammar.TypedGrammar].
+     * "Check while typing": Writing check in the keyboard. After a pause the
+     * field is checked on the phone, with the rules and, once it is
+     * downloaded, the grammar model [fixGrammar] uses; suggestions appear in
+     * the strip and its panel. Off by default; never changes text without a
+     * tap unless [typoAutoFix] is on. See [com.vocahq.vocaphone.ime.WritingCheckSession].
      */
     val typingGrammar: Boolean = false,
+    /** Writing check's blue group: wordy and redundant phrases, passive voice, long sentences. */
+    val writingClarity: Boolean = true,
+    /** Writing check's green group: weak intensifiers, a word used too often. Off by default. */
+    val writingEngagement: Boolean = false,
+    /** Writing check's purple group: hedging. Off by default. */
+    val writingDelivery: Boolean = false,
+    /** Whether the panel says how the text sounds (friendly, formal, urgent...). */
+    val writingTone: Boolean = true,
+    /**
+     * "Fix obvious typos as I type": a known misspelling or missing apostrophe
+     * ("recieve", "dont") is corrected after a pause, with an undo in the
+     * strip. Off by default: it is the one change Writing check makes without
+     * a tap.
+     */
+    val typoAutoFix: Boolean = false,
     val numberKeyHintsEnabled: Boolean = true,
     val longPressSymbolsEnabled: Boolean = false,
     /** Arm shift at the start of a field and after a sentence ends. */
@@ -585,6 +610,36 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setFixGrammar(enabled: Boolean) = put(Keys.FIX_GRAMMAR, enabled)
 
+    /** Records that the person agreed to download the grammar model. */
+    suspend fun setGrammarModelRequested() = put(Keys.GRAMMAR_MODEL_REQUESTED, true)
+
+    /**
+     * The person stopped a grammar model download: forget the agreement, and
+     * turn Fix grammar off with it, in one transaction, since it does nothing
+     * without the model and would otherwise ask for it again at the next start.
+     */
+    suspend fun withdrawGrammarModelRequest() {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.GRAMMAR_MODEL_REQUESTED] = false
+            preferences[Keys.FIX_GRAMMAR] = false
+        }
+    }
+
+    /**
+     * Writes [VocaPhoneSettings.grammarModelRequested] for someone whose build
+     * never did ([GrammarModelConsent.requested]); a stored value is kept.
+     * [filesOnPhone] has to be read before the retired grammar folders are swept.
+     */
+    suspend fun migrateGrammarModelRequested(filesOnPhone: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.GRAMMAR_MODEL_REQUESTED] = GrammarModelConsent.requested(
+                stored = preferences[Keys.GRAMMAR_MODEL_REQUESTED],
+                fixGrammar = preferences[Keys.FIX_GRAMMAR] ?: false,
+                filesOnPhone = filesOnPhone,
+            )
+        }
+    }
+
     suspend fun setGrammarSureOnly(enabled: Boolean) = put(Keys.GRAMMAR_SURE_ONLY, enabled)
 
     suspend fun setNumbersAsDigits(enabled: Boolean) = put(Keys.NUMBERS_AS_DIGITS, enabled)
@@ -611,6 +666,16 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCorrectionsEnabled(enabled: Boolean) = put(Keys.CORRECTIONS, enabled)
 
     suspend fun setTypingGrammar(enabled: Boolean) = put(Keys.TYPING_GRAMMAR, enabled)
+
+    suspend fun setWritingClarity(enabled: Boolean) = put(Keys.WRITING_CLARITY, enabled)
+
+    suspend fun setWritingEngagement(enabled: Boolean) = put(Keys.WRITING_ENGAGEMENT, enabled)
+
+    suspend fun setWritingDelivery(enabled: Boolean) = put(Keys.WRITING_DELIVERY, enabled)
+
+    suspend fun setWritingTone(enabled: Boolean) = put(Keys.WRITING_TONE, enabled)
+
+    suspend fun setTypoAutoFix(enabled: Boolean) = put(Keys.TYPO_AUTO_FIX, enabled)
 
     suspend fun setNumberKeyHintsEnabled(enabled: Boolean) = put(Keys.NUMBER_KEY_HINTS, enabled)
 
@@ -818,6 +883,7 @@ class SettingsRepository(private val context: Context) {
         syncWhisperDictionary = this[Keys.SYNC_WHISPER_DICTIONARY] ?: true,
         repairSpeech = this[Keys.REPAIR_SPEECH] ?: true,
         fixGrammar = this[Keys.FIX_GRAMMAR] ?: false,
+        grammarModelRequested = this[Keys.GRAMMAR_MODEL_REQUESTED] ?: false,
         grammarSureOnly = this[Keys.GRAMMAR_SURE_ONLY] ?: false,
         numbersAsDigits = this[Keys.NUMBERS_AS_DIGITS] ?: false,
         stopAfterPause = this[Keys.STOP_AFTER_PAUSE] ?: false,
@@ -831,6 +897,11 @@ class SettingsRepository(private val context: Context) {
         suggestionsEnabled = this[Keys.SUGGESTIONS] ?: true,
         correctionsEnabled = this[Keys.CORRECTIONS] ?: true,
         typingGrammar = this[Keys.TYPING_GRAMMAR] ?: false,
+        writingClarity = this[Keys.WRITING_CLARITY] ?: true,
+        writingEngagement = this[Keys.WRITING_ENGAGEMENT] ?: false,
+        writingDelivery = this[Keys.WRITING_DELIVERY] ?: false,
+        writingTone = this[Keys.WRITING_TONE] ?: true,
+        typoAutoFix = this[Keys.TYPO_AUTO_FIX] ?: false,
         numberKeyHintsEnabled = this[Keys.NUMBER_KEY_HINTS] ?: true,
         longPressSymbolsEnabled = this[Keys.LONG_PRESS_SYMBOLS] ?: false,
         autoCapitalizeEnabled = this[Keys.AUTO_CAPITALIZE] ?: true,
@@ -883,6 +954,7 @@ class SettingsRepository(private val context: Context) {
         val SYNC_WHISPER_DICTIONARY = booleanPreferencesKey("sync_whisper_dictionary")
         val REPAIR_SPEECH = booleanPreferencesKey("repair_speech")
         val FIX_GRAMMAR = booleanPreferencesKey("fix_grammar")
+        val GRAMMAR_MODEL_REQUESTED = booleanPreferencesKey("grammar_model_requested")
         val GRAMMAR_SURE_ONLY = booleanPreferencesKey("grammar_sure_only")
         val NUMBERS_AS_DIGITS = booleanPreferencesKey("numbers_as_digits")
         val CHINESE_SCRIPT = stringPreferencesKey("chinese_script")
@@ -896,6 +968,11 @@ class SettingsRepository(private val context: Context) {
         val SUGGESTIONS = booleanPreferencesKey("keyboard_suggestions")
         val CORRECTIONS = booleanPreferencesKey("keyboard_corrections")
         val TYPING_GRAMMAR = booleanPreferencesKey("keyboard_typing_grammar")
+        val WRITING_CLARITY = booleanPreferencesKey("writing_clarity")
+        val WRITING_ENGAGEMENT = booleanPreferencesKey("writing_engagement")
+        val WRITING_DELIVERY = booleanPreferencesKey("writing_delivery")
+        val WRITING_TONE = booleanPreferencesKey("writing_tone")
+        val TYPO_AUTO_FIX = booleanPreferencesKey("typo_auto_fix")
         val NUMBER_KEY_HINTS = booleanPreferencesKey("keyboard_number_key_hints")
         val LONG_PRESS_SYMBOLS = booleanPreferencesKey("keyboard_long_press_symbols")
         val AUTO_CAPITALIZE = booleanPreferencesKey("keyboard_auto_capitalize")
