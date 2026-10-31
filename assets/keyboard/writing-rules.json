@@ -1980,6 +1980,15 @@
    "we",
    "they"
   ],
+  "wh": [
+   "what",
+   "where",
+   "when",
+   "why",
+   "how",
+   "who",
+   "which"
+  ],
   "person_contraction": [
    "i'm",
    "you're",
@@ -2533,6 +2542,14 @@
   {"match": "^ {do_q} {subject} {verb_inflected}", "replace": "$1 $2 ${base:3}", "kind": "verb_form", "message": "verb_form.do", "id": "do-question-base"},
   {"match": "have|has|had {simple_past}", "replace": "$1 ${participle:2}", "kind": "verb_form", "message": "verb_form.after", "id": "have-participle"},
   {"match": "{neg_aux} {neg_verb} {neg_object}", "replace": "$1 $2 ${any:3}", "kind": "double_negative", "id": "double-negative"},
+  {"match": "{wh} is you|we|they", "replace": "$1 are $3", "kind": "agreement", "message": "Use “are” with “{3}”.", "id": "wh-is-you"},
+  {"match": "{wh} was you|we|they", "replace": "$1 were $3", "kind": "agreement", "message": "Use “were” with “{3}”.", "id": "wh-was-you"},
+  {"match": "you|we|they is", "replace": "$1 are", "kind": "agreement", "message": "Use “are” with “{1}”.", "id": "you-is"},
+  {"match": "you|we|they was", "replace": "$1 were", "kind": "agreement", "message": "Use “were” with “{1}”.", "id": "you-was"},
+  {"match": "i is|are", "replace": "$1 am", "kind": "agreement", "message": "Use “am” with “I”.", "id": "i-is"},
+  {"match": "he|she|it are", "replace": "$1 is", "kind": "agreement", "message": "Use “is” with “{1}”.", "id": "he-are"},
+  {"match": "he|she|it don't", "replace": "$1 doesn't", "kind": "agreement", "message": "Use “doesn't” with “{1}”.", "id": "he-dont"},
+  {"match": "i|you|we|they doesn't", "replace": "$1 don't", "kind": "agreement", "message": "Use “don't” with “{1}”.", "id": "you-doesnt"},
   {"match": "most {superlative}", "replace": "$2", "kind": "comparison", "id": "most-superlative"},
   {"match": "more better|worse|bigger|smaller|easier|harder|faster|cheaper", "replace": "$2", "kind": "comparison", "id": "more-comparative"},
   {"match": "less {plural_count}", "replace": "fewer $2", "kind": "word_choice", "message": "“Fewer” is for things you can count, like “{2}”.", "id": "less-fewer"},

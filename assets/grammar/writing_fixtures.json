@@ -2582,12 +2582,12 @@
      "original": "don't",
      "kind": "agreement",
      "start": 3,
-     "rule": null,
+     "rule": "he-dont",
      "end": 8,
      "label": "don't → doesn't",
-     "source": "model",
+     "source": "rule",
      "category": "correctness",
-     "message": "“doesn't” agrees with “He”.",
+     "message": "Use “doesn't” with “He”.",
      "replacement": "doesn't",
      "mark": [
       3,
@@ -2905,12 +2905,12 @@
      "original": "was",
      "kind": "agreement",
      "start": 5,
-     "rule": null,
+     "rule": "you-was",
      "end": 8,
      "label": "was → were",
-     "source": "model",
+     "source": "rule",
      "category": "correctness",
-     "message": "“were” agrees with “they”.",
+     "message": "Use “were” with “they”.",
      "replacement": "were",
      "mark": [
       5,
@@ -3223,10 +3223,27 @@
     2,
     3,
     100,
-    100
+    92
    ],
    "tones": [],
-   "suggestions": [],
+   "suggestions": [
+    {
+     "original": "don't",
+     "kind": "agreement",
+     "start": 3,
+     "rule": "he-dont",
+     "end": 8,
+     "label": "don't → doesn't",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “doesn't” with “He”.",
+     "replacement": "doesn't",
+     "mark": [
+      3,
+      8
+     ]
+    }
+   ],
    "modelPending": true
   },
   {
@@ -3328,6 +3345,88 @@
       16
      ]
     }
+   ],
+   "modelPending": false
+  },
+  {
+   "name": "agreement in a question, without the model",
+   "text": "what is you doing",
+   "suggestions": [
+    {
+     "original": "is",
+     "kind": "agreement",
+     "start": 5,
+     "rule": "wh-is-you",
+     "end": 7,
+     "label": "is → are",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “are” with “you”.",
+     "replacement": "are",
+     "mark": [
+      5,
+      7
+     ]
+    }
+   ],
+   "tones": [],
+   "stats": [
+    4,
+    17,
+    1,
+    2,
+    2,
+    100,
+    92
+   ],
+   "modelPending": false
+  },
+  {
+   "name": "agreement after a plural pronoun, without the model",
+   "text": "I think you was right and he don't care.",
+   "suggestions": [
+    {
+     "original": "was",
+     "kind": "agreement",
+     "start": 12,
+     "rule": "you-was",
+     "end": 15,
+     "label": "was → were",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “were” with “you”.",
+     "replacement": "were",
+     "mark": [
+      12,
+      15
+     ]
+    },
+    {
+     "original": "don't",
+     "kind": "agreement",
+     "start": 29,
+     "rule": "he-dont",
+     "end": 34,
+     "label": "don't → doesn't",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “doesn't” with “he”.",
+     "replacement": "doesn't",
+     "mark": [
+      29,
+      34
+     ]
+    }
+   ],
+   "tones": [],
+   "stats": [
+    9,
+    40,
+    1,
+    3,
+    4,
+    100,
+    84
    ],
    "modelPending": false
   }
