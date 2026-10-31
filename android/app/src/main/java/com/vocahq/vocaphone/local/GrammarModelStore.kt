@@ -67,6 +67,13 @@ class GrammarModelStore internal constructor(
     /** Where the verified files live. Only meaningful while [isReady]. */
     val directory: File get() = File(root, model.id)
 
+    /**
+     * The folder inside [directory] that holds the model's own files, keeping
+     * the repository's layout (`onnx/`). This is what a loader opens.
+     */
+    val modelDirectory: File
+        get() = GrammarModelCatalog.modelFolder(model).let { if (it.isEmpty()) directory else File(directory, it) }
+
     private val staging: File get() = File(root, ".${model.id}.staging")
 
     /** Stat-only: safe on any path that runs per dictation. */
@@ -125,6 +132,7 @@ class GrammarModelStore internal constructor(
                     // reaches nothing.
                     throwIfCancelled()
                     val destination = File(staging, pinned.path)
+                    destination.parentFile?.mkdirs()
                     val actual = fetchPinnedFile(
                         client = client,
                         url = downloadUrl(pinned),
@@ -191,6 +199,25 @@ class GrammarModelStore internal constructor(
             removed
         }
     }
+
+    /**
+     * Removes the folders of grammar models this build no longer pins.
+     * Returns whether there was one: the caller then downloads the current
+     * model for anyone whose grammar setting is on.
+     */
+    suspend fun removeRetired(retired: List<String> = GrammarModelCatalog.retiredIds): Boolean =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                retired.filter { it != model.id }.fold(false) { found, id ->
+                    val folder = File(root, id)
+                    val staged = File(root, ".$id.staging")
+                    val existed = folder.exists() || staged.exists()
+                    folder.deleteRecursively()
+                    staged.deleteRecursively()
+                    found || existed
+                }
+            }
+        }
 
     private fun deleteAbandonedStaging(now: Long = System.currentTimeMillis()) {
         if (!staging.exists()) return

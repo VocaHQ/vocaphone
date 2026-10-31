@@ -18,7 +18,13 @@ import Observation
 @MainActor
 @Observable
 final class GrammarModelStore {
-    nonisolated static let modelID = "mindtype-tagger-v1.5"
+    nonisolated static let modelID = "mindtype-tagger-v2.0"
+
+    /// Grammar models an earlier build downloaded. `removeRetired()` deletes
+    /// their folders, and the app downloads the current model in their place
+    /// for anyone whose grammar setting is on. Mirrors
+    /// `GrammarModelCatalog.retiredIds` on Android.
+    nonisolated static let retiredModelIDs = ["mindtype-tagger-v1.5"]
 
     enum Phase: Equatable {
         case absent
@@ -48,6 +54,36 @@ final class GrammarModelStore {
 
     /// Where the verified files live. Only meaningful while `isReady`.
     nonisolated var directory: URL? { root?.appendingPathComponent(Self.modelID, isDirectory: true) }
+
+    /// The folder inside `directory` holding the model's own files, in the
+    /// repository's layout (`onnx/`). This is what a loader opens.
+    nonisolated var modelDirectory: URL? {
+        guard let directory else { return nil }
+        guard let first = pins?.files.first?.path, let slash = first.lastIndex(of: "/") else { return directory }
+        return directory.appendingPathComponent(String(first[..<slash]), isDirectory: true)
+    }
+
+    /// Deletes the folders of grammar models this build no longer pins, and
+    /// says whether there was one: the caller then downloads the current
+    /// model for anyone whose grammar setting is on.
+    @discardableResult
+    func removeRetired(_ retired: [String] = GrammarModelStore.retiredModelIDs) -> Bool {
+        guard let root else { return false }
+        var found = false
+        for id in retired where id != Self.modelID {
+            let folder = root.appendingPathComponent(id, isDirectory: true)
+            if FileManager.default.fileExists(atPath: folder.path) {
+                found = true
+                try? FileManager.default.removeItem(at: folder)
+            }
+            if let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) {
+                for name in names where name.hasPrefix(".download-\(id)-") {
+                    try? FileManager.default.removeItem(at: root.appendingPathComponent(name))
+                }
+            }
+        }
+        return found
+    }
 
     init(
         pins: LocalModelIntegrity.PinnedModelManifest? = try? LocalModelIntegrity.grammarModel(
