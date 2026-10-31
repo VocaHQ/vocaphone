@@ -864,26 +864,31 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             return
         }
         KeyboardHaptics.shared.action()
-        let panel = dictationSurfaceState.writing
-        let document = readDocument()
-        guard let before = document.before else { return }
-        let field = WritingCheckClient.Field(text: before + (document.after ?? ""), cursor: before.utf16Length)
-        panel.isRunning = true
+        guard readDocument().before != nil else { return }
+        dictationSurfaceState.writing.isRunning = true
         dictationSurfaceState.present(.writing)
         let documentID = currentDocumentID
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(450))
-            guard let self else { return }
-            // The field read before the pause is only this field's: a field
-            // change or a hidden keyboard in between drops it.
-            guard isKeyboardVisible, currentDocumentID == documentID else {
+        // The field is read after the pause, so an edit in it is checked as it
+        // now reads. A closed panel, a field change or a hidden keyboard in
+        // between drops the check rather than publishing for text that is gone.
+        writingCheck.checkAfterPause(
+            .milliseconds(450),
+            read: { [weak self] in
+                guard let self, isKeyboardVisible, currentDocumentID == documentID,
+                      dictationSurfaceState.presentedPanel == .writing,
+                      textDocumentProxy.selectedText?.isEmpty != false
+                else { return nil }
+                let document = readDocument()
+                guard let before = document.before else { return nil }
+                return WritingCheckClient.Field(text: before + (document.after ?? ""), cursor: before.utf16Length)
+            },
+            options: { [weak self] in self?.writingOptions() ?? WritingCheckClient.Options() },
+            finished: { [weak self] in
+                guard let self else { return }
                 dictationSurfaceState.writing.isRunning = false
-                return
+                writingChanged()
             }
-            writingCheck.checkNow(field, options: writingOptions())
-            dictationSurfaceState.writing.isRunning = false
-            writingChanged()
-        }
+        )
     }
 
     /// "Whole message": reads past the window iOS hands the keyboard by
@@ -2358,7 +2363,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             // The keys are coming back. A "Whole message" walk still moving
             // the cursor puts it back first, so the next key lands where the
             // user left it rather than wherever the walk had got to.
-            if !presented { stopReadingWholeMessage(restoringCursor: true) }
+            if !presented {
+                stopReadingWholeMessage(restoringCursor: true)
+                // A button check still waiting is for a panel no longer open.
+                writingCheck.cancelButtonCheck()
+            }
             panelOwnsKeyboard = presented
             render(lastRecord)
         }

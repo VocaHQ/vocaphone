@@ -94,6 +94,10 @@ final class WritingCheckClient {
     private let now: () -> Date
     private let observe: (@escaping @Sendable () -> Void) -> VocaPhoneDarwinObservation?
     private var pending: Task<Void, Never>?
+    /// The Writing check button's check, waiting out its beat; `buttonTaps`
+    /// says which tap is the latest.
+    private var buttonCheck: Task<Void, Never>?
+    private var buttonTaps = 0
     /// The check under way. A newer check, an edit, or a reset makes its
     /// result stale; `generation` says which one is current.
     private var running: Task<Void, Never>?
@@ -194,8 +198,38 @@ final class WritingCheckClient {
         check(field, options, retry: true)
     }
 
-    /// Waits for the pause and the check under way, if any. For tests.
+    /// The Writing check button: checks after `delay`, so its pulse shows for
+    /// a beat. The field is read when the wait ends, not when the button was
+    /// tapped, so the check is always of the text as it is now; `read`
+    /// returning nil (the panel closed, the field changed) checks nothing.
+    /// A newer tap, ``cancelButtonCheck()`` and ``reset()`` drop it too.
+    /// `finished` runs once the wait is over, checked or not, unless a newer
+    /// tap took its place.
+    func checkAfterPause(
+        _ delay: Duration, read: @escaping () -> Field?, options: @escaping () -> Options,
+        finished: @escaping () -> Void = {}
+    ) {
+        buttonCheck?.cancel()
+        buttonTaps += 1
+        let tap = buttonTaps
+        buttonCheck = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, tap == buttonTaps else { return }
+            buttonCheck = nil
+            if !Task.isCancelled, let field = read() { checkNow(field, options: options()) }
+            finished()
+        }
+    }
+
+    /// Drops a button check still waiting out its beat.
+    func cancelButtonCheck() {
+        buttonCheck?.cancel()
+    }
+
+    /// Waits for the button's beat, the pause and the check under way, if
+    /// any. For tests.
     func settle() async {
+        await buttonCheck?.value
         await pending?.value
         await running?.value
     }
@@ -429,6 +463,7 @@ final class WritingCheckClient {
     func reset() {
         pending?.cancel()
         pending = nil
+        cancelButtonCheck()
         stopChecking()
         observation?.invalidate()
         observation = nil
