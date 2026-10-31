@@ -22,7 +22,7 @@ final class GrammarModelStore {
 
     /// Grammar models an earlier build downloaded. `removeRetired()` deletes
     /// their folders, and the app downloads the current model in their place
-    /// for anyone whose grammar setting is on. Mirrors
+    /// for anyone who agreed to the model (`GrammarModelConsent`). Mirrors
     /// `GrammarModelCatalog.retiredIds` on Android.
     nonisolated static let retiredModelIDs = ["mindtype-tagger-v1.5"]
 
@@ -39,7 +39,10 @@ final class GrammarModelStore {
         _ url: URL, _ progress: @escaping @Sendable (Int64) -> Void
     ) async throws -> URL
 
-    private(set) var phase: Phase = .absent
+    private(set) var phase: Phase = .absent {
+        // The keyboard reads this to decide whether asking the app is worth it.
+        didSet { if (phase == .ready) != (oldValue == .ready) { KeyboardPreferences.grammarModelReady = phase == .ready } }
+    }
 
     nonisolated let pins: LocalModelIntegrity.PinnedModelManifest?
     private nonisolated let root: URL?
@@ -49,6 +52,9 @@ final class GrammarModelStore {
     /// download's last hash, a refresh's digest pass — must not install files
     /// or publish `.ready` afterwards.
     private var generation = 0
+    /// Whether launch found a part-way download of this model, before
+    /// sweeping it away: evidence for `hasFiles(retired:)`.
+    private var foundStaging = false
 
     nonisolated var sizeBytes: Int64 { pins?.files.reduce(0) { $0 + $1.size } ?? 0 }
 
@@ -64,16 +70,16 @@ final class GrammarModelStore {
     }
 
     /// What app launch does: sweeps retired models, re-reads the folder, and
-    /// downloads the current model when `wanted` says a grammar setting is on
-    /// over missing files. Returns whether it downloaded one.
+    /// downloads the current model when `wanted` says the person agreed to it
+    /// and the files are missing. Returns whether it downloaded one.
     ///
-    /// The settings can only be turned on once the files are verified, so on
-    /// over missing files means an update moved the pin or an earlier attempt
-    /// at this download failed. Whoever turned the setting on agreed to the
-    /// download already, so it is retried on every launch until it succeeds,
+    /// Missing files after an agreement mean an update moved the pin or an
+    /// earlier attempt at this download failed. Whoever agreed to the download
+    /// agreed to this one, so it is retried on every launch until it succeeds,
     /// not only on the launch that removed the old folder. `wanted` is asked
-    /// only when the files are missing, and nobody who never turned grammar on
-    /// gets a download. Mirrors `GrammarModelStore.restore` on Android.
+    /// only when the files are missing, and nobody who never agreed to the
+    /// model gets a download (see `GrammarModelConsent`). Mirrors
+    /// `GrammarModelStore.restore` on Android.
     func restore(
         retired: [String] = GrammarModelStore.retiredModelIDs,
         wanted: () -> Bool
@@ -82,6 +88,24 @@ final class GrammarModelStore {
         await refresh()
         guard !isReady, wanted() else { return false }
         return (try? await download()) != nil
+    }
+
+    /// Whether any grammar model, this build's or a `retired` one, is on the
+    /// phone, finished or part-way through a download. Only a download someone
+    /// agreed to puts files here, so this is the evidence launch uses to carry
+    /// that agreement over from builds that did not record it. Ask before
+    /// `restore`, which sweeps the retired folders away. A part-way download
+    /// of this model counts even though `init` already swept it.
+    func hasFiles(retired: [String] = GrammarModelStore.retiredModelIDs) -> Bool {
+        guard let root else { return false }
+        if foundStaging { return true }
+        let fileManager = FileManager.default
+        let ids = retired + [Self.modelID]
+        if ids.contains(where: { fileManager.fileExists(atPath: root.appendingPathComponent($0, isDirectory: true).path) }) {
+            return true
+        }
+        let names = (try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []
+        return names.contains { name in ids.contains { name.hasPrefix(".download-\($0)-") } }
     }
 
     /// Deletes the folders of grammar models this build no longer pins, and
@@ -119,6 +143,7 @@ final class GrammarModelStore {
         self.fetch = fetch
         removeAbandonedStaging()
         if isReady { phase = .ready }
+        if pins != nil { KeyboardPreferences.grammarModelReady = isReady }
     }
 
     /// Staging folders left by an attempt the system killed mid-download. Each
@@ -128,6 +153,7 @@ final class GrammarModelStore {
               let names = try? FileManager.default.contentsOfDirectory(atPath: root.path)
         else { return }
         for name in names where name.hasPrefix(".download-\(Self.modelID)-") {
+            foundStaging = true
             try? FileManager.default.removeItem(at: root.appendingPathComponent(name))
         }
     }
@@ -179,12 +205,15 @@ final class GrammarModelStore {
         downloadTask?.cancel()
     }
 
-    /// Removes the model. Returns whether nothing was left behind.
+    /// Removes the model. Returns whether nothing was left behind. Removing
+    /// it withdraws the agreement to download it, so the next launch does not
+    /// fetch it again.
     @discardableResult
     func delete() -> Bool {
         generation += 1
         cancel()
         guard let directory else { return false }
+        GrammarModelConsent.withdraw()
         if FileManager.default.fileExists(atPath: directory.path) {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -407,5 +436,69 @@ final class GrammarModelStore {
         } onCancel: {
             box.cancel()
         }
+    }
+}
+
+/// Whether the person agreed to the 28 MB grammar model, kept apart from the
+/// switches that use it. Mirrors android/.../local/GrammarModelConsent.kt.
+///
+/// "Check while typing" works without the model (the rules ship in the
+/// keyboard), and the offer to download the model can be declined, so that
+/// switch is not an agreement to download anything. Fix grammar still is: it
+/// cannot be turned on until the model is verified. The agreement itself is
+/// `KeyboardPreferences.grammarModelRequested`, written whenever someone
+/// starts a download from any entry point and cleared when they cancel one.
+enum GrammarModelConsent {
+    /// The flag as app launch leaves it. A `stored` value, true or false, is
+    /// kept. Someone whose build never wrote one agreed if Fix grammar is on
+    /// or any grammar model (this build's, a retired one, or a part-way
+    /// download) is on the phone, because only an agreed download puts files
+    /// there. This runs before the retired folders are swept and is then
+    /// stored, so an upgrade download that fails offline is still retried on
+    /// later launches.
+    nonisolated static func requested(stored: Bool?, fixGrammar: Bool, filesOnPhone: Bool) -> Bool {
+        stored ?? (fixGrammar || filesOnPhone)
+    }
+
+    /// Whether app launch may fetch the model when its files are missing. Fix
+    /// grammar counts on its own because it does nothing without the model;
+    /// "Check while typing" does not count at all.
+    nonisolated static func wanted(available: Bool, requested: Bool, fixGrammar: Bool) -> Bool {
+        available && (requested || fixGrammar)
+    }
+
+    /// Launch: writes the flag for someone whose build never did, from what
+    /// `store` finds on the phone, then decides whether `restore` may fetch
+    /// the model. Before `restore`, which sweeps the evidence away.
+    @MainActor
+    static func migrate(_ store: GrammarModelStore, retired: [String] = GrammarModelStore.retiredModelIDs) {
+        guard KeyboardPreferences.grammarModelRequested == nil else { return }
+        KeyboardPreferences.grammarModelRequested = requested(
+            stored: nil, fixGrammar: KeyboardPreferences.fixGrammar, filesOnPhone: store.hasFiles(retired: retired)
+        )
+    }
+
+    /// Whether launch may fetch `store`'s missing model, from the stored
+    /// settings. A build without pins has nothing to fetch.
+    @MainActor
+    static func wantedAtLaunch(_ store: GrammarModelStore) -> Bool {
+        wanted(
+            available: store.pins != nil,
+            requested: KeyboardPreferences.grammarModelRequested ?? false,
+            fixGrammar: KeyboardPreferences.fixGrammar
+        )
+    }
+
+    /// A download is starting: the person agreed to the model.
+    static func agree() {
+        KeyboardPreferences.grammarModelRequested = true
+    }
+
+    /// The person stopped a download or removed the model: the agreement is
+    /// withdrawn, and Fix grammar goes off with it, since it does nothing
+    /// without the model and would otherwise ask for it again at launch.
+    static func withdraw() {
+        KeyboardPreferences.grammarModelRequested = false
+        KeyboardPreferences.fixGrammar = false
     }
 }

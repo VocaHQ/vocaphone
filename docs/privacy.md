@@ -63,12 +63,14 @@ the same way as a speech model; the model itself is
 from a build that used v1.5 deletes the old model and, if the user had
 downloaded it, downloads v2.0 in its place; a download that fails is tried
 again at each app start while the model is missing for someone who agreed to
-it. On Android that agreement is stored separately from the switches
-(`grammar_model_requested`): it is recorded when the user starts a download
-from Fix grammar or from Writing check's offer, withdrawn if they cancel one,
-and carried over from older builds only for those who had a grammar model on
-the phone or Fix grammar on. "Check while typing" on its own never downloads
-the model. The download sends nothing but the request for those files. Once it is on, the
+it. That agreement is stored separately from the switches
+(`grammar_model_requested` on Android, `grammarModelRequested` in the App
+Group defaults on iOS): it is recorded when the user starts a download from
+Fix grammar or from Writing check's offer, withdrawn (with Fix grammar) if
+they cancel one, and carried over from older builds only for those who had a
+grammar model on the phone or Fix grammar on. "Check while typing" on its own
+never downloads the model. The download sends nothing but the request for
+those files. Once it is on, the
 finished on-device English transcript is corrected on the phone, in memory,
 before it is styled; the text is never sent anywhere for this, and nothing
 the model produces is stored beyond the transcript itself. It never runs on a
