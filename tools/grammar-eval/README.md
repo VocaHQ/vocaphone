@@ -30,9 +30,11 @@ uv run --with-requirements requirements.txt python infer.py ~/.cache/vocaphone/m
 ## Typed text (Writing check)
 
 Writing check offers the model's edits on typed text, so it is also scored on
-`typed_en.jsonl` and `clean_en.jsonl`, the way the keyboard offers them: a
-capital on a sentence typed in lower case and a full stop added where the text
-stops are taken back first.
+`typed_en.jsonl` and `clean_en.jsonl`, the way the keyboard offers them. Like
+`WritingCheck`, `eval.py` filters the model's word edits one by one: a full stop,
+question or exclamation mark added where the text stops is taken back (one that
+replaces a mark the text has is kept), and so is a capital anywhere but a
+sentence start, or anywhere in text typed in lower case.
 
 | Set | Precision | Recall | F0.5 | Exact (errors) | False positives (correct) |
 |---|---|---|---|---|---|
