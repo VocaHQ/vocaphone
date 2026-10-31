@@ -1,8 +1,12 @@
 package com.vocahq.vocaphone.ime
 
+import com.vocahq.vocaphone.writing.WritingCategory
 import com.vocahq.vocaphone.writing.WritingCheck
 import com.vocahq.vocaphone.writing.WritingFixtures
+import com.vocahq.vocaphone.writing.WritingSuggestion
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WritingContextTest {
@@ -35,5 +39,23 @@ class WritingContextTest {
         assertEquals('…', c.after.last())
         assert(c.before.length <= 61) { c.before }
         assert(c.after.length <= 61) { c.after }
+    }
+
+    private fun suggestion(original: String, replacement: String?) = WritingSuggestion(
+        start = 0, end = original.length, original = original, replacement = replacement,
+        markStart = 0, markEnd = original.length, kind = "passive", category = WritingCategory.CLARITY,
+        title = "Passive voice", message = "", mechanical = false, source = WritingSuggestion.Source.RULE,
+    )
+
+    @Test
+    fun `advice with no replacement is not struck through`() {
+        assertFalse(strikesOriginal(suggestion("was written by", null)))
+    }
+
+    @Test
+    fun `a replacement or a removal strikes the words`() {
+        assertTrue(strikesOriginal(suggestion("teh", "the")))
+        assertTrue(strikesOriginal(suggestion(" very", "")))
+        assertFalse(strikesOriginal(suggestion("", ",")))
     }
 }

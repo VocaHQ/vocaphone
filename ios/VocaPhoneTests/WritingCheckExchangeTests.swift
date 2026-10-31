@@ -83,6 +83,77 @@ struct WritingCheckExchangeTests {
         #expect(labels(client).contains("was → were"))
     }
 
+    @Test func theButtonChecksTheFieldAsItReadsAfterItsPause() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = client(appRunning: false)
+        var text = "I could of told you. "
+        var finished = 0
+        client.checkAfterPause(
+            .milliseconds(30),
+            read: { WritingCheckClient.Field(text: text, cursor: text.utf16.count) },
+            options: { .init() },
+            finished: { finished += 1 }
+        )
+        // Edited during the pause, with "Check while typing" off.
+        text = "I could have told you. "
+        client.textChanged(before: text, after: "", enabled: true, autoCheck: false) { WritingCheckClient.Options() }
+        await client.settle()
+        #expect(client.report?.field.text == text)
+        #expect(client.report?.all.contains { $0.shownOriginal == "of" } == false)
+        #expect(finished == 1)
+    }
+
+    @Test func aClosedPanelDropsTheButtonCheck() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = client(appRunning: false)
+        let text = "I could of told you. "
+        var reads = 0
+        var finished = 0
+        client.checkAfterPause(
+            .milliseconds(30),
+            read: {
+                reads += 1
+                return WritingCheckClient.Field(text: text, cursor: text.utf16.count)
+            },
+            options: { .init() },
+            finished: { finished += 1 }
+        )
+        client.cancelButtonCheck()
+        await client.settle()
+        #expect(reads == 0)
+        #expect(client.report == nil)
+        #expect(finished == 1)
+        // A field change (or a hidden keyboard) in the pause drops it too.
+        client.checkAfterPause(
+            .milliseconds(30),
+            read: { WritingCheckClient.Field(text: text, cursor: text.utf16.count) },
+            options: { .init() }
+        )
+        client.reset()
+        await client.settle()
+        #expect(client.report == nil)
+        // And a field that cannot be read when the pause ends checks nothing.
+        client.checkAfterPause(.milliseconds(10), read: { nil }, options: { .init() })
+        await client.settle()
+        #expect(client.report == nil)
+        #expect(!client.isChecking)
+    }
+
+    @Test func adviceIsNotStruckThrough() {
+        func make(_ original: String, _ replacement: String?) -> WritingSuggestion {
+            let end = (original as NSString).length
+            return WritingSuggestion(
+                start: 0, end: end, original: original, replacement: replacement,
+                markStart: 0, markEnd: end, kind: "passive", category: .clarity,
+                title: "Passive voice", message: "", mechanical: false, source: .rule, rule: nil
+            )
+        }
+        #expect(!WritingPanelView.strikesOriginal(make("was written by", nil)))
+        #expect(WritingPanelView.strikesOriginal(make("teh", "the")))
+        #expect(WritingPanelView.strikesOriginal(make(" very", "")))
+        #expect(!WritingPanelView.strikesOriginal(make("", ",")))
+    }
+
     @Test func theButtonDoesNotBlinkWhenIOSDoesNotAnswer() {
         let words = DocumentSnapshot(before: "what is you", after: "")
         let empty = DocumentSnapshot(before: "", after: "")

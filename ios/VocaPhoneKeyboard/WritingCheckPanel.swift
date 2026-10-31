@@ -377,7 +377,7 @@ struct WritingPanelView: View {
     }
 
     /// The sentence around the change, the old words struck through in red and
-    /// the new ones in teal.
+    /// the new ones in teal. Advice with no replacement leaves them as typed.
     private func changeLine(_ s: WritingSuggestion) -> AttributedString {
         let context = WritingPanelView.context(of: s, in: model.report?.field.text ?? "")
         var text = AttributedString(context.before)
@@ -385,8 +385,12 @@ struct WritingPanelView: View {
         let replacement = s.shownReplacement
         if !original.isEmpty {
             var old = AttributedString(original)
-            old.strikethroughStyle = .single
-            old.foregroundColor = WritingColors.struck(isDark: isDark)
+            if Self.strikesOriginal(s) {
+                old.strikethroughStyle = .single
+                old.foregroundColor = WritingColors.struck(isDark: isDark)
+            } else {
+                old.foregroundColor = WritingColors.of(s.category, isDark: isDark)
+            }
             text += old
         }
         if let replacement, !replacement.isEmpty {
@@ -398,6 +402,14 @@ struct WritingPanelView: View {
         }
         text += AttributedString(context.after)
         return text
+    }
+
+    /// Whether the card strikes `s`'s words through: only when they are
+    /// replaced or removed (an empty replacement). Advice with no replacement,
+    /// such as a passive voice or a long sentence, changes nothing, and struck
+    /// words would read as a deletion.
+    static func strikesOriginal(_ s: WritingSuggestion) -> Bool {
+        s.replacement != nil && !s.shownOriginal.isEmpty
     }
 
     private func changeAccessibility(_ s: WritingSuggestion) -> String {

@@ -286,6 +286,14 @@ internal fun RowScope.AutoFixNotice(label: String, onUndo: () -> Unit) {
     }
 }
 
+/**
+ * Whether the card strikes [s]'s words through: only when they are replaced
+ * or removed (an empty replacement). Advice with no replacement, such as a
+ * passive voice or a long sentence, changes nothing, and struck words would
+ * read as a deletion.
+ */
+internal fun strikesOriginal(s: WritingSuggestion): Boolean = s.replacement != null && s.shownOriginal.isNotEmpty()
+
 /** The words around a suggestion, within its sentence, for the card. */
 internal data class WritingContext(val before: String, val after: String)
 
@@ -486,10 +494,11 @@ private fun WritingCard(s: WritingSuggestion, text: String) {
                     append(" ")
                 }
                 if (s.shownOriginal.isNotEmpty()) {
+                    val struck = strikesOriginal(s)
                     withStyle(
                         SpanStyle(
-                            textDecoration = TextDecoration.LineThrough,
-                            color = if (replacement == null) muted else removed,
+                            textDecoration = if (struck) TextDecoration.LineThrough else null,
+                            color = if (struck) removed else color,
                             fontWeight = FontWeight.SemiBold,
                         ),
                     ) { append(s.shownOriginal) }
