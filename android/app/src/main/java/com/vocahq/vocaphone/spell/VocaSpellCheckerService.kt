@@ -36,21 +36,7 @@ class VocaSpellCheckerService : SpellCheckerService() {
 
     private val checker get() = container.writingCheck
 
-    /**
-     * The keyboard's English word list, for telling a long English sentence
-     * from a French one. Read on the first check, on a binder thread: the
-     * service has no composition thread to keep it off, and a user who never
-     * picks VocaPhone as the spell checker never pays for it.
-     */
-    private val englishWords: Set<String> by lazy {
-        runCatching {
-            assets.open("en.txt").bufferedReader().useLines { lines ->
-                lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toHashSet()
-            }
-        }.getOrDefault(emptySet())
-    }
-
-    private fun isEnglish(text: String): Boolean = TranscriptRepair.isEnglish(text, "auto") { it in englishWords }
+    private fun isEnglish(text: String): Boolean = TranscriptRepair.isEnglish(text, "auto") { it in container.englishWords }
 
     override fun createSession(): Session = WritingSession()
 

@@ -132,8 +132,8 @@ class AppContainer(context: Context) {
 
     /**
      * The keyboard's shipped English word list, for the Writing check screen's
-     * question of whether a text is English at all. Read once, off the main
-     * thread, on first use.
+     * and the spell checker's question of whether a text is English at all.
+     * Read once, off the main thread, on first use.
      */
     val englishWords: Set<String> by lazy {
         runCatching {
