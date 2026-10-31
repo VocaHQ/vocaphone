@@ -30,8 +30,9 @@ Mindscend's v2.0 has v1.5's architecture, tokenizer, plausible pairs, input
 and output names and label count; only the weights and the order and content
 of `labels.json` changed (1,523 multi-word `APPEND_` labels swapped, which the
 guard vetoes anyway). Its card recommends a KEEP bias of 3 ("Balanced") and 4
-("Only sure fixes"), so the recipe moved from 2.0 to 3.0 and both apps offer
-4.0 as a setting.
+("Only sure fixes"), so the recipe moved from 2.0 to 3.0. Both apps store a
+`grammarSureOnly` preference that applies 4.0; the "Only sure fixes" control
+that sets it arrives with Writing check.
 
 | Model, KEEP bias | Precision | Recall | F0.5 | Exact (errors) | False positives (correct) | Protected-span damage |
 |---|---|---|---|---|---|---|
