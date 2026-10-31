@@ -1,5 +1,5 @@
 {
- "about": "Cases for Writing check, read by both ports: android/.../writing/WritingCheckTest.kt and ios/VocaPhoneTests/WritingCheckTests.swift. Offsets are UTF-16 units. Expected values were recorded from the Kotlin port, reviewed, and are binding on both. `model` maps a sentence to what the grammar model returns for it (null: still loading); a sentence not listed comes back unchanged.",
+ "about": "Cases for Writing check, read by both ports: android/.../writing/WritingCheckTest.kt and ios/VocaPhoneTests/WritingCheckTests.swift. Offsets are UTF-16 units. Expected values were recorded from the Kotlin port, reviewed, and are binding on both. `model` maps a sentence to what the grammar model returns for it (null: still loading); a sentence not listed comes back unchanged. `accept` is the text left once every suggestion is accepted.",
  "tokenize": [
   {
    "text": "He don't know.",
@@ -3688,6 +3688,39 @@
     }
    ],
    "modelPending": false
+  },
+  {
+   "name": "a phrase removed between commas takes them along",
+   "text": "It was, needless to say, a great day.",
+   "stats": [
+    8,
+    37,
+    1,
+    3,
+    4,
+    100,
+    96
+   ],
+   "tones": [],
+   "suggestions": [
+    {
+     "original": ", needless to say,",
+     "kind": "wordiness",
+     "start": 6,
+     "rule": "wordy-needless-to-say",
+     "end": 24,
+     "label": "Remove “needless to say”",
+     "source": "rule",
+     "category": "clarity",
+     "message": "You can drop “needless to say” without changing the meaning.",
+     "replacement": "",
+     "mark": [
+      8,
+      23
+     ]
+    }
+   ],
+   "modelPending": false
   }
  ],
  "rebase": [
@@ -3819,6 +3852,76 @@
    "original": "won't",
    "replacement": "doesn't",
    "expected": null
+  }
+ ],
+ "accept": [
+  {
+   "name": "a word added after a bracket",
+   "text": "I go(store)",
+   "model": {
+    "I go(store)": "I go(the store)"
+   },
+   "expected": "I go(the store)"
+  },
+  {
+   "name": "a comma removed between words",
+   "text": "Hello ,world",
+   "model": {
+    "Hello ,world": "Hello world"
+   },
+   "expected": "Hello world"
+  },
+  {
+   "name": "a comma swapped for a word",
+   "text": "I like cats,dogs.",
+   "model": {
+    "I like cats,dogs.": "I like cats and dogs."
+   },
+   "expected": "I like cats and dogs."
+  },
+  {
+   "name": "a word added before a full stop",
+   "text": "I go.",
+   "model": {
+    "I go.": "I go home."
+   },
+   "expected": "I go home."
+  },
+  {
+   "name": "a helper verb added",
+   "text": "I going to the store.",
+   "model": {
+    "I going to the store.": "I am going to the store."
+   },
+   "expected": "I am going to the store."
+  },
+  {
+   "name": "a comma added",
+   "text": "Hi Sam how are you?",
+   "model": {
+    "Hi Sam how are you?": "Hi Sam, how are you?"
+   },
+   "expected": "Hi Sam, how are you?"
+  },
+  {
+   "name": "a phrase removed between commas",
+   "text": "It was, needless to say, a great day.",
+   "expected": "It was a great day."
+  },
+  {
+   "name": "a phrase removed before the full stop",
+   "text": "Let us go, if that makes sense.",
+   "expected": "Let us go."
+  },
+  {
+   "name": "a phrase removed at the start",
+   "text": "Needless to say, it was great.",
+   "expected": "it was great."
+  },
+  {
+   "name": "a repeated word removed inside brackets",
+   "text": "(the the cat)",
+   "expected": "(the cat)"
   }
  ]
 }

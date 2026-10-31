@@ -41,6 +41,7 @@ class WritingCheckTest {
         checks(recorded)
         rebase(recorded)
         apply(recorded)
+        accept(recorded)
         if (recording) File("build/writing_fixtures.json").writeText(recorded.toString(1) + "\n")
     }
 
@@ -117,6 +118,17 @@ class WritingCheckTest {
             .copy(original = case.getString("original"), replacement = case.getString("replacement"))
         expect(case, out, "expected", WritingCheck.apply(case.getString("text"), s))
     }
+
+    /** Every suggestion accepted, last first: the spacing [WritingEdits.build] leaves behind. */
+    private fun accept(recorded: JSONObject) = section(recorded, "accept") { case, out ->
+        var text = case.getString("text")
+        val report = check.check(text, WritingFixtures.model(case), WritingFixtures.options(case))
+        for (s in report.suggestions.filter { it.isActionable }.sortedByDescending { it.start }) {
+            text = WritingCheck.apply(text, s) ?: text
+        }
+        expect(case, out, "expected", text)
+    }
+
 }
 
 /** Shared by the writing tests: the rules file and the fixture's model and options. */

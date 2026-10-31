@@ -173,7 +173,7 @@ class WritingCheck(val rules: WritingRules) {
         }
         val edit = WritingEdits.build(text, tokens, sentence.first, from, to, inserted)
         val original = text.substring(edit.start, edit.end)
-        values["original"] = original.trim()
+        values["original"] = edit.shownOriginal(text)
         values["replacement"] = edit.replacement.trim()
         values["previous"] = if (from > sentence.first) tokens[from - 1].text else ""
         values["next"] = if (to <= sentence.last) tokens[to].text else ""

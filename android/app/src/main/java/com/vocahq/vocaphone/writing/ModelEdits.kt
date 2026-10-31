@@ -33,7 +33,7 @@ internal class ModelEdits(private val rules: WritingRules) {
             val atStart = hunk.aFrom == 0 || WritingText.isSentenceStart(tokens, sentence, from)
             val (kind, messageKey) = classify(removed, added, previous, next, atStart, endOfSentence = hunk.aFrom == a.size)
             val k = rules.kind(kind)
-            val shownOriginal = text.substring(edit.start, edit.end).trim()
+            val shownOriginal = edit.shownOriginal(text)
             val values = mapOf(
                 "original" to shownOriginal,
                 "replacement" to edit.replacement.trim(),

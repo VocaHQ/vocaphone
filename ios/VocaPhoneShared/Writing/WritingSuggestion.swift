@@ -23,7 +23,13 @@ struct WritingSuggestion: Equatable, Codable, Sendable {
     /// The rule's id for `.rule`.
     var rule: String?
 
-    var shownOriginal: String { original.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// The words as typed; for a removal, only the words removed, not a comma or space taken along.
+    var shownOriginal: String {
+        if let replacement, replacement.allSatisfy(\.isWhitespace), start <= markStart, markStart < markEnd, markEnd <= end {
+            return original.utf16Slice(markStart - start, markEnd - start).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return original.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     var shownReplacement: String? { replacement?.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// What a chip says: the words as typed and what they become.
@@ -58,39 +64,109 @@ enum WritingEdits {
         let replacement: String
         let markStart: Int
         let markEnd: Int
+
+        /// What a card shows as replaced, as `WritingSuggestion.shownOriginal`.
+        func shownOriginal(_ text: String) -> String {
+            let blank = replacement.allSatisfy(\.isWhitespace)
+            return text.utf16Slice(blank ? markStart : start, blank ? markEnd : end)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
+    /// Removed tokens `from..<to` become `inserted`; `floor` is the first token
+    /// the edit may reach back to for its whitespace. The spaces come from both
+    /// neighbours, and a phrase removed between commas takes one along, as
+    /// `WritingEdits.build` in Kotlin describes.
     static func build(
         _ tokens: [WritingToken], floor: Int, from: Int, to: Int, inserted: String
     ) -> Edit {
         let removed = to > from
-        if removed, !inserted.isEmpty {
-            return Edit(start: tokens[from].start, end: tokens[to - 1].end, replacement: inserted,
-                        markStart: tokens[from].start, markEnd: tokens[to - 1].end)
-        }
-        if removed {
-            // Take the space before the word with it, or after it at the start.
-            if from > floor {
-                return Edit(start: tokens[from - 1].end, end: tokens[to - 1].end, replacement: "",
-                            markStart: tokens[from].start, markEnd: tokens[to - 1].end)
-            }
-            if to < tokens.count {
-                return Edit(start: tokens[from].start, end: tokens[to].start, replacement: "",
-                            markStart: tokens[from].start, markEnd: tokens[to - 1].end)
-            }
-            return Edit(start: tokens[from].start, end: tokens[to - 1].end, replacement: "",
-                        markStart: tokens[from].start, markEnd: tokens[to - 1].end)
-        }
+        if removed, !inserted.isEmpty { return replace(tokens, floor: floor, from: from, to: to, inserted: inserted) }
+        if removed { return remove(tokens, floor: floor, from: from, to: to) }
+        let words = WritingText.tokenize(inserted)
+        let firstText = words.first?.text ?? inserted
+        let lastText = words.last?.text ?? inserted
         if from > floor {
             let anchor = tokens[from - 1]
-            let glue = WritingText.isPunctuation(String(inserted.prefix(1))) ? "" : " "
-            return Edit(start: anchor.end, end: anchor.end, replacement: glue + inserted,
+            let left = spaced(anchor.text, firstText) ? " " : ""
+            let next = from < tokens.count ? tokens[from] : nil
+            let right = next.map { $0.start == anchor.end && spaced(lastText, $0.text) } == true ? " " : ""
+            return Edit(start: anchor.end, end: anchor.end, replacement: left + inserted + right,
                         markStart: anchor.start, markEnd: anchor.end)
         }
         let next = tokens[from]
-        return Edit(start: next.start, end: next.start, replacement: inserted + " ",
+        let right = spaced(lastText, next.text) ? " " : ""
+        return Edit(start: next.start, end: next.start, replacement: inserted + right,
                     markStart: next.start, markEnd: next.end)
     }
+
+    /// Tokens swapped for others: a space only where two words would otherwise touch.
+    private static func replace(_ tokens: [WritingToken], floor: Int, from: Int, to: Int, inserted: String) -> Edit {
+        let words = WritingText.tokenize(inserted)
+        let first = tokens[from]
+        let last = tokens[to - 1]
+        let before = from > floor && from > 0 ? tokens[from - 1] : nil
+        let after = to < tokens.count ? tokens[to] : nil
+        let left = before.map { $0.end == first.start && $0.isWord } == true && words.first?.isWord == true ? " " : ""
+        let right = after.map { $0.start == last.end && $0.isWord } == true && words.last?.isWord == true ? " " : ""
+        return Edit(start: first.start, end: last.end, replacement: left + inserted + right,
+                    markStart: first.start, markEnd: last.end)
+    }
+
+    private static func remove(_ tokens: [WritingToken], floor: Int, from removeFrom: Int, to removeTo: Int) -> Edit {
+        let markStart = tokens[removeFrom].start
+        let markEnd = tokens[removeTo - 1].end
+        var from = removeFrom
+        var to = removeTo
+        func token(_ i: Int) -> WritingToken? { i >= 0 && i < tokens.count ? tokens[i] : nil }
+        let left = from > floor ? token(from - 1) : nil
+        let right = token(to)
+        if left?.text == "," {
+            if right?.text == ",", from - 1 > floor {
+                // ", needless to say," between words: both commas go.
+                from -= 1
+                to += 1
+            } else if right == nil || closing.contains(right!.text) {
+                // ", if that makes sense." at the end: the comma goes.
+                from -= 1
+            }
+        } else if left == nil, right?.text == "," {
+            to += 1
+        }
+        let l = from > floor ? token(from - 1) : nil
+        let r = token(to)
+        let first = tokens[from]
+        let last = tokens[to - 1]
+        guard let l else {
+            // At the start, take the space after it.
+            return Edit(start: first.start, end: r?.start ?? last.end, replacement: "", markStart: markStart, markEnd: markEnd)
+        }
+        guard let r else {
+            // At the end, take the space before it.
+            return Edit(start: l.end, end: last.end, replacement: "", markStart: markStart, markEnd: markEnd)
+        }
+        let wanted = spaced(l.text, r.text)
+        let gapBefore = first.start > l.end
+        let gapAfter = r.start > last.end
+        // Usually the space before goes and the one after stays.
+        if gapAfter == wanted {
+            return Edit(start: l.end, end: last.end, replacement: "", markStart: markStart, markEnd: markEnd)
+        }
+        if gapBefore == wanted {
+            return Edit(start: first.start, end: r.start, replacement: "", markStart: markStart, markEnd: markEnd)
+        }
+        return Edit(start: l.end, end: r.start, replacement: wanted ? " " : "", markStart: markStart, markEnd: markEnd)
+    }
+
+    /// Whether a space belongs between `left` and `right`: not after "(" or a hyphen, not before "," or ")".
+    private static func spaced(_ left: String, _ right: String) -> Bool {
+        !opening.contains(left) && !joining.contains(left) && !joining.contains(right) && !attached.contains(right)
+    }
+
+    private static let closing: Set<String> = [".", "!", "?", ";", ":", "…"]
+    private static let attached: Set<String> = [",", ".", ";", ":", "!", "?", "…", ")", "]", "}", "”", "’", "»"]
+    private static let opening: Set<String> = ["(", "[", "{", "“", "‘", "«"]
+    private static let joining: Set<String> = ["-", "‐", "‑", "/"]
 
     /// Fills `{name}` placeholders from `values`; unknown names become empty.
     static func format(_ template: String, _ values: [String: String]) -> String {

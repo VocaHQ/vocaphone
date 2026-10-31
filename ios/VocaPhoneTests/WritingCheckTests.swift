@@ -137,6 +137,20 @@ struct WritingCheckTests {
             #expect(Self.canonical(WritingCheck.apply(text, s)) == Self.canonical(c["expected"]), Self.label(c, "expected"))
         }
     }
+
+    /// Every suggestion accepted, last first: the spacing `WritingEdits.build` leaves behind.
+    @Test func accept() {
+        let check = WritingCheck(rules: Self.rules)
+        for c in Self.cases("accept") {
+            var text = c["text"] as! String
+            let report = check.check(text, model: Self.model(c), options: Self.options(c))
+            for s in report.suggestions.filter(\.isActionable).sorted(by: { $0.start > $1.start }) {
+                text = WritingCheck.apply(text, s) ?? text
+            }
+            #expect(Self.canonical(text) == Self.canonical(c["expected"]), Self.label(c, "expected"))
+        }
+    }
+
 }
 
 /// The rules' false-positive gate, as WritingCleanTextTest.kt: at most 2% of
@@ -157,4 +171,5 @@ struct WritingCleanTextTests {
         }
         #expect(Double(flagged.count) / Double(cases.count) <= 0.02, "\(flagged.map { $0["input"]! })")
     }
+
 }

@@ -35,7 +35,7 @@ struct ModelEdits {
             )
             let k = rules.kind(kind)
             let original = text.utf16Slice(edit.start, edit.end)
-            let shownOriginal = original.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shownOriginal = edit.shownOriginal(text)
             let shownReplacement = edit.replacement.trimmingCharacters(in: .whitespacesAndNewlines)
             let values = [
                 "original": shownOriginal,

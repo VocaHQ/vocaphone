@@ -176,7 +176,7 @@ struct WritingCheck: Sendable {
         }
         let edit = WritingEdits.build(tokens, floor: sentence.first, from: from, to: to, inserted: inserted)
         let original = text.utf16Slice(edit.start, edit.end)
-        let shownOriginal = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shownOriginal = edit.shownOriginal(text)
         let shownReplacement = edit.replacement.trimmingCharacters(in: .whitespacesAndNewlines)
         values["original"] = shownOriginal
         values["replacement"] = shownReplacement
