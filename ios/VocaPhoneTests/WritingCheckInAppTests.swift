@@ -51,6 +51,29 @@ struct WritingCheckInAppTests {
         #expect(Self.checker.check("please recieve").suggestions.contains { $0.shownReplacement == "receive" })
     }
 
+    @Test func aBorrowedAccentedWordDoesNotHideTheRestOfAnEnglishSentence() {
+        let sentence = "I definately want to visit the café."
+        // The transcript test alone calls any accented letter foreign.
+        #expect(!TranscriptRepair.isEnglish(sentence, isDictionaryWord: Self.english.contains))
+        #expect(Self.applies(sentence))
+        #expect(Self.checker.check(sentence).suggestions.contains { $0.shownReplacement == "definitely" })
+    }
+
+    @Test func aSentenceWithManyAccentedWordsIsNotEnglish() {
+        #expect(!WritingCheck.isEnglish("El niño está en la casa grande") { _ in true })
+        #expect(!Self.applies("Ça a été une très belle journée, merci"))
+        // One accented word in eight is allowed; the other seven are French.
+        #expect(!Self.applies("Je pense que nous irons au café demain"))
+    }
+
+    @Test func theRestIsAskedWithoutTheBorrowedWords() {
+        var asked = ""
+        _ = WritingCheck.isEnglish("we met at the café on monday") { asked = $0; return true }
+        #expect(asked == "we met at the on monday")
+        _ = WritingCheck.isEnglish("plain english text") { asked = $0; return true }
+        #expect(asked == "plain english text")
+    }
+
     @Test func textWithoutLettersIsNotChecked() {
         #expect(!Self.applies("12 + 30 = 42"))
     }
