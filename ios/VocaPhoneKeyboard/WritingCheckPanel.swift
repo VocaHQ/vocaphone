@@ -448,11 +448,7 @@ struct WritingPanelView: View {
         return (before, after)
     }
 
-    private var toneLine: String? {
-        let tones = model.report?.tones ?? []
-        guard !tones.isEmpty else { return nil }
-        return "Sounds " + tones.map { "\($0.emoji) \($0.label)" }.joined(separator: " · ")
-    }
+    private var toneLine: String? { model.toneLine }
 
     // MARK: Checking and done
 
