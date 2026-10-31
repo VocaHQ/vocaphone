@@ -594,6 +594,7 @@ enum KeyboardPreferences {
     static let typingGrammarKey = "typingGrammarEnabled"
     static let grammarSureOnlyKey = "grammarSureOnly"
     static let grammarModelReadyKey = "grammarModelReady"
+    static let grammarModelRequestedKey = "grammarModelRequested"
     static let writingClarityKey = "writingClarity"
     static let writingEngagementKey = "writingEngagement"
     static let writingDeliveryKey = "writingDelivery"
@@ -977,6 +978,26 @@ enum KeyboardPreferences {
     static var grammarModelReady: Bool {
         get { boolean(grammarModelReadyKey, default: false) }
         set { defaults?.set(newValue, forKey: grammarModelReadyKey) }
+    }
+
+    /// Whether the person agreed to download the grammar model, from Fix
+    /// grammar or Writing check's download offer; nil when no build has
+    /// written it yet. App launch fetches a missing model (a moved pin, a
+    /// failed attempt) only while this or `fixGrammar` is on; "Check while
+    /// typing" alone never does. See `GrammarModelConsent`. Only the app
+    /// reads it.
+    static var grammarModelRequested: Bool? {
+        get {
+            guard let defaults, defaults.object(forKey: grammarModelRequestedKey) != nil else { return nil }
+            return defaults.bool(forKey: grammarModelRequestedKey)
+        }
+        set {
+            if let newValue {
+                defaults?.set(newValue, forKey: grammarModelRequestedKey)
+            } else {
+                defaults?.removeObject(forKey: grammarModelRequestedKey)
+            }
+        }
     }
 
     /// Writing check's blue group: wordy phrases, passive voice, long sentences.

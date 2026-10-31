@@ -346,4 +346,113 @@ struct GrammarModelStoreTests {
         #expect(!asked)
         #expect(requests.all.count == before)
     }
+
+    // MARK: - Agreeing to the model
+
+    // Greptile on #438: "Check while typing" works without the grammar model
+    // and its download offer can be declined, so turning it on must not make
+    // the next launch fetch 28 MB anyway. Mirrors GrammarModelConsentTest.kt.
+
+    @Test func aStoredAnswerIsKeptWhateverIsOnThePhone() {
+        #expect(GrammarModelConsent.requested(stored: true, fixGrammar: false, filesOnPhone: false))
+        #expect(!GrammarModelConsent.requested(stored: false, fixGrammar: true, filesOnPhone: true))
+    }
+
+    @Test func anEarlierBuildsDownloadOrFixGrammarCountsAsAgreement() {
+        #expect(GrammarModelConsent.requested(stored: nil, fixGrammar: false, filesOnPhone: true))
+        #expect(GrammarModelConsent.requested(stored: nil, fixGrammar: true, filesOnPhone: false))
+        #expect(!GrammarModelConsent.requested(stored: nil, fixGrammar: false, filesOnPhone: false))
+    }
+
+    @Test func onlyAnAgreementOrFixGrammarFetchesAMissingModel() {
+        #expect(!GrammarModelConsent.wanted(available: true, requested: false, fixGrammar: false))
+        #expect(GrammarModelConsent.wanted(available: true, requested: true, fixGrammar: false))
+        // Fix grammar does nothing without the model, so it is an agreement on its own.
+        #expect(GrammarModelConsent.wanted(available: true, requested: false, fixGrammar: true))
+        // A build without pins has nothing to fetch.
+        #expect(!GrammarModelConsent.wanted(available: false, requested: true, fixGrammar: true))
+    }
+
+    /// What `RecordingCoordinator` does at launch, with `stored` as the
+    /// setting: the flag it leaves, and whether it downloaded.
+    private func launch(_ store: GrammarModelStore, stored: Bool?, fixGrammar: Bool) async -> (Bool, Bool) {
+        let requested = GrammarModelConsent.requested(
+            stored: stored, fixGrammar: fixGrammar, filesOnPhone: store.hasFiles(retired: ["grammar-old"])
+        )
+        let downloaded = await store.restore(retired: ["grammar-old"]) {
+            GrammarModelConsent.wanted(available: true, requested: requested, fixGrammar: fixGrammar)
+        }
+        return (requested, downloaded)
+    }
+
+    @Test func checkWhileTypingAloneNeverDownloadsAtLaunch() async throws {
+        let root = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let requests = Requests()
+        // A fresh install that turned typing on and said "Not now" to the
+        // model: nothing on the phone, the flag never written.
+        let (requested, downloaded) = await launch(
+            GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch(requested: requests)),
+            stored: nil, fixGrammar: false
+        )
+        #expect(!requested)
+        #expect(!downloaded)
+        #expect(requests.all.isEmpty)
+        // Stored as false, so the next launch does not reconsider it either.
+        let (_, again) = await launch(
+            GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch(requested: requests)),
+            stored: requested, fixGrammar: false
+        )
+        #expect(!again)
+        #expect(requests.all.isEmpty)
+    }
+
+    @Test func anUpgradeFromABuildWithoutTheFlagKeepsRetryingUntilTheModelLands() async throws {
+        let root = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        // Downloaded under the old pin, for typing alone: Fix grammar off.
+        let old = root.appendingPathComponent("grammar-old", isDirectory: true)
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: old.appendingPathComponent("model.onnx"))
+        let offline = GrammarModelStore(pins: Self.pins, root: root) { _, _ in
+            throw URLError(.notConnectedToInternet)
+        }
+
+        let (requested, downloaded) = await launch(offline, stored: nil, fixGrammar: false)
+        #expect(requested)
+        #expect(!downloaded)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+
+        // The old folder is gone now; the stored flag is what carries the
+        // agreement to the next launch.
+        let next = GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch())
+        #expect(!next.hasFiles(retired: ["grammar-old"]))
+        let (_, retried) = await launch(next, stored: requested, fixGrammar: false)
+        #expect(retried)
+        #expect(next.isReady)
+    }
+
+    @Test func aPartWayDownloadCountsAsFilesOnThePhone() throws {
+        let root = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(!GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch()).hasFiles(retired: []))
+
+        // This model's, which launch sweeps away before anyone asks.
+        let current = root.appendingPathComponent(".download-\(GrammarModelStore.modelID)-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        let store = GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch())
+        #expect(!FileManager.default.fileExists(atPath: current.path))
+        #expect(store.hasFiles(retired: []))
+
+        // A retired model's.
+        let other = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: other) }
+        try FileManager.default.createDirectory(
+            at: other.appendingPathComponent(".download-grammar-old-\(UUID().uuidString)"),
+            withIntermediateDirectories: true
+        )
+        let retired = GrammarModelStore(pins: Self.pins, root: other, fetch: Self.fetch())
+        #expect(retired.hasFiles(retired: ["grammar-old"]))
+        #expect(!retired.hasFiles(retired: []))
+    }
 }

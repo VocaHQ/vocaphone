@@ -116,7 +116,7 @@ struct WritingCheckSettingsSection: View {
         case .ready:
             LabeledContent("Grammar model", value: "On this iPhone")
         case let .downloading(fraction):
-            Button("Cancel download", role: .cancel) { store.cancel() }
+            Button("Cancel download", role: .cancel) { cancelDownload(store) }
             ProgressView(value: fraction) { Text("Downloading the grammar model") }
         case let .failed(reason):
             downloadButton(detail: reason.plainText)
@@ -142,6 +142,7 @@ struct WritingCheckSettingsSection: View {
     }
 
     private func download() {
+        GrammarModelConsent.agree()
         Task {
             if (try? await store.download()) != nil { grammar.modelChanged() }
         }
@@ -165,7 +166,10 @@ private struct GrammarModelToggle: View {
         // The toggle is disabled while the files arrive, so this is the one
         // way to change your mind about a 28 MB download.
         if isDownloading {
-            Button("Cancel download", role: .cancel) { store.cancel() }
+            Button("Cancel download", role: .cancel) {
+                cancelDownload(store)
+                isOn = false
+            }
         }
     }
 
@@ -222,6 +226,7 @@ private struct GrammarModelToggle: View {
     }
 
     private func download() {
+        GrammarModelConsent.agree()
         Task {
             do {
                 try await store.download()
@@ -232,4 +237,13 @@ private struct GrammarModelToggle: View {
             }
         }
     }
+}
+
+/// "Cancel download", wherever it is offered: the files fetched so far are
+/// discarded, and changing your mind withdraws the agreement too, so the next
+/// launch does not fetch the model anyway and Fix grammar stays off.
+@MainActor
+private func cancelDownload(_ store: GrammarModelStore) {
+    store.cancel()
+    GrammarModelConsent.withdraw()
 }

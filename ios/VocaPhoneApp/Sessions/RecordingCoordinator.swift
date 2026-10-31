@@ -450,14 +450,18 @@ final class RecordingCoordinator {
         )
         self.grammar = grammar
         // An update that moved the grammar pin leaves the old model behind
-        // and the new one missing. Whoever had a grammar setting on already
-        // agreed to this download; a switch left on over a missing model would
-        // quietly stop correcting anything. A download that failed (offline,
-        // or the app killed mid-way) is retried on every launch until it lands.
+        // and the new one missing. Whoever agreed to the model (Fix grammar,
+        // or Writing check's download offer) agreed to this download already;
+        // Fix grammar left on over a missing model would quietly stop
+        // correcting anything. A download that failed (offline, or the app
+        // killed mid-way) is retried on every launch while that agreement
+        // stands. "Check while typing" alone is not an agreement: it works
+        // without the model.
         Task { @MainActor in
-            let downloaded = await grammarModel.restore {
-                KeyboardPreferences.fixGrammar || KeyboardPreferences.typingGrammar
-            }
+            // Before restore() sweeps the retired folders: they are what shows
+            // an earlier build's download was agreed to.
+            GrammarModelConsent.migrate(grammarModel)
+            let downloaded = await grammarModel.restore { GrammarModelConsent.wantedAtLaunch(grammarModel) }
             if downloaded { grammar.modelChanged() }
         }
         typedGrammar = TypedGrammarResponder(
