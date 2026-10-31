@@ -13,7 +13,6 @@ import com.vocahq.vocaphone.local.GrammarModelCatalog
 import com.vocahq.vocaphone.writing.WritingCategory
 import com.vocahq.vocaphone.writing.WritingCheck
 import com.vocahq.vocaphone.writing.WritingLanguage
-import com.vocahq.vocaphone.writing.WritingRules
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -35,11 +34,7 @@ import kotlinx.coroutines.runBlocking
 class VocaSpellCheckerService : SpellCheckerService() {
     private val container by lazy { VocaPhoneApplication.container(this) }
 
-    private val checker by lazy {
-        runCatching {
-            WritingCheck(WritingRules.parse(assets.open("writing-rules.json").bufferedReader().use { it.readText() }))
-        }.getOrNull()
-    }
+    private val checker get() = container.writingCheck
 
     /**
      * The keyboard's English word list, for telling a long English sentence
