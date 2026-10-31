@@ -61,7 +61,7 @@ struct WritingCheck: Sendable {
         var pending = false
 
         for sentence in sentences {
-            found += ruleSuggestions(text, tokens, sentence, protected, keep)
+            found += ruleSuggestions(text, tokens, sentence, protected, keep, options.categories)
         }
         if let model {
             let edits = ModelEdits(rules: rules)
@@ -106,7 +106,8 @@ struct WritingCheck: Sendable {
     // MARK: - Rules
 
     private func ruleSuggestions(
-        _ text: String, _ tokens: [WritingToken], _ sentence: WritingSentence, _ protected: [NSRange], _ keep: Set<String>
+        _ text: String, _ tokens: [WritingToken], _ sentence: WritingSentence, _ protected: [NSRange], _ keep: Set<String>,
+        _ categories: Set<WritingCategory>
     ) -> [WritingSuggestion] {
         var out: [WritingSuggestion] = []
         var i = sentence.first
@@ -115,6 +116,9 @@ struct WritingCheck: Sendable {
             let start = WritingText.isSentenceStart(tokens, sentence, i)
             for index in candidates(tokens[i]) {
                 let rule = rules.rules[index]
+                // A rule the user turned off must not take its words from one
+                // they kept: "could" is hedging, and "could helps" still needs "help".
+                if !categories.contains(rules.kind(rule.kind).category) { continue }
                 let count = rule.match(tokens, sentence, i, rules, start: start)
                 if count == 0 { continue }
                 let matched = Array(tokens[i..<(i + count)])

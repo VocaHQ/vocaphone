@@ -66,7 +66,7 @@ class WritingCheck(val rules: WritingRules) {
         val found = ArrayList<WritingSuggestion>()
         var pending = false
 
-        for (sentence in sentences) found += ruleSuggestions(text, tokens, sentence, protected, keep)
+        for (sentence in sentences) found += ruleSuggestions(text, tokens, sentence, protected, keep, options.categories)
         if (model != null) {
             for (sentence in sentences) {
                 val words = tokens.subList(sentence.first, sentence.last + 1)
@@ -102,6 +102,7 @@ class WritingCheck(val rules: WritingRules) {
         sentence: WritingSentence,
         protected: List<IntRange>,
         keep: Set<String>,
+        categories: Set<WritingCategory>,
     ): List<WritingSuggestion> {
         val out = ArrayList<WritingSuggestion>()
         var i = sentence.first
@@ -110,6 +111,9 @@ class WritingCheck(val rules: WritingRules) {
             val start = WritingText.isSentenceStart(tokens, sentence, i)
             for (index in candidates(tokens[i])) {
                 val rule = rules.rules[index]
+                // A rule the user turned off must not take its words from one
+                // they kept: "could" is hedging, and "could helps" still needs "help".
+                if (rules.kind(rule.kind).category !in categories) continue
                 val count = rule.match(tokens, sentence, i, rules, start)
                 if (count == 0) continue
                 val matched = tokens.subList(i, i + count)
