@@ -3294,6 +3294,45 @@
    "modelPending": false
   },
   {
+   "name": "a style rule that is off leaves its words to a fix that is on",
+   "text": "I was wondering if you could helps.",
+   "model": {},
+   "options": {
+    "categories": [
+     "correctness"
+    ]
+   },
+   "stats": [
+    7,
+    35,
+    1,
+    2,
+    3,
+    91,
+    92
+   ],
+   "tones": [],
+   "suggestions": [
+    {
+     "original": "helps",
+     "kind": "verb_form",
+     "start": 29,
+     "rule": "modal-base",
+     "end": 34,
+     "label": "helps → help",
+     "source": "rule",
+     "category": "correctness",
+     "message": "After “could”, use “help”.",
+     "replacement": "help",
+     "mark": [
+      29,
+      34
+     ]
+    }
+   ],
+   "modelPending": false
+  },
+  {
    "name": "whole text, not typed",
    "text": "see you tomorrow",
    "model": {
