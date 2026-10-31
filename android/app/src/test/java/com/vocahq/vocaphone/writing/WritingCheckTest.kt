@@ -129,6 +129,21 @@ class WritingCheckTest {
         expect(case, out, "expected", text)
     }
 
+    @Test
+    fun diffSetsTheSharedEndsAsideAndBoundsTheMiddle() {
+        val words = List(3000) { "w$it" }
+        val one = words.toMutableList().also { it[1500] = "x" }
+        assertEquals(listOf(ModelEdits.Hunk(1500, 1501, 1500, 1501)), ModelEdits.diff(words, one))
+        // A middle past the table's budget is one replaced run, not a 2000 × 2000 table.
+        val a = listOf("same") + List(2000) { "a$it" } + listOf("same")
+        val b = listOf("same") + List(2000) { "b$it" } + listOf("same")
+        assertEquals(listOf(ModelEdits.Hunk(1, 2001, 1, 2001)), ModelEdits.diff(a, b))
+        // A short middle still aligns word by word.
+        assertEquals(
+            listOf(ModelEdits.Hunk(1, 2, 1, 1), ModelEdits.Hunk(3, 3, 2, 3)),
+            ModelEdits.diff(listOf("a", "b", "c", "d"), listOf("a", "c", "x", "d")),
+        )
+    }
 }
 
 /** Shared by the writing tests: the rules file and the fixture's model and options. */

@@ -214,16 +214,39 @@ internal class ModelEdits(private val rules: WritingRules) {
         )
 
         /**
-         * The changed runs between [a] and [b], by longest common subsequence.
-         * Ties go to deleting from [a] first, on both platforms.
+         * The most the longest-common-subsequence table may hold: a changed
+         * middle of about 700 words each side. Past it, the middle is one hunk.
+         */
+        const val MAX_DIFF_CELLS = 500_000
+
+        /**
+         * The changed runs between [a] and [b], by longest common subsequence
+         * of what is left once the shared start and end are set aside. Ties go
+         * to deleting from [a] first, on both platforms. A middle too long to
+         * compare in [MAX_DIFF_CELLS] comes back as one replaced run, so a long
+         * pasted passage costs memory in proportion to its length, not its square.
          */
         fun diff(a: List<String>, b: List<String>): List<Hunk> {
-            val n = a.size
-            val m = b.size
-            val lcs = Array(n + 1) { IntArray(m + 1) }
+            var prefix = 0
+            while (prefix < a.size && prefix < b.size && a[prefix] == b[prefix]) prefix++
+            var suffix = 0
+            while (suffix < a.size - prefix && suffix < b.size - prefix && a[a.size - 1 - suffix] == b[b.size - 1 - suffix]) suffix++
+            val n = a.size - prefix - suffix
+            val m = b.size - prefix - suffix
+            if (n == 0 && m == 0) return emptyList()
+            if (n == 0 || m == 0 || n.toLong() * m > MAX_DIFF_CELLS) {
+                return listOf(Hunk(prefix, prefix + n, prefix, prefix + m))
+            }
+            // lcs[i * (m + 1) + j]: the common subsequence of the middles from i and j on.
+            val width = m + 1
+            val lcs = IntArray((n + 1) * width)
             for (i in n - 1 downTo 0) {
                 for (j in m - 1 downTo 0) {
-                    lcs[i][j] = if (a[i] == b[j]) lcs[i + 1][j + 1] + 1 else maxOf(lcs[i + 1][j], lcs[i][j + 1])
+                    lcs[i * width + j] = if (a[prefix + i] == b[prefix + j]) {
+                        lcs[(i + 1) * width + j + 1] + 1
+                    } else {
+                        maxOf(lcs[(i + 1) * width + j], lcs[i * width + j + 1])
+                    }
                 }
             }
             val hunks = ArrayList<Hunk>()
@@ -231,17 +254,17 @@ internal class ModelEdits(private val rules: WritingRules) {
             var j = 0
             var open: IntArray? = null
             fun close() {
-                open?.let { hunks.add(Hunk(it[0], i, it[1], j)) }
+                open?.let { hunks.add(Hunk(prefix + it[0], prefix + i, prefix + it[1], prefix + j)) }
                 open = null
             }
             while (i < n || j < m) {
                 when {
-                    i < n && j < m && a[i] == b[j] -> {
+                    i < n && j < m && a[prefix + i] == b[prefix + j] -> {
                         close()
                         i++
                         j++
                     }
-                    j >= m || (i < n && lcs[i + 1][j] >= lcs[i][j + 1]) -> {
+                    j >= m || (i < n && lcs[(i + 1) * width + j] >= lcs[i * width + j + 1]) -> {
                         if (open == null) open = intArrayOf(i, j)
                         i++
                     }

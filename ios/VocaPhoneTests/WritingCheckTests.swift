@@ -151,6 +151,20 @@ struct WritingCheckTests {
         }
     }
 
+    @Test func diffSetsTheSharedEndsAsideAndBoundsTheMiddle() {
+        let words = (0..<3000).map { "w\($0)" }
+        var one = words
+        one[1500] = "x"
+        #expect(ModelEdits.diff(words, one) == [ModelEdits.Hunk(aFrom: 1500, aTo: 1501, bFrom: 1500, bTo: 1501)])
+        // A middle past the table's budget is one replaced run, not a 2000 × 2000 table.
+        let a = ["same"] + (0..<2000).map { "a\($0)" } + ["same"]
+        let b = ["same"] + (0..<2000).map { "b\($0)" } + ["same"]
+        #expect(ModelEdits.diff(a, b) == [ModelEdits.Hunk(aFrom: 1, aTo: 2001, bFrom: 1, bTo: 2001)])
+        // A short middle still aligns word by word.
+        #expect(ModelEdits.diff(["a", "b", "c", "d"], ["a", "c", "x", "d"]) == [
+            ModelEdits.Hunk(aFrom: 1, aTo: 2, bFrom: 1, bTo: 1), ModelEdits.Hunk(aFrom: 3, aTo: 3, bFrom: 2, bTo: 3),
+        ])
+    }
 }
 
 /// The rules' false-positive gate, as WritingCleanTextTest.kt: at most 2% of

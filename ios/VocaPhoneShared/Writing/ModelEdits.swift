@@ -202,17 +202,35 @@ struct ModelEdits {
         ["isn't", "aren't"], ["wasn't", "weren't"], ["hasn't", "haven't"],
     ]
 
-    /// The changed runs between `a` and `b`, by longest common subsequence.
-    /// Ties go to deleting from `a` first, on both platforms.
+    /// The most the longest-common-subsequence table may hold; past it, the
+    /// changed middle is one hunk. As `MAX_DIFF_CELLS` in Kotlin.
+    static let maxDiffCells = 500_000
+
+    /// The changed runs between `a` and `b`, by longest common subsequence of
+    /// what is left once the shared start and end are set aside. Ties go to
+    /// deleting from `a` first, on both platforms. A middle too long to compare
+    /// in `maxDiffCells` comes back as one replaced run.
     static func diff(_ a: [String], _ b: [String]) -> [Hunk] {
-        let n = a.count
-        let m = b.count
-        var lcs = Array(repeating: Array(repeating: 0, count: m + 1), count: n + 1)
-        if n > 0, m > 0 {
-            for i in stride(from: n - 1, through: 0, by: -1) {
-                for j in stride(from: m - 1, through: 0, by: -1) {
-                    lcs[i][j] = a[i] == b[j] ? lcs[i + 1][j + 1] + 1 : max(lcs[i + 1][j], lcs[i][j + 1])
-                }
+        var prefix = 0
+        while prefix < a.count, prefix < b.count, a[prefix] == b[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < a.count - prefix, suffix < b.count - prefix, a[a.count - 1 - suffix] == b[b.count - 1 - suffix] {
+            suffix += 1
+        }
+        let n = a.count - prefix - suffix
+        let m = b.count - prefix - suffix
+        if n == 0, m == 0 { return [] }
+        if n == 0 || m == 0 || n * m > maxDiffCells {
+            return [Hunk(aFrom: prefix, aTo: prefix + n, bFrom: prefix, bTo: prefix + m)]
+        }
+        // lcs[i * (m + 1) + j]: the common subsequence of the middles from i and j on.
+        let width = m + 1
+        var lcs = [Int](repeating: 0, count: (n + 1) * width)
+        for i in stride(from: n - 1, through: 0, by: -1) {
+            for j in stride(from: m - 1, through: 0, by: -1) {
+                lcs[i * width + j] = a[prefix + i] == b[prefix + j]
+                    ? lcs[(i + 1) * width + j + 1] + 1
+                    : max(lcs[(i + 1) * width + j], lcs[i * width + j + 1])
             }
         }
         var hunks: [Hunk] = []
@@ -220,15 +238,15 @@ struct ModelEdits {
         var j = 0
         var open: (Int, Int)?
         func close() {
-            if let (ai, bj) = open { hunks.append(Hunk(aFrom: ai, aTo: i, bFrom: bj, bTo: j)) }
+            if let (ai, bj) = open { hunks.append(Hunk(aFrom: prefix + ai, aTo: prefix + i, bFrom: prefix + bj, bTo: prefix + j)) }
             open = nil
         }
         while i < n || j < m {
-            if i < n, j < m, a[i] == b[j] {
+            if i < n, j < m, a[prefix + i] == b[prefix + j] {
                 close()
                 i += 1
                 j += 1
-            } else if j >= m || (i < n && lcs[i + 1][j] >= lcs[i][j + 1]) {
+            } else if j >= m || (i < n && lcs[(i + 1) * width + j] >= lcs[i * width + j + 1]) {
                 if open == nil { open = (i, j) }
                 i += 1
             } else {
