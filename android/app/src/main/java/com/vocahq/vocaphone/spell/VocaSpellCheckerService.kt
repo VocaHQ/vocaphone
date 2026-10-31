@@ -13,7 +13,6 @@ import com.vocahq.vocaphone.local.GrammarModelCatalog
 import com.vocahq.vocaphone.writing.WritingCategory
 import com.vocahq.vocaphone.writing.WritingCheck
 import com.vocahq.vocaphone.writing.WritingLanguage
-import com.vocahq.vocaphone.writing.WritingRules
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -35,27 +34,9 @@ import kotlinx.coroutines.runBlocking
 class VocaSpellCheckerService : SpellCheckerService() {
     private val container by lazy { VocaPhoneApplication.container(this) }
 
-    private val checker by lazy {
-        runCatching {
-            WritingCheck(WritingRules.parse(assets.open("writing-rules.json").bufferedReader().use { it.readText() }))
-        }.getOrNull()
-    }
+    private val checker get() = container.writingCheck
 
-    /**
-     * The keyboard's English word list, for telling a long English sentence
-     * from a French one. Read on the first check, on a binder thread: the
-     * service has no composition thread to keep it off, and a user who never
-     * picks VocaPhone as the spell checker never pays for it.
-     */
-    private val englishWords: Set<String> by lazy {
-        runCatching {
-            assets.open("en.txt").bufferedReader().useLines { lines ->
-                lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toHashSet()
-            }
-        }.getOrDefault(emptySet())
-    }
-
-    private fun isEnglish(text: String): Boolean = TranscriptRepair.isEnglish(text, "auto") { it in englishWords }
+    private fun isEnglish(text: String): Boolean = TranscriptRepair.isEnglish(text, "auto") { it in container.englishWords }
 
     override fun createSession(): Session = WritingSession()
 

@@ -21,6 +21,8 @@ import com.vocahq.vocaphone.local.DeviceProfile
 import com.vocahq.vocaphone.local.GrammarModelCatalog
 import com.vocahq.vocaphone.local.GrammarModelConsent
 import com.vocahq.vocaphone.local.GrammarModelStore
+import com.vocahq.vocaphone.writing.WritingCheck
+import com.vocahq.vocaphone.writing.WritingRules
 import com.vocahq.vocaphone.local.LocalModelManager
 import com.vocahq.vocaphone.local.RetiredModels
 import com.vocahq.vocaphone.local.catalogLanguageCode
@@ -116,6 +118,30 @@ class AppContainer(context: Context) {
      */
     val grammarModel = GrammarModelStore(context.applicationContext)
     val grammar = GrammarCorrector(grammarModel) { event -> diagnostics.recordError(event, null) }
+
+    /**
+     * Writing check's rules, parsed once for the keyboard, the spell checker
+     * and the Writing check screen. A few milliseconds to parse, so first use
+     * belongs off the main thread. Null only if the bundled file is broken.
+     */
+    val writingCheck: WritingCheck? by lazy {
+        runCatching {
+            WritingCheck(WritingRules.parse(appContext.assets.open("writing-rules.json").bufferedReader().use { it.readText() }))
+        }.getOrNull()
+    }
+
+    /**
+     * The keyboard's shipped English word list, for the Writing check screen's
+     * and the spell checker's question of whether a text is English at all.
+     * Read once, off the main thread, on first use.
+     */
+    val englishWords: Set<String> by lazy {
+        runCatching {
+            appContext.assets.open("en.txt").bufferedReader().useLines { lines ->
+                lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toHashSet()
+            }
+        }.getOrDefault(emptySet())
+    }
 
     /**
      * Anonymous usage reporting. Does nothing at all until the user turns it on,

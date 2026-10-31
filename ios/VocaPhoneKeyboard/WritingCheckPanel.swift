@@ -21,6 +21,20 @@ final class WritingPanelModel: ObservableObject {
         guard let report else { return 0 }
         return report.suggestions.filter { report.canApply($0) && $0.mechanical }.count
     }
+
+    /// How the text sounds ("Sounds 😊 Friendly · …"), or nil with no report
+    /// or no tones. Shown above the cards, and under "No issues found" once
+    /// the last suggestion is gone; a text with nothing to fix still has a tone.
+    var toneLine: String? {
+        guard let tones = report?.tones, !tones.isEmpty else { return nil }
+        return "Sounds " + tones.map { "\($0.emoji) \($0.label)" }.joined(separator: " · ")
+    }
+
+    /// The tone under the empty state's title: not while "Checking…" stands
+    /// there, since the tone would be the last check's.
+    var emptyStateTone: String? {
+        isChecking || isReadingMessage ? nil : toneLine
+    }
 }
 
 /// Grammarly's four colours: red, blue, green, purple, lightened for dark mode.
@@ -59,6 +73,12 @@ struct WritingPanelView: View {
                 VStack(spacing: 4) {
                     Text(emptyTitle)
                         .font(.system(size: 17, weight: .semibold))
+                    if let tone = model.emptyStateTone {
+                        Text(tone)
+                            .font(.system(size: 13))
+                            .foregroundStyle(foreground.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                    }
                     Text("Checked on this iPhone. Nothing you type is sent anywhere.")
                         .font(.system(size: 13))
                         .foregroundStyle(foreground.opacity(0.7))
@@ -68,14 +88,17 @@ struct WritingPanelView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 6) {
+                        toneLine
                         ForEach(suggestions, id: \.identity) { suggestion in
                             card(suggestion)
                         }
                     }
                     .padding(.horizontal, 2)
                 }
+                .frame(maxHeight: .infinity)
             }
             footer
+                .layoutPriority(1)
         }
         .foregroundStyle(foreground)
         .padding(.horizontal, 8)
@@ -154,24 +177,34 @@ struct WritingPanelView: View {
             .accessibilityLabel(replacement.isEmpty ? "Remove \(original)" : "\(original) becomes \(replacement)")
     }
 
-    private var footer: some View {
-        HStack(spacing: 12) {
-            let tones = model.report?.tones ?? []
-            Text(tones.isEmpty ? "" : "Sounds " + tones.map { "\($0.emoji) \($0.label)" }.joined(separator: " · "))
+    @ViewBuilder
+    private var toneLine: some View {
+        if let tone = model.toneLine {
+            Text(tone)
                 .font(.system(size: 13))
                 .foregroundStyle(foreground.opacity(0.7))
-                .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 0) {
             if model.acceptAllCount >= 2 {
                 Button("Accept all \(model.acceptAllCount)") { model.onAcceptAll?() }
+                    .frame(maxWidth: .infinity)
             }
             Button(model.isReadingMessage ? "Reading…" : "Whole message") { model.onCheckWholeMessage?() }
                 .disabled(model.isReadingMessage)
+                .frame(maxWidth: .infinity)
             Button("Open app") { model.onOpenApp?() }
+                .frame(maxWidth: .infinity)
         }
-        .font(.system(size: 14, weight: .medium))
+        .font(.system(size: 15, weight: .medium))
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
         .foregroundStyle(Color(BrandPalette.accent(isDark: isDark)))
-        .frame(minHeight: 36)
+        .frame(height: 40)
     }
 }
 
