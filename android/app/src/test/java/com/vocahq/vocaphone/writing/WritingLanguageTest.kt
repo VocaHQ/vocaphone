@@ -73,6 +73,15 @@ class WritingLanguageTest {
     }
 
     @Test
+    fun `French that borrows nothing but an accent is not English`() {
+        // Every word but "C'est" and "café" is in the English list, and the
+        // rules would offer "don't" for "dont".
+        val french = "C'est le café dont tu as le menu."
+        assertFalse(WritingLanguage.applies(french, ::isEnglish))
+        assertEquals(emptyList<String>(), underlines(french))
+    }
+
+    @Test
     fun `the rest is asked without the borrowed words`() {
         var asked = ""
         WritingLanguage.isEnglish("we met at the café on monday") { asked = it; true }

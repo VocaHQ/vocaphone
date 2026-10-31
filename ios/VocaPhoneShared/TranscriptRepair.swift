@@ -21,6 +21,13 @@ enum TranscriptRepair {
 
     // MARK: - Entry point
 
+    /// The English marker words in `text`, by the same list and the same
+    /// word keys `isEnglish` counts them with: high-frequency English words
+    /// that are not also words in the other Latin-script languages.
+    static func englishMarkers(in text: String) -> Set<String> {
+        Set(split(text).map(\.key).filter { englishMarkers.contains($0) })
+    }
+
     /// Whether `text` is English: an explicit or detected `en`, or, on
     /// Automatic, a sentence that says so itself — on the terms
     /// ``looksEnglish(_:words:)`` sets out, or, for a fragment too short to

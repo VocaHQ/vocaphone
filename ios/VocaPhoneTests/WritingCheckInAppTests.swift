@@ -66,6 +66,14 @@ struct WritingCheckInAppTests {
         #expect(!Self.applies("Je pense que nous irons au café demain"))
     }
 
+    @Test func frenchThatBorrowsNothingButAnAccentIsNotEnglish() {
+        // Every word but "C'est" and "café" is in the English list, and the
+        // rules would offer "don't" for "dont".
+        let french = "C'est le café dont tu as le menu."
+        #expect(Self.checker.check(french).suggestions.contains { $0.shownReplacement == "don't" })
+        #expect(!Self.applies(french))
+    }
+
     @Test func theRestIsAskedWithoutTheBorrowedWords() {
         var asked = ""
         _ = WritingCheck.isEnglish("we met at the café on monday") { asked = $0; return true }
