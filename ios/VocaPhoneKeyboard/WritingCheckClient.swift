@@ -94,6 +94,10 @@ final class WritingCheckClient {
     private let now: () -> Date
     private let observe: (@escaping @Sendable () -> Void) -> VocaPhoneDarwinObservation?
     private var pending: Task<Void, Never>?
+    /// The Writing check button's check, waiting out its beat; `buttonTaps`
+    /// says which tap is the latest.
+    private var buttonCheck: Task<Void, Never>?
+    private var buttonTaps = 0
     /// The check under way. A newer check, an edit, or a reset makes its
     /// result stale; `generation` says which one is current.
     private var running: Task<Void, Never>?
@@ -136,9 +140,15 @@ final class WritingCheckClient {
     }
 
     /// The document changed. Suggestions that still fit it are moved to where
-    /// their words now are; a new check waits for the pause. `enabled` false
-    /// clears everything.
-    func textChanged(before: String?, after: String?, enabled: Bool, options: @escaping () -> Options) {
+    /// their words now are; a new check waits for the pause when `autoCheck`
+    /// ("Check while typing") is on. Off, a report the user asked for with the
+    /// Writing check button keeps following the text, and nothing new is
+    /// checked until the next tap. `enabled` false (a field Writing check does
+    /// not read) clears everything.
+    func textChanged(
+        before: String?, after: String?, enabled: Bool, autoCheck: Bool = true,
+        options: @escaping () -> Options
+    ) {
         let field = before.map { Field(text: $0 + (after ?? ""), cursor: $0.utf16Length) }
         // A whole message the keyboard read, seen again through the window:
         // nothing in it changed, so neither does the report.
@@ -168,6 +178,10 @@ final class WritingCheckClient {
                 publish(nil)
             }
         }
+        guard autoCheck else {
+            pending = nil
+            return
+        }
         pending = Task { [weak self, pause] in
             try? await Task.sleep(for: pause)
             guard !Task.isCancelled else { return }
@@ -184,8 +198,38 @@ final class WritingCheckClient {
         check(field, options, retry: true)
     }
 
-    /// Waits for the pause and the check under way, if any. For tests.
+    /// The Writing check button: checks after `delay`, so its pulse shows for
+    /// a beat. The field is read when the wait ends, not when the button was
+    /// tapped, so the check is always of the text as it is now; `read`
+    /// returning nil (the panel closed, the field changed) checks nothing.
+    /// A newer tap, ``cancelButtonCheck()`` and ``reset()`` drop it too.
+    /// `finished` runs once the wait is over, checked or not, unless a newer
+    /// tap took its place.
+    func checkAfterPause(
+        _ delay: Duration, read: @escaping () -> Field?, options: @escaping () -> Options,
+        finished: @escaping () -> Void = {}
+    ) {
+        buttonCheck?.cancel()
+        buttonTaps += 1
+        let tap = buttonTaps
+        buttonCheck = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, tap == buttonTaps else { return }
+            buttonCheck = nil
+            if !Task.isCancelled, let field = read() { checkNow(field, options: options()) }
+            finished()
+        }
+    }
+
+    /// Drops a button check still waiting out its beat.
+    func cancelButtonCheck() {
+        buttonCheck?.cancel()
+    }
+
+    /// Waits for the button's beat, the pause and the check under way, if
+    /// any. For tests.
     func settle() async {
+        await buttonCheck?.value
         await pending?.value
         await running?.value
     }
@@ -419,6 +463,7 @@ final class WritingCheckClient {
     func reset() {
         pending?.cancel()
         pending = nil
+        cancelButtonCheck()
         stopChecking()
         observation?.invalidate()
         observation = nil
@@ -696,4 +741,36 @@ final class WholeMessageWalk {
 
     private static let steps = 20
     private static let limit = 8_000
+}
+
+/// Whether the Writing check button shows, read from the field on each text
+/// change. iOS often answers a keyboard's read with nothing for a moment — in
+/// chat apps above all — and taking that as "the field is empty" made the
+/// button blink in and out while the user typed. So an unanswered read keeps
+/// the button as it is, words show it at once, and a field that reads as
+/// wordless hides it only once it still reads that way after a pause.
+enum WritingButtonVisibility: Equatable {
+    case show
+    case hide
+    /// Leave it as it is.
+    case keep
+    /// Read the field again after a pause, and hide only if it is still wordless.
+    case hideAfterPause
+
+    static func decide(_ snapshot: DocumentSnapshot, eligible: Bool, isNewField: Bool, showing: Bool) -> Self {
+        guard eligible else { return .hide }
+        guard let hasWords = hasWords(snapshot) else { return isNewField ? .hide : .keep }
+        if hasWords { return .show }
+        if isNewField { return .hide }
+        return showing ? .hideAfterPause : .keep
+    }
+
+    /// Whether the field has a letter in it; nil when iOS did not answer.
+    static func hasWords(_ snapshot: DocumentSnapshot) -> Bool? {
+        guard snapshot.hasContent != nil else { return nil }
+        return (snapshot.before?.contains(where: \.isLetter) ?? false)
+            || (snapshot.after?.contains(where: \.isLetter) ?? false)
+    }
+
+    static let pause: Duration = .milliseconds(700)
 }

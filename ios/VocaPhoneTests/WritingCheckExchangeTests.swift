@@ -64,6 +64,124 @@ struct WritingCheckExchangeTests {
         client.report?.suggestions.map(\.label) ?? []
     }
 
+    @Test func theButtonChecksWithoutCheckWhileTyping() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = client(appRunning: false)
+        let text = "what is you doing"
+        client.checkNow(WritingCheckClient.Field(text: text, cursor: text.utf16.count), options: .init())
+        await client.settle()
+        #expect(labels(client).contains("is → are"))
+        // Typing on with "Check while typing" off moves the report along and
+        // checks nothing new until the next tap.
+        let more = "what is you doing. They was here"
+        client.textChanged(before: more, after: "", enabled: true, autoCheck: false) { WritingCheckClient.Options() }
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(labels(client) == ["is → are"])
+        #expect(client.report?.field.text == more)
+        client.checkNow(options: .init())
+        await client.settle()
+        #expect(labels(client).contains("was → were"))
+    }
+
+    @Test func theButtonChecksTheFieldAsItReadsAfterItsPause() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = client(appRunning: false)
+        var text = "I could of told you. "
+        var finished = 0
+        client.checkAfterPause(
+            .milliseconds(30),
+            read: { WritingCheckClient.Field(text: text, cursor: text.utf16.count) },
+            options: { .init() },
+            finished: { finished += 1 }
+        )
+        // Edited during the pause, with "Check while typing" off.
+        text = "I could have told you. "
+        client.textChanged(before: text, after: "", enabled: true, autoCheck: false) { WritingCheckClient.Options() }
+        await client.settle()
+        #expect(client.report?.field.text == text)
+        #expect(client.report?.all.contains { $0.shownOriginal == "of" } == false)
+        #expect(finished == 1)
+    }
+
+    @Test func aClosedPanelDropsTheButtonCheck() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = client(appRunning: false)
+        let text = "I could of told you. "
+        var reads = 0
+        var finished = 0
+        client.checkAfterPause(
+            .milliseconds(30),
+            read: {
+                reads += 1
+                return WritingCheckClient.Field(text: text, cursor: text.utf16.count)
+            },
+            options: { .init() },
+            finished: { finished += 1 }
+        )
+        client.cancelButtonCheck()
+        await client.settle()
+        #expect(reads == 0)
+        #expect(client.report == nil)
+        #expect(finished == 1)
+        // A field change (or a hidden keyboard) in the pause drops it too.
+        client.checkAfterPause(
+            .milliseconds(30),
+            read: { WritingCheckClient.Field(text: text, cursor: text.utf16.count) },
+            options: { .init() }
+        )
+        client.reset()
+        await client.settle()
+        #expect(client.report == nil)
+        // And a field that cannot be read when the pause ends checks nothing.
+        client.checkAfterPause(.milliseconds(10), read: { nil }, options: { .init() })
+        await client.settle()
+        #expect(client.report == nil)
+        #expect(!client.isChecking)
+    }
+
+    @Test func adviceIsNotStruckThrough() {
+        func make(_ original: String, _ replacement: String?) -> WritingSuggestion {
+            let end = (original as NSString).length
+            return WritingSuggestion(
+                start: 0, end: end, original: original, replacement: replacement,
+                markStart: 0, markEnd: end, kind: "passive", category: .clarity,
+                title: "Passive voice", message: "", mechanical: false, source: .rule, rule: nil
+            )
+        }
+        #expect(!WritingPanelView.strikesOriginal(make("was written by", nil)))
+        #expect(WritingPanelView.strikesOriginal(make("teh", "the")))
+        #expect(WritingPanelView.strikesOriginal(make(" very", "")))
+        #expect(!WritingPanelView.strikesOriginal(make("", ",")))
+    }
+
+    @Test func theButtonDoesNotBlinkWhenIOSDoesNotAnswer() {
+        let words = DocumentSnapshot(before: "what is you", after: "")
+        let empty = DocumentSnapshot(before: "", after: "")
+        let decide = WritingButtonVisibility.decide
+        #expect(decide(words, true, false, false) == .show)
+        // An unanswered read leaves it as it is; it is not an empty field.
+        #expect(decide(.unknown, true, false, true) == .keep)
+        #expect(decide(.unknown, true, false, false) == .keep)
+        // Wordless hides only after a second look, except in a new field.
+        #expect(decide(empty, true, false, true) == .hideAfterPause)
+        #expect(decide(empty, true, true, true) == .hide)
+        #expect(decide(.unknown, true, true, true) == .hide)
+        #expect(decide(DocumentSnapshot(before: "123 ", after: nil), true, false, false) == .keep)
+        #expect(decide(words, false, false, true) == .hide)
+    }
+
+    @Test func theCardShowsTheChangeInItsSentence() {
+        let text = "Hi there. what is you doing now? Bye."
+        let report = Self.checker.check(text, model: nil, options: .init(typed: true))
+        let s = try! #require(report.suggestions.first { $0.kind == "agreement" })
+        let context = WritingPanelView.context(of: s, in: text)
+        #expect(context.before + s.shownOriginal + context.after == "what is you doing now?")
+        let long = String(repeating: "word ", count: 30) + "they is here"
+        let t = Self.checker.check(long, model: nil, options: .init(typed: true))
+        let u = try! #require(t.suggestions.first { $0.kind == "agreement" })
+        #expect(WritingPanelView.context(of: u, in: long).before.hasPrefix("…"))
+    }
+
     @Test func theQuestionIsDeletedAsItIsRead() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         try store.saveTypedGrammarRequest(TypedGrammarRequest(sentences: ["She go home."], keep: []))
