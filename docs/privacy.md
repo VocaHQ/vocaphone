@@ -98,7 +98,10 @@ iOS their text replacements and contact names) are never changed.
   it. The request carries only those of the user's protected words that occur
   in the sentence, never the whole list, so the address book is not copied
   into it. A question nobody collects is deleted when the keyboard closes,
-  when checking stops, or when the app next starts. This needs Full Access (it is the App Group) and only works
+  when checking stops, or when the app next starts. An answer nobody collects
+  — the keyboard closed while the app was checking — is deleted by the app
+  five seconds after it is written, when the keyboard would no longer take it,
+  and the app writes none at all for a question older than that. This needs Full Access (it is the App Group) and only works
   while the app is running, which Quick Dictation keeps it doing in the
   background; otherwise nothing is written at all. The keyboard extension still
   never loads the model, makes no network call, and reports nothing.

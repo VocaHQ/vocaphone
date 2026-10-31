@@ -574,19 +574,42 @@ final class SharedStore: @unchecked Sendable {
             .flatMap { $0.schemaVersion == TypedGrammarAnswer.schemaVersion ? $0 : nil }
     }
 
+    /// Removes the answer to `id` if it is still waiting: the keyboard went
+    /// away, or moved on, before collecting it.
+    func removeTypedGrammarAnswer(id: UUID) {
+        guard let root = try? rootDirectory() else { return }
+        let fileURL = typedGrammarAnswerURL(root: root)
+        guard let data = try? Data(contentsOf: fileURL),
+              (try? decoder.decode(TypedGrammarAnswer.self, from: data))?.id == id
+        else { return }
+        try? fileManager.removeItem(at: fileURL)
+    }
+
     /// Removes a question or answer nobody collected: a keyboard dismissed
-    /// mid-check, an app that ended before it answered.
+    /// mid-check, an app that ended before it answered. A file a process was
+    /// reading when it ended goes too.
     func clearTypedGrammarExchange() {
         guard let root = try? rootDirectory() else { return }
         try? fileManager.removeItem(at: typedGrammarRequestURL(root: root))
         try? fileManager.removeItem(at: typedGrammarAnswerURL(root: root))
+        let names = (try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []
+        for name in names where name.hasPrefix("typed-grammar-") && name.hasSuffix(".taking") {
+            try? fileManager.removeItem(at: root.appendingPathComponent(name))
+        }
     }
 
+    /// Reads a file and deletes it. It is claimed first by renaming it, which
+    /// is atomic: read then delete in place would delete, unread, a newer file
+    /// the other process saved at that path in between.
     private func take<T: Decodable>(_ type: T.Type, at location: (URL) -> URL) -> T? {
         guard let root = try? rootDirectory() else { return nil }
         let fileURL = location(root)
-        guard let data = try? Data(contentsOf: fileURL) else { return nil }
-        try? fileManager.removeItem(at: fileURL)
+        let claimed = root.appendingPathComponent(
+            "\(fileURL.deletingPathExtension().lastPathComponent).\(UUID().uuidString).taking"
+        )
+        guard (try? fileManager.moveItem(at: fileURL, to: claimed)) != nil else { return nil }
+        defer { try? fileManager.removeItem(at: claimed) }
+        guard let data = try? Data(contentsOf: claimed) else { return nil }
         return try? decoder.decode(type, from: data)
     }
 

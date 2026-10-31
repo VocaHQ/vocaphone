@@ -9,7 +9,9 @@ import Foundation
 /// and the keyboard does not ask otherwise.
 ///
 /// The question is deleted as it is read and the answer is deleted by the
-/// keyboard as it reads it. Nothing is logged but the grammar stage's own
+/// keyboard as it reads it. An answer the keyboard never collects — it closed
+/// while the app was checking — is deleted by the app once the keyboard would
+/// no longer take it, `answerLifetime` later. Nothing is logged but the grammar stage's own
 /// content-free events, and nothing reaches usage statistics.
 final class TypedGrammarResponder: @unchecked Sendable {
     typealias Correct = @Sendable (String, Set<String>) -> String?
@@ -20,6 +22,7 @@ final class TypedGrammarResponder: @unchecked Sendable {
     private let now: @Sendable () -> Date
     private let pollInterval: Duration
     private let loadWait: Duration
+    private let answerLifetime: Duration
     private let queue = DispatchQueue(label: "com.vocahq.vocaphone.typed-grammar", qos: .userInitiated)
     private var observation: VocaPhoneDarwinObservation?
 
@@ -29,7 +32,8 @@ final class TypedGrammarResponder: @unchecked Sendable {
         correct: @escaping Correct,
         now: @escaping @Sendable () -> Date = { Date() },
         pollInterval: Duration = .milliseconds(100),
-        loadWait: Duration = .seconds(3)
+        loadWait: Duration = .seconds(3),
+        answerLifetime: Duration = .seconds(TypedGrammarRequest.maximumAge)
     ) {
         self.store = store
         self.isEnabled = isEnabled
@@ -37,6 +41,7 @@ final class TypedGrammarResponder: @unchecked Sendable {
         self.now = now
         self.pollInterval = pollInterval
         self.loadWait = loadWait
+        self.answerLifetime = answerLifetime
     }
 
     /// Starts listening. A question left over from before this process — the
@@ -75,11 +80,19 @@ final class TypedGrammarResponder: @unchecked Sendable {
             waited += pollInterval
             corrected = correct(request.text, keep)
         }
+        // The keyboard gives up on a question this old and asks again, so an
+        // answer now would only leave the sentence on disk.
+        guard request.isFresh(at: now()) else { return }
         reply(TypedGrammarAnswer(id: request.id, corrected: corrected))
     }
 
     private func reply(_ answer: TypedGrammarAnswer) {
-        try? store.saveTypedGrammarAnswer(answer)
+        guard (try? store.saveTypedGrammarAnswer(answer)) != nil else { return }
+        // On this queue, where every answer is written, so the check-then-
+        // delete cannot remove a newer one.
+        queue.asyncAfter(deadline: .now() + Self.seconds(answerLifetime)) { [store] in
+            store.removeTypedGrammarAnswer(id: answer.id)
+        }
     }
 
     private static func seconds(_ duration: Duration) -> TimeInterval {

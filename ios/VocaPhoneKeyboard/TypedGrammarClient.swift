@@ -108,12 +108,15 @@ final class TypedGrammarClient {
             keep: TypedGrammar.wordsPresent(keep, in: region),
             createdAt: now()
         )
-        // No Full Access is no App Group, and so no way to ask.
-        guard (try? store.saveTypedGrammarRequest(request)) != nil else { return }
-        outstanding = (request.id, region, request.createdAt)
+        // Listening before asking: an app that answers before a listener
+        // registered afterwards would ping nobody, and the answer would wait
+        // unread.
         if observation == nil {
             observation = observe { Task { @MainActor [weak self] in self?.collect() } }
         }
+        // No Full Access is no App Group, and so no way to ask.
+        guard (try? store.saveTypedGrammarRequest(request)) != nil else { return }
+        outstanding = (request.id, region, request.createdAt)
     }
 
     /// Reads the app's answer. Called on its ping, and by tests.

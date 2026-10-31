@@ -18,6 +18,7 @@ struct TypedGrammarExchangeTests {
     private func responder(
         enabled: Bool = true,
         now: @escaping @Sendable () -> Date = { Date() },
+        answerLifetime: Duration = .seconds(TypedGrammarRequest.maximumAge),
         correct: @escaping TypedGrammarResponder.Correct = { text, _ in
             text.replacingOccurrences(of: "don't", with: "doesn't")
         }
@@ -28,20 +29,22 @@ struct TypedGrammarExchangeTests {
             correct: correct,
             now: now,
             pollInterval: .milliseconds(5),
-            loadWait: .milliseconds(50)
+            loadWait: .milliseconds(50),
+            answerLifetime: answerLifetime
         )
     }
 
     private func client(
         appRunning: Bool = true,
-        now: @escaping () -> Date = { Date() }
+        now: @escaping () -> Date = { Date() },
+        observe: @escaping (@escaping @Sendable () -> Void) -> VocaPhoneDarwinObservation? = { _ in nil }
     ) -> TypedGrammarClient {
         TypedGrammarClient(
             store: store,
             isAppRunning: { appRunning },
             pause: .milliseconds(10),
             now: now,
-            observe: { _ in nil }
+            observe: observe
         )
     }
 
@@ -57,6 +60,19 @@ struct TypedGrammarExchangeTests {
         #expect(store.takeTypedGrammarRequest()?.text == "He don't know.")
         #expect(files().isEmpty)
         #expect(store.takeTypedGrammarRequest() == nil)
+    }
+
+    /// Review finding: reading then deleting in place could delete, unread, a
+    /// newer question saved in between. The file is claimed by a rename, and
+    /// a claim left by a process that ended mid-read is cleared at start.
+    @Test func aClaimLeftMidReadIsCleared() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let left = root.appendingPathComponent("typed-grammar-request.\(UUID().uuidString).taking")
+        try Data("{}".utf8).write(to: left)
+        try store.saveTypedGrammarRequest(TypedGrammarRequest(text: "He don't know.", keep: []))
+        store.clearTypedGrammarExchange()
+        #expect(files().isEmpty)
     }
 
     @Test func theAppAnswersWithTheModelsText() throws {
@@ -116,6 +132,41 @@ struct TypedGrammarExchangeTests {
         #expect(store.takeTypedGrammarAnswer() == TypedGrammarAnswer(id: request.id, corrected: nil))
     }
 
+    /// Review finding: an answer written after the keyboard closed stayed on
+    /// disk until the next exchange.
+    @Test func anUncollectedAnswerIsDeletedOnceTheKeyboardWouldNoLongerTakeIt() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try store.saveTypedGrammarRequest(TypedGrammarRequest(text: "He don't know.", keep: []))
+        responder(answerLifetime: .milliseconds(20)).answerPendingRequest()
+        #expect(files() == ["typed-grammar-answer.json"])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(files().isEmpty)
+    }
+
+    /// A newer answer is not removed by an older one's expiry.
+    @Test func anExpiryLeavesANewerAnswer() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try store.saveTypedGrammarRequest(TypedGrammarRequest(text: "He don't know.", keep: []))
+        responder(answerLifetime: .milliseconds(20)).answerPendingRequest()
+        let newer = TypedGrammarAnswer(id: UUID(), corrected: "Fine.")
+        try store.saveTypedGrammarAnswer(newer)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(store.takeTypedGrammarAnswer() == newer)
+    }
+
+    /// A check that outlasts the keyboard's patience is not answered: the
+    /// keyboard has already asked again, and the answer would only wait on disk.
+    @Test func aQuestionThatGoesStaleWhileCheckingIsNotAnswered() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clock = Box(Date())
+        try store.saveTypedGrammarRequest(TypedGrammarRequest(text: "He don't know.", keep: [], createdAt: clock.value))
+        responder(now: { clock.value }, correct: { text, _ in
+            clock.value = clock.value.addingTimeInterval(TypedGrammarRequest.maximumAge + 1)
+            return text
+        }).answerPendingRequest()
+        #expect(files().isEmpty)
+    }
+
     @Test func startingClearsWhatAnEarlierProcessLeft() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         try store.saveTypedGrammarRequest(TypedGrammarRequest(text: "Left over.", keep: []))
@@ -138,6 +189,22 @@ struct TypedGrammarExchangeTests {
         client.collect()
         #expect(client.fix?.label == "don't \u{2192} doesn't")
         #expect(files().isEmpty)
+    }
+
+    /// Review finding: the first question was written before the answer's
+    /// listener registered, so a quick answer could ping nobody.
+    @Test func theKeyboardListensBeforeItAsks() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let seenAtRegistration = Box<[String]?>(nil)
+        let client = client(observe: { [root] _ in
+            seenAtRegistration.value =
+                (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+            return nil
+        })
+        client.textChanged(before: "He don't know. ", enabled: true, keep: { [] })
+        try await pause()
+        #expect(seenAtRegistration.value == [])
+        #expect(files() == ["typed-grammar-request.json"])
     }
 
     @Test func nothingIsAskedWhileTheAppIsNotRunning() async throws {
