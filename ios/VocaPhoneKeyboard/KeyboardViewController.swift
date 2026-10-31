@@ -416,7 +416,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         isKeyboardVisible = false
         announcesStateChanges = false
         typing.suspend()
-        stopReadingWholeMessage()
+        // Dismissed or switched away mid "Whole message": the field is still
+        // this one for now, so the cursor goes back to where the user left it,
+        // as closing the panel does. Otherwise their next words would land
+        // wherever the walk had got to.
+        stopReadingWholeMessage(restoringCursor: true)
         writingCheck.reset()
         autoFixer.clear()
         super.viewWillDisappear(animated)
