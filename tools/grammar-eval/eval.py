@@ -248,7 +248,7 @@ def main() -> None:
     detail += listing("Error sentences not fixed exactly", main_score["misses"],
                       lambda a, b, e: f"- `{a}` → `{b}` (expected `{e}`)")
     name = "results.md" if not typed else f"results-{args.set}.md"
-    (HERE / name).write_text("\n".join(detail) + "\n")
+    (HERE / name).write_text("\n".join(detail).rstrip("\n") + "\n")
 
 
 if __name__ == "__main__":
