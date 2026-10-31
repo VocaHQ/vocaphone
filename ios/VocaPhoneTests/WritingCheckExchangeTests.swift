@@ -619,3 +619,42 @@ private final class Box<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) { self.value = value }
 }
+
+/// What the keyboard's Writing check panel says about how the text sounds.
+struct WritingPanelModelTests {
+    /// "rules 52" in the shared fixtures: three tones and nothing to fix.
+    private static let text =
+        "I'm sorry for the delay. Thanks so much for your patience, I really appreciate it and hope you have a great weekend!"
+
+    private func report(_ text: String) -> WritingCheckClient.Report {
+        let result = WritingCheck(rules: WritingCheckTests.rules).check(text)
+        return WritingCheckClient.Report(
+            field: .init(text: text, cursor: text.utf16.count),
+            all: result.suggestions,
+            tones: result.tones,
+            modelPending: false
+        )
+    }
+
+    @Test func aTextWithNothingToFixStillShowsItsTone() throws {
+        let model = WritingPanelModel()
+        model.report = report(Self.text)
+        #expect(model.report?.suggestions.isEmpty == true)
+        let tone = try #require(model.emptyStateTone)
+        #expect(tone.hasPrefix("Sounds "))
+        #expect(tone == model.toneLine)
+        #expect(tone.components(separatedBy: " · ").count == 3)
+    }
+
+    @Test func theEmptyStateHasNoToneWhileCheckingOrBeforeAReport() {
+        let model = WritingPanelModel()
+        #expect(model.toneLine == nil)
+        #expect(model.emptyStateTone == nil)
+        model.report = report(Self.text)
+        model.isChecking = true
+        #expect(model.emptyStateTone == nil)
+        model.isChecking = false
+        model.isReadingMessage = true
+        #expect(model.emptyStateTone == nil)
+    }
+}

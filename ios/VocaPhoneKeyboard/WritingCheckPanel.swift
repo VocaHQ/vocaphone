@@ -21,6 +21,20 @@ final class WritingPanelModel: ObservableObject {
         guard let report else { return 0 }
         return report.suggestions.filter { report.canApply($0) && $0.mechanical }.count
     }
+
+    /// How the text sounds ("Sounds 😊 Friendly · …"), or nil with no report
+    /// or no tones. Shown above the cards, and under "No issues found" once
+    /// the last suggestion is gone; a text with nothing to fix still has a tone.
+    var toneLine: String? {
+        guard let tones = report?.tones, !tones.isEmpty else { return nil }
+        return "Sounds " + tones.map { "\($0.emoji) \($0.label)" }.joined(separator: " · ")
+    }
+
+    /// The tone under the empty state's title: not while "Checking…" stands
+    /// there, since the tone would be the last check's.
+    var emptyStateTone: String? {
+        isChecking || isReadingMessage ? nil : toneLine
+    }
 }
 
 /// Grammarly's four colours: red, blue, green, purple, lightened for dark mode.
@@ -59,6 +73,12 @@ struct WritingPanelView: View {
                 VStack(spacing: 4) {
                     Text(emptyTitle)
                         .font(.system(size: 17, weight: .semibold))
+                    if let tone = model.emptyStateTone {
+                        Text(tone)
+                            .font(.system(size: 13))
+                            .foregroundStyle(foreground.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                    }
                     Text("Checked on this iPhone. Nothing you type is sent anywhere.")
                         .font(.system(size: 13))
                         .foregroundStyle(foreground.opacity(0.7))
@@ -159,9 +179,8 @@ struct WritingPanelView: View {
 
     @ViewBuilder
     private var toneLine: some View {
-        let tones = model.report?.tones ?? []
-        if !tones.isEmpty {
-            Text("Sounds " + tones.map { "\($0.emoji) \($0.label)" }.joined(separator: " · "))
+        if let tone = model.toneLine {
+            Text(tone)
                 .font(.system(size: 13))
                 .foregroundStyle(foreground.opacity(0.7))
                 .frame(maxWidth: .infinity, alignment: .leading)
