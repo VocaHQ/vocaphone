@@ -187,14 +187,16 @@ class AppContainer(context: Context) {
      * dead weight and the current one is missing. Whoever had Fix grammar or
      * Check grammar on agreed to this download already; leaving the switch on
      * over a missing model would quietly stop correcting anything. A failed
-     * download is retried the next time the app starts or the switch is used.
+     * download (offline, or the app stopped mid-way) is retried on every start
+     * while a grammar setting is on and the model is still missing.
      */
     private suspend fun refreshGrammarModel() {
-        val replaced = grammarModel.removeRetired()
-        grammarModel.refresh()
-        if (!replaced || grammarModel.state.value.ready || !GrammarModelCatalog.available) return
-        val wanted = settings.current().let { it.fixGrammar || it.typingGrammar }
-        if (wanted && runCatching { grammarModel.download() }.isSuccess) grammar.modelChanged()
+        val downloaded = grammarModel.restore(
+            wanted = {
+                GrammarModelCatalog.available && settings.current().let { it.fixGrammar || it.typingGrammar }
+            },
+        )
+        if (downloaded) grammar.modelChanged()
     }
 
     /**

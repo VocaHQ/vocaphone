@@ -63,9 +63,29 @@ final class GrammarModelStore {
         return directory.appendingPathComponent(String(first[..<slash]), isDirectory: true)
     }
 
+    /// What app launch does: sweeps retired models, re-reads the folder, and
+    /// downloads the current model when `wanted` says a grammar setting is on
+    /// over missing files. Returns whether it downloaded one.
+    ///
+    /// The settings can only be turned on once the files are verified, so on
+    /// over missing files means an update moved the pin or an earlier attempt
+    /// at this download failed. Whoever turned the setting on agreed to the
+    /// download already, so it is retried on every launch until it succeeds,
+    /// not only on the launch that removed the old folder. `wanted` is asked
+    /// only when the files are missing, and nobody who never turned grammar on
+    /// gets a download. Mirrors `GrammarModelStore.restore` on Android.
+    func restore(
+        retired: [String] = GrammarModelStore.retiredModelIDs,
+        wanted: () -> Bool
+    ) async -> Bool {
+        removeRetired(retired)
+        await refresh()
+        guard !isReady, wanted() else { return false }
+        return (try? await download()) != nil
+    }
+
     /// Deletes the folders of grammar models this build no longer pins, and
-    /// says whether there was one: the caller then downloads the current
-    /// model for anyone whose grammar setting is on.
+    /// says whether there was one.
     @discardableResult
     func removeRetired(_ retired: [String] = GrammarModelStore.retiredModelIDs) -> Bool {
         guard let root else { return false }

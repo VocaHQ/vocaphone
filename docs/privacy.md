@@ -61,7 +61,8 @@ the same way as a speech model; the model itself is
 `onnx/mindtype_tagger.onnx`, SHA-256
 `cde26b40d62216c0b5680725b5e3f3b438f50cb6d02e05c395bf13059467da76`. An update
 from a build that used v1.5 deletes the old model and, if a grammar setting
-was on, downloads v2.0 in its place. The
+was on, downloads v2.0 in its place; a download that fails is tried again at
+each app start while a grammar setting is on and the model is missing. The
 download sends nothing but the request for those files. Once it is on, the
 finished on-device English transcript is corrected on the phone, in memory,
 before it is styled; the text is never sent anywhere for this, and nothing

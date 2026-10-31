@@ -289,4 +289,61 @@ struct GrammarModelStoreTests {
         #expect(store.isReady)
         #expect(!GrammarModelStore.retiredModelIDs.contains(GrammarModelStore.modelID))
     }
+
+    /// Greptile on #435: the first launch after an update removes the old
+    /// folder; if that download fails, the next launch has no old folder to
+    /// find and must still retry.
+    @Test func aFailedUpgradeDownloadIsRetriedOnTheNextLaunch() async throws {
+        let root = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let old = root.appendingPathComponent("grammar-old", isDirectory: true)
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: old.appendingPathComponent("model.onnx"))
+        let offline = GrammarModelStore(pins: Self.pins, root: root) { _, _ in
+            throw URLError(.notConnectedToInternet)
+        }
+
+        let firstLaunch = await offline.restore(retired: ["grammar-old"]) { true }
+        #expect(!firstLaunch)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(!offline.isReady)
+
+        let nextLaunch = GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch())
+        let retried = await nextLaunch.restore(retired: ["grammar-old"]) { true }
+        #expect(retried)
+        #expect(nextLaunch.isReady)
+    }
+
+    @Test func noGrammarSettingOnMeansNoDownloadAtLaunch() async throws {
+        let root = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let requests = Requests()
+        let store = GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch(requested: requests))
+
+        let downloaded = await store.restore(retired: []) { false }
+        #expect(!downloaded)
+
+        #expect(!store.isReady)
+        #expect(requests.all.isEmpty)
+    }
+
+    @Test func aReadyModelIsNotDownloadedAgainOrTheSettingsAsked() async throws {
+        let root = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let requests = Requests()
+        let store = GrammarModelStore(pins: Self.pins, root: root, fetch: Self.fetch(requested: requests))
+        try await store.download()
+        let before = requests.all.count
+        var asked = false
+
+        let downloaded = await store.restore(retired: []) {
+            asked = true
+            return true
+        }
+        #expect(!downloaded)
+
+        #expect(store.isReady)
+        #expect(!asked)
+        #expect(requests.all.count == before)
+    }
 }

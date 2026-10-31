@@ -201,9 +201,31 @@ class GrammarModelStore internal constructor(
     }
 
     /**
+     * What app start does: sweeps retired models, re-reads the folder, and
+     * downloads the current model when [wanted] says a grammar setting is on
+     * over missing files. Returns whether it downloaded one.
+     *
+     * The settings can only be turned on once the files are verified, so on
+     * over missing files means an update moved the pin or an earlier attempt
+     * at this download failed. Whoever turned the setting on agreed to the
+     * download already, so it is retried on every start until it succeeds,
+     * not only on the start that removed the old folder. [wanted] is asked
+     * only when the files are missing, and nobody who never turned grammar on
+     * gets a download.
+     */
+    suspend fun restore(
+        retired: List<String> = GrammarModelCatalog.retiredIds,
+        wanted: suspend () -> Boolean,
+    ): Boolean {
+        removeRetired(retired)
+        refresh()
+        if (state.value.ready || !wanted()) return false
+        return runCatching { download() }.isSuccess
+    }
+
+    /**
      * Removes the folders of grammar models this build no longer pins.
-     * Returns whether there was one: the caller then downloads the current
-     * model for anyone whose grammar setting is on.
+     * Returns whether there was one.
      */
     suspend fun removeRetired(retired: List<String> = GrammarModelCatalog.retiredIds): Boolean =
         withContext(Dispatchers.IO) {
