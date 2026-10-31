@@ -40,6 +40,7 @@ import com.vocahq.vocaphone.settings.ClipboardHistory
 import com.vocahq.vocaphone.settings.ClipboardImages
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.writing.WritingCheck
+import com.vocahq.vocaphone.writing.WritingLanguage
 import com.vocahq.vocaphone.writing.WritingSuggestion
 import com.vocahq.vocaphone.writing.writingCategories
 import kotlinx.coroutines.CoroutineScope
@@ -175,7 +176,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             checker = { writingChecker.value },
             model = ::writingModel,
             isEnglish = { text ->
-                TranscriptRepair.isEnglish(text, "auto") { suggestionDictionary.value?.isKnown(it) == true }
+                WritingLanguage.isEnglish(text) { rest ->
+                    TranscriptRepair.isEnglish(rest, "auto") { suggestionDictionary.value?.isKnown(it) == true }
+                }
             },
         )
     }

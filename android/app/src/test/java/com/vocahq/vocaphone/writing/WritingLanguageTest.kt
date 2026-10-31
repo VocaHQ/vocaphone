@@ -52,6 +52,45 @@ class WritingLanguageTest {
     }
 
     @Test
+    fun `a borrowed accented word does not hide the rest of an English sentence`() {
+        val sentence = "I definately want to visit the café."
+        // The transcript test alone calls any accented letter foreign.
+        assertFalse(isEnglish(sentence))
+        assertEquals(listOf("definately → definitely"), underlines(sentence))
+    }
+
+    @Test
+    fun `a sentence with many accented words is not English`() {
+        assertFalse(WritingLanguage.isEnglish("El niño está en la casa grande") { true })
+        assertFalse(WritingLanguage.applies("Ça a été une très belle journée, merci") { true })
+    }
+
+    @Test
+    fun `a few accents do not make another language English`() {
+        // One accented word in eight is allowed; the other seven are French.
+        val french = "Je pense que nous irons au café demain"
+        assertFalse(WritingLanguage.applies(french, ::isEnglish))
+    }
+
+    @Test
+    fun `French that borrows nothing but an accent is not English`() {
+        // Every word but "C'est" and "café" is in the English list, and the
+        // rules would offer "don't" for "dont".
+        val french = "C'est le café dont tu as le menu."
+        assertFalse(WritingLanguage.applies(french, ::isEnglish))
+        assertEquals(emptyList<String>(), underlines(french))
+    }
+
+    @Test
+    fun `the rest is asked without the borrowed words`() {
+        var asked = ""
+        WritingLanguage.isEnglish("we met at the café on monday") { asked = it; true }
+        assertEquals("we met at the on monday", asked)
+        WritingLanguage.isEnglish("plain english text") { asked = it; true }
+        assertEquals("plain english text", asked)
+    }
+
+    @Test
     fun `a single misspelled word is still checked`() {
         assertEquals(listOf("definately → definitely"), underlines("definately"))
     }

@@ -179,9 +179,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             writingChanged()
         }
         // The English layout is not proof of English: someone may type another
-        // language on it. The same test dictation's grammar stage uses.
+        // language on it. The same test dictation's grammar stage uses, past
+        // the odd borrowed word like "café".
         writingCheck.isEnglish = { [weak self] text in
-            TranscriptRepair.isEnglish(text) { self?.typing.isListedWord($0) ?? false }
+            WritingCheck.isEnglish(text) { rest in
+                TranscriptRepair.isEnglish(rest) { self?.typing.isListedWord($0) ?? false }
+            }
         }
         configureWritingPanel()
         Task.detached(priority: .utility) {

@@ -29,7 +29,45 @@ extension WritingCheck {
     static func applies(to text: String, isDictionaryWord: (String) -> Bool = EnglishWords.contains) -> Bool {
         guard text.contains(where: \.isLetter) else { return false }
         let words = text.split(whereSeparator: \.isWhitespace).count { $0.contains(where: \.isLetter) }
-        return words < languageTestMinimumWords || TranscriptRepair.isEnglish(text, isDictionaryWord: isDictionaryWord)
+        return words < languageTestMinimumWords
+            || isEnglish(text) { TranscriptRepair.isEnglish($0, isDictionaryWord: isDictionaryWord) }
+    }
+
+    /// At most one word in this many may be spelled outside a–z for text to
+    /// still be English. See `isEnglish(_:isEnglish:)`.
+    static let borrowedWordShare = 4
+
+    /// `isEnglish` (the transcript test, which calls any text with an
+    /// accented letter foreign) asked of `text` without its borrowed words.
+    /// English borrows "café", "naïve" and "résumé", and one of them in a
+    /// sentence should not switch off every check in it. So when no more than
+    /// one word in `borrowedWordShare` has a letter outside a–z, those words
+    /// are left out and the rest decides; more than that and the text is not
+    /// English.
+    ///
+    /// An accent is still evidence of another language, and dropping it
+    /// leaves the dictionary half of `isEnglish` easy to fool: "le", "tu",
+    /// "as" and "menu" are all English words, so "C'est le café dont tu as le
+    /// menu." would pass on its other words. The rest must also carry an
+    /// English marker word (`TranscriptRepair.englishMarkers(in:)`) other
+    /// than "dont", which is French as well and is the very word the rules
+    /// would "correct". As `WritingLanguage.isEnglish` on Android.
+    static func isEnglish(_ text: String, isEnglish: (String) -> Bool) -> Bool {
+        let words = text.split(whereSeparator: \.isWhitespace).filter { $0.contains(where: \.isLetter) }
+        let borrowed = words.filter(isBorrowed)
+        if borrowed.isEmpty { return isEnglish(text) }
+        if borrowed.count * borrowedWordShare > words.count { return false }
+        let rest = words.filter { !isBorrowed($0) }.joined(separator: " ")
+        return isEnglish(rest) && !TranscriptRepair.englishMarkers(in: rest).subtracting(sharedMarkers).isEmpty
+    }
+
+    /// English marker words that are words in French too.
+    private static let sharedMarkers: Set<String> = ["dont"]
+
+    private static func isBorrowed(_ word: Substring) -> Bool {
+        word.unicodeScalars.contains { scalar in
+            scalar.properties.isAlphabetic && !("a"..."z").contains(scalar) && !("A"..."Z").contains(scalar)
+        }
     }
 
     /// `check`, with a second pass after `retryAfter` if the model was still

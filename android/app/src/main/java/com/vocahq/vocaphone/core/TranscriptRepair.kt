@@ -55,6 +55,14 @@ object TranscriptRepair {
     }
 
     /**
+     * The English marker words in [text], by the same list and the same
+     * word keys [isEnglish] counts them with: high-frequency English words
+     * that are not also words in the other Latin-script languages.
+     */
+    fun englishMarkers(text: String): Set<String> =
+        split(text).map { it.key }.filter { it in ENGLISH_MARKERS }.toSet()
+
+    /**
      * Whether [text] is English: an explicit or detected `en`, or, on
      * Automatic, a sentence that says so itself — on the terms
      * [looksEnglish] sets out, or, for a fragment too short to carry two
