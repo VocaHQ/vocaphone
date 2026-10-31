@@ -13,6 +13,10 @@ struct WritingRule: Sendable {
     private let atStart: Bool
     private let atEnd: Bool
     private let notAtStart: Bool
+    /// The word right before the match must be one of these, or the match must start the sentence.
+    private let after: Set<String>?
+    /// The word right before the match must not be one of these.
+    private let notAfter: Set<String>
     let replace: String?
     let kind: String
     let message: String?
@@ -42,6 +46,8 @@ struct WritingRule: Sendable {
             atStart: atStart,
             atEnd: atEnd,
             notAtStart: o["notAtStart"] as? Bool ?? false,
+            after: (o["after"] as? [String]).map { Set($0.map(WritingToken.normalize)) },
+            notAfter: Set((o["notAfter"] as? [String] ?? []).map(WritingToken.normalize)),
             replace: o["replace"] as? String,
             kind: kind,
             message: o["message"] as? String
@@ -53,6 +59,10 @@ struct WritingRule: Sendable {
         let start = WritingText.isSentenceStart(tokens, sentence, index)
         if atStart, !start { return 0 }
         if notAtStart, start { return 0 }
+        let before = index > sentence.first ? tokens[index - 1] : nil
+        if let before, notAfter.contains(before.key) { return 0 }
+        if let after, !start, !(before.map { after.contains($0.key) } ?? false) { return 0 }
+        if let before, Self.hyphens.contains(before.text), before.end == tokens[index].start { return 0 }
         var i = index
         for element in elements {
             if i > sentence.last { return 0 }
@@ -65,7 +75,8 @@ struct WritingRule: Sendable {
             if !ok { return 0 }
             i += 1
         }
-        if atEnd, i <= sentence.last, tokens[i].isWord { return 0 }
+        if i <= sentence.last, Self.hyphens.contains(tokens[i].text), tokens[i - 1].end == tokens[i].start { return 0 }
+        if atEnd, i <= sentence.last, tokens[i...sentence.last].contains(where: \.isWord) { return 0 }
         return i - index
     }
 
@@ -133,6 +144,7 @@ struct WritingRule: Sendable {
         }
     }
 
+    private static let hyphens: Set<String> = ["-", "‐", "‑"]
     private static let pronounI: Set<String> = ["i", "i'm", "i've", "i'll", "i'd"]
     private static let any = ["nothing": "anything", "nobody": "anybody", "nowhere": "anywhere", "none": "any", "no": "any"]
     private static let subject = ["me": "I", "him": "he", "her": "she", "us": "we", "them": "they"]

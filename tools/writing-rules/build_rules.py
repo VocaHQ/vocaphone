@@ -317,6 +317,17 @@ CLASSES = {
   "their_verbs": "is are was were will has have would".split(),
 }
 
+# Agreement rules check the pronoun is the subject. "I", "he", "she", "we" and
+# "they" are subjects wherever they stand, unless they end a joined subject
+# ("You and I are", "He and she are"). "You" and "it" are objects too ("What I
+# told you was true", "the people behind it are"), so those rules fire only
+# where a clause starts: the sentence start, a conjunction, a verb such as
+# "think" that takes a clause, or a comma.
+JOINED = ["and", "or", "nor"]
+CLAUSE_START = """and but or so because cause if when whenever while since although though that think thought
+know knew guess hope bet said say says believe feel felt mean sure , ; :""".split()
+WH = CLASSES["wh"] + ["whose", "whom"]
+
 def r(match, replace, kind, message=None, rid=None):
     d = {"match": match, "replace": replace, "kind": kind}
     if message: d["message"] = message
@@ -342,8 +353,9 @@ RULES += [
   r("who's {possessed}", "whose $2", "confused_words", rid="whos-car"),
   r("^ whose coming|going|there|here|that|this|in|next", "who's $2", "confused_words", rid="whose-coming"),
   r("^ were going|coming|leaving|here|done|ready|late|almost|not", "we're $2", "confused_words", rid="were-going"),
-  dict(r("{modal} {verb_inflected}", "$1 ${base:2}", "verb_form", "verb_form.after", rid="modal-base"), notAtStart=True),
-  dict(r("{modal} not {verb_inflected}", "$1 $2 ${base:3}", "verb_form", "verb_form.modal_not", rid="modal-not-base"), notAtStart=True),
+  # Not in a question: in "How can understanding help?" the word after the modal is its subject.
+  dict(r("{modal} {verb_inflected}", "$1 ${base:2}", "verb_form", "verb_form.after", rid="modal-base"), notAtStart=True, notAfter=WH),
+  dict(r("{modal} not {verb_inflected}", "$1 $2 ${base:3}", "verb_form", "verb_form.modal_not", rid="modal-not-base"), notAtStart=True, notAfter=WH),
   r("{neg_do_modal} {verb_inflected}", "$1 ${base:2}", "verb_form", "verb_form.after", rid="neg-base"),
   r("do|does|did not {verb_inflected}", "$1 $2 ${base:3}", "verb_form", "verb_form.modal_not", rid="do-not-base"),
   r("^ {do_q} {subject} {verb_inflected}", "$1 $2 ${base:3}", "verb_form", "verb_form.do", rid="do-question-base"),
@@ -352,12 +364,17 @@ RULES += [
   # Subject-verb agreement the rules can be sure of without the model.
   r("{wh} is you|we|they", "$1 are $3", "agreement", "Use “are” with “{3}”.", rid="wh-is-you"),
   r("{wh} was you|we|they", "$1 were $3", "agreement", "Use “were” with “{3}”.", rid="wh-was-you"),
-  r("you|we|they is", "$1 are", "agreement", "Use “are” with “{1}”.", rid="you-is"),
-  r("you|we|they was", "$1 were", "agreement", "Use “were” with “{1}”.", rid="you-was"),
-  r("i is|are", "$1 am", "agreement", "Use “am” with “I”.", rid="i-is"),
-  r("he|she|it are", "$1 is", "agreement", "Use “is” with “{1}”.", rid="he-are"),
-  r("he|she|it don't", "$1 doesn't", "agreement", "Use “doesn't” with “{1}”.", rid="he-dont"),
-  r("i|you|we|they doesn't", "$1 don't", "agreement", "Use “don't” with “{1}”.", rid="you-doesnt"),
+  dict(r("we|they is", "$1 are", "agreement", "Use “are” with “{1}”.", rid="they-is"), notAfter=JOINED),
+  dict(r("you is", "$1 are", "agreement", "Use “are” with “{1}”.", rid="you-is"), after=CLAUSE_START),
+  dict(r("we|they was", "$1 were", "agreement", "Use “were” with “{1}”.", rid="they-was"), notAfter=JOINED),
+  dict(r("you was", "$1 were", "agreement", "Use “were” with “{1}”.", rid="you-was"), after=CLAUSE_START),
+  dict(r("i is|are", "$1 am", "agreement", "Use “am” with “I”.", rid="i-is"), notAfter=JOINED),
+  dict(r("he|she are", "$1 is", "agreement", "Use “is” with “{1}”.", rid="he-are"), notAfter=JOINED),
+  dict(r("it are", "$1 is", "agreement", "Use “is” with “{1}”.", rid="it-are"), after=CLAUSE_START),
+  dict(r("he|she don't", "$1 doesn't", "agreement", "Use “doesn't” with “{1}”.", rid="he-dont"), notAfter=JOINED),
+  dict(r("it don't", "$1 doesn't", "agreement", "Use “doesn't” with “{1}”.", rid="it-dont"), after=CLAUSE_START),
+  dict(r("i|we|they doesn't", "$1 don't", "agreement", "Use “don't” with “{1}”.", rid="they-doesnt"), notAfter=JOINED),
+  dict(r("you doesn't", "$1 don't", "agreement", "Use “don't” with “{1}”.", rid="you-doesnt"), after=CLAUSE_START),
   r("most {superlative}", "$2", "comparison", rid="most-superlative"),
   r("more better|worse|bigger|smaller|easier|harder|faster|cheaper", "$2", "comparison", rid="more-comparative"),
   r("less {plural_count}", "fewer $2", "word_choice", "“Fewer” is for things you can count, like “{2}”.", rid="less-fewer"),

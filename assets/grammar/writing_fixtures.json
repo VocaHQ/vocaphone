@@ -2905,7 +2905,7 @@
      "original": "was",
      "kind": "agreement",
      "start": 5,
-     "rule": "you-was",
+     "rule": "they-was",
      "end": 8,
      "label": "was → were",
      "source": "rule",
@@ -3400,22 +3400,6 @@
       12,
       15
      ]
-    },
-    {
-     "original": "don't",
-     "kind": "agreement",
-     "start": 29,
-     "rule": "he-dont",
-     "end": 34,
-     "label": "don't → doesn't",
-     "source": "rule",
-     "category": "correctness",
-     "message": "Use “doesn't” with “he”.",
-     "replacement": "doesn't",
-     "mark": [
-      29,
-      34
-     ]
     }
    ],
    "tones": [],
@@ -3426,7 +3410,282 @@
     3,
     4,
     100,
-    84
+    92
+   ],
+   "modelPending": false
+  },
+  {
+   "name": "an end-anchored rule needs the sentence to end there",
+   "text": "I went over their (very detailed) plan.",
+   "stats": [
+    7,
+    39,
+    1,
+    2,
+    3,
+    67,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "a contraction before a hyphenated compound is left alone",
+   "text": "It's name-calling.",
+   "stats": [
+    3,
+    18,
+    1,
+    1,
+    2,
+    91,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "a possessive before a hyphenated compound is left alone",
+   "text": "We are planning your going-away party.",
+   "stats": [
+    7,
+    38,
+    1,
+    2,
+    3,
+    79,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "a modal in a wh-question is followed by its subject",
+   "text": "How can understanding help?",
+   "stats": [
+    4,
+    27,
+    1,
+    2,
+    2,
+    55,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "you as an object is not a subject",
+   "text": "What I told you was true.",
+   "stats": [
+    6,
+    25,
+    1,
+    2,
+    3,
+    100,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "it as an object is not a subject",
+   "text": "The people behind it are waiting.",
+   "stats": [
+    6,
+    33,
+    1,
+    2,
+    3,
+    74,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "a joined subject with I",
+   "text": "You and I are ready.",
+   "stats": [
+    5,
+    20,
+    1,
+    2,
+    2,
+    100,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "a joined subject with she",
+   "text": "He and she are coming.",
+   "stats": [
+    5,
+    22,
+    1,
+    2,
+    2,
+    100,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "you as an object before doesn't",
+   "text": "The thing I gave you doesn't work.",
+   "stats": [
+    7,
+    34,
+    1,
+    2,
+    3,
+    100,
+    100
+   ],
+   "tones": [],
+   "suggestions": [],
+   "modelPending": false
+  },
+  {
+   "name": "agreement after they, without the model",
+   "text": "They was here.",
+   "stats": [
+    3,
+    14,
+    1,
+    1,
+    2,
+    100,
+    92
+   ],
+   "tones": [],
+   "suggestions": [
+    {
+     "original": "was",
+     "kind": "agreement",
+     "start": 5,
+     "rule": "they-was",
+     "end": 8,
+     "label": "was → were",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “were” with “They”.",
+     "replacement": "were",
+     "mark": [
+      5,
+      8
+     ]
+    }
+   ],
+   "modelPending": false
+  },
+  {
+   "name": "agreement after he, without the model",
+   "text": "He don't know.",
+   "stats": [
+    3,
+    14,
+    1,
+    1,
+    2,
+    100,
+    92
+   ],
+   "tones": [],
+   "suggestions": [
+    {
+     "original": "don't",
+     "kind": "agreement",
+     "start": 3,
+     "rule": "he-dont",
+     "end": 8,
+     "label": "don't → doesn't",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “doesn't” with “He”.",
+     "replacement": "doesn't",
+     "mark": [
+      3,
+      8
+     ]
+    }
+   ],
+   "modelPending": false
+  },
+  {
+   "name": "agreement after a clause start, without the model",
+   "text": "I think you was right, but he don't care. It don't matter.",
+   "stats": [
+    12,
+    58,
+    2,
+    4,
+    5,
+    100,
+    76
+   ],
+   "tones": [],
+   "suggestions": [
+    {
+     "original": "was",
+     "kind": "agreement",
+     "start": 12,
+     "rule": "you-was",
+     "end": 15,
+     "label": "was → were",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “were” with “you”.",
+     "replacement": "were",
+     "mark": [
+      12,
+      15
+     ]
+    },
+    {
+     "original": "don't",
+     "kind": "agreement",
+     "start": 30,
+     "rule": "he-dont",
+     "end": 35,
+     "label": "don't → doesn't",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “doesn't” with “he”.",
+     "replacement": "doesn't",
+     "mark": [
+      30,
+      35
+     ]
+    },
+    {
+     "original": "don't",
+     "kind": "agreement",
+     "start": 45,
+     "rule": "it-dont",
+     "end": 50,
+     "label": "don't → doesn't",
+     "source": "rule",
+     "category": "correctness",
+     "message": "Use “doesn't” with “It”.",
+     "replacement": "doesn't",
+     "mark": [
+      45,
+      50
+     ]
+    }
    ],
    "modelPending": false
   }

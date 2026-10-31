@@ -9,9 +9,12 @@ import org.json.JSONObject
  * of one sentence: a literal word or mark (case-insensitive, apostrophes
  * straight), alternatives `a|b|c`, a class `{name}` from the file's `classes`
  * or a built-in one, `^` first for "starts the sentence" and `$` last for
- * "nothing but punctuation follows". A replacement is words and `$n` (the nth
- * matched token as typed) or `${fn:n}` (base, ing, participle, any, subject).
- * Mirrors `WritingRule.swift`.
+ * "nothing but punctuation follows, to the end of the sentence". A rule may
+ * also say which word must (`after`, or the sentence start) or must not
+ * (`notAfter`) come right before the match. A match never takes part of a
+ * hyphenated compound ("name" in "name-calling"). A replacement is words and
+ * `$n` (the nth matched token as typed) or `${fn:n}` (base, ing, participle,
+ * any, subject). Mirrors `WritingRule.swift`.
  */
 class WritingRule private constructor(
     val id: String,
@@ -19,6 +22,8 @@ class WritingRule private constructor(
     private val atStart: Boolean,
     private val atEnd: Boolean,
     private val notAtStart: Boolean,
+    private val after: Set<String>?,
+    private val notAfter: Set<String>,
     val replace: String?,
     val kind: String,
     val message: String?,
@@ -38,6 +43,10 @@ class WritingRule private constructor(
         val start = WritingText.isSentenceStart(tokens, sentence, index)
         if (atStart && !start) return 0
         if (notAtStart && start) return 0
+        val before = if (index > sentence.first) tokens[index - 1] else null
+        if (before != null && before.key in notAfter) return 0
+        if (after != null && !start && (before == null || before.key !in after)) return 0
+        if (before != null && isHyphen(before) && before.end == tokens[index].start) return 0
         var i = index
         for (element in elements) {
             if (i > sentence.last) return 0
@@ -50,9 +59,12 @@ class WritingRule private constructor(
             if (!ok) return 0
             i++
         }
-        if (atEnd && i <= sentence.last && tokens[i].isWord) return 0
+        if (i <= sentence.last && isHyphen(tokens[i]) && tokens[i - 1].end == tokens[i].start) return 0
+        if (atEnd && (i..sentence.last).any { tokens[it].isWord }) return 0
         return i - index
     }
+
+    private fun isHyphen(token: WritingToken) = token.text in HYPHENS
 
     private fun matchesClass(name: String, token: WritingToken, previous: WritingToken?, rules: WritingRules): Boolean {
         if (!token.isWord) return false
@@ -115,6 +127,9 @@ class WritingRule private constructor(
                 atStart = atStart,
                 atEnd = atEnd,
                 notAtStart = o.optBoolean("notAtStart", false),
+                after = o.optJSONArray("after")?.let { a -> List(a.length()) { WritingToken.normalize(a.getString(it)) }.toSet() },
+                notAfter = o.optJSONArray("notAfter")?.let { a -> List(a.length()) { WritingToken.normalize(a.getString(it)) }.toSet() }
+                    .orEmpty(),
                 replace = if (o.isNull("replace")) null else o.getString("replace"),
                 kind = o.getString("kind"),
                 message = o.optString("message").takeIf { o.has("message") },
@@ -122,6 +137,7 @@ class WritingRule private constructor(
         }
 
         private val REFERENCE = Regex("\\$(?:\\{(\\w+):)?(\\d+)\\}?")
+        private val HYPHENS = setOf("-", "‐", "‑")
         private val PRONOUN_I = setOf("i", "i'm", "i've", "i'll", "i'd")
         private val ANY = mapOf("nothing" to "anything", "nobody" to "anybody", "nowhere" to "anywhere", "none" to "any", "no" to "any")
         private val SUBJECT = mapOf("me" to "I", "him" to "he", "her" to "she", "us" to "we", "them" to "they")
