@@ -81,7 +81,7 @@ struct WritingCheck: Sendable {
             }
         }
         found += longSentences(text, tokens, sentences)
-        found += overusedWords(tokens, sentences)
+        found += overusedWords(tokens, sentences, keep)
 
         let lowercaseStyle = text.unicodeScalars.first(where: WritingText.isLetter)?.properties.isLowercase == true
         var starts = Set<Int>()
@@ -220,7 +220,8 @@ struct WritingCheck: Sendable {
         }
     }
 
-    private func overusedWords(_ tokens: [WritingToken], _ sentences: [WritingSentence]) -> [WritingSuggestion] {
+    /// A word used `overusedWordCount` times in a paragraph, marked where that happens; never one in `keep`.
+    private func overusedWords(_ tokens: [WritingToken], _ sentences: [WritingSentence], _ keep: Set<String>) -> [WritingSuggestion] {
         let kind = rules.kind("overused_word")
         var out: [WritingSuggestion] = []
         var paragraphs: [Int] = []
@@ -234,7 +235,7 @@ struct WritingCheck: Sendable {
             for s in byParagraph[p] ?? [] {
                 for i in s.first...s.last {
                     let t = tokens[i]
-                    if !t.hasLetter || t.key.count < 4 || rules.stopwords.contains(t.key) { continue }
+                    if !t.hasLetter || t.key.count < 4 || rules.stopwords.contains(t.key) || keep.contains(t.key) { continue }
                     let n = (counts[t.key] ?? 0) + 1
                     counts[t.key] = n
                     if n == rules.overusedWordCount {

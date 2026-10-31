@@ -81,7 +81,7 @@ class WritingCheck(val rules: WritingRules) {
             }
         }
         found += longSentences(text, tokens, sentences)
-        found += overusedWords(text, tokens, sentences)
+        found += overusedWords(tokens, sentences, keep)
 
         val lowercaseStyle = text.firstOrNull { it.isLetter() }?.isLowerCase() == true
         val starts = sentences.mapTo(HashSet()) { s ->
@@ -214,8 +214,8 @@ class WritingCheck(val rules: WritingRules) {
         }
     }
 
-    /** A word used [WritingRules.overusedWordCount] times in a paragraph, marked where that happens. */
-    private fun overusedWords(text: String, tokens: List<WritingToken>, sentences: List<WritingSentence>): List<WritingSuggestion> {
+    /** A word used [WritingRules.overusedWordCount] times in a paragraph, marked where that happens; never one in [keep]. */
+    private fun overusedWords(tokens: List<WritingToken>, sentences: List<WritingSentence>, keep: Set<String>): List<WritingSuggestion> {
         val kind = rules.kind("overused_word")
         val out = ArrayList<WritingSuggestion>()
         sentences.groupBy { it.paragraph }.values.forEach { paragraph ->
@@ -223,7 +223,7 @@ class WritingCheck(val rules: WritingRules) {
             for (s in paragraph) {
                 for (i in s.first..s.last) {
                     val t = tokens[i]
-                    if (!t.hasLetter || t.key.length < 4 || t.key in rules.stopwords) continue
+                    if (!t.hasLetter || t.key.length < 4 || t.key in rules.stopwords || t.key in keep) continue
                     val n = (counts[t.key] ?: 0) + 1
                     counts[t.key] = n
                     if (n == rules.overusedWordCount) {
