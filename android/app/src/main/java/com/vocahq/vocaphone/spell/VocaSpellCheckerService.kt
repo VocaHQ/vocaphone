@@ -7,10 +7,12 @@ import android.view.textservice.TextInfo
 import com.vocahq.vocaphone.VocaPhoneApplication
 import com.vocahq.vocaphone.core.CustomVocabulary
 import com.vocahq.vocaphone.core.DictatedTranscript
+import com.vocahq.vocaphone.core.TranscriptRepair
 import com.vocahq.vocaphone.ime.PersonalDictionary
 import com.vocahq.vocaphone.local.GrammarModelCatalog
 import com.vocahq.vocaphone.writing.WritingCategory
 import com.vocahq.vocaphone.writing.WritingCheck
+import com.vocahq.vocaphone.writing.WritingLanguage
 import com.vocahq.vocaphone.writing.WritingRules
 import kotlinx.coroutines.runBlocking
 
@@ -25,6 +27,10 @@ import kotlinx.coroutines.runBlocking
  * underline is for mistakes, not for style. The framework asks a sentence at a
  * time, a few hundred milliseconds after the user stops typing, on its own
  * binder threads.
+ *
+ * The session's locale only says which checker the user picked, not what a
+ * given message is written in, so each text the framework hands over is also
+ * asked [WritingLanguage.applies] before the English rules see it.
  */
 class VocaSpellCheckerService : SpellCheckerService() {
     private val container by lazy { VocaPhoneApplication.container(this) }
@@ -34,6 +40,22 @@ class VocaSpellCheckerService : SpellCheckerService() {
             WritingCheck(WritingRules.parse(assets.open("writing-rules.json").bufferedReader().use { it.readText() }))
         }.getOrNull()
     }
+
+    /**
+     * The keyboard's English word list, for telling a long English sentence
+     * from a French one. Read on the first check, on a binder thread: the
+     * service has no composition thread to keep it off, and a user who never
+     * picks VocaPhone as the spell checker never pays for it.
+     */
+    private val englishWords: Set<String> by lazy {
+        runCatching {
+            assets.open("en.txt").bufferedReader().useLines { lines ->
+                lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toHashSet()
+            }
+        }.getOrDefault(emptySet())
+    }
+
+    private fun isEnglish(text: String): Boolean = TranscriptRepair.isEnglish(text, "auto") { it in englishWords }
 
     override fun createSession(): Session = WritingSession()
 
@@ -65,6 +87,13 @@ class VocaSpellCheckerService : SpellCheckerService() {
         private fun check(text: String): List<SpellCheckSpans.Span> {
             val checker = checker
             if (!english || checker == null || text.isBlank()) return emptyList()
+            // The language is asked of the whole text the framework sent, the
+            // same text the rules check: the decision and the underlines are
+            // about the same words.
+            return SpellCheckSpans.checked(text, ::isEnglish) { report(checker, text) }
+        }
+
+        private fun report(checker: WritingCheck, text: String): WritingCheck.Report {
             val settings = runBlocking { container.settings.current() }
             val keep = DictatedTranscript.grammarKeeps(
                 PersonalDictionary.terms(settings.personalDictionary) + CustomVocabulary.terms(settings.customVocabulary),
@@ -76,12 +105,11 @@ class VocaSpellCheckerService : SpellCheckerService() {
                 null
             }
             val options = WritingCheck.Options(setOf(WritingCategory.CORRECTNESS), keep, typed = true)
-            val report = ModelWait.check(
+            return ModelWait.check(
                 check = { checker.check(text, model, options) },
                 loading = { container.grammar.isLoading },
                 loaded = { container.grammar.isLoaded },
             )
-            return SpellCheckSpans.of(text, report)
         }
 
         private fun info(span: SpellCheckSpans.Span?, textInfo: TextInfo): SuggestionsInfo {

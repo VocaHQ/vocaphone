@@ -2,6 +2,7 @@ package com.vocahq.vocaphone.spell
 
 import com.vocahq.vocaphone.writing.WritingCategory
 import com.vocahq.vocaphone.writing.WritingCheck
+import com.vocahq.vocaphone.writing.WritingLanguage
 import com.vocahq.vocaphone.writing.WritingText
 
 /**
@@ -23,6 +24,20 @@ object SpellCheckSpans {
 
     /** Kinds the framework draws as a misspelling rather than a grammar error. */
     private val TYPO_KINDS = setOf("spelling", "apostrophe")
+
+    /**
+     * What the service reports for [text]: [of] the report [check] gives, or,
+     * when [WritingLanguage] says the English rules should not look at the
+     * text, every word fine without asking [check] at all. Fine rather than
+     * nothing, so an underline drawn while a French sentence was still too
+     * short to tell clears once it is long enough.
+     */
+    fun checked(text: String, isEnglish: (String) -> Boolean, check: () -> WritingCheck.Report): List<Span> =
+        if (WritingLanguage.applies(text, isEnglish)) of(text, check()) else fine(text)
+
+    /** Every word in [text], reported fine. */
+    fun fine(text: String): List<Span> =
+        WritingText.tokenize(text).filter { it.isWord }.map { Span(it.start, it.end - it.start, Kind.FINE, emptyList()) }
 
     fun of(text: String, report: WritingCheck.Report): List<Span> {
         val tokens = WritingText.tokenize(text)
