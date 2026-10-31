@@ -186,4 +186,37 @@ struct WritingCleanTextTests {
         #expect(Double(flagged.count) / Double(cases.count) <= 0.02, "\(flagged.map { $0["input"]! })")
     }
 
+    /// Every rule fix applied to the chat set must move a line toward what was meant, never away.
+    @Test func ruleFixesOnTypedTextNeverMakeALineWorse() {
+        let check = WritingCheck(rules: WritingCheckTests.rules)
+        let cases = Self.lines("typed_en.jsonl")
+        #expect(!cases.isEmpty)
+        var options = WritingCheck.Options()
+        options.categories = [.correctness]
+        let worse = cases.compactMap { c -> String? in
+            let input = c["input"]!
+            let expected = c["expected"]!
+            var text = input
+            for s in check.check(input, options: options).suggestions.reversed() {
+                text = WritingCheck.apply(text, s) ?? text
+            }
+            return Self.distance(text, expected) > Self.distance(input, expected) ? "\(input) → \(text) (expected \(expected))" : nil
+        }
+        #expect(worse.isEmpty, "\(worse.count) lines made worse:\n\(worse.joined(separator: "\n"))")
+    }
+
+    /// Word-level edit distance over Writing check's own tokens.
+    static func distance(_ a: String, _ b: String) -> Int {
+        let x = WritingText.tokenize(a).map(\.text)
+        let y = WritingText.tokenize(b).map(\.text)
+        var d = Array(repeating: Array(repeating: 0, count: y.count + 1), count: x.count + 1)
+        for i in 0...x.count { d[i][0] = i }
+        for j in 0...y.count { d[0][j] = j }
+        for i in stride(from: 1, through: x.count, by: 1) {
+            for j in stride(from: 1, through: y.count, by: 1) {
+                d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (x[i - 1] == y[j - 1] ? 0 : 1))
+            }
+        }
+        return d[x.count][y.count]
+    }
 }
