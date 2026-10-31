@@ -37,12 +37,29 @@ final class WritingCheckClient {
 
     struct Report: Equatable {
         let field: Field
+        /// Everything the check found that still fits the text, including what
+        /// touches the word the cursor is in. Kept so that leaving that word
+        /// brings its suggestions back without another check; edits, Accept and
+        /// dismissals work on this list.
+        let all: [WritingSuggestion]
+        /// What the user is shown (the count, the chips and the panel): `all`
+        /// without the word the cursor is in, which is being typed or has just
+        /// been gone back into, and is not finished.
         let suggestions: [WritingSuggestion]
         let tones: [WritingCheck.Tone]
         /// What the strip may offer as chips: actionable and within reach,
         /// nearest the cursor first.
         let chips: [WritingSuggestion]
         let modelPending: Bool
+
+        init(field: Field, all: [WritingSuggestion], tones: [WritingCheck.Tone], modelPending: Bool) {
+            self.field = field
+            self.all = all
+            suggestions = WritingCheckClient.outsideCurrentWord(all, in: field)
+            self.tones = tones
+            chips = WritingCheckClient.chips(suggestions, in: field)
+            self.modelPending = modelPending
+        }
 
         var count: Int { suggestions.count }
 
@@ -129,7 +146,7 @@ final class WritingCheckClient {
            let window = Self.window(before: before, after: after ?? "", in: last) {
             lastField = window
             if let report, report.field != window {
-                publish(Self.report(report, field: window, suggestions: report.suggestions))
+                publish(Self.report(report, field: window, all: report.all))
             }
             return
         }
@@ -230,24 +247,20 @@ final class WritingCheckClient {
     }
 
     private func makeReport(_ field: Field, _ result: WritingCheck.Report, tone: Bool) -> Report {
-        let suggestions = Self.outsideCurrentWord(result.suggestions.filter { !dismissed.contains($0.key) }, in: field)
-        return Report(
+        Report(
             field: field,
-            suggestions: suggestions,
+            all: result.suggestions.filter { !dismissed.contains($0.key) },
             tones: tone ? result.tones : [],
-            chips: Self.chips(suggestions, in: field),
             modelPending: result.modelPending
         )
     }
 
-    private static func report(_ report: Report, field: Field, suggestions: [WritingSuggestion]) -> Report {
-        Report(
-            field: field, suggestions: suggestions, tones: report.tones,
-            chips: chips(suggestions, in: field), modelPending: report.modelPending
-        )
+    /// `report` on `field` with `all`, its tones and model state unchanged.
+    private static func report(_ report: Report, field: Field, all: [WritingSuggestion]) -> Report {
+        Report(field: field, all: all, tones: report.tones, modelPending: report.modelPending)
     }
 
-    private static func chips(_ suggestions: [WritingSuggestion], in field: Field) -> [WritingSuggestion] {
+    nonisolated fileprivate static func chips(_ suggestions: [WritingSuggestion], in field: Field) -> [WritingSuggestion] {
         let actionable = suggestions.filter { $0.isActionable && field.isReachable($0) }.enumerated().sorted { a, b in
             let da = abs(a.element.markEnd - field.cursor)
             let db = abs(b.element.markEnd - field.cursor)
@@ -259,13 +272,13 @@ final class WritingCheckClient {
     /// `suggestions` without those touching the word the cursor is in: it is
     /// being typed, or the user has just gone back into it, and is not
     /// finished.
-    private static func outsideCurrentWord(_ suggestions: [WritingSuggestion], in field: Field) -> [WritingSuggestion] {
+    nonisolated fileprivate static func outsideCurrentWord(_ suggestions: [WritingSuggestion], in field: Field) -> [WritingSuggestion] {
         guard let word = wordAt(field.text, field.cursor) else { return suggestions }
         return suggestions.filter { $0.markEnd < word.0 || $0.markStart > word.1 }
     }
 
     /// The word the cursor touches, as `(start, end)`; nil between words.
-    private static func wordAt(_ text: String, _ cursor: Int) -> (Int, Int)? {
+    nonisolated private static func wordAt(_ text: String, _ cursor: Int) -> (Int, Int)? {
         let units = Array(text.utf16)
         func isWord(_ i: Int) -> Bool {
             guard i >= 0, i < units.count, let scalar = Unicode.Scalar(units[i]) else { return false }
@@ -290,12 +303,13 @@ final class WritingCheckClient {
         return Field(text: last.text, cursor: last.cursor, reach: start..<end)
     }
 
-    /// `report` moved onto `field`, as a new check would leave it: nothing
-    /// in the word the cursor is now in. Nil when none of it could be placed.
+    /// `report` moved onto `field`: everything it found, even what the word
+    /// the cursor was in hid, so leaving that word shows it again. Nil when
+    /// none of it could be placed.
     private func rebase(_ report: Report, to field: Field) -> Report? {
-        let moved = WritingCheck.rebase(report.suggestions, old: report.field.text, new: field.text)
+        let moved = WritingCheck.rebase(report.all, old: report.field.text, new: field.text)
         guard !moved.isEmpty else { return nil }
-        return Self.report(report, field: field, suggestions: Self.outsideCurrentWord(moved, in: field))
+        return Self.report(report, field: field, all: moved)
     }
 
     // MARK: - The model, through the app
@@ -381,9 +395,9 @@ final class WritingCheckClient {
         let cursor = old.cursor >= suggestion.end ? old.cursor + delta : old.cursor
         let reach = old.reach.map { $0.lowerBound..<max($0.lowerBound, $0.upperBound + delta) }
         let field = Field(text: edited, cursor: cursor, reach: reach)
-        let rest = WritingCheck.rebase(report.suggestions.filter { $0 != suggestion }, old: old.text, new: edited)
+        let rest = WritingCheck.rebase(report.all.filter { $0 != suggestion }, old: old.text, new: edited)
         lastField = field
-        publish(Self.report(report, field: field, suggestions: rest))
+        publish(Self.report(report, field: field, all: rest))
     }
 
     /// The user waved `suggestion` away: it is not offered again in this field.
@@ -396,8 +410,8 @@ final class WritingCheckClient {
     func dismiss(key: String) {
         dismissed.insert(key)
         guard let report else { return }
-        let rest = report.suggestions.filter { $0.key != key }
-        publish(Self.report(report, field: report.field, suggestions: rest))
+        let rest = report.all.filter { $0.key != key }
+        publish(Self.report(report, field: report.field, all: rest))
     }
 
     /// A new field, or the keyboard went away: nothing carries over, and a
@@ -554,6 +568,10 @@ final class WholeMessageWalk {
     private let move: (Int) -> Void
     private let wait: () async -> Bool
     private var isStopped = false
+    /// The walk's last move, until the field has been seen to follow it. The
+    /// field can lag a move by a moment, so a window read meanwhile may still
+    /// show the cursor where it was before this move.
+    private var unconfirmed = 0
     /// What has been read, either side of where the cursor started.
     private var before = ""
     private var after = ""
@@ -610,11 +628,28 @@ final class WholeMessageWalk {
     /// keys can type again: a key pressed mid-walk would land wherever the walk
     /// had got to. Not after an interruption, which put the cursor where the
     /// user wants it.
+    ///
+    /// This runs mid-wait, before the walk has checked the field after its
+    /// last move, so the field is checked here first, the same way. The window
+    /// must show the cursor where the walk put it, or, the field not having
+    /// caught up yet, where it was just before that move: the move is still on
+    /// its way, and the one back is made after it, so either way the cursor
+    /// ends where it started. Anything else is the user or the app moving the
+    /// cursor or changing the text during the wait, and the cursor is left
+    /// where they put it; moving back from there would put it somewhere else.
     func restore() {
         guard !isStopped else { return }
         isStopped = true
-        if moved != 0 { move(-moved) }
+        guard moved != 0 else { return }
+        let now = window()
+        let shown = (before: now.before ?? "", after: now.after ?? "")
+        guard !now.hasSelection, fits(shown, at: moved) || fits(shown, at: moved - unconfirmed) else {
+            wasInterrupted = true
+            return
+        }
+        move(-moved)
         moved = 0
+        unconfirmed = 0
     }
 
     /// Stops the walk where it is, without moving the cursor again.
@@ -630,24 +665,26 @@ final class WholeMessageWalk {
         if offset != 0 {
             move(offset)
             moved += offset
+            unconfirmed = offset
             guard await wait(), !isStopped else { return nil }
         }
         let now = window()
         let shown = (before: now.before ?? "", after: now.after ?? "")
-        guard !now.hasSelection, fits(shown) else {
+        guard !now.hasSelection, fits(shown, at: moved) else {
             wasInterrupted = true
             isStopped = true
             return nil
         }
+        unconfirmed = 0
         return shown
     }
 
-    /// Whether `shown` agrees with what has been read, around where the walk
-    /// put the cursor. Only the overlap is compared: a window can reach past
-    /// what has been read, or stop short of it.
-    private func fits(_ shown: (before: String, after: String)) -> Bool {
+    /// Whether `shown` agrees with what has been read, around the cursor
+    /// `offset` from where the walk found it. Only the overlap is compared: a
+    /// window can reach past what has been read, or stop short of it.
+    private func fits(_ shown: (before: String, after: String), at offset: Int) -> Bool {
         let text = Array((before + after).utf16)
-        let at = before.utf16Length + moved
+        let at = before.utf16Length + offset
         guard at >= 0, at <= text.count else { return false }
         let left = Array(shown.before.utf16)
         let right = Array(shown.after.utf16)

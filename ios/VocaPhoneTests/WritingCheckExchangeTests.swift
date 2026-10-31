@@ -355,6 +355,48 @@ struct WritingCheckExchangeTests {
         #expect(client.report?.chips.map(\.original) == ["of"])
     }
 
+    @Test func leavingAFlaggedWordBringsItsChipBack() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = client(appRunning: false)
+        let text = "I definately could of told you. "
+        try await type(client, text)
+        let inside = ("I defin" as NSString).length
+        client.textChanged(
+            before: text.utf16Slice(0, inside), after: text.utf16Slice(inside, text.utf16Length), enabled: true
+        ) { WritingCheckClient.Options() }
+        await client.settle()
+        #expect(labels(client) == ["of → have"])
+        #expect(client.report?.count == 1)
+        // Back to the end: the hidden correction is shown again at once,
+        // before any new check, and counted.
+        client.textChanged(before: text, after: "", enabled: true) { WritingCheckClient.Options() }
+        #expect(client.report?.chips.map(\.original).sorted() == ["definately", "of"])
+        #expect(client.report?.count == 2)
+        await client.settle()
+        #expect(client.report?.chips.map(\.original).sorted() == ["definately", "of"])
+        #expect(client.report?.count == 2)
+    }
+
+    @Test func aDismissalInsideTheCurrentWordHoldsAfterLeavingIt() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = client(appRunning: false)
+        let text = "I definately could of told you. "
+        try await type(client, text)
+        let of = try #require(client.report?.suggestions.first { $0.original == "of" })
+        // The cursor goes into "definately", "of" is waved away, and the
+        // cursor comes back out: only "definately" returns.
+        let inside = ("I defin" as NSString).length
+        client.textChanged(
+            before: text.utf16Slice(0, inside), after: text.utf16Slice(inside, text.utf16Length), enabled: true
+        ) { WritingCheckClient.Options() }
+        client.dismiss(of)
+        #expect(client.report?.count == 0)
+        client.textChanged(before: text, after: "", enabled: true) { WritingCheckClient.Options() }
+        #expect(client.report?.suggestions.map(\.original) == ["definately"])
+        await client.settle()
+        #expect(client.report?.suggestions.map(\.original) == ["definately"])
+    }
+
     @Test func oneAutomaticFixPerUndo() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let client = client(appRunning: false)
@@ -403,6 +445,9 @@ struct WholeMessageWalkTests {
         var text: String
         var cursor: Int
         var hasSelection = false
+        /// Where the window shows the cursor when the field has not caught up
+        /// with it yet; nil when it has.
+        var shownCursor: Int?
         private(set) var moves: [Int] = []
         let size = 8
 
@@ -413,6 +458,7 @@ struct WholeMessageWalkTests {
 
         var window: WholeMessageWalk.Window {
             let length = text.utf16Length
+            let cursor = shownCursor ?? cursor
             return .init(
                 before: text.utf16Slice(max(0, cursor - size), cursor),
                 after: text.utf16Slice(cursor, min(length, cursor + size)),
@@ -506,6 +552,53 @@ struct WholeMessageWalkTests {
         // Once stopped, nothing moves it again.
         walk.restore()
         #expect(field.cursor == 20)
+    }
+
+    @Test func closingAfterAnOutsideMoveLeavesTheCursorAlone() async throws {
+        let field = Field(Self.text, cursor: 20)
+        // The user taps elsewhere during a wait, and the panel closes before
+        // the walk has looked: the cursor stays where the user put it.
+        let walk = makeWalk(field) { wait, walk in
+            guard wait == 2 else { return true }
+            field.cursor = 40
+            walk.restore()
+            return false
+        }
+        #expect(await walk.read() == nil)
+        #expect(walk.wasInterrupted)
+        #expect(field.cursor == 40)
+        #expect(field.moves.count == 2)
+    }
+
+    @Test func closingAfterAnOutsideEditLeavesTheCursorAlone() async throws {
+        let field = Field(Self.text, cursor: 20)
+        let walk = makeWalk(field) { wait, walk in
+            guard wait == 1 else { return true }
+            field.text = field.text.replacingOccurrences(of: "Four", with: "4")
+            walk.restore()
+            return false
+        }
+        #expect(await walk.read() == nil)
+        #expect(walk.wasInterrupted)
+        #expect(field.cursor == 12)
+        #expect(field.moves.count == 1)
+    }
+
+    @Test func closingBeforeTheFieldCatchesUpStillPutsTheCursorBack() async throws {
+        let field = Field(Self.text, cursor: 20)
+        // The panel closes right after the walk's own move, while the window
+        // still shows the cursor where it was before it.
+        let walk = makeWalk(field) { wait, walk in
+            guard wait == 2 else { return true }
+            field.shownCursor = field.cursor - field.moves.last!
+            walk.restore()
+            field.shownCursor = nil
+            return false
+        }
+        #expect(await walk.read() == nil)
+        #expect(!walk.wasInterrupted)
+        #expect(field.cursor == 20)
+        #expect(field.moves.count == 3)
     }
 
     @Test func aRestoredWalkMakesNoFurtherMoves() async throws {
