@@ -9,13 +9,21 @@ import kotlin.math.roundToInt
  * text, on the phone. Pure, so every decision is unit-tested against
  * `assets/grammar/writing_fixtures.json`, which `WritingCheck.swift` reads too.
  *
- * Two sources of suggestions meet here. The rules in `writing-rules.json`
- * run anywhere, the iOS keyboard extension and the F-Droid build included.
+ * Three sources of suggestions meet here. The rules in `writing-rules.json`
+ * and the spelling dictionary ([WritingSpelling]) run anywhere, the iOS
+ * keyboard extension and the F-Droid build included.
  * The grammar model runs where ONNX Runtime does and arrives as [Model]: a
  * sentence in, the model's corrected sentence out, or null while it loads.
  * Nothing leaves the device.
  */
-class WritingCheck(val rules: WritingRules) {
+class WritingCheck(
+    val rules: WritingRules,
+    val spelling: WritingSpelling? = null,
+    /** The part-of-speech tagger the agreement checks need; null leaves them out. */
+    val tagger: PosTagger? = null,
+) {
+    private val agreement = tagger?.let { WritingAgreement(rules, it, spelling) }
+
     /** One sentence in, the model's correction out; null while it is not ready. */
     fun interface Model {
         fun correct(sentence: String): String?
@@ -30,6 +38,8 @@ class WritingCheck(val rules: WritingRules) {
          * capital on a sentence typed in lower case on purpose, are not offered.
          */
         val typed: Boolean = true,
+        /** Rules the user turned on that are off by default, by their `optIn` name: "serial_comma". */
+        val optIn: Set<String> = emptySet(),
     )
 
     data class Tone(val id: String, val label: String, val emoji: String, val score: Int)
@@ -66,7 +76,22 @@ class WritingCheck(val rules: WritingRules) {
         val found = ArrayList<WritingSuggestion>()
         var pending = false
 
-        for (sentence in sentences) found += ruleSuggestions(text, tokens, sentence, protected, keep, options.categories)
+        for (sentence in sentences) found += ruleSuggestions(text, tokens, sentence, protected, keep, options)
+        agreement?.let { checks ->
+            // Subjects and their verbs, where no rule has spoken for the verb.
+            val fixed = found.filter { it.isActionable }
+            val casual = options.typed && text.firstOrNull { it.isLetter() }?.isLowerCase() == true
+            for (sentence in sentences) found += checks.suggestions(text, tokens, sentence, protected, keep, fixed, casual)
+        }
+        spelling?.let { dictionary ->
+            // A word a rule already fixes is not looked up, and a word met
+            // twice is looked up once.
+            val fixed = found.filter { it.isActionable }
+            val guesses = HashMap<String, WritingSpelling.Guess?>()
+            for (sentence in sentences) {
+                found += spellingSuggestions(text, tokens, sentence, protected, keep, dictionary, fixed, guesses)
+            }
+        }
         if (model != null) {
             for (sentence in sentences) {
                 val words = tokens.subList(sentence.first, sentence.last + 1)
@@ -90,7 +115,7 @@ class WritingCheck(val rules: WritingRules) {
         }
         val kept = found.filter { it.category in options.categories }
             .filter { !options.typed || offeredOnTypedText(it, text, lowercaseStyle, starts) }
-        val merged = merge(kept)
+        val merged = merge(kept, text)
         return Report(text, merged, tones(text, tokens), stats(text, tokens, sentences, merged), pending)
     }
 
@@ -102,32 +127,42 @@ class WritingCheck(val rules: WritingRules) {
         sentence: WritingSentence,
         protected: List<IntRange>,
         keep: Set<String>,
-        categories: Set<WritingCategory>,
+        options: Options,
     ): List<WritingSuggestion> {
         val out = ArrayList<WritingSuggestion>()
-        var i = sentence.first
-        while (i <= sentence.last) {
-            var advanced = false
+        // Tokens a suggestion already changes. A later rule may still match
+        // across them ("didnt went" is both "didnt" → "didn't" and "went" →
+        // "go"), but may not change them a second time.
+        val claimed = HashSet<Int>()
+        for (i in sentence.first..sentence.last) {
             val start = WritingText.isSentenceStart(tokens, sentence, i)
             for (index in candidates(tokens[i])) {
                 val rule = rules.rules[index]
                 // A rule the user turned off must not take its words from one
                 // they kept: "could" is hedging, and "could helps" still needs "help".
-                if (rules.kind(rule.kind).category !in categories) continue
+                if (rules.kind(rule.kind).category !in options.categories) continue
+                if (rule.optIn != null && rule.optIn !in options.optIn) continue
                 val count = rule.match(tokens, sentence, i, rules, start)
                 if (count == 0) continue
                 val matched = tokens.subList(i, i + count)
                 if (matched.any { t -> protected.any { t.start <= it.last && it.first < t.end } }) continue
-                val suggestion = ruleSuggestion(text, tokens, sentence, rule, i, matched, keep) ?: continue
-                out.add(suggestion)
-                i += count
-                advanced = true
-                break
+                val found = ruleSuggestion(text, tokens, sentence, rule, i, matched, keep) ?: continue
+                if (!found.suggestion.isActionable) {
+                    out.add(found.suggestion)
+                    continue
+                }
+                if ((found.from until found.to).any { it in claimed }) continue
+                out.add(found.suggestion)
+                for (k in found.from until found.to) claimed.add(k)
+                // Once this token has changed, no other rule may start here.
+                if (i in found.from until found.to) break
             }
-            if (!advanced) i++
         }
         return out
     }
+
+    /** A rule's suggestion and the tokens `[from, to)` it changes. */
+    private class Found(val suggestion: WritingSuggestion, val from: Int, val to: Int)
 
     /** The rules that could start at [token], in the file's order. */
     private fun candidates(token: WritingToken): IntArray {
@@ -151,7 +186,7 @@ class WritingCheck(val rules: WritingRules) {
         index: Int,
         matched: List<WritingToken>,
         keep: Set<String>,
-    ): WritingSuggestion? {
+    ): Found? {
         val kind = rules.kind(rule.kind)
         val values = HashMap<String, String>()
         matched.forEachIndexed { i, t -> values["${i + 1}"] = t.text }
@@ -160,13 +195,14 @@ class WritingCheck(val rules: WritingRules) {
             val first = matched.first()
             val last = matched.last()
             values["original"] = text.substring(first.start, last.end)
-            return WritingSuggestion(
+            val info = WritingSuggestion(
                 start = first.start, end = last.end, original = text.substring(first.start, last.end),
                 replacement = null, markStart = first.start, markEnd = last.end,
                 kind = kind.id, category = kind.category, title = kind.title,
                 message = WritingEdits.format(template(rule, kind), values),
                 mechanical = kind.mechanical, source = WritingSuggestion.Source.RULE, rule = rule.id,
             )
+            return Found(info, index, index + matched.size)
         }
         // Narrow to the tokens that change: "rather then" → "rather than" is
         // "then" → "than". Case counts only for a capitalization rule.
@@ -206,17 +242,79 @@ class WritingCheck(val rules: WritingRules) {
             template = rules.messages.getValue("confused_words.gloss")
         }
         if (rule.message == null && expanded.isEmpty()) rules.messages["${kind.id}.remove"]?.let { template = it }
-        return WritingSuggestion(
+        val suggestion = WritingSuggestion(
             start = edit.start, end = edit.end, original = original, replacement = edit.replacement,
             markStart = edit.markStart, markEnd = edit.markEnd,
             kind = kind.id, category = kind.category, title = kind.title,
             message = WritingEdits.format(template, values),
             mechanical = kind.mechanical, source = WritingSuggestion.Source.RULE, rule = rule.id,
         )
+        return Found(suggestion, from, to)
     }
 
     private fun template(rule: WritingRule, kind: WritingRules.Kind): String =
         rule.message?.let { rules.messages[it] ?: it } ?: kind.message
+
+    // ── spelling ───────────────────────────────────────────────────────────
+
+    /**
+     * Words the dictionary does not know, with the word most likely meant.
+     * Left alone: names (a capital anywhere but a sentence start, or capitals
+     * inside a word), acronyms, words with digits or letters outside a–z, the
+     * user's own words, parts of hyphenated words, stretched words ("sooo")
+     * and laughter. A capitalised unknown word that opens a sentence may be a
+     * name, so it is offered only a common word one slip away ("Teh").
+     */
+    private fun spellingSuggestions(
+        text: String,
+        tokens: List<WritingToken>,
+        sentence: WritingSentence,
+        protected: List<IntRange>,
+        keep: Set<String>,
+        dictionary: WritingSpelling,
+        fixed: List<WritingSuggestion>,
+        guesses: MutableMap<String, WritingSpelling.Guess?>,
+    ): List<WritingSuggestion> {
+        val kind = rules.kind("spelling")
+        val out = ArrayList<WritingSuggestion>()
+        for (i in sentence.first..sentence.last) {
+            val t = tokens[i]
+            if (!t.hasLetter || t.key in keep || t.text.length < WritingSpelling.MIN_LENGTH) continue
+            if (!t.text.all { it in 'a'..'z' || it in 'A'..'Z' || it == '\'' || it == '’' }) continue
+            if (protected.any { t.start <= it.last && it.first < t.end }) continue
+            if (touchesHyphen(tokens, i)) continue
+            if (fixed.any { it.start < t.end && t.start < it.end }) continue
+            val capitalised = t.text[0] in 'A'..'Z'
+            if (t.text.drop(1).any { it in 'A'..'Z' }) continue
+            val opens = WritingText.isSentenceStart(tokens, sentence, i)
+            if (capitalised && !opens) continue
+            if (stretched(t.key) || laughter(t.key)) continue
+            if (dictionary.isKnown(t.text)) continue
+            if ('\'' in t.key) continue
+            val guess = (if (t.key in guesses) guesses[t.key] else dictionary.suggest(t.key).also { guesses[t.key] = it }) ?: continue
+            if (capitalised && (guess.edits > 1 || guess.score > CAPITALISED_MAX_SCORE)) continue
+            val replacement = if (capitalised) guess.word.replaceFirstChar(Char::uppercaseChar) else guess.word
+            val edit = WritingEdits.build(text, tokens, sentence.first, i, i + 1, replacement)
+            val values = mapOf("original" to t.text, "replacement" to replacement)
+            out.add(
+                WritingSuggestion(
+                    start = edit.start, end = edit.end, original = text.substring(edit.start, edit.end),
+                    replacement = edit.replacement, markStart = edit.markStart, markEnd = edit.markEnd,
+                    kind = kind.id, category = kind.category, title = kind.title,
+                    message = WritingEdits.format(kind.message, values),
+                    mechanical = guess.sure, source = WritingSuggestion.Source.DICTIONARY,
+                ),
+            )
+        }
+        return out
+    }
+
+    private fun touchesHyphen(tokens: List<WritingToken>, i: Int): Boolean {
+        val before = tokens.getOrNull(i - 1)
+        val after = tokens.getOrNull(i + 1)
+        return (before != null && before.text in HYPHENS && before.end == tokens[i].start) ||
+            (after != null && after.text in HYPHENS && after.start == tokens[i].end)
+    }
 
     // ── information only ───────────────────────────────────────────────────
 
@@ -285,15 +383,41 @@ class WritingCheck(val rules: WritingRules) {
         return true
     }
 
-    /** Actionable suggestions never overlap: correctness first, rules before the model. */
-    private fun merge(found: List<WritingSuggestion>): List<WritingSuggestion> {
-        fun priority(s: WritingSuggestion) = s.category.ordinal * 2 + if (s.source == WritingSuggestion.Source.RULE) 0 else 1
+    /**
+     * Actionable suggestions never conflict: correctness first, rules before
+     * the model, and the model before the spelling dictionary, which knows
+     * nothing of the sentence around a word. Correctness is listed before the
+     * style groups, so a card about clarity or tone never comes ahead of a
+     * mistake.
+     */
+    private fun merge(found: List<WritingSuggestion>, text: String): List<WritingSuggestion> {
         val accepted = ArrayList<WritingSuggestion>()
         for (s in found.filter { it.isActionable }.sortedWith(compareBy({ priority(it) }, { it.start }))) {
-            if (accepted.none { it.overlaps(s) }) accepted.add(s)
+            if (accepted.none { conflicts(it, s, text) }) accepted.add(s)
         }
         val info = found.filter { !it.isActionable }.distinctBy { Triple(it.kind, it.start, it.end) }
-        return (accepted + info).sortedWith(compareBy({ it.markStart }, { priority(it) }))
+        return (accepted + info).sortedWith(compareBy({ it.category.ordinal }, { it.markStart }, { priority(it) }))
+    }
+
+    /**
+     * Two suggestions that overlap, or one that adds words right beside the
+     * other: "thanks for invite me" can gain "the" or become "thanks for
+     * inviting me", and accepting both reads "for the inviting me".
+     */
+    private fun priority(s: WritingSuggestion): Int = s.category.ordinal * 3 + when (s.source) {
+        WritingSuggestion.Source.RULE -> 0
+        WritingSuggestion.Source.MODEL -> 1
+        else -> 2
+    }
+
+    private fun conflicts(a: WritingSuggestion, b: WritingSuggestion, text: String): Boolean =
+        a.overlaps(b) || addsBeside(a, b, text) || addsBeside(b, a, text)
+
+    private fun addsBeside(add: WritingSuggestion, other: WritingSuggestion, text: String): Boolean {
+        if (add.shownOriginal.isNotEmpty() || add.shownReplacement?.any(Char::isLetter) != true) return false
+        val from = if (add.start <= other.start) add.end else other.end
+        val to = if (add.start <= other.start) other.start else add.start
+        return from <= to && text.substring(from, to).isBlank()
     }
 
     // ── tone and statistics ───────────────────────────────────────────────
@@ -361,6 +485,18 @@ class WritingCheck(val rules: WritingRules) {
     }
 
     companion object {
+        private val HYPHENS = setOf("-", "‐", "‑")
+
+        /** The most a capitalised word opening a sentence may score to be offered: one slip from a common word. */
+        private const val CAPITALISED_MAX_SCORE = WritingSpelling.EDIT * WritingSpelling.DISTANCE_WEIGHT + 20
+
+        /** A letter three times in a row: "sooo", "yesss". */
+        private fun stretched(word: String): Boolean =
+            (2 until word.length).any { word[it] == word[it - 1] && word[it] == word[it - 2] }
+
+        /** "hahaha", "hehe", "ahahah". */
+        private fun laughter(word: String): Boolean = word.length >= 4 && word.all { it == 'h' || it == 'a' || it == 'e' }
+
         private val SMILEYS = setOf(0x1F60A, 0x1F642, 0x1F604, 0x1F600, 0x1F603, 0x1F601, 0x2764, 0x1F44D, 0x1F389, 0x1F60D, 0x1F970)
 
         /** Vowel groups, less a silent final "e": "make" 1, "table" 2, "readability" 5. */
