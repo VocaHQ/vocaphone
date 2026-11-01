@@ -43,6 +43,7 @@ import com.vocahq.vocaphone.writing.WritingCheck
 import com.vocahq.vocaphone.writing.WritingLanguage
 import com.vocahq.vocaphone.writing.WritingSuggestion
 import com.vocahq.vocaphone.writing.writingCategories
+import com.vocahq.vocaphone.writing.writingOptIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -949,9 +950,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     }
 
     /** The grammar model, when it is downloaded; the rules work without it. */
-    private fun writingModel(): ((String, Set<String>) -> String?)? {
+    private fun writingModel(): ((String, Set<String>, Boolean) -> String?)? {
         if (!GrammarModelCatalog.available || !container.grammarModel.state.value.ready) return null
-        return { text, keep -> container.grammar.correctTyped(text, keep) }
+        return { text, keep, thorough -> container.grammar.correctTyped(text, keep, thorough) }
     }
 
     private fun writingOptions(): WritingCheckSession.Options {
@@ -960,6 +961,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             categories = settings.writingCategories(),
             keep = typedGrammarKeeps(),
             tone = settings.writingTone,
+            optIn = settings.writingOptIn(),
         )
     }
 
