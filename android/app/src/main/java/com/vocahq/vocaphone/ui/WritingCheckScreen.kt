@@ -70,6 +70,7 @@ import com.vocahq.vocaphone.writing.WritingCheck
 import com.vocahq.vocaphone.writing.WritingLanguage
 import com.vocahq.vocaphone.writing.WritingSuggestion
 import com.vocahq.vocaphone.writing.writingCategories
+import com.vocahq.vocaphone.writing.writingOptIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -296,11 +297,12 @@ private suspend fun check(container: com.vocahq.vocaphone.AppContainer, text: St
         settings.snippets,
     )
     val model = if (GrammarModelCatalog.available && container.grammarModel.isReady()) {
-        WritingCheck.Model { container.grammar.correctTyped(it, keep) }
+        // The user opened Writing check to have this text checked: the thorough tier.
+        WritingCheck.Model { container.grammar.correctTyped(it, keep, thorough = true) }
     } else {
         null
     }
-    val options = WritingCheck.Options(settings.writingCategories(), keep, typed = true)
+    val options = WritingCheck.Options(settings.writingCategories(), keep, typed = true, optIn = settings.writingOptIn())
     val report = checkUntilCancelled(checker, text, model, options)
     return if (settings.writingTone) report else report.copy(tones = emptyList())
 }

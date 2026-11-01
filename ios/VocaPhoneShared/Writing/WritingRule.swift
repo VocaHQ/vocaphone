@@ -17,9 +17,13 @@ struct WritingRule: Sendable {
     private let after: Set<String>?
     /// The word right before the match must not be one of these.
     private let notAfter: Set<String>
+    /// No word after the match, to the end of the sentence, may be one of these.
+    private let unlessLater: Set<String>
     let replace: String?
     let kind: String
     let message: String?
+    /// The option that turns this rule on (`WritingCheck.Options.optIn`); nil runs always.
+    let optIn: String?
 
     static func compile(_ o: [String: Any]) throws -> WritingRule {
         guard let match = o["match"] as? String, let id = o["id"] as? String, let kind = o["kind"] as? String else {
@@ -48,9 +52,11 @@ struct WritingRule: Sendable {
             notAtStart: o["notAtStart"] as? Bool ?? false,
             after: (o["after"] as? [String]).map { Set($0.map(WritingToken.normalize)) },
             notAfter: Set((o["notAfter"] as? [String] ?? []).map(WritingToken.normalize)),
+            unlessLater: Set((o["unlessLater"] as? [String] ?? []).map(WritingToken.normalize)),
             replace: o["replace"] as? String,
             kind: kind,
-            message: o["message"] as? String
+            message: o["message"] as? String,
+            optIn: o["optIn"] as? String
         )
     }
 
@@ -84,6 +90,9 @@ struct WritingRule: Sendable {
         }
         if i <= sentence.last, Self.hyphens.contains(tokens[i].text), tokens[i - 1].end == tokens[i].start { return 0 }
         if atEnd, i <= sentence.last, tokens[i...sentence.last].contains(where: \.isWord) { return 0 }
+        if !unlessLater.isEmpty, i <= sentence.last, tokens[i...sentence.last].contains(where: { unlessLater.contains($0.key) }) {
+            return 0
+        }
         return i - index
     }
 
@@ -100,10 +109,21 @@ struct WritingRule: Sendable {
             return token.text.unicodeScalars.count >= 2 && WritingText.isUppercase(token.text)
                 && !Self.pronounI.contains(key)
                 && token.text.unicodeScalars.allSatisfy { WritingText.isLetter($0) || $0 == "'" || $0 == "’" }
+        case "number":
+            return key.unicodeScalars.allSatisfy { $0 >= "0" && $0 <= "9" }
+        case "clock_time":
+            return Self.isClockTime(key)
+        case "vowel_sound":
+            return Self.startsWithVowelSound(token, rules) == true
+        case "consonant_sound":
+            return Self.startsWithVowelSound(token, rules) == false
         case "verb_base":
             return rules.verbs.isBase(key)
         case "verb_inflected":
             guard let lemma = rules.verbs.lemma(key) else { return false }
+            return lemma != key
+        case "verb_ing":
+            guard key.hasSuffix("ing"), let lemma = rules.verbs.lemma(key) else { return false }
             return lemma != key
         case "simple_past":
             return rules.verbs.isSimplePastOnly(key)
@@ -145,8 +165,11 @@ struct WritingRule: Sendable {
         case "base": return verbs.lemma(word) ?? word
         case "ing": return verbs.ing(verbs.lemma(word) ?? word)
         case "participle": return verbs.participle(verbs.lemma(word) ?? word)
+        case "past": return verbs.past(verbs.lemma(word) ?? word)
+        case "third": return verbs.third(verbs.lemma(word) ?? word)
         case "any": return Self.any[word] ?? word
         case "subject": return Self.subject[word] ?? word
+        case "capital": return word.prefix(1).uppercased() + word.dropFirst()
         default: return word
         }
     }
@@ -154,5 +177,43 @@ struct WritingRule: Sendable {
     private static let hyphens: Set<String> = ["-", "‐", "‑"]
     private static let pronounI: Set<String> = ["i", "i'm", "i've", "i'll", "i'd"]
     private static let any = ["nothing": "anything", "nobody": "anybody", "nowhere": "anywhere", "none": "any", "no": "any"]
-    private static let subject = ["me": "I", "him": "he", "her": "she", "us": "we", "them": "they"]
+    private static let subject = [
+        "me": "I", "him": "he", "her": "she", "us": "we", "them": "they",
+        // A contraction's subject: "I'm agree" → "I agree".
+        "i'm": "I", "im": "I", "we're": "we", "they're": "they", "you're": "you", "he's": "he", "she's": "she",
+    ]
+
+    /// Whether `token` starts with a vowel sound, for "a" or "an"; nil when
+    /// that cannot be told. See `WritingRule.kt`.
+    private static func startsWithVowelSound(_ token: WritingToken, _ rules: WritingRules) -> Bool? {
+        let scalars = Array(token.text.unicodeScalars)
+        let key = token.key
+        let isLetter: (Unicode.Scalar) -> Bool = { ("a"..."z").contains($0) || ("A"..."Z").contains($0) }
+        if rules.stopwords.contains(key) || !scalars.allSatisfy(isLetter) { return nil }
+        guard let first = key.unicodeScalars.first else { return nil }
+        if scalars.count == 1 { return letterNameVowels.contains(first) }
+        if scalars.allSatisfy({ ("A"..."Z").contains($0) }) {
+            return scalars.count <= 3 ? letterNameVowels.contains(first) : nil
+        }
+        if silentH.contains(where: { key.hasPrefix($0) }) { return true }
+        if youSound.contains(where: { key.hasPrefix($0) }) { return false }
+        return "aeiou".unicodeScalars.contains(first)
+    }
+
+    /// Letters whose names start with a vowel sound: "an F", "an MBA".
+    private static let letterNameVowels = Set("aefhilmnorsx".unicodeScalars)
+    private static let silentH = ["hour", "honest", "honor", "honour", "heir"]
+    private static let youSound = [
+        "uni", "use", "usu", "uti", "ure", "uro", "uk", "ufo", "ubiq", "ukulele", "unanim", "uri", "ura",
+        "eu", "ewe", "one", "once",
+    ]
+
+    /// "3pm", "11am": a time typed as one word.
+    private static func isClockTime(_ key: String) -> Bool {
+        let scalars = Array(key.unicodeScalars)
+        guard scalars.count == 3 || scalars.count == 4 else { return false }
+        let digits = scalars.dropLast(2)
+        let suffix = String(String.UnicodeScalarView(scalars.suffix(2)))
+        return digits.allSatisfy { $0 >= "0" && $0 <= "9" } && (suffix == "am" || suffix == "pm")
+    }
 }
