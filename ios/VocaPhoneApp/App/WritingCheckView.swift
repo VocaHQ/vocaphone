@@ -102,11 +102,19 @@ struct WritingCheckView: View {
         .navigationTitle("Writing check")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            // The system Paste control draws its own filled background, which
+            // has no place inside iOS 26's shared glass group: there it sat as
+            // a square-cornered block jammed against the group's left end. So
+            // it stands on its own, as a round button beside the group.
+            ToolbarItem(placement: .topBarTrailing) {
                 PasteButton(payloadType: String.self) { strings in
                     if let pasted = strings.first { text = pasted }
                 }
                 .labelStyle(.iconOnly)
+                .buttonBorderShape(.circle)
+            }
+            .standaloneOnGlass()
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
                     UIPasteboard.general.string = text
                     didCopy = true
@@ -388,6 +396,19 @@ private struct UnderlinedTextView: UIViewRepresentable {
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard textView.selectedRange.length == 0 else { return }
             parent.onCaret(textView.selectedRange.location)
+        }
+    }
+}
+
+private extension ToolbarContent {
+    /// Keeps an item out of iOS 26's shared glass background, for a control
+    /// that brings its own.
+    @ToolbarContentBuilder
+    func standaloneOnGlass() -> some ToolbarContent {
+        if #available(iOS 26, *) {
+            sharedBackgroundVisibility(.hidden)
+        } else {
+            self
         }
     }
 }
