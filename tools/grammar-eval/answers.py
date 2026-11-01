@@ -19,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-from infer import KEEP_BIAS, Tagger
+from infer import KEEP_BIAS, THOROUGH_KEEP_BIAS, Tagger
 from writing_text import sentences
 
 HERE = Path(__file__).parent
@@ -36,7 +36,7 @@ SETS = [
 ]
 
 # Tier name → KEEP bias. Must match GrammarTagger's constants on both platforms.
-TIERS = {"balanced": KEEP_BIAS}
+TIERS = {"balanced": KEEP_BIAS, "thorough": THOROUGH_KEEP_BIAS}
 
 
 def build(model_dir: Path) -> str:
