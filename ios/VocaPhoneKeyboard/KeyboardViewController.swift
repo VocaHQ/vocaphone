@@ -189,8 +189,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         configureWritingPanel()
         Task.detached(priority: .utility) {
             let rules = WritingRules.bundled()
+            let spelling = WritingSpelling.bundled()
             await MainActor.run { [weak self] in
-                self?.writingChecker = rules.map { WritingCheck(rules: $0) }
+                self?.writingChecker = rules.map { WritingCheck(rules: $0, spelling: spelling) }
             }
         }
         typing.onWordListLoaded = { [weak self] list in
@@ -679,7 +680,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         if KeyboardPreferences.writingEngagement { categories.insert(.engagement) }
         if KeyboardPreferences.writingDelivery { categories.insert(.delivery) }
         return WritingCheckClient.Options(
-            categories: categories, keep: grammarKeeps(), tone: KeyboardPreferences.writingTone
+            categories: categories, keep: grammarKeeps(), tone: KeyboardPreferences.writingTone,
+            optIn: KeyboardPreferences.writingOptIn
         )
     }
 

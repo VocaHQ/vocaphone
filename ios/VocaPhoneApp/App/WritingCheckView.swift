@@ -129,7 +129,7 @@ struct WritingCheckView: View {
         .task {
             if checker == nil {
                 checker = await Task.detached(priority: .userInitiated) {
-                    WritingRules.bundled().map { WritingCheck(rules: $0) }
+                    WritingRules.bundled().map { WritingCheck(rules: $0, spelling: WritingSpelling.bundled()) }
                 }.value
             }
         }
@@ -172,13 +172,16 @@ struct WritingCheckView: View {
                 + LearnedWordStore().snapshot().words,
             snippets: SnippetStore.snippets
         )
-        let options = WritingCheck.Options(categories: Self.categories(), keep: keep, typed: true)
+        let options = WritingCheck.Options(
+            categories: Self.categories(), keep: keep, typed: true, optIn: KeyboardPreferences.writingOptIn
+        )
         let tone = KeyboardPreferences.writingTone
         let work = Task.detached(priority: .userInitiated) { () -> Outcome in
             // The rules are English ones; on another language they would
             // "correct" words that are right. As the keyboard does.
             guard WritingCheck.applies(to: snapshot) else { return .notEnglish }
-            let model: WritingCheck.Model? = modelReady ? { grammar.correctTyped($0, keeping: keep) } : nil
+            // The user opened Writing check to have this text checked: the thorough tier.
+            let model: WritingCheck.Model? = modelReady ? { grammar.correctTyped($0, keeping: keep, thorough: true) } : nil
             guard let report = await checker.checkUntilCancelled(snapshot, model: model, options: options) else {
                 return .cancelled
             }
