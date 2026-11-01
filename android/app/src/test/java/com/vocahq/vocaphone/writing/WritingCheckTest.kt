@@ -20,7 +20,7 @@ class WritingCheckTest {
     private val fixtureFile = File(GrammarFixtures.root, "writing_fixtures.json")
     private val document = JSONObject(fixtureFile.readText())
     private val rules = WritingFixtures.rules
-    private val check = WritingCheck(rules)
+    private val check = WritingCheck(rules, WritingFixtures.spelling, WritingFixtures.tagger)
     private val recording = File("build/writing-record").exists()
 
     private fun cases(name: String) = document.getJSONArray(name).let { a -> List(a.length()) { a.getJSONObject(it) } }
@@ -38,6 +38,7 @@ class WritingCheckTest {
         sentences(recorded)
         verbs(recorded)
         syllables(recorded)
+        spelling(recorded)
         checks(recorded)
         rebase(recorded)
         apply(recorded)
@@ -91,6 +92,14 @@ class WritingCheckTest {
 
     private fun syllables(recorded: JSONObject) = section(recorded, "syllables") { case, out ->
         expect(case, out, "count", WritingCheck.syllables(case.getString("word")))
+    }
+
+    private fun spelling(recorded: JSONObject) = section(recorded, "spelling") { case, out ->
+        val word = case.getString("word")
+        val dictionary = WritingFixtures.spelling
+        expect(case, out, "known", dictionary.isKnown(word))
+        val guess = dictionary.suggest(word.lowercase())
+        expect(case, out, "guess", guess?.let { JSONArray(listOf(it.word, it.edits, it.score, it.sure)) })
     }
 
     private fun checks(recorded: JSONObject) = section(recorded, "check") { case, out ->
@@ -150,6 +159,17 @@ class WritingCheckTest {
 object WritingFixtures {
     val rules: WritingRules by lazy { WritingRules.parse(File(GrammarFixtures.root, "../keyboard/writing-rules.json").readText()) }
 
+    /** The part-of-speech tagger both apps ship. */
+    val tagger: PosTagger by lazy { PosTagger.parse(File(GrammarFixtures.root, "../keyboard/en-pos.bin").readBytes()) }
+
+    /** The spelling dictionary both apps ship. */
+    val spelling: WritingSpelling by lazy {
+        WritingSpelling.parse(
+            File(GrammarFixtures.root, "../keyboard/en-spelling.txt").readText(),
+            File(GrammarFixtures.root, "../keyboard/en.txt").readText(),
+        )
+    }
+
     fun model(case: JSONObject): WritingCheck.Model? {
         if (!case.has("model")) return null
         val map = case.getJSONObject("model")
@@ -160,10 +180,12 @@ object WritingFixtures {
         val o = case.optJSONObject("options") ?: return WritingCheck.Options()
         val categories = o.optJSONArray("categories")?.let { a -> List(a.length()) { WritingCategory.of(a.getString(it)) }.toSet() }
         val keep = o.optJSONArray("keep")?.let { a -> List(a.length()) { a.getString(it) }.toSet() }
+        val optIn = o.optJSONArray("optIn")?.let { a -> List(a.length()) { a.getString(it) }.toSet() }
         return WritingCheck.Options(
             categories = categories ?: WritingCategory.entries.toSet(),
             keep = keep ?: emptySet(),
             typed = o.optBoolean("typed", true),
+            optIn = optIn ?: emptySet(),
         )
     }
 
@@ -179,6 +201,7 @@ object WritingFixtures {
         put("message", s.message)
         put("source", s.source.name.lowercase())
         put("rule", s.rule ?: JSONObject.NULL)
+        put("mechanical", s.mechanical)
     }
 
     fun bare(text: String, start: Int, end: Int) = WritingSuggestion(

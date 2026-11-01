@@ -21,8 +21,10 @@ import com.vocahq.vocaphone.local.DeviceProfile
 import com.vocahq.vocaphone.local.GrammarModelCatalog
 import com.vocahq.vocaphone.local.GrammarModelConsent
 import com.vocahq.vocaphone.local.GrammarModelStore
+import com.vocahq.vocaphone.writing.PosTagger
 import com.vocahq.vocaphone.writing.WritingCheck
 import com.vocahq.vocaphone.writing.WritingRules
+import com.vocahq.vocaphone.writing.WritingSpelling
 import com.vocahq.vocaphone.local.LocalModelManager
 import com.vocahq.vocaphone.local.RetiredModels
 import com.vocahq.vocaphone.local.catalogLanguageCode
@@ -120,15 +122,22 @@ class AppContainer(context: Context) {
     val grammar = GrammarCorrector(grammarModel) { event -> diagnostics.recordError(event, null) }
 
     /**
-     * Writing check's rules, parsed once for the keyboard, the spell checker
-     * and the Writing check screen. A few milliseconds to parse, so first use
-     * belongs off the main thread. Null only if the bundled file is broken.
+     * Writing check's rules and spelling dictionary, parsed once for the
+     * keyboard, the spell checker and the Writing check screen. Tens of
+     * milliseconds to parse, so first use belongs off the main thread. Null
+     * only if the bundled rules are broken; a broken dictionary checks
+     * without spelling.
      */
     val writingCheck: WritingCheck? by lazy {
         runCatching {
-            WritingCheck(WritingRules.parse(appContext.assets.open("writing-rules.json").bufferedReader().use { it.readText() }))
+            val rules = WritingRules.parse(asset("writing-rules.json"))
+            val spelling = runCatching { WritingSpelling.parse(asset("en-spelling.txt"), asset("en.txt")) }.getOrNull()
+            val tagger = runCatching { PosTagger.parse(appContext.assets.open("en-pos.bin").use { it.readBytes() }) }.getOrNull()
+            WritingCheck(rules, spelling, tagger)
         }.getOrNull()
     }
+
+    private fun asset(name: String): String = appContext.assets.open(name).bufferedReader().use { it.readText() }
 
     /**
      * The keyboard's shipped English word list, for the Writing check screen's

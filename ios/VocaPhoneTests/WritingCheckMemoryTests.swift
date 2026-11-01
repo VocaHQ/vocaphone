@@ -3,8 +3,8 @@ import Foundation
 import Testing
 
 /// What Writing check costs the keyboard extension, whose memory limit was
-/// measured at 77 MB on an iPhone 14 Pro: the rules parsed, and a check over a
-/// long message. Opt in with `TEST_RUNNER_VOCA_MEMPROBE=1`; it prints rather
+/// measured at 77 MB on an iPhone 14 Pro: the rules, the spelling dictionary
+/// and the tagger loaded, and a check over a long message. Opt in with `TEST_RUNNER_VOCA_MEMPROBE=1`; it prints rather
 /// than asserts, because a simulator's footprint is not a phone's.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["VOCA_MEMPROBE"] == "1"))
 struct WritingCheckMemoryTests {
@@ -24,13 +24,21 @@ struct WritingCheckMemoryTests {
         let data = try Data(contentsOf: WritingCheckTests.root.appendingPathComponent("keyboard/writing-rules.json"))
         let rules = try WritingRules(data: data)
         let parsed = Self.footprint()
-        let check = WritingCheck(rules: rules)
+        let spelling = WritingSpelling.parse(
+            spelling: try Data(contentsOf: WritingCheckTests.root.appendingPathComponent("keyboard/en-spelling.txt")),
+            frequency: try Data(contentsOf: WritingCheckTests.root.appendingPathComponent("keyboard/en.txt"))
+        )
+        let dictionary = Self.footprint()
+        let tagger = try PosTagger(data: Data(contentsOf: WritingCheckTests.root.appendingPathComponent("keyboard/en-pos.bin")))
+        let tagged = Self.footprint()
+        let check = WritingCheck(rules: rules, spelling: spelling, tagger: tagger)
         let text = String(repeating: "I definately think your going to love it, its very good and I could of told you. ", count: 40)
         let clock = ContinuousClock()
         var report: WritingCheck.Report?
         let elapsed = clock.measure { report = check.check(text) }
         let checked = Self.footprint()
-        print("WRITING_MEMPROBE start \(start) MB, rules +\(parsed - start) MB, check +\(checked - parsed) MB, "
+        print("WRITING_MEMPROBE start \(start) MB, rules +\(parsed - start) MB, spelling +\(dictionary - parsed) MB, "
+            + "tagger +\(tagged - dictionary) MB, check +\(checked - tagged) MB, "
             + "\(report?.suggestions.count ?? 0) suggestions over \(text.utf16Length) chars in \(elapsed)")
     }
 }
