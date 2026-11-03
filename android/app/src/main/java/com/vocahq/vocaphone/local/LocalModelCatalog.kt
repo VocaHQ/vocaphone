@@ -91,8 +91,19 @@ enum class SherpaFamily(
      * non-Latin script, so the Korean Zipformer answers
      * "지하철에서다리를벌리고앉지마라." although every token it emitted carries its
      * own leading space. Concatenating the tokens is the text the model made.
+     *
+     * The NeMo transducers for a narrower reason. The same joining step in
+     * sherpa-onnx 1.13.8 deletes the space before *every* ASCII punctuation
+     * mark, opening ones included, so Parakeet Unified's "to $1,200" arrives
+     * as "to$1,200", and v2 does the same with its "$". Their tokens still
+     * carry the space; see [joinTokens] for the marks it is rightly removed
+     * before.
      */
-    val joinsTokens: Boolean get() = this == ZIPFORMER_TRANSDUCER
+    val joinsTokens: Boolean get() = this == ZIPFORMER_TRANSDUCER || this == NEMO_TRANSDUCER
+
+    /** [tokens] as the model spelled them; see [joinsTokens] and [joinTokens]. */
+    fun joinedText(tokens: Array<String>): String =
+        joinTokens(tokens, closingUpPunctuation = this == NEMO_TRANSDUCER)
 
     /**
      * Whether this family was trained on upper-cased transcripts.
@@ -130,9 +141,29 @@ enum class SherpaFamily(
     companion object {
         const val GREEDY_SEARCH = "greedy_search"
 
-        /** [tokens] as the model spelled them, without the first word's leading space. */
-        fun joinTokens(tokens: Array<String>): String =
-            tokens.joinToString("").trim(' ')
+        /**
+         * Marks no word-boundary space belongs in front of, which is the part
+         * of sherpa-onnx's own joining worth keeping: a NeMo model that emits a
+         * bare word boundary before a comma would otherwise type "word ,".
+         */
+        private const val CLOSING_PUNCTUATION = ",.!?;:%)]}"
+
+        /**
+         * [tokens] as the model spelled them, without the first word's leading
+         * space -- and, with [closingUpPunctuation], without a space in front
+         * of a closing mark either. Opening marks keep theirs: "$", "&", "(".
+         */
+        fun joinTokens(tokens: Array<String>, closingUpPunctuation: Boolean = false): String {
+            if (!closingUpPunctuation) return tokens.joinToString("").trim(' ')
+            val text = StringBuilder()
+            for (token in tokens) {
+                if (token.isNotEmpty() && token[0] in CLOSING_PUNCTUATION) {
+                    while (text.endsWith(' ')) text.setLength(text.length - 1)
+                }
+                text.append(token)
+            }
+            return text.toString().trim(' ')
+        }
 
         /**
          * [text] in lower case when it has no lower-case letter at all, which is
