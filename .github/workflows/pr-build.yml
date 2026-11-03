@@ -655,7 +655,10 @@ jobs:
       contents: read
       actions: read
       pull-requests: write
-    needs: [prepare, android, ios]
+    # Compile jobs must be in needs: package jobs skip when compile fails,
+    # so waiting only on android/ios made a compile failure look like an
+    # intentional skip. Classification is pinned by tools/test_pr_build_notify.py.
+    needs: [prepare, android-build, android, ios-build, ios]
     if: >-
       always() &&
       needs.prepare.result == 'success' &&
@@ -676,7 +679,9 @@ jobs:
         env:
           WANT_ANDROID: ${{ needs.prepare.outputs.want_android }}
           WANT_IOS: ${{ needs.prepare.outputs.want_ios }}
+          ANDROID_BUILD_RESULT: ${{ needs['android-build'].result }}
           ANDROID_RESULT: ${{ needs.android.result }}
+          IOS_BUILD_RESULT: ${{ needs['ios-build'].result }}
           IOS_RESULT: ${{ needs.ios.result }}
           SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
           PR_REF: ${{ needs.prepare.outputs.ref }}
@@ -701,24 +706,60 @@ jobs:
               return out;
             }
 
+            function isBroken(result) {
+              return result === 'failure' || result === 'cancelled';
+            }
+
+            function wantedLegFailed(want, compileResult, packageResult, secretSkipped) {
+              if (!want) return false;
+              const compile = compileResult || 'skipped';
+              const pack = packageResult || 'skipped';
+              // failure/cancelled compile, failure/cancelled package, or
+              // package skipped because compile already failed.
+              if (isBroken(compile) || isBroken(pack) ||
+                  (pack === 'skipped' && isBroken(compile))) {
+                return true;
+              }
+              if (secretSkipped && pack === 'success') return false;
+              return compile !== 'success' || pack !== 'success';
+            }
+
+            function failureLabel(compileResult, packageResult) {
+              const compile = compileResult || 'skipped';
+              const pack = packageResult || 'skipped';
+              if (compile === 'cancelled') return 'compile cancelled';
+              if (pack === 'cancelled') return 'packaging cancelled';
+              if (isBroken(compile)) return 'compile failed';
+              if (isBroken(pack)) return 'packaging failed';
+              return 'did not produce an artifact';
+            }
+
             const androidMeta = readEnvFile(path.join('meta', 'android.env'));
             const iosMeta = readEnvFile(path.join('meta', 'ios.env'));
 
             const wantAndroid = process.env.WANT_ANDROID === 'true';
             const wantIos = process.env.WANT_IOS === 'true';
+            const androidBuildResult = process.env.ANDROID_BUILD_RESULT || 'skipped';
             const androidResult = process.env.ANDROID_RESULT || 'skipped';
+            const iosBuildResult = process.env.IOS_BUILD_RESULT || 'skipped';
             const iosResult = process.env.IOS_RESULT || 'skipped';
 
-            const androidFailed = wantAndroid && androidResult === 'failure';
-            const iosFailed = wantIos && iosResult === 'failure';
+            const androidFailed = wantedLegFailed(
+              wantAndroid, androidBuildResult, androidResult, false);
+            const iosFailed = wantedLegFailed(
+              wantIos, iosBuildResult, iosResult, iosMeta.skipped === 'true');
             const failed = androidFailed || iosFailed;
 
             const lines = [];
             if (failed) {
               lines.push(`PR Build failed for \`${process.env.SHORT_SHA}\``);
               lines.push('');
-              if (androidFailed) lines.push(`- Android: failed`);
-              if (iosFailed) lines.push(`- iOS: failed`);
+              if (androidFailed) {
+                lines.push(`- Android: ${failureLabel(androidBuildResult, androidResult)}`);
+              }
+              if (iosFailed) {
+                lines.push(`- iOS: ${failureLabel(iosBuildResult, iosResult)}`);
+              }
               lines.push('');
               lines.push(`[View build logs →](${runUrl})`);
               lines.push('');
@@ -742,7 +783,7 @@ jobs:
 
               if (wantIos) {
                 if (iosMeta.skipped === 'true') {
-                  lines.push(`| **iOS IPA** | skipped — add ad-hoc signing secrets (see CONTRIBUTING) |`);
+                  lines.push(`| **iOS IPA** | skipped: add ad-hoc signing secrets (see CONTRIBUTING) |`);
                 } else if (iosResult === 'success' && iosMeta.ipa_name) {
                   const url = `${runUrl}/artifacts/${iosMeta.artifact_id}`;
                   lines.push(`| **iOS IPA** | [\`${iosMeta.ipa_name}\`](${url}) (${iosMeta.ipa_size}) |`);
