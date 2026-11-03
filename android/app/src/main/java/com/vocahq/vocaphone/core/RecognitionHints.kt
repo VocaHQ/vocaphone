@@ -119,12 +119,18 @@ object RecognitionHints {
      * first.
      */
     fun whisperPrompt(terms: List<String>): String {
-        for (start in terms.indices) {
-            val kept = terms.subList(start, terms.size).asReversed()
-            val prompt = kept.joinToString(", ") + "."
-            if (prompt.length <= WHISPER_PROMPT_CHARACTERS) return prompt
+        // Most important first, until the next term would pass the budget.
+        // That stops after a few dozen terms however long the list, where
+        // rebuilding every shorter list did work that grew with the square of
+        // a pasted vocabulary.
+        val kept = StringBuilder()
+        for (term in terms.asReversed()) {
+            val separator = if (kept.isEmpty()) "" else ", "
+            // + 1 for the closing full stop.
+            if (kept.length + separator.length + term.length + 1 > WHISPER_PROMPT_CHARACTERS) break
+            kept.append(separator).append(term)
         }
-        return ""
+        return if (kept.isEmpty()) "" else "$kept."
     }
 
     /**

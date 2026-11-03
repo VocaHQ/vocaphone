@@ -68,6 +68,11 @@ class PrepareTest(unittest.TestCase):
 
 
 class VocabTest(unittest.TestCase):
+    def test_default_sets_skip_vocab_without_say(self) -> None:
+        self.assertNotIn("vocab-en", prepare.default_sets(lambda tool: None))
+        self.assertIn("librispeech-clean", prepare.default_sets(lambda tool: None))
+        self.assertEqual(prepare.default_sets(lambda tool: f"/usr/bin/{tool}"), list(prepare.SETS))
+
     def test_the_script_is_the_pinned_one(self) -> None:
         spec = prepare.vocab_spec()
         dictionary = [entry["term"] for entry in spec["terms"]]

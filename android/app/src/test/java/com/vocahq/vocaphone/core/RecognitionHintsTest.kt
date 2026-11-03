@@ -89,6 +89,18 @@ class RecognitionHintsTest {
     }
 
     @Test
+    fun `a pasted list of thousands builds the prompt from the terms that fit`() {
+        val terms = RecognitionHints.terms(vocabulary = (1..50_000).map { "Name$it" })
+        val prompt = RecognitionHints.whisperPrompt(terms)
+        assertTrue(prompt.startsWith("Name1, Name2, "))
+        assertTrue(prompt.length <= RecognitionHints.WHISPER_PROMPT_CHARACTERS)
+        assertEquals(
+            prompt,
+            RecognitionHints.whisperPrompt(terms.takeLast(200)),
+        )
+    }
+
+    @Test
     fun `an over-long prompt loses the front of the list and never half a term`() {
         val terms = RecognitionHints.terms((1..200).map { "Supercalifragilistic$it" })
         val prompt = RecognitionHints.whisperPrompt(terms)

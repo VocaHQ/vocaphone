@@ -127,18 +127,31 @@ enum RecognitionHints {
         maximumTokens: Int? = nil,
         tokenCount: (String) -> Int = { _ in 0 }
     ) -> String {
-        var start = 0
-        while start < terms.count {
-            let prompt = terms[start...].reversed().joined(separator: ", ") + "."
-            // Characters first: counting tokens means tokenizing.
-            if prompt.count <= whisperPromptCharacters,
-               maximumTokens.map({ tokenCount(prompt) <= $0 }) ?? true
-            {
-                return prompt
-            }
-            start += 1
+        // Most important first, until the next term would pass the character
+        // budget. That stops after a few dozen terms however long the list,
+        // where rebuilding every shorter list did work that grew with the
+        // square of a pasted vocabulary.
+        var kept: [String] = []
+        var length = 1  // the closing full stop
+        for term in terms.reversed() {
+            let added = term.count + (kept.isEmpty ? 0 : 2)
+            guard length + added <= whisperPromptCharacters else { break }
+            kept.append(term)
+            length += added
+        }
+        // Then the token budget, dropping the least important kept term at a
+        // time. Bounded by what fits in `whisperPromptCharacters`.
+        guard let maximumTokens else { return prompt(kept) }
+        while !kept.isEmpty {
+            let candidate = prompt(kept)
+            if tokenCount(candidate) <= maximumTokens { return candidate }
+            kept.removeLast()
         }
         return ""
+    }
+
+    private static func prompt(_ terms: [String]) -> String {
+        terms.isEmpty ? "" : terms.joined(separator: ", ") + "."
     }
 
     // MARK: - Qwen3-ASR

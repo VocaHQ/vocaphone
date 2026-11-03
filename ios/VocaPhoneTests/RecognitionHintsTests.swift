@@ -115,6 +115,19 @@ struct RecognitionHintsTests {
         ) == "")
     }
 
+    @Test func aPastedListOfThousandsOnlyTokenizesWhatFits() {
+        let terms = RecognitionHints.terms(vocabulary: (1...50_000).map { "Name\($0)" })
+        var tokenized = 0
+        let prompt = RecognitionHints.whisperPrompt(
+            terms, maximumTokens: RecognitionHints.whisperKitPromptTokens,
+            tokenCount: { tokenized += 1; return Self.roughTokens($0) }
+        )
+        #expect(prompt.hasPrefix("Name1, Name2, "))
+        #expect(Self.roughTokens(prompt) <= RecognitionHints.whisperKitPromptTokens)
+        // At most one tokenization per term that fits in the character budget.
+        #expect(tokenized <= RecognitionHints.whisperPromptCharacters / 3)
+    }
+
     @Test func storedVocabularyReachesThePromptInTheUsersPriority() {
         let terms = RecognitionHints.terms(vocabulary: CustomVocabulary.terms("Kanishk\nVocaHQ, Tailscale"))
         #expect(RecognitionHints.whisperPrompt(terms) == "Kanishk, VocaHQ, Tailscale.")

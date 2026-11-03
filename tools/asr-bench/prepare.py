@@ -24,6 +24,7 @@ spelled. Nothing here is checked in: AGENTS.md keeps recordings and transcripts
 out of the repository.
 
 Needs `ffmpeg` (LibriSpeech is FLAC), and `say` and `afconvert` for `vocab-en`.
+Without those two (any host but a Mac), a bare run skips `vocab-en`.
 Standard library only otherwise.
 """
 
@@ -360,10 +361,18 @@ def vocab_set(out: Path) -> None:
     write_set(out, "vocab-en", clips)
 
 
+def default_sets(has_tool=shutil.which) -> list[str]:
+    """Every set this host can build: `vocab-en` needs macOS `say` and
+    `afconvert`, so a bare run elsewhere prepares the others instead of
+    failing after them. Asking for `--sets vocab-en` still names the tools."""
+    speaks = bool(has_tool("say")) and bool(has_tool("afconvert"))
+    return [name for name in SETS if name != "vocab-en" or speaks]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    parser.add_argument("--sets", nargs="+", choices=SETS, default=list(SETS))
+    parser.add_argument("--sets", nargs="+", choices=SETS, default=default_sets())
     parser.add_argument("--limit", type=int, default=200, help="clips per short set (default 200)")
     parser.add_argument("--long-limit", type=int, default=24, help="clips in librispeech-long (default 24)")
     args = parser.parse_args()
