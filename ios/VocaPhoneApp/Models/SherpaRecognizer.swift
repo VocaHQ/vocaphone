@@ -261,16 +261,18 @@ final class SherpaRecognizer: @unchecked Sendable {
     }
 
     /// One decode, and for a transducer given hotwords, one more without them
-    /// when the first stopped before the speech did (`SherpaHotwordCheck`):
-    /// the user's spelling is never worth a lost sentence.
+    /// when the first stopped before the speech did or looped on a hotword
+    /// (`SherpaHotwordCheck`): the user's spelling is never worth a lost or a
+    /// garbled sentence.
     private func decode(_ samples: [Float], hotwords: String?) -> SherpaDecodeOutcome {
         guard takesHotwords, let hotwords, !hotwords.isEmpty else {
             return decodeOnce(samples, hotwords: hotwords).outcome
         }
         let (outcome, lastTokenSeconds) = decodeOnce(samples, hotwords: hotwords)
-        guard case .decoded = outcome,
-              SherpaHotwordCheck.stoppedEarly(samples, lastTokenSeconds: lastTokenSeconds)
-        else { return outcome }
+        guard case let .decoded(transcript) = outcome else { return outcome }
+        let stoppedEarly = SherpaHotwordCheck.stoppedEarly(samples, lastTokenSeconds: lastTokenSeconds)
+        let repeats = SherpaHotwordCheck.repeatsAHotword(transcript.text, hotwords: hotwords)
+        guard stoppedEarly || repeats else { return outcome }
         return decodeOnce(samples, hotwords: nil).outcome
     }
 

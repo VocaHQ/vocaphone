@@ -94,6 +94,18 @@ class SherpaSearchTest {
     }
 
     @Test
+    fun `a hotword said twice in a row is a loop`() {
+        val hotwords = "Aoife/Slack/Jetpack Compose"
+        assertTrue(SherpaHotwordCheck.repeatsAHotword("tell Aoife on Slack Slack Slack", hotwords))
+        assertTrue(SherpaHotwordCheck.repeatsAHotword("Jetpack Compose, Jetpack Compose.", hotwords))
+        assertFalse(SherpaHotwordCheck.repeatsAHotword("tell Aoife on Slack", hotwords))
+        assertFalse(SherpaHotwordCheck.repeatsAHotword("Slack it on Slack", hotwords))
+        // Only the user's words: an ordinary repeat is the speaker's.
+        assertFalse(SherpaHotwordCheck.repeatsAHotword("very very good", hotwords))
+        assertFalse(SherpaHotwordCheck.repeatsAHotword("", hotwords))
+    }
+
+    @Test
     fun `the tuned search stays below the runaway score`() {
         // Score 4 with a beam of 4 repeated hotwords into ordinary speech
         // ("Jira Jira Jira") on vocab-en; see docs/local-model-review.md.

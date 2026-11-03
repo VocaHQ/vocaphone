@@ -71,6 +71,11 @@ internal data class SherpaSearch(
  * at least [LOUDNESS_RATIO] of the window's. A window that trips it is decoded
  * again without hotwords; trailing silence, the usual end of a dictation, does
  * not.
+ *
+ * The same search can also loop on a hotword it has just finished, typing
+ * "tell Aoife on Slack Slack Slack" where the speaker said Slack once
+ * (`vocab-en`, one clip in 50 at score 2.0). [repeatsAHotword] catches that,
+ * and the window is decoded again without hotwords too.
  */
 internal object SherpaHotwordCheck {
     const val MARGIN_SECONDS = 0.5
@@ -89,5 +94,41 @@ internal object SherpaHotwordCheck {
         if (samples.size - start < (MINIMUM_TAIL_SECONDS * rate).toInt()) return false
         val tail = samples.copyOfRange(start, samples.size)
         return SherpaLongAudio.loudestFrame(tail) >= LOUDNESS_RATIO * loudest
+    }
+
+    /**
+     * Whether [text] says one of [hotwords] ("/"-separated, as
+     * `RecognitionHints.transducerHotwords` writes them) twice in a row.
+     */
+    fun repeatsAHotword(text: String, hotwords: String): Boolean {
+        val spoken = words(text)
+        for (phrase in hotwords.split('/')) {
+            val target = words(phrase)
+            val length = target.size
+            if (length == 0 || spoken.size < 2 * length) continue
+            for (start in 0..spoken.size - 2 * length) {
+                if (spoken.subList(start, start + length) == target &&
+                    spoken.subList(start + length, start + 2 * length) == target
+                ) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun words(text: String): List<String> {
+        val words = mutableListOf<String>()
+        val current = StringBuilder()
+        for (character in text) {
+            if (character.isLetterOrDigit()) {
+                current.append(character)
+            } else if (current.isNotEmpty()) {
+                words.add(current.toString())
+                current.clear()
+            }
+        }
+        if (current.isNotEmpty()) words.add(current.toString())
+        return words
     }
 }

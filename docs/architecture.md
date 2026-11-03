@@ -352,7 +352,11 @@ get them from one builder, `RecognitionHints` on both platforms
   first, so two are never resident. Only the copy of the vocabulary leaves
   the APK on Android, to app-private storage, because sherpa-onnx opens it by
   path. "/", ":", "#" and "@" are removed from the terms, because sherpa-onnx
-  reads them as syntax.
+  reads them as syntax. A window whose hotword decode left audible speech
+  after its last token, or typed a hotword twice in a row, is decoded once
+  more without hotwords (`SherpaHotwordCheck`): sherpa-onnx 1.13.8's beam
+  search can hold on to a half-finished hotword and drop the rest of the
+  window, and can loop on a finished one.
 - **Every other sherpa family** (Parakeet v2 and v3, Canary, SenseVoice,
   Moonshine and the rest) takes no hint. Parakeet v2 and v3 are TDT models,
   whose beam search on 1.13.8 can drop whole sentences, so they stay greedy

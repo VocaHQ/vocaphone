@@ -105,13 +105,15 @@ internal class SherpaRecognizer private constructor(
 
     /**
      * One decode, and for a transducer given hotwords, one more without them
-     * when the first stopped before the speech did ([SherpaHotwordCheck]): the
-     * user's spelling is never worth a lost sentence.
+     * when the first stopped before the speech did or looped on a hotword
+     * ([SherpaHotwordCheck]): the user's spelling is never worth a lost or a
+     * garbled sentence.
      */
     private fun decode(samples: FloatArray, hotwords: String?): SherpaTranscript {
         if (!takesTransducerHotwords || hotwords.isNullOrEmpty()) return decodeOnce(samples, hotwords).first
         val (transcript, lastTokenSeconds) = decodeOnce(samples, hotwords)
-        if (!SherpaHotwordCheck.stoppedEarly(samples, lastTokenSeconds)) return transcript
+        val stoppedEarly = SherpaHotwordCheck.stoppedEarly(samples, lastTokenSeconds)
+        if (!stoppedEarly && !SherpaHotwordCheck.repeatsAHotword(transcript.text, hotwords)) return transcript
         return decodeOnce(samples, null).first
     }
 

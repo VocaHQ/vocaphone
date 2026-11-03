@@ -296,6 +296,17 @@ struct RecognitionHintsTests {
         #expect(!SherpaHotwordCheck.stoppedEarly(audio(speech: total), lastTokenSeconds: last))
     }
 
+    @Test func aHotwordSaidTwiceInARowIsALoop() {
+        let hotwords = "Aoife/Slack/Jetpack Compose"
+        #expect(SherpaHotwordCheck.repeatsAHotword("tell Aoife on Slack Slack Slack", hotwords: hotwords))
+        #expect(SherpaHotwordCheck.repeatsAHotword("Jetpack Compose, Jetpack Compose.", hotwords: hotwords))
+        #expect(!SherpaHotwordCheck.repeatsAHotword("tell Aoife on Slack", hotwords: hotwords))
+        #expect(!SherpaHotwordCheck.repeatsAHotword("Slack it on Slack", hotwords: hotwords))
+        // Only the user's words: an ordinary repeat is the speaker's.
+        #expect(!SherpaHotwordCheck.repeatsAHotword("very very good", hotwords: hotwords))
+        #expect(!SherpaHotwordCheck.repeatsAHotword("", hotwords: hotwords))
+    }
+
     @Test func theTunedSearchStaysBelowTheRunawayScore() {
         // Score 4 with a beam of 4 repeated hotwords into ordinary speech
         // ("Jira Jira Jira") on vocab-en; see docs/local-model-review.md.

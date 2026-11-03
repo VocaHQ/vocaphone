@@ -58,6 +58,11 @@ struct SherpaSearch: Equatable, Sendable {
 /// began, whose loudest frame is at least `loudnessRatio` of the window's.
 /// A window that trips it is decoded again without hotwords; trailing
 /// silence, the usual end of a dictation, does not.
+///
+/// The same search can also loop on a hotword it has just finished, typing
+/// "tell Aoife on Slack Slack Slack" where the speaker said Slack once
+/// (`vocab-en`, one clip in 50 at score 2.0). `repeatsAHotword` catches that,
+/// and the window is decoded again without hotwords too.
 enum SherpaHotwordCheck {
     static let marginSeconds = 0.5
     static let minimumTailSeconds = 1.0
@@ -73,5 +78,26 @@ enum SherpaHotwordCheck {
         guard samples.count - start >= Int(minimumTailSeconds * rate) else { return false }
         let tail = Array(samples[start...])
         return SherpaLongAudio.loudestFrame(tail) >= loudnessRatio * loudest
+    }
+
+    /// Whether `text` says one of `hotwords` ("/"-separated, as
+    /// `RecognitionHints.transducerHotwords` writes them) twice in a row.
+    static func repeatsAHotword(_ text: String, hotwords: String) -> Bool {
+        let spoken = words(text)
+        for phrase in hotwords.split(separator: "/") {
+            let target = words(String(phrase))
+            let length = target.count
+            guard length > 0, spoken.count >= 2 * length else { continue }
+            for start in 0...(spoken.count - 2 * length) {
+                let first = Array(spoken[start..<(start + length)])
+                let second = Array(spoken[(start + length)..<(start + 2 * length)])
+                if first == target, second == target { return true }
+            }
+        }
+        return false
+    }
+
+    private static func words(_ text: String) -> [String] {
+        text.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
     }
 }
