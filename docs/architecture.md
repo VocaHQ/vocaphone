@@ -334,9 +334,11 @@ last word on a term:
   wider budget, but only when a word in the span is not on the shipped word
   list. Two or three words whose joined letters share a term's primary
   Metaphone key ("cooper netties" → Kubernetes) are joined only with evidence
-  the engine misheard them: a word not on the list, or one the engine decoded
-  below 0.6 probability every time it was heard. A single ordinary word is
-  never respelled. These are VocaMac's rules.
+  the engine misheard them: a word it decoded below 0.6 probability every time
+  it was heard, or, from an engine that reports no confidence, a word not on
+  the list. A single ordinary word is never respelled. These are VocaMac's
+  rules, except that the list never overrules an engine that reports
+  confidence.
 - **Confidence** (`RecognitionConfidence`): WhisperKit and whisper.cpp give
   each token's log probability as part of decoding; a word is the geometric
   mean of its tokens (WhisperKit's own word probability, without turning on

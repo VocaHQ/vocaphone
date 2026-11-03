@@ -122,8 +122,30 @@ struct SoundAlikeCorrectionTests {
         #expect(corrected("deploy to cooper netties now", ["Kubernetes"]) == "deploy to cooper netties now")
     }
 
+    /// From an engine that reports nothing, a word off the list is the
+    /// only evidence there is.
     @Test func anUnknownWordInTheRunIsEvidenceEnough() {
         #expect(corrected("deploy to cooper netteez now", ["Kubernetes"]) == "deploy to Kubernetes now")
+    }
+
+    /// From an engine that reports confidence, only its doubt counts: a word
+    /// off the list, such as a name, is not evidence it misheard.
+    @Test func anEngineThatReportsConfidenceMustHaveDoubtedAWord() {
+        let text = "he said Ruth, a little dubiously"
+        func joined(_ unsure: Set<String>?) -> String {
+            VocabularyCorrection.apply(
+                text, terms: ["Siddharth"],
+                isDictionaryWord: { ["he", "said", "a", "little", "dubiously"].contains($0) },
+                lowConfidenceWords: unsure
+            )
+        }
+        #expect(joined([]) == text)
+        #expect(joined(["little"]) == text)
+        #expect(joined(nil) == "he Siddharth, a little dubiously")
+        #expect(corrected("deploy to cooper netteez now", ["Kubernetes"], unsure: [])
+            == "deploy to cooper netteez now")
+        #expect(corrected("deploy to cooper netteez now", ["Kubernetes"], unsure: ["netteez"])
+            == "deploy to Kubernetes now")
     }
 
     @Test func soundAlikeJoinNeedsTheWholeKey() {

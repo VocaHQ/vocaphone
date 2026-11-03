@@ -31,10 +31,11 @@ import kotlin.math.abs
  * - **Several words heard for one.** "cooper netties" for "Kubernetes", "pie
  *   torch" for "PyTorch": two or three words whose letters sound exactly like a
  *   term of six letters or more. Real words are never respelled on spelling
- *   alone, so this needs evidence the engine misheard them: one of the words is
- *   not an ordinary word, or the engine decoded it with low confidence
- *   ([RecognitionConfidence]). An engine that reports no confidence leaves a
- *   run of real words alone, and a single real word is never respelled —
+ *   alone, so this needs evidence the engine misheard them: the engine decoded
+ *   one of the words with low confidence ([RecognitionConfidence]), or, for an
+ *   engine that reports no confidence, one of them is not an ordinary word.
+ *   Such an engine leaves a run of real words alone, and a single real word is
+ *   never respelled —
  *   "cloud" stays "cloud" with Claude listed. VocaMac's rules.
  *
  * Mirrors `VocabularyCorrection.swift`.
@@ -284,9 +285,10 @@ object VocabularyCorrection {
     /**
      * Two or three words heard for one longer term that sounds exactly like
      * them: their joined letters and the term share a primary Metaphone key.
-     * Needs evidence the engine misheard: a word that is not an ordinary word,
-     * or one decoded with low confidence. The term itself must not be an
-     * ordinary word, or "cooper" and "pans" could become "Copperpans".
+     * Needs evidence the engine misheard: a word it decoded with low
+     * confidence, or, from an engine that reports no confidence, a word that is
+     * not an ordinary word. The term itself must not be an ordinary word, or
+     * "cooper" and "pans" could become "Copperpans".
      */
     private fun soundAlikeJoin(
         index: Int,
@@ -305,8 +307,16 @@ object VocabularyCorrection {
             val span = words.subList(index, index + length)
             if (!isContiguous(span, text, JOIN_JOINERS)) continue
             val keys = span.map { it.key }
-            val misheard = keys.any { !isDictionaryWord(it) } ||
-                keys.any { lowConfidenceWords?.contains(it) == true }
+            // An engine that reports confidence has said which words it
+            // doubted, and a word missing from a 10 000-word list is no
+            // evidence beside that: "said Ruth" is not "Siddharth" because
+            // "Ruth" is a name. Only an engine that says nothing is judged
+            // by the list.
+            val misheard = if (lowConfidenceWords != null) {
+                keys.any { it in lowConfidenceWords }
+            } else {
+                keys.any { !isDictionaryWord(it) }
+            }
             if (!misheard) continue
             val joined = keys.joinToString("")
             val heardKey = search.phonetic.key(joined) ?: continue

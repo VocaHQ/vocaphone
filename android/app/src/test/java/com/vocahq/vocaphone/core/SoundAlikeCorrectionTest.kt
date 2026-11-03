@@ -146,9 +146,36 @@ class SoundAlikeCorrectionTest {
         assertEquals("deploy to cooper netties now", corrected("deploy to cooper netties now", "Kubernetes"))
     }
 
+    /** From an engine that reports nothing, a word off the list is the only evidence there is. */
     @Test
     fun `an unknown word in the run is evidence enough`() {
         assertEquals("deploy to Kubernetes now", corrected("deploy to cooper netteez now", "Kubernetes"))
+    }
+
+    /**
+     * From an engine that reports confidence, only its doubt counts: a word off
+     * the list, such as a name, is not evidence it misheard.
+     */
+    @Test
+    fun `an engine that reports confidence must have doubted a word`() {
+        val text = "he said Ruth, a little dubiously"
+        fun joined(unsure: Set<String>?) = VocabularyCorrection.apply(
+            text,
+            listOf("Siddharth"),
+            isDictionaryWord = { it in setOf("he", "said", "a", "little", "dubiously") },
+            lowConfidenceWords = unsure,
+        )
+        assertEquals(text, joined(emptySet()))
+        assertEquals(text, joined(setOf("little")))
+        assertEquals("he Siddharth, a little dubiously", joined(null))
+        assertEquals(
+            "deploy to cooper netteez now",
+            corrected("deploy to cooper netteez now", "Kubernetes", unsure = emptySet()),
+        )
+        assertEquals(
+            "deploy to Kubernetes now",
+            corrected("deploy to cooper netteez now", "Kubernetes", unsure = setOf("netteez")),
+        )
     }
 
     @Test

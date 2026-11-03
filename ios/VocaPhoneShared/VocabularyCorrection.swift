@@ -31,10 +31,11 @@ import Foundation
 /// - **Several words heard for one.** "cooper netties" for "Kubernetes", "pie
 ///   torch" for "PyTorch": two or three words whose letters sound exactly like
 ///   a term of six letters or more. Real words are never respelled on spelling
-///   alone, so this needs evidence the engine misheard them: one of the words
-///   is not an ordinary word, or the engine decoded it with low confidence
-///   (`RecognitionConfidence`). An engine that reports no confidence leaves a
-///   run of real words alone, and a single real word is never respelled —
+///   alone, so this needs evidence the engine misheard them: the engine
+///   decoded one of the words with low confidence (`RecognitionConfidence`),
+///   or, for an engine that reports no confidence, one of them is not an
+///   ordinary word. Such an engine leaves a run of real words alone, and a
+///   single real word is never respelled —
 ///   "cloud" stays "cloud" with Claude listed. VocaMac's rules.
 ///
 /// Mirrors `VocabularyCorrection.kt`.
@@ -293,9 +294,10 @@ enum VocabularyCorrection {
 
     /// Two or three words heard for one longer term that sounds exactly like
     /// them: their joined letters and the term share a primary Metaphone key.
-    /// Needs evidence the engine misheard: a word that is not an ordinary
-    /// word, or one decoded with low confidence. The term itself must not be
-    /// an ordinary word, or "cooper" and "pans" could become "Copperpans".
+    /// Needs evidence the engine misheard: a word it decoded with low
+    /// confidence, or, from an engine that reports no confidence, a word that
+    /// is not an ordinary word. The term itself must not be an ordinary word,
+    /// or "cooper" and "pans" could become "Copperpans".
     private static func soundAlikeJoin(
         at index: Int,
         words: [Word],
@@ -314,8 +316,16 @@ enum VocabularyCorrection {
             let span = words[index..<(index + length)]
             guard isContiguous(span, in: text, allowing: [" ", "-"]) else { continue }
             let keys = span.map(\.key)
-            let misheard = keys.contains { !isDictionaryWord($0) }
-                || keys.contains { lowConfidenceWords?.contains($0) == true }
+            // An engine that reports confidence has said which words it
+            // doubted, and a word missing from a 10 000-word list is no
+            // evidence beside that: "said Ruth" is not "Siddharth" because
+            // "Ruth" is a name. Only an engine that says nothing is judged
+            // by the list.
+            let misheard = if let lowConfidenceWords {
+                keys.contains(where: lowConfidenceWords.contains)
+            } else {
+                keys.contains { !isDictionaryWord($0) }
+            }
             guard misheard else { continue }
             let joined = keys.joined()
             guard let heardKey = phonetic.key(joined), heardKey.primary.count >= 3 else { continue }
