@@ -35,6 +35,17 @@ class WordReplacementTest {
     }
 
     @Test
+    fun `a combining mark belongs to the word it follows`() {
+        val tomorrow = replacement("कल", "tomorrow")
+        assertEquals("कला", replaced("कला", tomorrow))
+        assertEquals("tomorrow कला", replaced("कल कला", tomorrow))
+        // A Latin word followed by a combining accent is one word too.
+        assertEquals("cafe\u0301", replaced("cafe\u0301", replacement("cafe", "Café")))
+        // Nor does a match split a surrogate pair.
+        assertEquals("a\uD835\uDC00b", replaced("a\uD835\uDC00b", replacement("a", "x")))
+    }
+
+    @Test
     fun `accepts several heard forms`() {
         val kubectl = replacement("cube cuttle, cube  control", "kubectl")
         assertEquals(listOf("cube cuttle", "cube control"), kubectl.heardForms)
@@ -108,8 +119,20 @@ class WordReplacementTest {
     }
 
     @Test
+    fun `adding takes every heard form typed with commas`() {
+        val list = WordReplacements.adding("get hub, git hub", "GitHub", emptyList())
+        assertEquals(1, list.size)
+        assertEquals(listOf("get hub", "git hub"), list.single().heardForms)
+        assertEquals("GitHub", list.single().written)
+        // A form another row had moves, as a single form does.
+        val moved = WordReplacements.adding("git hub, gee hub", "Gitea", list)
+        assertEquals(listOf("get hub"), moved.first { it.written == "GitHub" }.heardForms)
+        assertEquals(listOf("git hub", "gee hub"), moved.first { it.written == "Gitea" }.heardForms)
+    }
+
+    @Test
     fun `adding rejects what cannot match`() {
-        assertTrue(WordReplacements.adding("a, b", "C", emptyList()).isEmpty())
+        assertTrue(WordReplacements.adding(" , ", "C", emptyList()).isEmpty())
         assertTrue(WordReplacements.adding(" ", "C", emptyList()).isEmpty())
         assertTrue(WordReplacements.adding("a", " ", emptyList()).isEmpty())
     }

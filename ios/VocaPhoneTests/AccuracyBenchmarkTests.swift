@@ -177,6 +177,11 @@ enum AccuracyBenchmark {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         var settings = ["quality": configuration.quality.rawValue]
         if !configuration.backgroundName.isEmpty { settings["background"] = configuration.backgroundName }
+        // The list itself, not its file name: a resume with other terms, or
+        // with none where there were some, must not pass as the same control.
+        if let terms = configuration.finishVocabulary {
+            settings["finishVocabulary"] = terms.joined(separator: "\n")
+        }
         try checkSettings(in: output, settings)
         let file = output.appendingPathComponent("\(set).\(path).jsonl")
         try trimIncompleteRecord(file)

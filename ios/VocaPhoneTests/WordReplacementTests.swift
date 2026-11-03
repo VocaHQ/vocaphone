@@ -101,8 +101,25 @@ struct WordReplacementTests {
         #expect(list[0].heardForms == ["Cube Control"])
     }
 
+    @Test func aCombiningMarkBelongsToTheWordItFollows() {
+        let tomorrow = WordReplacement(heard: "कल", written: "tomorrow")
+        #expect(WordReplacements.apply("कला", replacements: [tomorrow]).text == "कला")
+        #expect(WordReplacements.apply("कल कला", replacements: [tomorrow]).text == "tomorrow कला")
+    }
+
+    @Test func addingTakesEveryHeardFormTypedWithCommas() {
+        let list = WordReplacements.adding(heard: "get hub, git hub", written: "GitHub", to: [])
+        #expect(list.count == 1)
+        #expect(list.first?.heardForms == ["get hub", "git hub"])
+        #expect(list.first?.written == "GitHub")
+        // A form another row had moves, as a single form does.
+        let moved = WordReplacements.adding(heard: "git hub, gee hub", written: "Gitea", to: list)
+        #expect(moved.first { $0.written == "GitHub" }?.heardForms == ["get hub"])
+        #expect(moved.first { $0.written == "Gitea" }?.heardForms == ["git hub", "gee hub"])
+    }
+
     @Test func addingRejectsWhatCannotMatch() {
-        #expect(WordReplacements.adding(heard: "a, b", written: "C", to: []).isEmpty)
+        #expect(WordReplacements.adding(heard: " , ", written: "C", to: []).isEmpty)
         #expect(WordReplacements.adding(heard: " ", written: "C", to: []).isEmpty)
         #expect(WordReplacements.adding(heard: "a", written: " ", to: []).isEmpty)
     }

@@ -113,6 +113,9 @@ class WhisperAccuracyBenchmarkTest {
      */
     private fun checkSettings(directory: File) {
         val settings = JSONObject().put("crop", crop.toString()).put("quality", quality.storedValue)
+        // The list itself, not its file name: a resume with other terms, or
+        // with none where there were some, must not pass as the same control.
+        finishVocabulary?.let { settings.put("finishVocabulary", it.joinToString("\n")) }
         val file = File(directory, "settings.json")
         if (!file.exists()) {
             file.writeText(settings.toString())

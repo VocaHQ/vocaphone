@@ -71,10 +71,13 @@ object WordReplacements {
      * [list] with [heard] → [written] added. A row that already writes
      * [written] takes the heard form beside its own, so one target stays one
      * row; a heard form some row already has, compared ignoring case, is taken
-     * off that row first, so it never fires two ways. Invalid input returns
-     * [list] unchanged.
+     * off that row first, so it never fires two ways. Several heard forms
+     * separated by commas ("get hub, git hub") are each added. Invalid input
+     * returns [list] unchanged.
      */
     fun adding(heard: String, written: String, list: List<WordReplacement>): List<WordReplacement> {
+        val forms = heard.split(',')
+        if (forms.size > 1) return forms.fold(list) { result, form -> adding(form, written, result) }
         val form = heard.split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
         val target = written.trim()
         if (form.isEmpty() || form.contains(',') || target.isEmpty()) return list
@@ -146,8 +149,8 @@ object WordReplacements {
     }
 
     private class Form(val heard: String, val written: String) {
-        val startsWithWord = isWordCharacter(heard.first())
-        val endsWithWord = isWordCharacter(heard.last())
+        val startsWithWord = isWordCodePoint(heard.codePointAt(0))
+        val endsWithWord = isWordCodePoint(heard.codePointBefore(heard.length))
     }
 
     // Stable, so of two equally long forms the earlier row wins.
@@ -166,16 +169,34 @@ object WordReplacements {
         if (end > text.length || !text.regionMatches(index, form.heard, 0, form.heard.length, ignoreCase = true)) {
             return false
         }
+        // A match must not begin or end inside a character: between a
+        // surrogate pair's halves, or before a combining mark.
+        if (index > 0 && Character.isLowSurrogate(text[index])) return false
+        if (end < text.length && Character.isLowSurrogate(text[end])) return false
         if (index > 0) {
-            val before = text[index - 1]
-            if (if (form.startsWithWord) isWordCharacter(before) else !before.isWhitespace()) return false
+            val before = text.codePointBefore(index)
+            if (if (form.startsWithWord) isWordCodePoint(before) else !Character.isWhitespace(before)) return false
         }
         if (end < text.length) {
-            val after = text[end]
-            if (if (form.endsWithWord) isWordCharacter(after) else !after.isWhitespace()) return false
+            val after = text.codePointAt(end)
+            if (if (form.endsWithWord) isWordCodePoint(after) else !Character.isWhitespace(after)) return false
         }
         return protected.none { it.first < end && index <= it.last }
     }
 
-    private fun isWordCharacter(character: Char): Boolean = character.isLetterOrDigit()
+    /**
+     * Letters and digits, and what is written inside a word without being
+     * either: combining marks (a Devanagari vowel sign, an accent typed as a
+     * separate mark) and the zero-width joiners Indic scripts use. Without them
+     * "कल" matched the start of "कला" and left its vowel sign behind. iOS
+     * compares whole characters (grapheme clusters), so it never splits one.
+     */
+    private fun isWordCodePoint(codePoint: Int): Boolean {
+        if (Character.isLetterOrDigit(codePoint)) return true
+        if (codePoint == 0x200C || codePoint == 0x200D) return true
+        return when (Character.getType(codePoint).toByte()) {
+            Character.NON_SPACING_MARK, Character.COMBINING_SPACING_MARK, Character.ENCLOSING_MARK -> true
+            else -> false
+        }
+    }
 }

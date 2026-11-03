@@ -292,6 +292,27 @@ enum VocabularyCorrection {
         }
     }
 
+    /// Term lengths worth comparing with a joined run of `heardLength` letters:
+    /// within a third of the term's length (at least two), closest first, then
+    /// shorter. Spelled out step by step because the one-expression version
+    /// is more than Xcode 26's type checker will finish.
+    private static func joinCandidateLengths(heardLength: Int) -> [Int] {
+        let upper = max(minimumJoinedTermLength, heardLength * 2)
+        var lengths: [Int] = []
+        for length in minimumJoinedTermLength...upper {
+            let distance: Int = abs(length - heardLength)
+            let allowed: Int = max(2, length / 3)
+            if distance <= allowed { lengths.append(length) }
+        }
+        lengths.sort { (lhs: Int, rhs: Int) -> Bool in
+            let lhsDistance: Int = abs(lhs - heardLength)
+            let rhsDistance: Int = abs(rhs - heardLength)
+            if lhsDistance != rhsDistance { return lhsDistance < rhsDistance }
+            return lhs < rhs
+        }
+        return lengths
+    }
+
     /// Two or three words heard for one longer term that sounds exactly like
     /// them: their joined letters and the term share a primary Metaphone key.
     /// Needs evidence the engine misheard: a word it decoded with low
@@ -330,9 +351,7 @@ enum VocabularyCorrection {
             let joined = keys.joined()
             guard let heardKey = phonetic.key(joined), heardKey.primary.count >= 3 else { continue }
             // Closest length first, then the order the user wrote them in.
-            let lengths = (minimumJoinedTermLength...max(minimumJoinedTermLength, joined.count * 2))
-                .filter { abs($0 - joined.count) <= max(2, $0 / 3) }
-                .sorted { (abs($0 - joined.count), $0) < (abs($1 - joined.count), $1) }
+            let lengths = joinCandidateLengths(heardLength: joined.count)
             for sound in soundsToSearch(joined) {
                 guard let byLength = filed[sound] else { continue }
                 for termLength in lengths {

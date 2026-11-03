@@ -48,9 +48,18 @@ enum WordReplacements {
     /// `list` with `heard` → `written` added. A row that already writes
     /// `written` takes the heard form beside its own, so one target stays one
     /// row; a heard form some row already has, compared ignoring case, is
-    /// taken off that row first, so it never fires two ways. Invalid input
-    /// returns `list` unchanged.
+    /// taken off that row first, so it never fires two ways. Several heard
+    /// forms separated by commas ("get hub, git hub") are each added. Invalid
+    /// input returns `list` unchanged.
     static func adding(heard: String, written: String, to list: [WordReplacement]) -> [WordReplacement] {
+        let forms = heard.split(separator: ",")
+        if forms.count > 1 {
+            var result = list
+            for form in forms {
+                result = adding(heard: String(form), written: written, to: result)
+            }
+            return result
+        }
         let form = heard.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let target = written.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !form.isEmpty, !form.contains(","), !target.isEmpty else { return list }
@@ -141,23 +150,26 @@ enum WordReplacements {
     }
 
     private static func forms(_ replacements: [WordReplacement]) -> [Form] {
-        replacements.filter(\.isValid)
-            .flatMap { replacement in
-                replacement.heardForms.map { heard in
-                    Form(
-                        heard: Array(heard).map { $0.lowercased() },
-                        written: replacement.written,
-                        startsWithWord: heard.first.map(isWordCharacter) ?? false,
-                        endsWithWord: heard.last.map(isWordCharacter) ?? false
-                    )
-                }
+        // Built with loops and typed steps: the chained version took over a
+        // second to type-check, past what CI's Xcode 26 allows.
+        var forms: [Form] = []
+        for replacement in replacements where replacement.isValid {
+            for heard in replacement.heardForms {
+                let letters: [String] = heard.map { (character: Character) -> String in character.lowercased() }
+                let starts: Bool = heard.first.map(isWordCharacter) ?? false
+                let ends: Bool = heard.last.map(isWordCharacter) ?? false
+                forms.append(Form(heard: letters, written: replacement.written, startsWithWord: starts, endsWithWord: ends))
             }
-            // Stable, so of two equally long forms the earlier row wins.
-            .enumerated()
-            .sorted { $0.element.heard.count != $1.element.heard.count
-                ? $0.element.heard.count > $1.element.heard.count
-                : $0.offset < $1.offset }
-            .map(\.element)
+        }
+        // Stable, so of two equally long forms the earlier row wins.
+        var order: [Int] = Array(forms.indices)
+        order.sort { (lhs: Int, rhs: Int) -> Bool in
+            let lhsCount: Int = forms[lhs].heard.count
+            let rhsCount: Int = forms[rhs].heard.count
+            if lhsCount != rhsCount { return lhsCount > rhsCount }
+            return lhs < rhs
+        }
+        return order.map { (index: Int) -> Form in forms[index] }
     }
 
     /// Whether `form` is heard at `index`: the same characters ignoring case,

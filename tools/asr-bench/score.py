@@ -100,13 +100,21 @@ def score(results: Path, manifest: Path, only: set[str] | None = None) -> dict |
             row[f"{field}_terms"] = spelled / expected * 100 if expected else 0.0
     controlled = [h for h in hypotheses if h.get("finishedVocabulary") is not None]
     if controlled:
-        pairs = [
-            (normalise(references[h["id"]]["text"], language), normalise(h["finishedVocabulary"], language))
+        # Both columns from the same records: a run resumed with the control
+        # switched on has it for only some clips, and comparing that subset
+        # with every clip's finished text would measure different speech.
+        triples = [
+            (
+                normalise(references[h["id"]]["text"], language),
+                normalise(h["finished"], language),
+                normalise(h["finishedVocabulary"], language),
+            )
             for h in controlled
         ]
-        pairs = [(r, h) for r, h in pairs if r]
+        triples = [t for t in triples if t[0]]
         row["control_clips"] = len(controlled)
-        row["control_wer"] = jiwer.wer([r for r, _ in pairs], [h for _, h in pairs]) * 100
+        row["control_baseline_wer"] = jiwer.wer([r for r, _, _ in triples], [f for _, f, _ in triples]) * 100
+        row["control_wer"] = jiwer.wer([r for r, _, _ in triples], [c for _, _, c in triples]) * 100
         row["control_changed"] = sum(1 for h in controlled if h["finishedVocabulary"] != h["finished"])
     row["empty"] = sum(1 for h in hypotheses if not h["raw"].strip())
     row["empty_windows"] = sum(h.get("emptyWindows", 0) for h in hypotheses)
@@ -146,7 +154,7 @@ def print_table(tag: str, table: dict) -> None:
         print("|---|---|---|---|---|---|---|")
         for (model, set_name, path), row in sorted(controlled.items()):
             print(
-                f"| {model} | {set_name} | {path} | {row['control_clips']} | {row['finished_wer']:.2f} | "
+                f"| {model} | {set_name} | {path} | {row['control_clips']} | {row['control_baseline_wer']:.2f} | "
                 f"{row['control_wer']:.2f} | {row['control_changed']} |"
             )
 
