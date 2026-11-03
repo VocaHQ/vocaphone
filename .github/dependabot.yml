@@ -53,5 +53,11 @@ updates:
     groups:
       swift:
         patterns: ['*']
+    # onnxruntime-libs reaches us transitively through sherpa-onnx, which pins
+    # it with `exact:` in its own Package.swift. Dependabot can edit only the
+    # version field in our Package.resolved, so a solo bump there can never
+    # resolve — the pin moves when sherpa-onnx moves and not before (#363).
+    ignore:
+      - dependency-name: 'github.com/csukuangfj/onnxruntime-libs'
     commit-message:
       prefix: build
