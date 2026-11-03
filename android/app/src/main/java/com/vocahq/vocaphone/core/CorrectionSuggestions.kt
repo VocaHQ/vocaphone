@@ -150,6 +150,25 @@ object CorrectionSuggestions {
         return Learned(updated, suggestion.corrected)
     }
 
+    /** Where an added fix's corrected word goes. */
+    enum class Destination { PERSONAL_DICTIONARY, CUSTOM_WORDS, REPLACEMENT, NOT_YET }
+
+    /**
+     * Where [suggestion]'s corrected word goes. While dictation reads the
+     * personal dictionary ([synced]) the custom words are not read at all, and
+     * the dictionary only takes plain words ([savable]): "GPT4" or "Claude
+     * Code" becomes a replacement from what was heard instead, which
+     * dictation reads. One ordinary word heard ("cloud" → "Claude Code") is
+     * only made one when the user asked ([explicit]); added on its own, it
+     * would rewrite every "cloud", so it waits as a suggestion.
+     */
+    fun destination(suggestion: CorrectionSuggestion, synced: Boolean, savable: Boolean, explicit: Boolean): Destination {
+        if (!synced) return Destination.CUSTOM_WORDS
+        if (savable) return Destination.PERSONAL_DICTIONARY
+        val oneOrdinaryWord = suggestion.heardIsWord && !suggestion.heard.trim().contains(' ')
+        return if (oneOrdinaryWord && !explicit) Destination.NOT_YET else Destination.REPLACEMENT
+    }
+
     /** Whether the lists already make this fix: the word is a custom word, or a replacement writes it from what was heard. */
     fun isListed(
         heard: String,

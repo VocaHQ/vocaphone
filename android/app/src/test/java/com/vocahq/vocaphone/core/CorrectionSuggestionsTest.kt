@@ -108,4 +108,20 @@ class CorrectionSuggestionsTest {
         assertTrue(CorrectionSuggestion.decode("not json").isEmpty())
         assertEquals(listOf("a", "b"), CorrectionSuggestion.decodeKeys(CorrectionSuggestion.encodeKeys(listOf("a", "b"))))
     }
+
+    @Test
+    fun `a term the keyboard dictionary cannot hold becomes a replacement while dictation reads it`() {
+        val gpt = CorrectionSuggestion("gpt for", "GPT4", heardIsWord = false)
+        val claude = CorrectionSuggestion("cloud", "Claude Code", heardIsWord = true)
+        val kanishk = CorrectionSuggestion("Kanish", "Kanishk", heardIsWord = false)
+        // Synced: a plain word goes to the personal dictionary dictation reads.
+        assertEquals(CorrectionSuggestions.Destination.PERSONAL_DICTIONARY, CorrectionSuggestions.destination(kanishk, synced = true, savable = true, explicit = false))
+        // Synced: digits or a space cannot go there, and the custom words are not read.
+        assertEquals(CorrectionSuggestions.Destination.REPLACEMENT, CorrectionSuggestions.destination(gpt, synced = true, savable = false, explicit = false))
+        // One ordinary word heard is only made a replacement when the user asks.
+        assertEquals(CorrectionSuggestions.Destination.NOT_YET, CorrectionSuggestions.destination(claude, synced = true, savable = false, explicit = false))
+        assertEquals(CorrectionSuggestions.Destination.REPLACEMENT, CorrectionSuggestions.destination(claude, synced = true, savable = false, explicit = true))
+        // Not synced: the custom words are what dictation reads.
+        assertEquals(CorrectionSuggestions.Destination.CUSTOM_WORDS, CorrectionSuggestions.destination(gpt, synced = false, savable = false, explicit = false))
+    }
 }

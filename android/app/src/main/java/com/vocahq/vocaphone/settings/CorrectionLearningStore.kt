@@ -74,7 +74,18 @@ class CorrectionLearningStore(
             preferences[Keys.SUGGESTIONS] = CorrectionSuggestion.encode(received.suggestions)
             added = received.added
         }
-        added.forEach { settings.learnCorrection(it) }
+        // A fix that could not be added on its own (see
+        // [SettingsRepository.learnCorrection]) stays a suggestion for the
+        // user to decide.
+        val unlearned = added.filterNot { settings.learnCorrection(it, explicit = false) }
+        if (unlearned.isNotEmpty()) {
+            context.correctionLearningStore.edit { preferences ->
+                val suggestions = CorrectionSuggestion.decode(preferences[Keys.SUGGESTIONS])
+                val keys = suggestions.map { it.key }.toSet()
+                preferences[Keys.SUGGESTIONS] =
+                    CorrectionSuggestion.encode(suggestions + unlearned.filter { it.key !in keys })
+            }
+        }
     }
 
     /** Add: the word and, when due, a replacement. */

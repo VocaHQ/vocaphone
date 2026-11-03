@@ -830,27 +830,46 @@ class SettingsRepository(private val context: Context) {
      * dictionary while dictation shares it, else the custom words — and a
      * replacement when one is due. One edit, so nothing changed alongside it
      * is lost.
+     *
+     * Where the word goes is [CorrectionSuggestions.destination]: a term the
+     * keyboard's dictionary cannot hold becomes a replacement while dictation
+     * reads that dictionary. Returns whether the fix is now in a list
+     * dictation reads; [explicit] is false for a fix added without asking.
      */
-    suspend fun learnCorrection(suggestion: CorrectionSuggestion) {
+    suspend fun learnCorrection(suggestion: CorrectionSuggestion, explicit: Boolean = true): Boolean {
+        var learnedIt = true
         context.dataStore.edit { preferences ->
             val replacements = WordReplacement.decode(preferences[Keys.REPLACEMENTS])
             val learned = CorrectionSuggestions.learn(suggestion, replacements)
-            if (learned.replacements != replacements) {
-                preferences[Keys.REPLACEMENTS] = WordReplacement.encode(learned.replacements)
-            }
             val term = learned.term.trim()
-            val synced = preferences[Keys.SYNC_WHISPER_DICTIONARY] ?: true
-            if (synced && PersonalDictionary.isSavable(term)) {
-                val words = preferences[Keys.PERSONAL_DICTIONARY].orEmpty()
-                if (PersonalDictionary.terms(words).none { it == term }) {
-                    preferences[Keys.PERSONAL_DICTIONARY] = PersonalDictionary.add(words, term)
+            val destination = CorrectionSuggestions.destination(
+                suggestion,
+                synced = preferences[Keys.SYNC_WHISPER_DICTIONARY] ?: true,
+                savable = PersonalDictionary.isSavable(term),
+                explicit = explicit,
+            )
+            var updated = learned.replacements
+            when (destination) {
+                CorrectionSuggestions.Destination.PERSONAL_DICTIONARY -> {
+                    val words = preferences[Keys.PERSONAL_DICTIONARY].orEmpty()
+                    if (PersonalDictionary.terms(words).none { it == term }) {
+                        preferences[Keys.PERSONAL_DICTIONARY] = PersonalDictionary.add(words, term)
+                    }
                 }
-            } else {
-                val vocabulary = preferences[Keys.CUSTOM_VOCABULARY].orEmpty()
-                val updated = CorrectionSuggestions.vocabulary(vocabulary, term)
-                if (updated != vocabulary) preferences[Keys.CUSTOM_VOCABULARY] = updated
+                CorrectionSuggestions.Destination.CUSTOM_WORDS -> {
+                    val vocabulary = preferences[Keys.CUSTOM_VOCABULARY].orEmpty()
+                    val withTerm = CorrectionSuggestions.vocabulary(vocabulary, term)
+                    if (withTerm != vocabulary) preferences[Keys.CUSTOM_VOCABULARY] = withTerm
+                }
+                CorrectionSuggestions.Destination.REPLACEMENT ->
+                    updated = WordReplacements.adding(suggestion.heard, term, updated)
+                CorrectionSuggestions.Destination.NOT_YET -> learnedIt = false
+            }
+            if (learnedIt && updated != replacements) {
+                preferences[Keys.REPLACEMENTS] = WordReplacement.encode(updated)
             }
         }
+        return learnedIt
     }
 
     suspend fun setTelemetryEnabled(enabled: Boolean) = put(Keys.TELEMETRY_ENABLED, enabled)

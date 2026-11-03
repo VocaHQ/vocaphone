@@ -157,3 +157,32 @@ struct CorrectionSuggestionsTests {
         #expect(store.takeLearnedCorrections().isEmpty)
     }
 }
+
+/// The Suggested screen reloads on `didChange`, so every write has to post it.
+@Suite(.serialized)
+struct CorrectionLearningPreferencesChangeTests {
+    private final class Counter: @unchecked Sendable {
+        var posts = 0
+    }
+
+    private func posts(during change: () -> Void) -> Int {
+        let counter = Counter()
+        let observer = NotificationCenter.default.addObserver(
+            forName: CorrectionLearningPreferences.didChange, object: nil, queue: nil
+        ) { _ in counter.posts += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        change()
+        return counter.posts
+    }
+
+    @Test func everyWritePostsAChange() {
+        let savedSuggestions = CorrectionLearningPreferences.suggestions
+        let savedDismissed = CorrectionLearningPreferences.dismissed
+        defer {
+            CorrectionLearningPreferences.suggestions = savedSuggestions
+            CorrectionLearningPreferences.dismissed = savedDismissed
+        }
+        #expect(posts { CorrectionLearningPreferences.suggestions = savedSuggestions } == 1)
+        #expect(posts { CorrectionLearningPreferences.dismissed = savedDismissed } == 1)
+    }
+}

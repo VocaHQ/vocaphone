@@ -106,6 +106,15 @@ enum CorrectionLearningPreferences {
         suiteName: AppConfiguration.appGroupIdentifier
     )
 
+    /// Posted, in this process, whenever the suggestions or dismissals
+    /// change, so a Suggested screen left open picks up what the app collects
+    /// as it comes forward, and what it adds without asking.
+    static let didChange = Notification.Name("VocaPhoneCorrectionSuggestionsDidChange")
+
+    private static func changed() {
+        NotificationCenter.default.post(name: didChange, object: nil)
+    }
+
     /// On unless the user turned it off.
     static var enabled: Bool {
         get { defaults?.object(forKey: enabledKey) as? Bool ?? true }
@@ -115,12 +124,18 @@ enum CorrectionLearningPreferences {
     /// Newest first.
     static var suggestions: [CorrectionSuggestion] {
         get { CorrectionSuggestion.decode(defaults?.data(forKey: suggestionsKey)) }
-        set { defaults?.set(CorrectionSuggestion.encode(newValue), forKey: suggestionsKey) }
+        set {
+            defaults?.set(CorrectionSuggestion.encode(newValue), forKey: suggestionsKey)
+            changed()
+        }
     }
 
     static var dismissed: [String] {
         get { defaults?.stringArray(forKey: dismissedKey) ?? [] }
-        set { defaults?.set(newValue, forKey: dismissedKey) }
+        set {
+            defaults?.set(newValue, forKey: dismissedKey)
+            changed()
+        }
     }
 
     /// Takes what the keyboard left and counts it in: suggested, or added
@@ -170,6 +185,7 @@ enum CorrectionLearningPreferences {
         defaults?.removeObject(forKey: suggestionsKey)
         defaults?.removeObject(forKey: dismissedKey)
         store.removeLearnedCorrections()
+        changed()
     }
 
     private static func learn(_ suggestion: CorrectionSuggestion) {

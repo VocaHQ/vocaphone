@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 extension SettingsHelp {
@@ -96,6 +97,14 @@ struct CorrectionSuggestionsSettingsView: View {
         }
         .onAppear {
             CorrectionLearningPreferences.collectFromKeyboard()
+            reload()
+        }
+        // The app collects the keyboard's fixes as it comes forward, which can
+        // be while this screen is open.
+        .onReceive(
+            NotificationCenter.default.publisher(for: CorrectionLearningPreferences.didChange)
+                .receive(on: DispatchQueue.main)
+        ) { _ in
             reload()
         }
         .onChange(of: enabled) { _, isOn in
