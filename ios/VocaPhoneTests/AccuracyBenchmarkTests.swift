@@ -21,7 +21,8 @@ import Testing
 ///
 /// A clip that lists a `vocabulary` (the `vocab-en` set) is decoded with it as
 /// the user's custom vocabulary: into the decoder the way the app hands it
-/// over, and into the finishing funnel. Every other clip is decoded with none.
+/// over (Whisper's prompt, Qwen3-ASR's hotwords), and into the finishing
+/// funnel. Every other clip is decoded with none.
 ///
 /// A clip already in the results file is skipped, so an interrupted run picks
 /// up where it stopped.
@@ -210,9 +211,9 @@ enum AccuracyBenchmark {
         case (.whisperKit, "streamed"):
             return try await Whisper.streamed(samples, language: language, vocabulary: vocabulary)
         case (.sherpaOnnx, "file"):
-            return (try Sherpa.file(samples, language: language), 0)
+            return (try Sherpa.file(samples, language: language, hotwords: Sherpa.hotwords(vocabulary)), 0)
         case (.sherpaOnnx, "streamed"):
-            return (try await Sherpa.streamed(samples, language: language), 0)
+            return (try await Sherpa.streamed(samples, language: language, hotwords: Sherpa.hotwords(vocabulary)), 0)
         default:
             Issue.record("unknown path \(path)")
             return ("", 0)
@@ -358,8 +359,19 @@ enum AccuracyBenchmark {
             return recognizer
         }
 
-        static func file(_ samples: [Float], language: String) throws -> String {
-            let outcome = try recognizer(language).transcribe(SpeechAudioConditioning.condition(samples))
+        /// As `LocalModelManager.sherpaHotwords(for:)` makes them from the
+        /// stored vocabulary.
+        static func hotwords(_ vocabulary: String?) -> String? {
+            let configuration = AccuracyBenchmark.configuration
+            let descriptor = configuration.flatMap { LocalModelCatalog.descriptor(for: $0.model) }
+            let terms = RecognitionHints.terms(vocabulary: CustomVocabulary.terms(vocabulary))
+            return RecognitionHints.sherpaHotwords(family: descriptor?.sherpaFamily, terms: terms)
+        }
+
+        static func file(_ samples: [Float], language: String, hotwords: String?) throws -> String {
+            let outcome = try recognizer(language).transcribe(
+                SpeechAudioConditioning.condition(samples), hotwords: hotwords
+            )
             if let failure = outcome.nativeFailure {
                 Issue.record("sherpa decode failed natively: \(failure)")
             }
@@ -368,9 +380,11 @@ enum AccuracyBenchmark {
 
         /// As `SherpaEndToEnd.dictation`: streamed while recording, then the
         /// whole file when the stream came back empty or lost a chunk.
-        static func streamed(_ captured: [Float], language: String) async throws -> String {
+        static func streamed(_ captured: [Float], language: String, hotwords: String?) async throws -> String {
             let (chunks, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .unbounded)
-            let session = SherpaIncrementalSession(chunks: chunks, recognizer: try recognizer(language)) {
+            let session = SherpaIncrementalSession(
+                chunks: chunks, recognizer: try recognizer(language), hotwords: hotwords
+            ) {
                 SileroSpeechDetector(model: SileroSpeechDetector.repositoryModel)
             }
             for start in stride(from: 0, to: captured.count, by: 1_600) {
@@ -381,7 +395,7 @@ enum AccuracyBenchmark {
             let streamed = await session.finish()
             var text = streamed.transcript.text
             if text.isEmpty || streamed.droppedAudibleChunk {
-                let wholeFile = try file(captured, language: language)
+                let wholeFile = try file(captured, language: language, hotwords: hotwords)
                 if streamed.supersededBy(wholeFile) { text = wholeFile }
             }
             return text

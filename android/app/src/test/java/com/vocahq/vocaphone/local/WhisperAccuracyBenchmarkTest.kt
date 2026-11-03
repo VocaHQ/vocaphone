@@ -64,7 +64,7 @@ class WhisperAccuracyBenchmarkTest {
                     language = language,
                     translateTo = "",
                     quality = quality,
-                    prompt = CustomVocabulary.whisperPrompt(vocabulary),
+                    prompt = whisperPrompt(vocabulary),
                     cropAudioContext = crop,
                     threads = WhisperCpuConfig.preferredThreadCount(model.id),
                 )
