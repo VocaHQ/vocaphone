@@ -17,6 +17,9 @@ import com.vocahq.vocaphone.core.MicrophonePreference
 import com.vocahq.vocaphone.core.ModelLanguageSupport
 import com.vocahq.vocaphone.core.ModelTranslationSupport
 import com.vocahq.vocaphone.core.Snippet
+import com.vocahq.vocaphone.core.CorrectionSuggestion
+import com.vocahq.vocaphone.core.CorrectionSuggestions
+import com.vocahq.vocaphone.ime.PersonalDictionary
 import com.vocahq.vocaphone.core.WordReplacement
 import com.vocahq.vocaphone.core.WordReplacements
 import com.vocahq.vocaphone.local.GrammarModelConsent
@@ -818,6 +821,35 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             val current = WordReplacement.decode(preferences[Keys.REPLACEMENTS])
             preferences[Keys.REPLACEMENTS] = WordReplacement.encode(current.filter { it.id != id })
+        }
+    }
+
+    /**
+     * Adds a spelling the user fixed after a dictation ([CorrectionSuggestions.learn]):
+     * the corrected word to the words dictation uses — the personal
+     * dictionary while dictation shares it, else the custom words — and a
+     * replacement when one is due. One edit, so nothing changed alongside it
+     * is lost.
+     */
+    suspend fun learnCorrection(suggestion: CorrectionSuggestion) {
+        context.dataStore.edit { preferences ->
+            val replacements = WordReplacement.decode(preferences[Keys.REPLACEMENTS])
+            val learned = CorrectionSuggestions.learn(suggestion, replacements)
+            if (learned.replacements != replacements) {
+                preferences[Keys.REPLACEMENTS] = WordReplacement.encode(learned.replacements)
+            }
+            val term = learned.term.trim()
+            val synced = preferences[Keys.SYNC_WHISPER_DICTIONARY] ?: true
+            if (synced && PersonalDictionary.isSavable(term)) {
+                val words = preferences[Keys.PERSONAL_DICTIONARY].orEmpty()
+                if (PersonalDictionary.terms(words).none { it == term }) {
+                    preferences[Keys.PERSONAL_DICTIONARY] = PersonalDictionary.add(words, term)
+                }
+            } else {
+                val vocabulary = preferences[Keys.CUSTOM_VOCABULARY].orEmpty()
+                val updated = CorrectionSuggestions.vocabulary(vocabulary, term)
+                if (updated != vocabulary) preferences[Keys.CUSTOM_VOCABULARY] = updated
+            }
         }
     }
 
