@@ -69,7 +69,14 @@ enum RecognitionHints {
             context.append(trimmed)
             used += trimmed.count + 2
         }
-        return context.reversed() + targets.reversed() + user.reversed()
+        // Appended one list at a time: `a.reversed() + b.reversed()` is
+        // ambiguous to the Xcode 26 type checker CI uses.
+        var ordered: [String] = []
+        ordered.reserveCapacity(context.count + targets.count + user.count)
+        ordered.append(contentsOf: context.reversed())
+        ordered.append(contentsOf: targets.reversed())
+        ordered.append(contentsOf: user.reversed())
+        return ordered
     }
 
     /// A replacement's target that reads like a term rather than a snippet.
