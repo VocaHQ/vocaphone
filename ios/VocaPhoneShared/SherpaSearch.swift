@@ -97,7 +97,10 @@ enum SherpaHotwordCheck {
         return false
     }
 
+    /// Case-folded: the decoder's casing of a repeat is its own ("Slack
+    /// slack"), and the user's list may be lower case.
     private static func words(_ text: String) -> [String] {
-        text.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map { $0.lowercased() }
     }
 }

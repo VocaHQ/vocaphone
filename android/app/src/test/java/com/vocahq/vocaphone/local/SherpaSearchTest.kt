@@ -106,6 +106,14 @@ class SherpaSearchTest {
     }
 
     @Test
+    fun `a repeat is found whatever its case`() {
+        assertTrue(SherpaHotwordCheck.repeatsAHotword("on Slack Slack", "slack"))
+        assertTrue(SherpaHotwordCheck.repeatsAHotword("on Slack slack", "Slack"))
+        assertTrue(SherpaHotwordCheck.repeatsAHotword("JETPACK compose Jetpack Compose", "Jetpack Compose"))
+        assertFalse(SherpaHotwordCheck.repeatsAHotword("on Slack", "slack"))
+    }
+
+    @Test
     fun `the tuned search stays below the runaway score`() {
         // Score 4 with a beam of 4 repeated hotwords into ordinary speech
         // ("Jira Jira Jira") on vocab-en; see docs/local-model-review.md.

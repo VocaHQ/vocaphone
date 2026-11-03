@@ -724,6 +724,7 @@ class VocaPhoneViewModel @JvmOverloads constructor(
                 language = configuration.effectiveLanguage.wireValue,
                 quality = configuration.transcriptionQuality,
                 translateTo = configuration.translationTarget,
+                vocabulary = configuration.whisperVocabulary,
             )
         }
     }

@@ -726,10 +726,15 @@ class LocalModelManager(
         language: String,
         quality: TranscriptionQuality,
         translateTo: String,
+        // Required, not defaulted: Parakeet Unified builds a different
+        // recognizer when the user has custom words (beam search with
+        // hotwords), and a warm-up that asked for the other one would replace
+        // the loaded model just before the dictation loads it back.
+        vocabulary: String,
     ) {
         cancelIdleUnload()
         engineScope.launch {
-            runCatching { prepare(modelID, language, quality, translateTo) }
+            runCatching { prepare(modelID, language, quality, translateTo, vocabulary) }
         }
     }
 
@@ -744,6 +749,8 @@ class LocalModelManager(
         language: String,
         quality: TranscriptionQuality,
         translateTo: String,
+        /** As in [warm]: the search the dictation will ask for. */
+        vocabulary: String,
         unloadAfterMs: Long = LOCAL_ENGINE_WARM_UNLOAD_MS,
     ) {
         val model = LocalModelCatalog.find(modelID) ?: return
@@ -761,7 +768,7 @@ class LocalModelManager(
         if (!room) return
         cancelIdleUnload()
         engineScope.launch {
-            runCatching { prepare(modelID, language, quality, translateTo) }
+            runCatching { prepare(modelID, language, quality, translateTo, vocabulary) }
             unloadWhenIdle(unloadAfterMs)
         }
     }

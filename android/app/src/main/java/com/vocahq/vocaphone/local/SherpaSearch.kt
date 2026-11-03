@@ -117,12 +117,16 @@ internal object SherpaHotwordCheck {
         return false
     }
 
+    /**
+     * Case-folded: the decoder's casing of a repeat is its own ("Slack
+     * slack"), and the user's list may be lower case.
+     */
     private fun words(text: String): List<String> {
         val words = mutableListOf<String>()
         val current = StringBuilder()
         for (character in text) {
             if (character.isLetterOrDigit()) {
-                current.append(character)
+                current.append(character.lowercaseChar())
             } else if (current.isNotEmpty()) {
                 words.add(current.toString())
                 current.clear()

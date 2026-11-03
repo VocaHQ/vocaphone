@@ -307,6 +307,13 @@ struct RecognitionHintsTests {
         #expect(!SherpaHotwordCheck.repeatsAHotword("", hotwords: hotwords))
     }
 
+    @Test func aRepeatIsFoundWhateverItsCase() {
+        #expect(SherpaHotwordCheck.repeatsAHotword("on Slack Slack", hotwords: "slack"))
+        #expect(SherpaHotwordCheck.repeatsAHotword("on Slack slack", hotwords: "Slack"))
+        #expect(SherpaHotwordCheck.repeatsAHotword("JETPACK compose Jetpack Compose", hotwords: "Jetpack Compose"))
+        #expect(!SherpaHotwordCheck.repeatsAHotword("on Slack", hotwords: "slack"))
+    }
+
     @Test func theTunedSearchStaysBelowTheRunawayScore() {
         // Score 4 with a beam of 4 repeated hotwords into ordinary speech
         // ("Jira Jira Jira") on vocab-en; see docs/local-model-review.md.
