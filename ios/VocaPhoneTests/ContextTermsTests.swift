@@ -164,6 +164,48 @@ struct ContextTermsTests {
         #expect(settings.hintTerms == ["GitHub", "Kanishk"])
     }
 
+    @Test func qwen3TakesContextTermsWithoutAListOfTheUsers() throws {
+        let qwen = try #require(LocalModelCatalog.descriptor(for: "qwen3-asr-0.6b"))
+        let hotwords = RecognitionHints.sherpaHotwords(
+            for: qwen, vocabulary: [], replacementTargets: [], contextTerms: ["GitHub", "Namrata"]
+        )
+        #expect(hotwords == "GitHub,Namrata")
+    }
+
+    @Test func withNoListOfTheUsersContextKeepsParakeetUnifiedOnGreedySearchEverywhere() throws {
+        let unified = try #require(LocalModelCatalog.descriptor(for: "parakeet-unified-0.6b-en"))
+        // The warm-up, the incremental session and the whole-file decode all
+        // build the recognizer through `LocalModelManager.hotwordVocabulary(for:)`,
+        // which asks this.
+        #expect(!RecognitionHints.takesHotwordSearch(unified, vocabulary: [], replacementTargets: []))
+        // And the decode hands a greedy recognizer no hotwords, whatever the cursor held.
+        let hotwords = RecognitionHints.sherpaHotwords(
+            for: unified, vocabulary: [], replacementTargets: [], contextTerms: ["GitHub", "Namrata"]
+        )
+        #expect(hotwords == nil)
+    }
+
+    @Test func withAListOfTheUsersContextJoinsParakeetUnifiedsHotwordsAfterIt() throws {
+        let unified = try #require(LocalModelCatalog.descriptor(for: "parakeet-unified-0.6b-en"))
+        #expect(RecognitionHints.takesHotwordSearch(unified, vocabulary: ["Kanishk"], replacementTargets: []))
+        let context = ["GitHub", "Namrata"]
+        #expect(RecognitionHints.sherpaHotwords(
+            for: unified, vocabulary: ["Kanishk"], replacementTargets: [], contextTerms: context
+        ) == "Kanishk/GitHub/Namrata")
+        #expect(RecognitionHints.sherpaHotwords(
+            for: unified, vocabulary: [], replacementTargets: ["Kanishk"], contextTerms: context
+        ) == "Kanishk/GitHub/Namrata")
+        // The 64-term cap cuts the cursor's terms, never the user's.
+        let user = (1...60).map { "User\($0)" }
+        let screen = (1...30).map { "Screen\($0)" }
+        let kept = try #require(RecognitionHints.sherpaHotwords(
+            for: unified, vocabulary: user, replacementTargets: [], contextTerms: screen
+        )).split(separator: "/").map(String.init)
+        #expect(kept.count == RecognitionHints.maximumTransducerHotwords)
+        #expect(Array(kept.prefix(60)) == user)
+        #expect(Array(kept.dropFirst(60)) == ["Screen1", "Screen2", "Screen3", "Screen4"])
+    }
+
     // MARK: - Hand-off
 
     @Test func theAppTakesTheTermsOnceAndTheyAreGone() throws {

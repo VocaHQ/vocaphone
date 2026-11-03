@@ -1342,10 +1342,15 @@ final class LocalModelManager {
     /// recognizer sherpa-onnx would refuse to build.
     static func hotwordVocabulary(for descriptor: LocalModelDescriptor) -> URL? {
         guard let name = descriptor.hotwordVocabularyFile,
-              sherpaHotwords(for: descriptor) != nil
+              RecognitionHints.takesHotwordSearch(
+                  descriptor,
+                  vocabulary: CustomVocabulary.terms(LocalTranscriptionPreferences.customVocabulary),
+                  replacementTargets: WordReplacements.hintTargets(LocalTranscriptionPreferences.replacements)
+              )
         else { return nil }
         return Bundle.main.url(forResource: name, withExtension: nil)
     }
+
 
     /// Starts loading the selected Whisper model while the user is still
     /// speaking, and listens for the pauses to decode early in.

@@ -1,10 +1,12 @@
 package com.vocahq.vocaphone.core
 
 import com.vocahq.vocaphone.local.LocalModelCatalog
+import com.vocahq.vocaphone.local.hotwordSearchFor
 import com.vocahq.vocaphone.local.sherpaHotwords
 import com.vocahq.vocaphone.local.whisperPrompt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -172,8 +174,39 @@ class ContextTermsTest {
 
     @Test
     fun `context terms reach whisper's prompt and qwen3's hotwords after the user's words`() {
-        assertEquals("Kanishk, GitHub, Namrata.", whisperPrompt("Kanishk", listOf("GitHub", "Namrata")))
-        val qwen = LocalModelCatalog.find("qwen3-asr-0.6b") ?: return
-        assertEquals("Kanishk,GitHub,Namrata", sherpaHotwords(qwen, "Kanishk", listOf("GitHub", "Namrata")))
+        assertEquals("Kanishk, GitHub, Namrata.", whisperPrompt("Kanishk", contextTerms = listOf("GitHub", "Namrata")))
+        val qwen = requireNotNull(LocalModelCatalog.find("qwen3-asr-0.6b"))
+        assertEquals("Kanishk,GitHub,Namrata", sherpaHotwords(qwen, "Kanishk", contextTerms = listOf("GitHub", "Namrata")))
+        // Qwen3-ASR takes them as a stream option, so they need no list of the user's.
+        assertEquals("GitHub,Namrata", sherpaHotwords(qwen, "", contextTerms = listOf("GitHub", "Namrata")))
+    }
+
+    private val unified = requireNotNull(LocalModelCatalog.find("parakeet-unified-0.6b-en"))
+    private val context = listOf("GitHub", "Namrata")
+
+    @Test
+    fun `with no list of the user's, context keeps parakeet unified on greedy search everywhere`() {
+        // warm, warmAhead, prepare, the incremental session and transcribe all
+        // ask hotwordSearchFor, which takes no context.
+        assertFalse(hotwordSearchFor(unified, "", emptyList()))
+        // And the decode hands a greedy recognizer no hotwords, whatever the cursor held.
+        assertNull(sherpaHotwords(unified, "", emptyList(), context))
+        assertNull(RecognitionHints.sherpaHotwords(unified, emptyList(), emptyList(), context))
+    }
+
+    @Test
+    fun `with a list of the user's, context joins parakeet unified's hotwords after it`() {
+        assertTrue(hotwordSearchFor(unified, "Kanishk", emptyList()))
+        assertEquals("Kanishk/GitHub/Namrata", sherpaHotwords(unified, "Kanishk", emptyList(), context))
+        assertEquals("Kanishk/GitHub/Namrata", sherpaHotwords(unified, "", listOf("Kanishk"), context))
+        // The 64-term cap cuts the cursor's terms, never the user's.
+        val user = (1..60).map { "User$it" }
+        val many = (1..30).map { "Screen$it" }
+        val kept = requireNotNull(
+            RecognitionHints.sherpaHotwords(unified, user, emptyList(), many),
+        ).split("/")
+        assertEquals(RecognitionHints.MAX_TRANSDUCER_HOTWORDS, kept.size)
+        assertEquals(user, kept.take(60))
+        assertEquals(listOf("Screen1", "Screen2", "Screen3", "Screen4"), kept.drop(60))
     }
 }

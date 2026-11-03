@@ -469,7 +469,7 @@ class LocalModelManager(
         // lists' decision alone: the terms from around the cursor never switch
         // it into beam search, or a warm-up started before they are read and
         // this session would ask for different recognizers.
-        val hotwordSearch = takesHotwordSearch(model, sherpaHotwords(model, vocabulary, replacementTargets))
+        val hotwordSearch = hotwordSearchFor(model, vocabulary, replacementTargets)
         // The hotwords themselves are resolved at the first decode rather than
         // here: the terms from around the cursor are still being read while the
         // microphone starts, and the first decode waits for a pause in speech
@@ -873,7 +873,7 @@ class LocalModelManager(
             spoken,
             quality,
             model.resolveTranslationTarget(translateTo, spoken),
-            takesHotwordSearch(model, sherpaHotwords(model, vocabulary, replacementTargets)),
+            hotwordSearchFor(model, vocabulary, replacementTargets),
         )
     }
 
@@ -891,7 +891,7 @@ class LocalModelManager(
         val model = LocalModelCatalog.find(modelID) ?: error("Unknown local model: $modelID")
         val resolved = if (model.englishOnly) "en" else language
         val target = model.resolveTranslationTarget(translateTo, resolved)
-        val hotwordSearch = takesHotwordSearch(model, sherpaHotwords(model, vocabulary, replacementTargets))
+        val hotwordSearch = hotwordSearchFor(model, vocabulary, replacementTargets)
         prepareEngine(model, resolved, quality, target, hotwordSearch)
         // One gain and one DC-offset correction cover the complete recording.
         // Sherpa used to have a separate during-recording path that could apply
@@ -1137,6 +1137,20 @@ internal fun sherpaHotwords(
  * while there are hotwords, so a user without custom words keeps greedy
  * search. See [SherpaSearch].
  */
+/**
+ * Whether [model]'s recognizer is built for hotword (beam) search, as warm-up,
+ * [LocalModelManager.prepare], the incremental session and [LocalModelManager.transcribe]
+ * all ask for it: the user's own lists alone. It takes no terms from around
+ * the cursor on purpose; they are read after a warm-up has already asked, and
+ * a different answer at decode time would load the model a second time (see
+ * [RecognitionHints.sherpaHotwords]).
+ */
+internal fun hotwordSearchFor(
+    model: LocalModelDescriptor,
+    vocabulary: String,
+    replacementTargets: List<String>,
+): Boolean = takesHotwordSearch(model, sherpaHotwords(model, vocabulary, replacementTargets))
+
 internal fun takesHotwordSearch(model: LocalModelDescriptor, hotwords: String?): Boolean =
     model.hotwordVocabularyFile != null && !hotwords.isNullOrEmpty()
 

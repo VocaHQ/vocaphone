@@ -254,6 +254,20 @@ enum RecognitionHints {
         return qwen3Hotwords(terms)
     }
 
+    /// Whether `model`'s recognizer is built for hotword (beam) search: the
+    /// user's own lists alone, whichever path asks (warm-up, the incremental
+    /// session, the whole-file decode all go through
+    /// `LocalModelManager.hotwordVocabulary(for:)`). It takes no terms from
+    /// around the cursor on purpose; see the function below. Mirrors
+    /// `hotwordSearchFor` on Android.
+    static func takesHotwordSearch(
+        _ model: LocalModelDescriptor, vocabulary: [String], replacementTargets: [String]
+    ) -> Bool {
+        guard model.hotwordVocabularyFile != nil else { return false }
+        let lists = terms(vocabulary: vocabulary, replacementTargets: replacementTargets)
+        return sherpaHotwords(for: model, terms: lists) != nil
+    }
+
     /// The hotwords one dictation decodes with on `model`: the user's
     /// `vocabulary` and `replacementTargets`, then the `contextTerms` from
     /// around the cursor as the least important, cut first.

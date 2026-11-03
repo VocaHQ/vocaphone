@@ -307,7 +307,9 @@ earlier message in the same thread (`tools/asr-bench/vocab_en_context.json`),
 handed over as a keyboard dictation hands them: the hint list (Whisper's
 prompt, Qwen3-ASR's hotwords) and the exact-match pass after the vocabulary.
 Quality Fast, so two runs differ only by the context (Parakeet still has its
-dither). The messages were written the way a person would, so 98 of the 120
+dither). Measured before #459 and #460 landed; with no custom words or
+replacements neither changes these paths (Parakeet Unified stays on greedy
+search, and context alone never switches it to beam search). The messages were written the way a person would, so 98 of the 120
 term uses are reachable: names that open a sentence, `NVIDIA` and `Notion`
 (both in the keyboard's word list), two-word names and `kubectl`/`npm` are not
 extracted. LibriSpeech clean (50 clips) decodes every clip with one unrelated
