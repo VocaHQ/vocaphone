@@ -9,9 +9,11 @@ import Foundation
 /// own vocabulary, so every engine that has to shorten it cuts from the front
 /// and the user's own words are the last to go. Within each source the term
 /// its caller ranks first ends up last, so the cut takes a source's least
-/// important term first. The vocabulary and replacement targets
-/// (`WordReplacements.hintTargets`) are filled in; on-screen terms are where
-/// the text around the cursor will join them.
+/// important term first. All three are filled in: the vocabulary, replacement
+/// targets (`WordReplacements.hintTargets`) and, for a dictation started from
+/// the keyboard, the names and identifiers `ContextTerms` found around the
+/// cursor. The cursor's terms never decide whether a transducer uses hotword
+/// search; see `sherpaHotwords(for:vocabulary:replacementTargets:contextTerms:)`.
 ///
 /// What an engine keeps it writes most important first, which for the
 /// vocabulary alone is the order the user wrote it: the order the prompt has
@@ -250,5 +252,31 @@ enum RecognitionHints {
         if model.hotwordVocabularyFile != nil { return transducerHotwords(terms) }
         guard model.sherpaFamily == .qwen3Asr else { return nil }
         return qwen3Hotwords(terms)
+    }
+
+    /// The hotwords one dictation decodes with on `model`: the user's
+    /// `vocabulary` and `replacementTargets`, then the `contextTerms` from
+    /// around the cursor as the least important, cut first.
+    ///
+    /// The cursor's terms never put a transducer into hotword search. Whether
+    /// its recognizer is built for beam search is the user's lists' decision
+    /// alone, made before the field has been read: a warm-up asks for greedy
+    /// search, and a decode that then asked for beam search on context alone
+    /// would load the 660 MB model a second time. So with no list of the
+    /// user's a transducer gets none, and the cursor's terms reach it only
+    /// through `ContextTerms.correct`. Qwen3-ASR takes hotwords as a stream
+    /// option, so the cursor's terms alone are enough there.
+    static func sherpaHotwords(
+        for model: LocalModelDescriptor,
+        vocabulary: [String],
+        replacementTargets: [String],
+        contextTerms: [String]
+    ) -> String? {
+        let users = sherpaHotwords(
+            for: model, terms: terms(vocabulary: vocabulary, replacementTargets: replacementTargets)
+        )
+        if contextTerms.isEmpty || (model.hotwordVocabularyFile != nil && users == nil) { return users }
+        let all = terms(vocabulary: vocabulary, replacementTargets: replacementTargets, contextTerms: contextTerms)
+        return sherpaHotwords(for: model, terms: all)
     }
 }
