@@ -598,12 +598,18 @@ data class ModelPick(val role: ModelPickRole, val model: LocalModelDescriptor)
 /**
  * English models best first. Parakeet leads wherever the budget allows it.
  *
+ * Parakeet Unified is the 0.6B English model, in place of v2: the same download
+ * and memory, with fewer errors on every LibriSpeech set. See the note on it in
+ * `SherpaModelCatalog`. v2 needs exactly the memory Unified does, so it could
+ * never be the fallback here and is left out; it stays in the catalog for
+ * anyone who already has it.
+ *
  * The 110M Parakeet is the small English model: a fifth of the 0.6B's download,
- * about three times as fast on the same CPU, at 3.00 against 1.75 WER on
+ * about three times as fast on the same CPU, at 3.00 against 1.75 WER for v2 on
  * LibriSpeech test-clean. See the note on it in `SherpaModelCatalog`.
  */
 private val ENGLISH_PREFERENCE = listOf(
-    "parakeet-tdt-0.6b-v2-en",
+    "parakeet-unified-0.6b-en",
     "parakeet-tdt-ctc-110m-en",
 )
 
