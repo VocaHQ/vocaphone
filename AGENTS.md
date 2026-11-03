@@ -278,8 +278,8 @@ why (docs-only, Linux host, no submodule, …).
 
 | Change | Local | Workflow (path-filtered; drafts skipped until ready) |
 | --- | --- | --- |
-| `android/**`, `assets/keyboard/**` | `just android ci` | Quality (Android) — JDK 21, recursive submodules, Room schema, 16 KB alignment |
-| `ios/**`, `assets/keyboard/**` | `just ios ci` | Quality (iOS) — macOS, stale `xcodeproj`, preview isolation, unit tests |
+| `android/**`, `assets/keyboard/**`, `assets/speech/**` | `just android ci` | Quality (Android) — JDK 21, recursive submodules, Room schema, 16 KB alignment |
+| `ios/**`, `assets/keyboard/**`, `assets/speech/**` | `just ios ci` | Quality (iOS) — macOS, stale `xcodeproj`, preview isolation, unit tests |
 | WhisperKit or sherpa-onnx version, `ios/VocaPhoneApp/Models/**`, `Sherpa*`, transcript finishing | `just ios model-test` (downloads the pinned Whisper and Parakeet models) | Quality (iOS) runs it on those paths: real models on synthesized speech. Unit tests stub both engines, so only this catches a decoder regression |
 | `web/**` | `cd web && npm run check` | Quality (web); CodeQL (web) |
 | `assets/keyboard/**`, `tools/**` | `python3 tools/generate-emoji-catalog.py --check` | Quality (shared assets) |
