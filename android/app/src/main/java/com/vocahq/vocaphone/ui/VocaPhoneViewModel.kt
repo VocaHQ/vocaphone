@@ -779,6 +779,7 @@ class VocaPhoneViewModel @JvmOverloads constructor(
                                     language = intended.effectiveLanguage.wireValue,
                                     quality = intended.transcriptionQuality,
                                     translateTo = intended.translationTarget,
+                                    vocabulary = intended.whisperVocabulary,
                                 )
                             } catch (error: CancellationException) {
                                 throw error
