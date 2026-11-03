@@ -41,6 +41,7 @@ import Testing
 struct AccuracyBenchmarkTests {
     @Test func decodeEverySet() async throws {
         let configuration = try #require(AccuracyBenchmark.configuration)
+        #expect(!AccuracyBenchmark.englishWords.isEmpty, "assets/keyboard/en.txt not found")
         for set in configuration.sets {
             let clips = try AccuracyBenchmark.clips(in: set, limit: configuration.limit)
             guard let language = clips.first?.language else { continue }
@@ -223,6 +224,18 @@ enum AccuracyBenchmark {
         print("asr-bench: \(configuration.model) \(set).\(path): decoded \(decoded), \(done.count) already done")
     }
 
+    /// The shipped English word list, read from the repository. The test
+    /// bundle has no host app, so `EnglishWords` finds no `en.txt` in it and
+    /// would call every word unknown: correction would respell words the app
+    /// leaves alone, and the English gate would never open on Automatic.
+    static let englishWords: Set<String> = {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("assets/keyboard/en.txt")
+        let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+        return Set(text.split(whereSeparator: \.isNewline).map { $0.lowercased() })
+    }()
+
     /// As the app finishes an on-device dictation, with no replacements.
     static func finish(_ raw: String, language: String, vocabulary: [String], unsure: Set<String>?) -> String {
         DictatedTranscript.finished(
@@ -235,7 +248,8 @@ enum AccuracyBenchmark {
             snippets: [],
             vocabulary: vocabulary,
             replacements: [],
-            lowConfidenceWords: unsure
+            lowConfidenceWords: unsure,
+            isDictionaryWord: englishWords.contains
         )
     }
 
