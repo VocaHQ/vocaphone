@@ -242,6 +242,7 @@
 		6814AEDCC13C13D0A90306DA /* LocalModelFileRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6078E8DEF142AE1E8A034A5D /* LocalModelFileRemoval.swift */; };
 		682EBEBF72662BD9A3B4058E /* ModelDownloadStartDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4ABCA9AE680E3AD5604F718 /* ModelDownloadStartDecision.swift */; };
 		6832F9BDA9C31AEAEB043216 /* StreamingAudioBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58B1DE9315B3E2EDF796B58 /* StreamingAudioBridge.swift */; };
+		683E92BF568A6BAD2D3E6DEB /* WhisperDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D02BC7720453E34A121B9EFB /* WhisperDictation.swift */; };
 		68E7553DB227208E27DF3A8F /* KeyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5118F8CFAAE127CD5FF92076 /* KeyView.swift */; };
 		691A89B2BE59318033FABB00 /* GrammarOnnxBridge.c in Sources */ = {isa = PBXBuildFile; fileRef = 6268EA410B0D5143D7C2685E /* GrammarOnnxBridge.c */; };
 		6958D23CCF24469E74B4F899 /* en-pos.LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 3397B3B5BC1AF7084A5C00E8 /* en-pos.LICENSE */; };
@@ -2255,6 +2256,7 @@
 				602CD8CB5A40F80A23E5A4A9 /* UsageStatsTests.swift in Sources */,
 				EA85F08A81F26ABC84C78D30 /* VocabularyCorrection.swift in Sources */,
 				283D0FC1E6A9444CED9C89F4 /* VocabularyCorrectionTests.swift in Sources */,
+				683E92BF568A6BAD2D3E6DEB /* WhisperDictation.swift in Sources */,
 				59E52198C09A56312E0AA437 /* WhisperIncrementalSession.swift in Sources */,
 				85D8C00FF03940BD62FB7957 /* WhisperTranscription.swift in Sources */,
 				88C3AD0C8E4E5D7BC43CF951 /* WhisperTranscriptionTests.swift in Sources */,
