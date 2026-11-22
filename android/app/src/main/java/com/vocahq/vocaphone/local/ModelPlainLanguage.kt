@@ -101,7 +101,7 @@ data class ModelPlainLanguage(
             ),
             "oruk-fourier-2b" to ModelPlainLanguage(
                 "English dictation on this device",
-                "A large English model for local dictation. Oruk permits dictating work documents in VocaPhone.",
+                "A large English model for local dictation. Oruk permits dictating work documents in vocaphone.",
                 accuracy = UNRATED, speed = UNRATED,
             ),
             "canary-180m-flash" to ModelPlainLanguage(

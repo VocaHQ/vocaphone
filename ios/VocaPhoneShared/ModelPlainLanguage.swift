@@ -88,7 +88,7 @@ struct ModelPlainLanguage: Sendable, Equatable {
         ),
         "oruk-fourier-2b": .init(
             title: "English dictation on this device",
-            summary: "A large English model for local dictation. Oruk permits dictating work documents in VocaPhone.",
+            summary: "A large English model for local dictation. Oruk permits dictating work documents in vocaphone.",
             accuracy: unrated, speed: unrated
         ),
         "canary-180m-flash": .init(
