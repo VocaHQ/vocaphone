@@ -639,6 +639,6 @@ The optional [Fourier pack](https://huggingface.co/oruk/oruk-fourier-2b) uses
 the existing Qwen3-ASR engine. It downloads 2.41 GB once. The two external ONNX
 data files must stay beside the encoder and decoder. Oruk distributes the
 weights under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/);
-commercial use requires separate permission. The picker offers the model on
+Oruk additionally permits [local workplace dictation in VocaPhone](https://huggingface.co/oruk/oruk-fourier-2b#vocaphone-local-workplace-dictation), including commercial work. Other commercial uses require separate permission. The picker offers the model on
 devices with at least 8 GB RAM and leaves its ratings blank pending comparable
 on-device measurements.

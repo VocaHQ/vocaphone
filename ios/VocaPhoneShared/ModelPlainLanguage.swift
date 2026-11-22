@@ -87,8 +87,8 @@ struct ModelPlainLanguage: Sendable, Equatable {
             accuracy: 3, speed: 1
         ),
         "oruk-fourier-2b": .init(
-            title: "English for personal use",
-            summary: "Transcribes English on your device. Oruk licenses this large download for noncommercial use (CC BY-NC 4.0).",
+            title: "English dictation on this device",
+            summary: "A large English model for local dictation. Oruk permits dictating work documents in VocaPhone.",
             accuracy: unrated, speed: unrated
         ),
         "canary-180m-flash": .init(

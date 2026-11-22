@@ -100,8 +100,8 @@ data class ModelPlainLanguage(
                 accuracy = 3, speed = 1,
             ),
             "oruk-fourier-2b" to ModelPlainLanguage(
-                "English for personal use",
-                "Transcribes English on your device. Oruk licenses this large download for noncommercial use (CC BY-NC 4.0).",
+                "English dictation on this device",
+                "A large English model for local dictation. Oruk permits dictating work documents in VocaPhone.",
                 accuracy = UNRATED, speed = UNRATED,
             ),
             "canary-180m-flash" to ModelPlainLanguage(

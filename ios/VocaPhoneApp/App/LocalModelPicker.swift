@@ -889,6 +889,12 @@ struct LocalModelPicker: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if state == .notDownloaded, model.id == "oruk-fourier-2b",
+                       let url = URL(string: "https://huggingface.co/oruk/oruk-fourier-2b#vocaphone-local-workplace-dictation") {
+                        Link("Oruk license and workplace permission", destination: url)
+                            .font(.footnote)
+                            .buttonStyle(.borderless)
+                    }
                     ModelRatingsView(plain: model.plain)
                     Text(model.technicalName)
                         .font(.caption)
