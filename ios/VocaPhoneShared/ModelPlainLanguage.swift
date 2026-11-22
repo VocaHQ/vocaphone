@@ -25,6 +25,7 @@ struct ModelPlainLanguage: Sendable, Equatable {
     let speed: Int
 
     static let maximumRating = 4
+    static let unrated = 0
 
     /// Every catalog id. `ModelPlainLanguageTests` fails when a model is added
     /// without an entry, so a new row cannot reach the picker unexplained.
@@ -84,6 +85,11 @@ struct ModelPlainLanguage: Sendable, Equatable {
             summary: "One model for 30 languages and many Chinese dialects, and tells them apart "
                 + "by itself. Slower, and a large download.",
             accuracy: 3, speed: 1
+        ),
+        "oruk-fourier-2b": .init(
+            title: "English for personal use",
+            summary: "Transcribes English on your device. Oruk licenses this large download for noncommercial use (CC BY-NC 4.0).",
+            accuracy: unrated, speed: unrated
         ),
         "canary-180m-flash": .init(
             title: "English, German, Spanish, French",

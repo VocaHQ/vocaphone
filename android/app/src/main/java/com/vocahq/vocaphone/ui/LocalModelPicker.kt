@@ -1362,6 +1362,7 @@ private fun RetiredModelNotice(
  */
 @Composable
 internal fun ModelRatings(plain: ModelPlainLanguage) {
+    if (plain.accuracy == ModelPlainLanguage.UNRATED || plain.speed == ModelPlainLanguage.UNRATED) return
     Row(
         modifier = Modifier.clearAndSetSemantics {
             contentDescription = plain.accessibilityRatings

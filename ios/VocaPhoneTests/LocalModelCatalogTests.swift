@@ -16,9 +16,19 @@ struct LocalModelCatalogTests {
         #expect(!LocalModelCatalog.accuracyRanking(for: "hi").contains(model.id))
     }
 
+    @Test func fourierUsesItsPinnedEnglishPack() throws {
+        let model = try #require(LocalModelCatalog.descriptor(for: "oruk-fourier-2b"))
+        #expect(model.englishOnly && model.maker == .oruk)
+        #expect(model.translationTargets.isEmpty)
+        let pins = try LocalModelIntegrity.sherpaModel(for: model.id)
+        #expect(pins.pathPrefix == "onnx/sherpa-int8")
+        #expect(pins.files.count == 10)
+        #expect(pins.files.contains { $0.path == "decoder.int8.onnx.data" })
+    }
+
     @Test func sherpaModelsAreAvailableAlongsideWhisperKit() {
         let sherpa = LocalModelCatalog.all.filter { $0.engine == .sherpaOnnx }
-        #expect(sherpa.count == 12)
+        #expect(sherpa.count == 13)
         #expect(sherpa.allSatisfy { $0.repository != nil && $0.revision != nil })
         #expect(sherpa.allSatisfy { $0.sherpaFamily != nil })
     }
