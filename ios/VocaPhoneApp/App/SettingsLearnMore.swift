@@ -303,7 +303,33 @@ enum SettingsHelp {
                     + "not even to your gateway. Writing check, when it is on, stays on "
                     + "this iPhone too: see its own section.",
                 "Nothing is suggested in password, passcode or one-time-code fields, "
-                    + "and nothing is learned from them.",
+                    + "and nothing is learned from them. Swipe to type and Dictate "
+                    + "are off there too. A field that turns autocorrection off, "
+                    + "such as many username and search boxes, gets no suggestions "
+                    + "or corrections either, as with the iPhone keyboard.",
+                "Autocorrect strength decides how sure the keyboard must be before "
+                    + "space replaces a word. Mild fixes only clear slips in longer "
+                    + "words; Normal is the default; Aggressive also fixes a typo when "
+                    + "the likelier word only just wins. Your text replacements and "
+                    + "the fixes the keyboard has learned from you apply at every "
+                    + "strength.",
+                "Hold a suggested word to stop it being suggested, or corrected to, "
+                    + "again. With VoiceOver, use the “Don’t suggest this word” "
+                    + "action. Reset blocked words, below, brings them all back.",
+                "Your snippets (Settings › Snippets) work while typing too, the "
+                    + "way an iPhone text replacement does: type a one-word trigger "
+                    + "and its text is offered first and goes in on space. Tap the "
+                    + "word in quotes, or Delete, to keep what you typed.",
+                "Type a sum ending in “=”, such as 12*4= or 1,200/3=, and the answer "
+                    + "is offered as a suggestion. Plain arithmetic only: no units "
+                    + "or currencies.",
+                "Shift changes selected text\u{2019}s case is off unless you turn it "
+                    + "on, because the iPhone keyboard never does it: with it off, Shift "
+                    + "over a selection is just Shift. With it on, each tap of Shift over "
+                    + "selected text goes Sentence case, CAPITALS, lowercase, then back "
+                    + "to how it was. It works on one line of up to 200 characters, and "
+                    + "never in web address, search or email fields, so a selection the "
+                    + "keyboard cannot see all of is never rewritten.",
             ]),
             .init(heading: "Learn as I type", paragraphs: [
                 "Words you type three times without undoing a correction, and words "
@@ -316,8 +342,19 @@ enum SettingsHelp {
             .init(heading: "Height", paragraphs: [
                 "Landscape keeps its own compact layout, because a landscape phone "
                     + "has no height to spare whichever size you pick.",
+                "Number row puts the digits above the letters, as many Android "
+                    + "keyboards do. The keyboard grows by one row, and the numbers "
+                    + "and symbols keep that height so it does not jump when you tap 123.",
+                "One-handed keyboard pushes the keys toward your left or right thumb, "
+                    + "like the iPhone keyboard's own. It applies with the iPhone upright; "
+                    + "tap the chevron in the space beside the keys, or choose it again "
+                    + "from More, to go back to full width.",
             ]),
             .init(heading: "More typing options", paragraphs: [
+                "Auto-capitalization turns Shift on at the start of a sentence. "
+                    + "Tap Shift to overrule it for the next letter. A field that "
+                    + "asks for no capitals, such as a username, never gets them, "
+                    + "and one that asks for all capitals still does with this off.",
                 "Smart punctuation curls quotes, turns two hyphens into an em dash "
                     + "and three dots into an ellipsis — except where the field asks "
                     + "it not to, such as a code or address field.",
@@ -333,10 +370,51 @@ enum SettingsHelp {
                     + "keyboard no way to reach the Taptic Engine, and the switch does "
                     + "nothing. Keyboard clicks are unaffected.",
                 "Swipe to type is on by default. Slide from letter to letter "
-                    + "without lifting; alternatives appear in the suggestion row.",
+                    + "without lifting; alternatives appear in the suggestion row. "
+                    + "Swiping works on the English keyboard only: the other "
+                    + "languages have no word list to match a swipe against yet, "
+                    + "so on them a slide types nothing rather than an English word.",
+                "Tap Shift with text selected to change its case: Sentence case, "
+                    + "then ALL CAPS, then lower case, then back to how it was. Keep "
+                    + "tapping to go round.",
                 "Space bar cursor: hold the space bar, then slide to move the cursor. "
                     + "With two keyboard languages, a swipe across it switches "
                     + "language instead.",
+            ]),
+        ]
+    )
+
+    static let clipboard = LearnMoreTopic(
+        title: "About clipboard history",
+        parts: [
+            .init(heading: "What it keeps", paragraphs: [
+                "With Clipboard history on, the keyboard keeps the last 30 pieces of "
+                    + "text you copied, each up to 2,000 characters, for as long as you "
+                    + "choose: an hour, a day or a week. Pinned clips stay until you "
+                    + "unpin them or clear the history.",
+                "Open it with the clipboard button beside Paste, or from More. Tap a "
+                    + "clip to type it, swipe it away to delete it, and use Clear to "
+                    + "remove everything not pinned.",
+            ]),
+            .init(heading: "When it reads the clipboard", paragraphs: [
+                "Never in the background and never on a timer. The keyboard looks at "
+                    + "the clipboard only when you open the history or tap Paste, and "
+                    + "keeps what you cut or copy from its own edit row. Opening the "
+                    + "history can make iOS ask whether vocaphone may paste; that is "
+                    + "iOS asking on your behalf, as it does for any paste.",
+                "Nothing is read or kept in password, one-time-code or card number "
+                    + "fields, nor anything that was on the clipboard while one of them "
+                    + "had the keyboard. Copies a password manager marks as secret or "
+                    + "temporary are skipped.",
+            ]),
+            .init(heading: "Where it lives", paragraphs: [
+                "On this iPhone only, in storage shared by vocaphone and its keyboard. "
+                    + "It is never synced, never backed up, never sent anywhere and "
+                    + "never in a diagnostics export. Expired clips are deleted when "
+                    + "the keyboard next appears or vocaphone opens. Turning the switch "
+                    + "off, or Clear clipboard history, deletes all of it, and so does "
+                    + "turning Full Access off, once the keyboard has run without it.",
+                "It needs Full Access, as every clipboard feature of a keyboard does.",
             ]),
         ]
     )

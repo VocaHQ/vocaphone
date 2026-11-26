@@ -128,34 +128,78 @@ enum SmartPunctuation {
 /// guards on the same `nil` and says so in its own comment. This is the one
 /// place that did not.
 enum AutomaticShift {
+    /// What the keyboard knows about the moment it is deciding in.
+    struct Context {
+        /// The user's Auto-capitalization switch. Off means Shift only ever
+        /// comes on by hand.
+        var isEnabled = true
+        /// The keyboard has just arrived in this field and nothing has been
+        /// typed yet, so "leave it as it is" has nothing worth keeping: the
+        /// state on screen belongs to the previous field, or to no field.
+        var isArrival = false
+        /// `UIKeyInput.hasText`. Read only on arrival, to tell a field that is
+        /// empty from a host that has not answered: both hand back `nil`.
+        var documentHasText = true
+        /// Text after the cursor, when the host gave any.
+        var documentAfter: String?
+        /// The lock in force was set for a field that asked for capitals, not
+        /// by a double tap, so it does not outlive that field.
+        var lockIsAutomatic = false
+    }
+
     /// The state to move to, or `nil` to leave the shift key exactly as it is.
     static func state(
         documentBefore: String?,
         autocapitalization: UITextAutocapitalizationType,
-        current: ShiftState
+        current: ShiftState,
+        context: Context = Context()
     ) -> ShiftState? {
         // The field wants everything capitalised, which it can say without the
-        // keyboard knowing a thing about the document.
+        // keyboard knowing a thing about the document. This is the field's
+        // requirement rather than a typing aid, so the switch does not apply.
         if autocapitalization == .allCharacters { return .locked }
-        // A user-engaged caps lock outranks any automatic decision.
-        guard current != .locked else { return nil }
-        // The host did not answer. Not an empty document — no information at
-        // all — so the last decision, which was made from a context the host
-        // *did* answer, stands.
-        guard let documentBefore else { return nil }
+        // A user-engaged caps lock outranks any automatic decision. One the
+        // last field asked for does not: it would follow the user into every
+        // field after it.
+        let userLocked = current == .locked && !context.lockIsAutomatic
+        guard !userLocked else { return nil }
+        guard context.isEnabled else { return .off }
+
+        guard let before = resolvedBefore(documentBefore, context: context) else {
+            // The host did not answer. Mid-typing that is no information at
+            // all, so the last decision — made from a context the host *did*
+            // answer — stands. On arrival there is no last decision, and a
+            // capital nobody asked for is worse than a lowercase letter at
+            // what may have been the start of a sentence.
+            if context.isArrival || current == .locked { return .off }
+            return nil
+        }
 
         switch autocapitalization {
         case .none:
             return .off
         case .words:
-            return documentBefore.isEmpty || documentBefore.last?.isWhitespace == true
+            return before.isEmpty || before.last?.isWhitespace == true
                 ? .on
                 : .off
         default:
             // "e.g. ", "Mr. " and "3. " all end in a full stop and none of them
             // ends a sentence. See `SentenceBoundary`.
-            return SentenceBoundary.endsSentence(documentBefore) ? .on : .off
+            return SentenceBoundary.endsSentence(before) ? .on : .off
         }
+    }
+
+    /// The text before the cursor, with the two cases where `nil` can be read
+    /// as "nothing there" filled in.
+    private static func resolvedBefore(_ before: String?, context: Context) -> String? {
+        if let before { return before }
+        guard context.isArrival else { return nil }
+        // Text after the cursor and none before it: the start of the document.
+        if context.documentAfter != nil { return "" }
+        // No text anywhere is an empty field. This is only trusted on arrival:
+        // mid-typing, a proxy that has stopped answering reports no text too,
+        // and believing it is what once capitalised the middle of sentences.
+        return context.documentHasText ? nil : ""
     }
 }
 
@@ -169,8 +213,10 @@ enum SentenceBoundary {
     static let abbreviations: Set<String> = [
         "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st",
         "e.g", "i.e", "etc", "vs", "approx", "dept", "est",
-        "fig", "no", "vol", "p", "pp", "al", "inc", "ltd", "co",
+        "fig", "vol", "p", "pp", "al", "inc", "ltd", "co",
     ]
+    // Not "no": "I said no. We" is far commoner than "No. 5", and a sentence
+    // that does not get its capital is the worse mistake.
 
     /// Whether the text before the cursor genuinely ends a sentence.
     static func endsSentence(_ before: String) -> Bool {
@@ -187,10 +233,14 @@ enum SentenceBoundary {
         let token = String(beforeStop.reversed().prefix { !$0.isWhitespace }.reversed())
         guard !token.isEmpty else { return true }
 
-        // A numbered or lettered list item: "3. " and "a. " start an item, not a
-        // sentence — though the item itself is usually capitalized anyway, so
-        // this only avoids forcing it.
-        if token.allSatisfy({ $0.isNumber }) { return false }
+        // A numbered list item: "3. " at the start of its line starts an item,
+        // not a sentence — though the item itself is usually capitalized
+        // anyway, so this only avoids forcing it. Anywhere else a number is
+        // the end of a sentence like any word: "I'm 25. My".
+        if token.allSatisfy({ $0.isNumber }) {
+            let line = beforeStop.dropLast(token.count).reversed().prefix { !$0.isNewline }
+            return !line.allSatisfy(\.isWhitespace)
+        }
         return !abbreviations.contains(token.lowercased())
     }
 }

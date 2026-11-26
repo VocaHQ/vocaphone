@@ -186,6 +186,10 @@ struct KeyboardSettingsView: View {
         store: KeyboardPreferences.defaults
     ) private var autocorrectEnabled = KeyboardDefaults.autocorrect
     @AppStorage(
+        KeyboardPreferences.autocorrectStrengthKey,
+        store: KeyboardPreferences.defaults
+    ) private var autocorrectStrengthRawValue = KeyboardDefaults.autocorrectStrength.rawValue
+    @AppStorage(
         KeyboardPreferences.nextWordPredictionKey,
         store: KeyboardPreferences.defaults
     ) private var predictionEnabled = KeyboardDefaults.nextWordPrediction
@@ -206,6 +210,10 @@ struct KeyboardSettingsView: View {
         store: KeyboardPreferences.defaults
     ) private var smartPunctuationEnabled = KeyboardDefaults.smartPunctuation
     @AppStorage(
+        KeyboardPreferences.autoCapitalizationKey,
+        store: KeyboardPreferences.defaults
+    ) private var autoCapitalizationEnabled = KeyboardDefaults.autoCapitalization
+    @AppStorage(
         KeyboardPreferences.typingHapticsKey,
         store: KeyboardPreferences.defaults
     ) private var typingHapticsEnabled = KeyboardDefaults.typingHaptics
@@ -221,6 +229,27 @@ struct KeyboardSettingsView: View {
         KeyboardPreferences.spacebarCursorKey,
         store: KeyboardPreferences.defaults
     ) private var spacebarCursorEnabled = KeyboardDefaults.spacebarCursor
+    @AppStorage(
+        KeyboardPreferences.shiftChangesSelectionCaseKey,
+        store: KeyboardPreferences.defaults
+    ) private var shiftChangesSelectionCase = KeyboardDefaults.shiftChangesSelectionCase
+    @AppStorage(
+        KeyboardPreferences.numberRowKey,
+        store: KeyboardPreferences.defaults
+    ) private var numberRowEnabled = KeyboardDefaults.numberRow
+    @AppStorage(
+        KeyboardPreferences.oneHandedKeyboardKey,
+        store: KeyboardPreferences.defaults
+    ) private var oneHandedRawValue = KeyboardDefaults.oneHandedKeyboard.rawValue
+    @AppStorage(
+        KeyboardPreferences.clipboardHistoryKey,
+        store: KeyboardPreferences.defaults
+    ) private var clipboardHistoryEnabled = KeyboardDefaults.clipboardHistory
+    @AppStorage(
+        KeyboardPreferences.clipboardRetentionKey,
+        store: KeyboardPreferences.defaults
+    ) private var clipboardRetentionRawValue = KeyboardDefaults.clipboardRetention.rawValue
+    @State private var isConfirmingClipboardClear = false
 
     /// Held rather than read straight from ``KeyboardPreferences`` on every
     /// redraw: the list has to keep its order, and the order is the order the
@@ -234,10 +263,16 @@ struct KeyboardSettingsView: View {
     @State private var learnedStore = LearnedWordStore()
     @State private var learnedCount = 0
     @State private var isConfirmingLearnedReset = false
+    @State private var blockedCount = 0
+    @State private var isConfirmingBlockedReset = false
     @State private var learnMore: LearnMoreTopic?
 
     private var selected: KeyboardHeightPreference {
         KeyboardHeightPreference(rawValue: keyboardHeightRawValue) ?? .standard
+    }
+
+    private var autocorrectStrength: AutocorrectStrength {
+        AutocorrectStrength(rawValue: autocorrectStrengthRawValue) ?? KeyboardDefaults.autocorrectStrength
     }
 
     var body: some View {
@@ -245,6 +280,7 @@ struct KeyboardSettingsView: View {
             previewSection
             languagesSection
             heightSection
+            layoutSection
             feedbackSection
             suggestionsSection
             WritingCheckSettingsSection(
@@ -255,6 +291,7 @@ struct KeyboardSettingsView: View {
             )
             learningSection
             typingDetailSection
+            clipboardSection
         }
         .navigationTitle("Keyboard")
         .navigationBarTitleDisplayMode(.inline)
@@ -271,6 +308,7 @@ struct KeyboardSettingsView: View {
             // Words and typo fixes alike: Reset forgets both.
             let learned = learnedStore.snapshot()
             learnedCount = learned.count + learned.learnedFixCount
+            blockedCount = learned.blockedCount
         }
         .confirmationDialog(
             "Forget \(learnedCount) learned word\(learnedCount == 1 ? "" : "s")?",
@@ -288,12 +326,44 @@ struct KeyboardSettingsView: View {
                     + "learns them a second time. Nothing else is affected."
             )
         }
+        // A second dialog on the List rather than the row, for the reason the
+        // sheets above give.
+        .confirmationDialog(
+            "Suggest \(blockedCount) blocked word\(blockedCount == 1 ? "" : "s") again?",
+            isPresented: $isConfirmingBlockedReset,
+            titleVisibility: .visible
+        ) {
+            Button("Unblock them", role: .destructive) {
+                learnedStore.removeAllBlocked()
+                blockedCount = 0
+            }
+            Button("Keep blocked", role: .cancel) {}
+        } message: {
+            Text("Words you held in the suggestion row can be suggested and corrected to again.")
+        }
+        // On the List, like the dialog above, so re-rendering the section
+        // cannot take it down with it.
+        .confirmationDialog(
+            "Clear clipboard history?",
+            isPresented: $isConfirmingClipboardClear,
+            titleVisibility: .visible
+        ) {
+            Button("Clear", role: .destructive) { ClipboardHistoryStore.shared.removeAll() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes every clip the keyboard kept, pinned ones too.")
+        }
     }
 
     /// The real keyboard, at the chosen height, redrawing as the switches move.
     private var previewSection: some View {
         Section {
-            KeyboardPreview(preference: selected, showsSuggestions: suggestionsEnabled)
+            KeyboardPreview(
+                preference: selected,
+                showsSuggestions: suggestionsEnabled,
+                numberRow: numberRowEnabled,
+                oneHanded: OneHandedKeyboard(rawValue: oneHandedRawValue) ?? .off
+            )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
         }
@@ -372,6 +442,53 @@ struct KeyboardSettingsView: View {
         }
     }
 
+    /// The shape of the keys: a number row, and Apple's one-handed keyboard.
+    private var layoutSection: some View {
+        Section {
+            Toggle(isOn: $numberRowEnabled) {
+                SettingLabel("Number row", detail: "Digits above the letters. The keyboard gets a row taller.")
+            }
+            Picker(selection: $oneHandedRawValue) {
+                ForEach(OneHandedKeyboard.allCases) { side in
+                    Text(side.displayName).tag(side.rawValue)
+                }
+            } label: {
+                SettingLabel("One-handed keyboard", detail: "Keys toward one thumb, iPhone upright.")
+            }
+        } footer: {
+            Text("Switch one-handed from More on the keyboard too. Tap the chevron beside the keys "
+                + "to go back to full width.")
+        }
+    }
+
+    /// Recent clips, kept only when asked for.
+    private var clipboardSection: some View {
+        Section {
+            Toggle(isOn: $clipboardHistoryEnabled) {
+                SettingLabel("Clipboard history", detail: "Recent text you copy, beside Paste and in More.")
+            }
+            .onChange(of: clipboardHistoryEnabled) { _, enabled in
+                // Off means nothing kept, pins included.
+                if !enabled { ClipboardHistoryStore.shared.removeAll() }
+            }
+            Picker("Keep clips for", selection: $clipboardRetentionRawValue) {
+                ForEach(ClipboardRetention.allCases) { retention in
+                    Text(retention.displayName).tag(retention.rawValue)
+                }
+            }
+            .disabled(!clipboardHistoryEnabled)
+            Button("Clear clipboard history", role: .destructive) {
+                isConfirmingClipboardClear = true
+            }
+        } header: {
+            LearnMoreHeader(title: "Clipboard", topic: SettingsHelp.clipboard, presented: $learnMore)
+        } footer: {
+            Text("Needs Full Access. Kept only on this iPhone: never synced or backed up. Passwords "
+                + "and anything a password manager marks secret are skipped. Pinned clips stay "
+                + "until you unpin or clear them.")
+        }
+    }
+
     /// Its own section, near the top, under the name iOS gives the same switch
     /// in Settings → General → Keyboard → Keyboard Feedback. Filed as the third
     /// row of "More" it was a switch a tester looked for and did not find.
@@ -397,6 +514,14 @@ struct KeyboardSettingsView: View {
             }
             Toggle("Autocorrect", isOn: $autocorrectEnabled)
                 .disabled(!suggestionsEnabled)
+            Picker(selection: $autocorrectStrengthRawValue) {
+                ForEach(AutocorrectStrength.allCases) { strength in
+                    Text(strength.displayName).tag(strength.rawValue)
+                }
+            } label: {
+                SettingLabel("Autocorrect strength", detail: autocorrectStrength.detail)
+            }
+            .disabled(!suggestionsEnabled || !autocorrectEnabled)
             Toggle("Predict the next word", isOn: $predictionEnabled)
                 .disabled(!suggestionsEnabled)
             Toggle(isOn: $suggestSwearWords) {
@@ -426,6 +551,12 @@ struct KeyboardSettingsView: View {
                 LabeledContent("Reset learned words", value: "\(learnedCount)")
             }
             .disabled(learnedCount == 0)
+            Button(role: .destructive) {
+                isConfirmingBlockedReset = true
+            } label: {
+                LabeledContent("Reset blocked words", value: "\(blockedCount)")
+            }
+            .disabled(blockedCount == 0)
         } footer: {
             if !learnedStore.isPersistent {
                 Text("Full Access is off, so learned words last only until the keyboard closes.")
@@ -436,6 +567,9 @@ struct KeyboardSettingsView: View {
 
     private var typingDetailSection: some View {
         Section {
+            Toggle(isOn: $autoCapitalizationEnabled) {
+                SettingLabel("Auto-capitalization", detail: "A capital at the start of a sentence.")
+            }
             Toggle(isOn: $smartPunctuationEnabled) {
                 SettingLabel("Smart punctuation", detail: "Curly quotes, — and ….")
             }
@@ -443,13 +577,19 @@ struct KeyboardSettingsView: View {
                 SettingLabel("Emoji suggestions", detail: "“happy” offers 😊.")
             }
             Toggle(isOn: $swipeTypingEnabled) {
-                SettingLabel("Swipe to type", detail: "Slide from letter to letter.")
+                SettingLabel("Swipe to type", detail: "Slide from letter to letter. English only.")
             }
             Toggle(isOn: $quickAccentsEnabled) {
                 SettingLabel("Quick accents", detail: "Hold a letter to type its main accent: e gives é.")
             }
             Toggle(isOn: $spacebarCursorEnabled) {
                 SettingLabel("Space bar cursor", detail: spaceBarHelp)
+            }
+            Toggle(isOn: $shiftChangesSelectionCase) {
+                SettingLabel(
+                    "Shift changes selected text\u{2019}s case",
+                    detail: "Select a few words and tap Shift: Sentence case, CAPITALS, lowercase."
+                )
             }
         } header: {
             LearnMoreHeader(title: "More", topic: SettingsHelp.typing, presented: $learnMore)
@@ -1575,7 +1715,11 @@ struct SnippetsSettingsView: View {
                     }
                     .onDelete(perform: delete)
                 } footer: {
-                    Text("Say a trigger while dictating and it is replaced by its text. Case does not matter.")
+                    Text(
+                        "Say a trigger while dictating and it is replaced by its text. Case does not "
+                            + "matter. On the vocaphone keyboard, a one-word trigger typed in full is "
+                            + "offered as a suggestion and goes in on space."
+                    )
                 }
             }
         }

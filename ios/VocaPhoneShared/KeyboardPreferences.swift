@@ -47,6 +47,8 @@ enum KeyboardDefaults {
     /// every typo stayed in the text.
     static let typingSuggestions = true
     static let autocorrect = true
+    /// The thresholds autocorrect used before there was a choice.
+    static let autocorrectStrength = AutocorrectStrength.normal
     static let nextWordPrediction = true
     static let learnAsIType = true
     /// Off, as on Apple's keyboard and for the App Store's 4+ rating. Slurs are
@@ -56,12 +58,27 @@ enum KeyboardDefaults {
     /// letter, which changes what a still hold types.
     static let quickAccents = false
     static let smartPunctuation = true
+    /// On, like the system keyboard.
+    static let autoCapitalization = true
     static let emojiSuggestions = true
     /// Off, like the system keyboard's own Haptic switch, which iOS ships off.
     /// A keyboard cannot read that switch, so it matches its default instead.
     static let typingHaptics = false
     static let swipeTyping = true
+    /// Off: Apple's iPhone keyboard has no number row, and a fifth row is
+    /// height taken from the app being typed into.
+    static let numberRow = false
+    /// Full width, as Apple's keyboard starts.
+    static let oneHandedKeyboard = OneHandedKeyboard.off
+    /// Off: keeping what was copied is keeping things people copied, and that
+    /// is asked for, never assumed.
+    static let clipboardHistory = false
+    static let clipboardRetention = ClipboardRetention.day
     static let spacebarCursor = true
+    /// Off: Apple's keyboard never changes a selection's case from Shift, and
+    /// someone who selects a word, taps Shift and types a capital expects the
+    /// capital — not their selection rewritten.
+    static let shiftChangesSelectionCase = false
     static let numbersAsDigits = true
     static let spokenEmoji = true
     static let repairSpeech = true
@@ -367,6 +384,82 @@ enum MicrophonePreference: String, Codable, CaseIterable, Identifiable, Sendable
 /// Landscape is deliberately not derived from this. A compact-height phone has
 /// almost no room to give away, and multiplying an already-tight layout by
 /// `.tall` would cover the field being typed into.
+/// How readily the keyboard replaces a word it does not recognise when space
+/// is pressed. A picker rather than a slider: three settings somebody can
+/// tell apart beat a continuum nobody can.
+///
+/// The thresholds themselves live with the rule they tune, in the keyboard
+/// (`AutocorrectStrength.maximumEdits` and its neighbours). ``normal`` is the
+/// keyboard as it behaved before this setting existed.
+enum AutocorrectStrength: String, CaseIterable, Identifiable, Sendable {
+    case mild
+    case normal
+    case aggressive
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .mild: "Mild"
+        case .normal: "Normal"
+        case .aggressive: "Aggressive"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .mild: "Only clear slips, in words of four letters or more."
+        case .normal: "Fixes a typo when one word is the obvious reading."
+        case .aggressive: "Also fixes a typo when the likelier word only just wins."
+        }
+    }
+}
+
+/// Apple's one-handed keyboard: the keys pushed toward one thumb, with a
+/// chevron in the space left over that puts them back. iPhone portrait only;
+/// landscape and iPad ignore it, as Apple's does.
+enum OneHandedKeyboard: String, CaseIterable, Identifiable, Sendable {
+    case off
+    case left
+    case right
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: "Off"
+        case .left: "Left"
+        case .right: "Right"
+        }
+    }
+}
+
+/// How long a copied clip stays in the keyboard's clipboard history. Pinned
+/// clips stay until they are unpinned or cleared.
+enum ClipboardRetention: String, CaseIterable, Identifiable, Sendable {
+    case hour
+    case day
+    case week
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .hour: "1 Hour"
+        case .day: "1 Day"
+        case .week: "1 Week"
+        }
+    }
+
+    var interval: TimeInterval {
+        switch self {
+        case .hour: 60 * 60
+        case .day: 24 * 60 * 60
+        case .week: 7 * 24 * 60 * 60
+        }
+    }
+}
+
 enum KeyboardHeightPreference: String, CaseIterable, Codable, Identifiable, Sendable {
     case compact
     case standard
@@ -555,6 +648,7 @@ enum KeyboardPreferences {
     static let suggestSwearWordsKey = "suggestSwearWords"
     static let quickAccentsKey = "quickAccentsEnabled"
     static let smartPunctuationKey = "smartPunctuationEnabled"
+    static let autoCapitalizationKey = "autoCapitalizationEnabled"
     static let emojiSuggestionsKey = "emojiSuggestionsEnabled"
     /// Custom tactile feedback for committed typing. Input clicks are governed
     /// by iOS's Keyboard Clicks setting and deliberately do not share this
@@ -572,12 +666,18 @@ enum KeyboardPreferences {
     /// Kept only so ``removeRetiredEmojiRecents()`` has a name to clear.
     static let retiredEmojiRecentsKey = "recentEmoji"
     static let swipeTypingKey = "swipeTypingEnabled"
+    static let autocorrectStrengthKey = "autocorrectStrength"
     static let numberRowKey = "numberRowEnabled"
+    static let oneHandedKeyboardKey = "oneHandedKeyboard"
+    static let clipboardHistoryKey = "clipboardHistoryEnabled"
+    static let clipboardRetentionKey = "clipboardRetention"
     /// Debug-only touch and frame instrumentation. Kept off unless a developer
     /// explicitly arms it in the keyboard lab.
     static let touchTraceKey = "touchTraceEnabled"
     /// Holding or sliding the spacebar to move the cursor.
     static let spacebarCursorKey = "spacebarCursorEnabled"
+    /// Shift over a selection cycles its case (``CaseCycle``).
+    static let shiftChangesSelectionCaseKey = "shiftChangesSelectionCase"
     /// The compact dictation row: More, Start, and the dashboard behind More.
     /// On by default. The lab switch is an off-ramp, not the way it ships; the
     /// key keeps its lab name so a switch someone already flipped still counts.
@@ -782,6 +882,16 @@ enum KeyboardPreferences {
 
     static var autocorrectIsActive: Bool { typingSuggestionsEnabled && autocorrectEnabled }
 
+    /// Read with the rest of a keystroke's context, so a change in Settings
+    /// reaches the next word without the keyboard being reloaded.
+    static var autocorrectStrength: AutocorrectStrength {
+        get {
+            defaults?.string(forKey: autocorrectStrengthKey)
+                .flatMap(AutocorrectStrength.init(rawValue:)) ?? KeyboardDefaults.autocorrectStrength
+        }
+        set { defaults?.set(newValue.rawValue, forKey: autocorrectStrengthKey) }
+    }
+
     static var nextWordPredictionEnabled: Bool {
         get { boolean(nextWordPredictionKey, default: KeyboardDefaults.nextWordPrediction) }
         set { defaults?.set(newValue, forKey: nextWordPredictionKey) }
@@ -810,6 +920,13 @@ enum KeyboardPreferences {
     static var smartPunctuationEnabled: Bool {
         get { boolean(smartPunctuationKey, default: KeyboardDefaults.smartPunctuation) }
         set { defaults?.set(newValue, forKey: smartPunctuationKey) }
+    }
+
+    /// Shift turning itself on at the start of a sentence. A field that asks
+    /// for no capitals, or for all of them, is obeyed either way.
+    static var autoCapitalizationEnabled: Bool {
+        get { boolean(autoCapitalizationKey, default: KeyboardDefaults.autoCapitalization) }
+        set { defaults?.set(newValue, forKey: autoCapitalizationKey) }
     }
 
     /// An emoji offered beside the word candidates while typing — "lol" offers
@@ -859,9 +976,35 @@ enum KeyboardPreferences {
         set { defaults?.set(newValue, forKey: swipeTypingKey) }
     }
 
+    /// Digits above the letters on the letters plane. Off by default, as on
+    /// Apple's keyboard, which has none; on, the keyboard is one row taller.
     static var numberRowEnabled: Bool {
-        get { boolean(numberRowKey, default: false) }
+        get { boolean(numberRowKey, default: KeyboardDefaults.numberRow) }
         set { defaults?.set(newValue, forKey: numberRowKey) }
+    }
+
+    /// Which thumb the keys lean toward on an iPhone held upright.
+    static var oneHandedKeyboard: OneHandedKeyboard {
+        get {
+            defaults?.string(forKey: oneHandedKeyboardKey).flatMap(OneHandedKeyboard.init(rawValue:))
+                ?? KeyboardDefaults.oneHandedKeyboard
+        }
+        set { defaults?.set(newValue.rawValue, forKey: oneHandedKeyboardKey) }
+    }
+
+    /// Whether the keyboard keeps recent text clips. Needs Full Access, as
+    /// any clipboard does; see ``ClipboardHistoryStore``.
+    static var clipboardHistoryEnabled: Bool {
+        get { boolean(clipboardHistoryKey, default: KeyboardDefaults.clipboardHistory) }
+        set { defaults?.set(newValue, forKey: clipboardHistoryKey) }
+    }
+
+    static var clipboardRetention: ClipboardRetention {
+        get {
+            defaults?.string(forKey: clipboardRetentionKey).flatMap(ClipboardRetention.init(rawValue:))
+                ?? KeyboardDefaults.clipboardRetention
+        }
+        set { defaults?.set(newValue.rawValue, forKey: clipboardRetentionKey) }
     }
 
     static var touchTraceEnabled: Bool {
@@ -876,6 +1019,13 @@ enum KeyboardPreferences {
     static var spacebarCursorEnabled: Bool {
         get { boolean(spacebarCursorKey, default: KeyboardDefaults.spacebarCursor) }
         set { defaults?.set(newValue, forKey: spacebarCursorKey) }
+    }
+
+    /// Shift over selected text changes its case. Off by default; see
+    /// ``KeyboardDefaults/shiftChangesSelectionCase``.
+    static var shiftChangesSelectionCase: Bool {
+        get { boolean(shiftChangesSelectionCaseKey, default: KeyboardDefaults.shiftChangesSelectionCase) }
+        set { defaults?.set(newValue, forKey: shiftChangesSelectionCaseKey) }
     }
 
     /// Read by the keyboard itself, not only by the lab.

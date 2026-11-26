@@ -22,6 +22,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// The field `lastInsertedText` went into. Undo deletes by length, so a
     /// window that shows only the insertion's tail is not enough on its own.
     private var lastInsertedDocumentID: String?
+    /// The selection `lastInsertedText` replaced, which Undo puts back.
+    private var lastInsertedReplaced: String?
     private var isPerformingInsertion = false
     private var lastSpaceInsertedAt: Date?
     /// Observed by this keyboard instance rather than read from the record: the
@@ -138,6 +140,16 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// change in the containing app, which means this extension has been torn
     /// down or at least sent off screen in between.
     private var heightPreference = KeyboardPreferences.keyboardHeight
+    /// Read with the height, for the same reason.
+    private var numberRowPreference = KeyboardPreferences.numberRowEnabled
+    private var oneHandedPreference = KeyboardPreferences.oneHandedKeyboard
+    /// What the shared defaults said last time they were read. Without Full
+    /// Access a choice made from More may not persist there, so only a change
+    /// in what is stored (Settings, in the app) replaces the choice in hand.
+    private var storedOneHanded = KeyboardPreferences.oneHandedKeyboard
+    /// The last thing this keyboard did to the document that the edit row's
+    /// Undo can take back. See ``KeyboardEditUndo``.
+    private var lastEdit: KeyboardEdit?
 
     private lazy var dictationBar = DictationBarView(
         metrics: DictationBarMetrics.resolved(
@@ -353,7 +365,16 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // A recreated extension instance can inherit a session the previous one
         // started, so scan once on appear and let `render` decide about polling.
         typing.installCustomVocabulary(LocalTranscriptionPreferences.customVocabulary)
+        // Edited in the app, like the vocabulary: once per appearance, never
+        // per keystroke. A few hundred bytes of JSON from the shared defaults.
+        typing.installSnippets(SnippetStore.snippets)
+        // Settings may have reset learned or blocked words meanwhile. Read
+        // off the main thread; nothing waits for it.
+        typing.reloadLearnedWords()
         applyDocumentTraits()
+        // Shift was last set for wherever the keyboard was before, and iOS
+        // sends no `textDidChange` for a field it is merely shown over.
+        updateAutomaticShift(isArrival: true)
         // The app's settings screen writes the same two keys, and it may have
         // done so while another keyboard was on screen.
         dictationSurfaceState.refreshPreferences()
@@ -399,6 +420,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // is reissued across an app switch, so the offer ends with the
         // appearance it was made in.
         lastInsertedText = nil
+        lastEdit = nil
         // A notice belongs to the appearance it was shown in. One about a
         // missing voice model in particular has usually just been acted on:
         // the button opens vocaphone, and coming back is this.
@@ -407,6 +429,14 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         publishKeyboardStatus()
         // An "Open app" hand-off the app never took is past its use by now.
         store.removeExpiredWritingDraft()
+        // Expired clips leave the file, not only the panel; with the history
+        // switched off the file goes. The file only — the clipboard is not
+        // read here. Without Full Access the container is out of reach and
+        // this does nothing; the app deletes the file when it hears so.
+        ClipboardHistoryStore.shared.enforce(
+            isEnabled: KeyboardPreferences.clipboardHistoryEnabled,
+            retention: KeyboardPreferences.clipboardRetention.interval
+        )
         // Full Access can be granted or revoked in Settings while this instance
         // stays alive, and a warm engine is what makes the first key of the
         // session land as a tap rather than as nothing.
@@ -420,9 +450,40 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// wait for the keyboard process to be recycled.
     private func applyHeightPreferenceIfChanged() {
         let preference = KeyboardPreferences.keyboardHeight
-        guard preference != heightPreference else { return }
+        let numberRow = KeyboardPreferences.numberRowEnabled
+        let stored = KeyboardPreferences.oneHandedKeyboard
+        let oneHanded = OneHandedPreferenceSync.resolve(
+            stored: stored,
+            lastStored: storedOneHanded,
+            current: oneHandedPreference
+        )
+        storedOneHanded = stored
+        guard preference != heightPreference
+            || numberRow != numberRowPreference
+            || oneHanded != oneHandedPreference
+        else { return }
         heightPreference = preference
+        numberRowPreference = numberRow
+        oneHandedPreference = oneHanded
         applyLayoutMetrics()
+    }
+
+    /// Whether the one-handed keyboard applies: an iPhone held upright.
+    private var allowsOneHanded: Bool {
+        traitCollection.userInterfaceIdiom == .phone
+            && traitCollection.horizontalSizeClass == .compact
+            && traitCollection.verticalSizeClass == .regular
+    }
+
+    /// Moves the keys toward one thumb, or back, and remembers it.
+    private func setOneHanded(_ side: OneHandedKeyboard) {
+        KeyboardPreferences.oneHandedKeyboard = side
+        // Whatever landed: the side itself with Full Access, possibly the old
+        // value without. Either way the next appearance keeps `side`.
+        storedOneHanded = KeyboardPreferences.oneHandedKeyboard
+        oneHandedPreference = side
+        keyGrid.oneHandedSide = allowsOneHanded ? side : .off
+        refreshEditAvailability()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -432,6 +493,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             self.dictationSurfaceState.candidatesAnimate = true
         }
         super.viewDidAppear(animated)
+        // The host often has not answered by `viewWillAppear`. It has by now,
+        // and no key can have been pressed in between.
+        updateAutomaticShift(isArrival: true)
         reportIfLowOnMemory()
         typing.prepareResources()
         // UIKit can finalize a changed Full Access setting after the earlier
@@ -475,6 +539,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         writingCheck.reset()
         autoFixer.clear()
         corrections.finish()
+        // Leaving from a password field: a copy made while it had the
+        // keyboard is never kept.
+        if fieldIsSecret { ClipboardCapture.noteSecretField(UIPasteboard.general) }
         super.viewWillDisappear(animated)
         pollingTimer?.invalidate()
         pollingTimer = nil
@@ -641,6 +708,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         if documentID != lastDocumentID {
             lastDocumentID = documentID
             lastSpaceInsertedAt = nil
+            // The edit row's Undo and a Shift case cycle belong to the field
+            // they were made in.
+            lastEdit = nil
+            caseCycle = nil
             corrections.finish()
             stopReadingWholeMessage()
             writingCheck.reset()
@@ -664,7 +735,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // place it no longer describes. Free while nothing is waiting to undo.
         releaseUndoIfDetached()
         updateReturnKeyEnablement(for: snapshot)
-        updateAutomaticShift(for: snapshot)
+        updateAutomaticShift(for: snapshot, isArrival: isNewField)
         // An edit after an automatic fix ends its Undo: the fixed words can
         // no longer be found for certain.
         if let fix = autoFixer.offer, !fix.isCurrent(before: snapshot.before) { autoFixer.clear() }
@@ -786,10 +857,44 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     /// Text handed over by the paste button (or read on the older bar's tap).
     private func paste(_ text: String) {
-        textDocumentProxy.insertText(text)
-        ClipboardWatch.notePasted(changeCount: UIPasteboard.general.changeCount)
-        typing.resetComposition(origin: .suggestion, document: refreshDocument())
+        let changeCount = UIPasteboard.general.changeCount
+        insertOwnText(text)
+        ClipboardWatch.notePasted(changeCount: changeCount)
+        // Handed over by the user's own tap on Paste, so keeping it reads
+        // nothing more. The types are metadata; the text is already in hand.
+        ClipboardCapture.keep(
+            text,
+            types: UIPasteboard.general.firstItemTypes,
+            changeCount: changeCount,
+            isEnabled: clipboardHistoryIsOn,
+            fieldAllows: fieldAllowsClipboardHistory
+        )
+        if dictationSurfaceState.presentedPanel != nil { dictationSurfaceState.present(nil) }
         render(lastRecord)
+    }
+
+    /// Text the keyboard puts in on the user's behalf — a paste or a clip —
+    /// remembered so the edit row's Undo can take it back.
+    private func insertOwnText(_ text: String) {
+        let following = textDocumentProxy.documentContextAfterInput
+        // A paste over a selection replaces it, and Undo has to put it back.
+        // A selection too long to trust the proxy with is not restorable, so
+        // that paste gets no Undo rather than one that loses text.
+        let replaced = textDocumentProxy.selectedText ?? ""
+        textDocumentProxy.insertText(text)
+        if replaced.isEmpty {
+            lastEdit = .inserted(text: text, following: following, documentID: currentDocumentID)
+        } else if SelectionEditGuard.allows(replaced) {
+            lastEdit = .inserted(
+                text: text,
+                following: following,
+                documentID: currentDocumentID,
+                replaced: replaced
+            )
+        } else {
+            lastEdit = nil
+        }
+        typing.resetComposition(origin: .suggestion, document: refreshDocument())
     }
 
     private func writingCandidates() -> [TypingCandidate] {
@@ -1090,7 +1195,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// not leave the field (the keyboard records itself, or Quick Dictation is
     /// ready); a hold that would open vocaphone is just the tap it ends as.
     private func beginPushToTalk() -> Bool {
-        guard activeSessionID == nil, hasFullAccess else { return false }
+        guard activeSessionID == nil, hasFullAccess, fieldAllowsDictation else { return false }
         let quickReady = (try? store.loadQuickDictationAvailability())?.isReady() == true
         guard quickReady || KeyboardDictation.gateway(quickDictationReady: false) != nil else { return false }
         KeyboardHaptics.shared.action()
@@ -1266,7 +1371,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // By the stored length, not by what the window shows: the window may
         // hold only the last sentence of it.
         inserted.forEach { _ in textDocumentProxy.deleteBackward() }
+        if let replaced = lastInsertedReplaced { textDocumentProxy.insertText(replaced) }
         lastInsertedText = nil
+        lastInsertedReplaced = nil
+        // The edit row's Undo described the same insertion.
+        lastEdit = nil
         refresh()
         flash("The last insertion was removed.")
     }
@@ -1293,6 +1402,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 )
             )
         }
+        // Anything typed ends a Shift case cycle: the text before the cursor
+        // is no longer the spelling it inserted.
+        caseCycle = nil
         // The compact row moves its action button aside as soon as somebody
         // types, and "as soon as" is the keystroke — not the suggestions it
         // eventually produces.
@@ -1605,6 +1717,80 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     func keyGridDidChangeShift(_ grid: KeyGridView) {}
 
+    func keyGridDidToggleShift(_ grid: KeyGridView) {
+        // One read of the document for the whole tap: the event's snapshot is
+        // the anchor too. `selectedText` is asked for only when the setting
+        // that uses it is on.
+        let anchor: DocumentSnapshot? = documentEvent {
+            // Over a selection, Shift changes the selection's case instead —
+            // only when asked for in Settings, since Apple's keyboard never does.
+            if shiftChangesSelectionCase, cycleSelectionCase() { return nil }
+            return document
+        }
+        guard let anchor else { return }
+        // Remembered with the place it was made, so that it lasts exactly as
+        // long as the cursor stays there. See ``updateAutomaticShift``.
+        manualShiftAnchor = anchor
+        shiftLockIsAutomatic = false
+    }
+
+    /// Shift tapped over selected text: Sentence case, then ALL CAPS, then
+    /// lower, then the spelling it started with (``CaseCycle``), as on the
+    /// Android keyboard. Reports whether it did anything.
+    ///
+    /// Replacing the selection is one `insertText`, and the host puts the
+    /// cursor after it — a keyboard cannot select text, so the highlight does
+    /// not survive. The next tap carries on regardless, from the spelling
+    /// still in front of the cursor (``CaseCycleSession``), until anything
+    /// else is typed or the cursor moves.
+    ///
+    /// Not in a field that refuses typing intelligence: `selectedText` is the
+    /// one read here that hands over text the user did not just type, and a
+    /// password field's selection is none of the keyboard's business.
+    private func cycleSelectionCase() -> Bool {
+        guard typing.policy.allowsTypingIntelligence, fieldAllowsSelectionCase, !isPerformingInsertion else {
+            caseCycle = nil
+            return false
+        }
+        let proxy = textDocumentProxy
+        let next: String
+        let original: String
+        let selected = proxy.selectedText
+        if let selected, !selected.isEmpty {
+            // Long, multi-line or letterless: Shift is just Shift. See
+            // ``SelectionCaseGuard``.
+            guard SelectionCaseGuard.allows(selected) else {
+                caseCycle = nil
+                return false
+            }
+            // A selection that is still what the last tap made continues that
+            // cycle; any other selection starts a new one.
+            original = caseCycle?.emitted == selected ? caseCycle?.original ?? selected : selected
+            next = CaseCycle.next(selected, original: original)
+            guard next != selected else { return false }
+            proxy.insertText(next)
+        } else if let session = caseCycle,
+                  session.continues(before: document.before, after: document.after)
+        {
+            original = session.original
+            next = CaseCycle.next(session.emitted, original: original)
+            for _ in 0..<session.emitted.count { proxy.deleteBackward() }
+            proxy.insertText(next)
+        } else {
+            caseCycle = nil
+            return false
+        }
+        let snapshot = refreshDocument()
+        caseCycle = CaseCycleSession(original: original, emitted: next, after: snapshot.after)
+        typing.reconcile(document: snapshot)
+        // The tap was a case change, not a capital for the next letter.
+        manualShiftAnchor = nil
+        keyGrid.shiftState = .off
+        KeyboardHaptics.shared.action()
+        UIAccessibility.post(notification: .announcement, argument: next)
+        return true
+    }
+
     private func insertSpace() {
         let proxy = textDocumentProxy
         let before = document.before ?? ""
@@ -1801,6 +1987,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     }
 
     private func startSession() {
+        // The button is already off in a password field; this is the rule
+        // for every other way of getting here.
+        guard fieldAllowsDictation else {
+            flash(DictationBarModel.noDictationHere)
+            return
+        }
         guard hasFullAccess else {
             openFullAccessSettings()
             return
@@ -2035,11 +2227,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         defer { isPerformingInsertion = false }
         let contextBefore = textDocumentProxy.documentContextBeforeInput
         let contextAfter = textDocumentProxy.documentContextAfterInput
+        let selectedBefore = textDocumentProxy.selectedText ?? ""
         let prepared = TextInsertion.prepare(
             transcript,
             before: contextBefore,
             after: contextAfter,
-            hasSelection: textDocumentProxy.selectedText?.isEmpty == false
+            hasSelection: !selectedBefore.isEmpty
         )
         do {
             DiagnosticLog.record(.insertionStarted)
@@ -2052,9 +2245,26 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             }
             textDocumentProxy.insertText(prepared.text)
             followDictationForCorrections(prepared, before: contextBefore, after: contextAfter)
-            lastInsertedText = prepared.text
-            lastInsertedFollowing = prepared.following
-            lastInsertedDocumentID = currentDocumentID
+            // The transcript replaced the selection. Undo puts it back, and a
+            // selection too long to trust the proxy with gets no Undo rather
+            // than one that loses text.
+            let replaced = prepared.cursorAdvance == 0 ? selectedBefore : ""
+            if replaced.isEmpty || SelectionEditGuard.allows(replaced) {
+                lastInsertedText = prepared.text
+                lastInsertedFollowing = prepared.following
+                lastInsertedDocumentID = currentDocumentID
+                lastInsertedReplaced = replaced.isEmpty ? nil : replaced
+                lastEdit = .inserted(
+                    text: prepared.text,
+                    following: prepared.following,
+                    documentID: currentDocumentID,
+                    replaced: lastInsertedReplaced
+                )
+            } else {
+                lastInsertedText = nil
+                lastInsertedReplaced = nil
+                lastEdit = nil
+            }
             // The session ID makes this append idempotent if the extension is
             // interrupted after insertion. Recording here means an insertion
             // that happened cannot be lost merely because saving the terminal
@@ -2542,7 +2752,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 processingLocation: record?.processingLocation,
                 insertionWasInterrupted: record?.insertionInterrupted == true
                     && [.readyToInsert, .targetContextChanged].contains(record?.state),
-                notice: notice
+                notice: notice,
+                allowsDictation: fieldAllowsDictation
             )
         )
         // A failure this instance is showing counts as told: another instance
@@ -2768,6 +2979,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 writingCheck.cancelButtonCheck()
             }
             panelOwnsKeyboard = presented
+            if presented { refreshEditAvailability() }
             render(lastRecord)
         }
         dictationSurfaceState.onVocaPhoneRunningChanged = { [weak self] running in
@@ -2787,6 +2999,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             guard let self, !isPerformingInsertion else { return }
             documentEvent { self.apply(candidate) }
         }
+        dictationSurfaceState.typing.onBlock = { [weak self] candidate in
+            guard let self, !isPerformingInsertion else { return }
+            documentEvent { self.block(candidate) }
+        }
         dictationSurfaceState.onHoldBegan = { [weak self] in self?.beginPushToTalk() ?? false }
         dictationSurfaceState.onHoldEnded = { [weak self] in self?.endPushToTalk() }
         dictationSurfaceState.onSlideMenu = { [weak self] in
@@ -2798,6 +3014,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             guard let self, !isPerformingInsertion else { return }
             documentEvent { self.paste(text) }
         }
+        dictationSurfaceState.onEditAction = { [weak self] action in
+            guard let self, !isPerformingInsertion else { return }
+            documentEvent { self.performEdit(action) }
+        }
+        configureClipboardPanel()
         dictationSurfaceState.onLanguageChanged = { [weak self] lang in
             KeyboardPreferences.transcriptionLanguage = lang
             self?.refresh()
@@ -2873,11 +3094,17 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// most of a session. "The last insertion was removed", "Starting with
     /// Quick Dictation…" and the Full Access fallback were all being written to
     /// a view nobody could see.
-    private func flash(_ message: String) {
+    ///
+    /// `undo`, when given, is offered with it: an Undo button beside the
+    /// notice on the surface, and the message itself on the older bar.
+    private func flash(_ message: String, undo: (() -> Void)? = nil) {
         if dictationBar.isHidden {
-            dictationSurfaceState.showNotice(message)
+            dictationSurfaceState.showNotice(
+                message,
+                action: undo.map { DictationSurfaceState.NoticeAction(title: "Undo", perform: $0) }
+            )
         } else {
-            dictationBar.flash(message)
+            dictationBar.flash(undo == nil ? message : "\(message). Tap to undo.", onTap: undo)
         }
         guard isKeyboardVisible else { return }
         UIAccessibility.post(notification: .announcement, argument: message)
@@ -2887,6 +3114,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         configureDictationSurface()
         dictationBar.delegate = self
         keyGrid.delegate = self
+        keyGrid.onRestoreFullWidth = { [weak self] in
+            KeyboardHaptics.shared.action()
+            self?.setOneHanded(.off)
+        }
 
         topBarContainer.translatesAutoresizingMaskIntoConstraints = false
         topBarContainer.clipsToBounds = true
@@ -2968,7 +3199,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         applyTheme()
         applyLayoutMetrics()
         applyDocumentTraits()
-        updateAutomaticShift()
+        updateAutomaticShift(isArrival: true)
     }
 
     /// The gap between the dictation surface and the top row of keys.
@@ -2999,14 +3230,21 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// and x=291, and the ones past 287 typed a line break instead, because 287
     /// is where the spacebar's target ended. On the system's geometry it ends at
     /// 293. Three of them in one sentence, and none of them a slip of the thumb.
+    ///
+    /// The keys themselves now sit further in, on iOS 26's own geometry (see
+    /// `KeyboardMetrics.nativeSideInset`); the grid's hit map still runs the
+    /// edge keys' targets out to this margin, so the outermost columns keep
+    /// every point of touch target they had.
     private static let chromeInset: CGFloat = 3
 
-    /// Nothing under the last row of keys.
+    /// The air under the last row of keys.
     ///
     /// The system draws its own globe and dictation bar below this view and
     /// gives that bar its own padding; six more points of ours sat on top of it
-    /// and read as a gap the system keyboard does not have.
-    private static let chromeBottomInset: CGFloat = 0
+    /// and read as a gap the system keyboard does not have. None at all was
+    /// too little: over the same field in the iPhone 17 simulator, Apple's
+    /// bottom row ends 9 px (3 pt) higher above that system bar than ours did.
+    private static let chromeBottomInset: CGFloat = 3
 
     /// Sizes everything from the current traits instead of a single portrait
     /// iPhone constant, and gives the dictation bar only as much room as the
@@ -3015,7 +3253,9 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         let metrics = KeyboardMetrics.resolved(
             for: traitCollection,
             preference: heightPreference
-        )
+        ).withNumberRow(numberRowPreference)
+        keyGrid.showsNumberRow = numberRowPreference
+        keyGrid.oneHandedSide = allowsOneHanded ? oneHandedPreference : .off
         let barMetrics = DictationBarMetrics.resolved(
             for: traitCollection,
             preference: heightPreference
@@ -3126,11 +3366,33 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // still be running the user's password through a dictionary.
         let policy = TypingFieldPolicy.resolve(for: proxy)
         typing.documentChanged(policy: policy)
+        // Into or out of a password, one-time-code or card field: whatever
+        // the clipboard holds is marked seen, so clipboard history never
+        // keeps a copy that was on the clipboard while one had the keyboard.
+        // Only `changeCount` is read. See ``ClipboardCapture/noteSecretField``.
+        let isSecret = !policy.allowsDictation
+        if isSecret || fieldIsSecret { ClipboardCapture.noteSecretField(UIPasteboard.general) }
+        fieldIsSecret = isSecret
         fieldAllowsGrammarCheck = TypingFieldPolicy.allowsGrammarCheck(for: proxy)
         fieldAllowsWritingCheck = TypingFieldPolicy.allowsWritingCheck(for: proxy)
         // The trace writes which key was pressed, and a character key's name is
         // the character. Not in a field that has asked for no intelligence.
         keyGrid.traceNamesKeys = policy.allowsTypingIntelligence
+        // Swipe reads words as surely as the strip does, and goes with it.
+        keyGrid.allowsSwipeTyping = policy.allowsSwipeTyping
+        caseCycle = nil
+        shiftChangesSelectionCase = KeyboardPreferences.shiftChangesSelectionCase
+        // Two more trait reads, only for someone who turned the switch on.
+        fieldAllowsSelectionCase = shiftChangesSelectionCase && SelectionCaseGuard.fieldAllows(
+            keyboardType: proxy.keyboardType,
+            contentType: proxy.textContentType
+        )
+        // No microphone in a password field. Redrawn at once when that
+        // changes, so Dictate never stays live over a field it may not use.
+        if fieldAllowsDictation != policy.allowsDictation {
+            fieldAllowsDictation = policy.allowsDictation
+            if hasRendered { render(lastRecord) }
+        }
         keyGrid.showsGlobeKey = needsInputModeSwitchKey
         keyGrid.offersCursorTrackpad = KeyboardPreferences.spacebarCursorEnabled
         applyTypingLayout(KeyboardPreferences.typingLayout)
@@ -3145,6 +3407,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         // else to go once it is there.
         keyGrid.homePlane = Self.initialPlane(for: keyboardType)
         keyGrid.plane = keyGrid.homePlane
+        refreshClipboardEntryPoint()
         updateReturnKeyEnablement()
         applyTheme()
         // A returning keyboard may already be at the end of "happy". Restore
@@ -3281,17 +3544,61 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// Autocapitalization follows the field's own request. A username or URL
     /// field asks for none, and forcing sentence case there produced input the
     /// user had to correct on every word.
-    private func updateAutomaticShift(for snapshot: DocumentSnapshot? = nil) {
+    private func updateAutomaticShift(
+        for snapshot: DocumentSnapshot? = nil,
+        isArrival: Bool = false
+    ) {
+        let resolved = snapshot ?? document
+        if isArrival {
+            manualShiftAnchor = nil
+        } else if let anchor = manualShiftAnchor {
+            // The user set Shift by hand and the cursor has not moved since.
+            // Hosts send `textDidChange` for reasons of their own, and each one
+            // used to put Shift back the way the keyboard preferred it. A read
+            // the host declined to answer says nothing about having moved.
+            if resolved == anchor || resolved == .unknown { return }
+            manualShiftAnchor = nil
+        }
+        let proxy = textDocumentProxy
+        let autocapitalization = proxy.autocapitalizationType ?? .sentences
         // `nil` means leave the shift key alone, which is the answer whenever
         // the host declined to say what the document contains. See
         // ``AutomaticShift``.
         guard let state = AutomaticShift.state(
-            documentBefore: (snapshot ?? document).before,
-            autocapitalization: textDocumentProxy.autocapitalizationType ?? .sentences,
-            current: keyGrid.shiftState
+            documentBefore: resolved.before,
+            autocapitalization: autocapitalization,
+            current: keyGrid.shiftState,
+            context: AutomaticShift.Context(
+                isEnabled: KeyboardPreferences.autoCapitalizationEnabled,
+                isArrival: isArrival,
+                // One more hop into the host, so only where it is used.
+                documentHasText: isArrival ? proxy.hasText : true,
+                documentAfter: resolved.after,
+                lockIsAutomatic: shiftLockIsAutomatic
+            )
         ) else { return }
+        shiftLockIsAutomatic = state == .locked && autocapitalization == .allCharacters
         keyGrid.shiftState = state
     }
+
+    /// The document as it stood when the user last tapped Shift, until the
+    /// cursor leaves that spot.
+    private var manualShiftAnchor: DocumentSnapshot?
+    /// Settings' "Shift changes selected text's case", read per appearance.
+    private var shiftChangesSelectionCase = KeyboardDefaults.shiftChangesSelectionCase
+    /// Not a URL, web search or email field (``SelectionCaseGuard``), as of
+    /// the last ``applyDocumentTraits``.
+    private var fieldAllowsSelectionCase = false
+    /// The field is a password, one-time-code or card number field
+    /// (``TypingFieldPolicy/allowsDictation`` refused it), as of the last
+    /// ``applyDocumentTraits``.
+    private var fieldIsSecret = false
+    /// Caps lock is on because a field asked for capitals, not by a double tap.
+    private var shiftLockIsAutomatic = false
+    /// The Shift case cycle the next tap continues, if nothing has moved.
+    private var caseCycle: CaseCycleSession?
+    /// Whether this field may offer dictation (``TypingFieldPolicy/allowsDictation``).
+    private var fieldAllowsDictation = true
 }
 
 extension KeyboardViewController: KeyGridViewDelegate {
@@ -3318,6 +3625,29 @@ extension KeyboardViewController: DictationBarViewDelegate {
     func dictationBar(_ bar: DictationBarView, didChoose candidate: TypingCandidate) {
         guard !isPerformingInsertion else { return }
         documentEvent { apply(candidate) }
+    }
+
+    func dictationBar(_ bar: DictationBarView, didBlock candidate: TypingCandidate) {
+        guard !isPerformingInsertion else { return }
+        documentEvent { block(candidate) }
+    }
+
+    /// A long press (or the VoiceOver action) on a suggested word: it is
+    /// never suggested again. Said out loud, because the only other sign is
+    /// a chip disappearing.
+    private func block(_ candidate: TypingCandidate) {
+        guard candidate.isBlockable, let blocking = typing.block(candidate.text) else { return }
+        KeyboardHaptics.shared.action()
+        // A held thumb is an easy accident, so the block can be taken back
+        // for as long as the notice is up.
+        flash("Won\u{2019}t suggest \u{201C}\(candidate.text)\u{201D} again") { [weak self] in
+            guard let self else { return }
+            typing.undoBlock(blocking)
+            KeyboardHaptics.shared.action()
+            UIAccessibility.post(notification: .announcement, argument: "\(candidate.text) can be suggested again")
+            render(lastRecord)
+        }
+        render(lastRecord)
     }
 
     private func apply(_ candidate: TypingCandidate) {
@@ -3407,7 +3737,12 @@ extension KeyboardViewController: DictationBarViewDelegate {
             advanceToNextInputMode()
         case .writingReview:
             dictationSurfaceState.present(.writing)
+        case .calculation:
+            // Straight after the "=", no space: "12*4=48".
+            textDocumentProxy.insertText(candidate.text)
+            typing.resetComposition(origin: .suggestion, document: refreshDocument())
         }
+        caseCycle = nil
         lastSpaceInsertedAt = nil
         releaseUndoIfDetached()
         updateAutomaticShift()
@@ -3483,12 +3818,16 @@ final class KeyboardStack: UIStackView {
         // 3. The strip's lower half while the user is typing: a touch there
         //    within a quarter second of a key is an "e" aimed high, not a
         //    suggestion read and chosen, so it types the top-row key below.
+        //    Not above the one-handed strip: nothing below is a key, and the
+        //    chevron must not take a touch meant for a suggestion.
         if let bar = topBarContainer?.frame,
            lateralSpan.contains(point.x),
+           let grid = keyGrid as? KeyGridView,
+           grid.stripTouchHasKeysBelow(atX: grid.convert(point, from: self).x),
            KeyGridView.stripTouchGoesToKeys(
                y: point.y,
                bar: bar,
-               isTyping: (keyGrid as? KeyGridView)?.isTypingNow == true
+               isTyping: grid.isTypingNow
            )
         {
             return forwardToGrid("strip-dead-zone")
@@ -3583,4 +3922,184 @@ final class TouchLiftObserver: UIGestureRecognizer, UIGestureRecognizerDelegate 
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
     ) -> Bool { true }
+}
+
+// MARK: - Edit row and clipboard history
+
+extension KeyboardViewController {
+    /// Clipboard history on, and able to work: it needs Full Access.
+    fileprivate var clipboardHistoryIsOn: Bool {
+        hasFullAccess && KeyboardPreferences.clipboardHistoryEnabled
+    }
+
+    /// Not in a password, one-time code or card number field: nothing is read
+    /// from the clipboard there, and nothing typed there is kept.
+    fileprivate var fieldAllowsClipboardHistory: Bool {
+        switch TypingFieldPolicy.resolve(for: textDocumentProxy).reason {
+        case .secureEntry?, .sensitiveContentType?: false
+        case .numericKeyboard?, nil: true
+        }
+    }
+
+    fileprivate func configureClipboardPanel() {
+        let model = dictationSurfaceState.clipboard
+        model.onInsert = { [weak self] clip in
+            guard let self, !isPerformingInsertion else { return }
+            documentEvent {
+                self.insertOwnText(clip.text)
+                // Used again, so it is recent again.
+                self.updateClipboardHistory { $0.add(clip.text, at: Date()) }
+                self.dictationSurfaceState.present(nil)
+                self.render(self.lastRecord)
+            }
+        }
+        model.onTogglePin = { [weak self] id in
+            self?.updateClipboardHistory { $0.togglePin(id) }
+        }
+        model.onDelete = { [weak self] id in
+            self?.updateClipboardHistory { $0.remove(id) }
+        }
+        model.onClearUnpinned = { [weak self] in
+            self?.updateClipboardHistory { $0.removeUnpinned() }
+        }
+        refreshClipboardEntryPoint()
+    }
+
+    fileprivate func updateClipboardHistory(_ change: (inout ClipboardHistory) -> Void) {
+        let history = ClipboardHistoryStore.shared.update(
+            retention: KeyboardPreferences.clipboardRetention.interval,
+            change
+        )
+        dictationSurfaceState.clipboard.show(history)
+    }
+
+    /// The button beside Paste, while clipboard history is on.
+    fileprivate func refreshClipboardEntryPoint() {
+        dictationSurfaceState.typing.onOpenClipboard = clipboardHistoryIsOn && fieldAllowsClipboardHistory
+            ? { [weak self] in self?.openClipboardHistory() }
+            : nil
+    }
+
+    /// Opening the panel is asking for the clipboard, so this is one of the
+    /// two moments it is read — once per copy, by change count. iOS may ask
+    /// first, exactly as it does for a Paste.
+    fileprivate func openClipboardHistory() {
+        guard clipboardHistoryIsOn, fieldAllowsClipboardHistory else { return }
+        ClipboardCapture.captureIfChanged(UIPasteboard.general, isEnabled: true, fieldAllows: true)
+        dictationSurfaceState.clipboard.show(
+            ClipboardHistoryStore.shared.current(retention: KeyboardPreferences.clipboardRetention.interval)
+        )
+        dictationSurfaceState.present(.clipboard)
+    }
+
+    /// What the edit row behind More can do, read as it opens.
+    fileprivate func refreshEditAvailability() {
+        refreshClipboardEntryPoint()
+        let snapshot = document
+        let canUndo = lastEdit.map {
+            KeyboardEditUndo.step(
+                for: $0,
+                before: snapshot.before,
+                after: snapshot.after,
+                currentDocumentID: currentDocumentID
+            ) != .unavailable
+        } ?? false
+        dictationSurfaceState.editAvailability = KeyboardEditAvailability(
+            hasSelection: textDocumentProxy.selectedText?.isEmpty == false,
+            canUndo: canUndo,
+            hasFullAccess: hasFullAccess,
+            showsClipboard: clipboardHistoryIsOn && fieldAllowsClipboardHistory,
+            offersOneHanded: allowsOneHanded,
+            oneHanded: oneHandedPreference
+        )
+    }
+
+    fileprivate func performEdit(_ action: KeyboardEditAction) {
+        KeyboardHaptics.shared.action()
+        switch action {
+        case .clipboard:
+            openClipboardHistory()
+            return
+        case let .oneHanded(side):
+            setOneHanded(side)
+            dictationSurfaceState.present(nil)
+            return
+        case .undo:
+            undoLastEdit()
+        case .copy, .cut:
+            copySelection(cutting: action == .cut)
+        }
+        dictationSurfaceState.present(nil)
+        render(lastRecord)
+    }
+
+    /// Copies the selection — the one piece of text a keyboard can see is
+    /// selected — and, for Cut, deletes it. Needs Full Access to write.
+    private func copySelection(cutting: Bool) {
+        guard hasFullAccess, let selected = textDocumentProxy.selectedText, !selected.isEmpty else {
+            flash("Select some text first.")
+            return
+        }
+        // Cut deletes the whole selection in the host, whatever part of it
+        // the keyboard was handed; a long one is left to the app's own Cut.
+        guard SelectionEditGuard.allows(selected) else {
+            flash(cutting
+                ? "Too much is selected to cut from the keyboard. Use the app\u{2019}s Cut."
+                : "Too much is selected to copy from the keyboard. Use the app\u{2019}s Copy.")
+            return
+        }
+        UIPasteboard.general.string = selected
+        let changeCount = UIPasteboard.general.changeCount
+        // This keyboard's own copy: the Paste chip need not offer it back.
+        ClipboardWatch.notePasted(changeCount: changeCount)
+        ClipboardCapture.keep(
+            selected,
+            changeCount: changeCount,
+            isEnabled: clipboardHistoryIsOn,
+            fieldAllows: fieldAllowsClipboardHistory
+        )
+        guard cutting else {
+            flash("Copied.")
+            return
+        }
+        // Deleting with a selection deletes the selection.
+        textDocumentProxy.deleteBackward()
+        let snapshot = refreshDocument()
+        lastEdit = .removed(
+            text: selected,
+            before: snapshot.before,
+            after: snapshot.after,
+            documentID: currentDocumentID
+        )
+        typing.resetComposition(origin: .suggestion, document: snapshot)
+    }
+
+    /// Takes back what this keyboard last did, if the document still shows it.
+    private func undoLastEdit() {
+        guard let edit = lastEdit else { return }
+        let snapshot = document
+        let step = KeyboardEditUndo.step(
+            for: edit,
+            before: snapshot.before,
+            after: snapshot.after,
+            currentDocumentID: currentDocumentID
+        )
+        lastEdit = nil
+        switch step {
+        case let .deleteBackward(count):
+            for _ in 0..<count { textDocumentProxy.deleteBackward() }
+        case let .replaceBackward(count, restoring):
+            for _ in 0..<count { textDocumentProxy.deleteBackward() }
+            textDocumentProxy.insertText(restoring)
+        case let .insert(text):
+            textDocumentProxy.insertText(text)
+        case .unavailable:
+            flash("The cursor moved, so undo is no longer available.")
+            return
+        }
+        // A dictation's own Undo button is for the same insertion.
+        lastInsertedText = nil
+        typing.resetComposition(origin: .suggestion, document: refreshDocument())
+        flash("Undone.")
+    }
 }

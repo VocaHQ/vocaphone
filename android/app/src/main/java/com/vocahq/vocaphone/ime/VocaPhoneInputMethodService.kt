@@ -85,6 +85,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
      */
     private val suggestionDictionary = MutableStateFlow<SuggestionDictionary?>(null)
     private val emojiCatalog = MutableStateFlow<List<EmojiEntry>>(emptyList())
+    /** Skin-tone groups, built from the catalog with it, off the main thread. */
+    private val emojiTones = MutableStateFlow(EmojiTones.EMPTY)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         // A failed empty dictation owns the suggestion strip. A new copy is
@@ -92,7 +94,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         if (lastState.phase == DictationPhase.FAILED) {
             container.dictation.clearTransient()
         }
-        refreshClipboard()
+        refreshClipboard(changed = true)
     }
     private val preferenceWrites by lazy {
         KeyboardPreferenceCoordinator(scope) {
@@ -148,6 +150,12 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var dictationEditorSession = -1
     private var ignoredClipboardText: String? = null
     private var lastRecordedClip: String? = null
+    private var lastClipboardPrune = Long.MIN_VALUE / 2
+    /** The text-editing panel's selection: where Select started, and the end that moves. */
+    private var editSelectionAnchor: Int? = null
+    private var editSelectionFocus: Int? = null
+    /** Clips that changed while a sensitive field was focused; see [ClipboardPrivacy]. */
+    private val sensitiveClips = SensitiveClips()
     private var lastImageSource: String? = null
     private var editorSession = 0
     private var editorIdentity: EditorIdentity? = null
@@ -162,6 +170,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private var destroyed = false
     /** True while the editor still has a composing region we set. */
     private var composingRegionActive = false
+
+    /** Where the keyboard's own edits leave the cursor; see [SelectionForecast]. */
+    private val selectionForecast = SelectionForecast()
 
     private val editorTextRefresh = Runnable { refreshEditorText() }
 
@@ -190,6 +201,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     /** Push-to-talk let go before the dictation was listening: finish once it is. */
     private var pushToTalkFinishPending = false
+
+    /** [editorSession] the last dictation was typed into; undo works only there. */
+    private var insertionSession = -1
 
     /**
      * Writing check: the rules everywhere, and the app's own grammar model
@@ -285,7 +299,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             // Failures are silent on purpose: a keyboard that cannot read its
             // word list still types, and there is no screen here to report on.
             suggestionDictionary.value = runCatching { SuggestionDictionary.load(assets) }.getOrNull()
-            emojiCatalog.value = runCatching { EmojiCatalog.load(assets) }.getOrNull().orEmpty()
+            val catalog = runCatching { EmojiCatalog.load(assets) }.getOrNull().orEmpty()
+            emojiTones.value = runCatching { EmojiTones.build(catalog) }.getOrDefault(EmojiTones.EMPTY)
+            emojiCatalog.value = catalog
             runCatching { EmojiSuggestions.load(assets) }
             writingChecker.value = container.writingCheck
         }
@@ -328,6 +344,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             val editorText by visibleEditorText.collectAsState()
             val dictionary by suggestionDictionary.collectAsState()
             val emojis by emojiCatalog.collectAsState()
+            val tones by emojiTones.collectAsState()
             val writingReport by writingCheck.report.collectAsState()
             val writingChecking by writingCheck.checking.collectAsState()
             val writingAutoFix by autoFixed.collectAsState()
@@ -349,6 +366,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 editorText = editorText,
                 suggestions = dictionary,
                 emojiCatalog = emojis,
+                emojiTones = tones,
+                onEmojiSkinTone = { tone -> scope.launch { container.settings.setEmojiSkinTone(tone) } },
                 writing = writing,
                 onCommand = ::handleCommand,
                 onMicTap = ::toggleDictation,
@@ -365,6 +384,9 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 onDismissClipboard = ::dismissClipboard,
                 onRemoveClipboardHistory = ::removeClipboardHistory,
                 onClearClipboardHistory = ::clearClipboardHistory,
+                onPinClipboardHistory = ::pinClipboardHistory,
+                onLayoutChanged = ::setActiveLayout,
+                onOneHandedMode = { mode -> scope.launch { container.settings.setOneHandedMode(mode) } },
                 onEmojiUsed = ::recordEmojiRecent,
                 onSpaceLongPress = ::showKeyboardPicker,
                 onWritingApply = ::applyWriting,
@@ -378,6 +400,8 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 typingMemory = memory,
                 onLearnPick = ::learnTypingPick,
                 onRejectFix = ::rejectTypingFix,
+                onBlockSuggestion = ::blockSuggestion,
+                onUnblockSuggestion = ::unblockSuggestion,
                 onMicHoldStart = ::startPushToTalk,
                 onMicHoldEnd = ::finishPushToTalk,
                 readTextBeforeCursor = ::readTextBeforeCursorForSlide,
@@ -403,6 +427,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         lastCandidatesEnd = -1
         lastSelStart = attribute?.initialSelStart ?: -1
         lastSelEnd = attribute?.initialSelEnd ?: -1
+        selectionForecast.reset(lastSelStart, lastSelEnd)
         composingRegionActive = false
         val autoCapitalize = visibleSettings.value.autoCapitalizeEnabled
         // Off, the answer is ignored, so skip the Binder call.
@@ -449,6 +474,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         viewShows.value += 1
         applyVoiceShortcutSubtype(currentSubtype())
         if (!voiceShortcutActive) {
+            pruneClipboardHistory()
             startClipboardWatch()
             refreshEditorText()
         }
@@ -531,9 +557,13 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             lastCandidatesEnd = candidatesEnd
             lastSelStart = newSelStart
             lastSelEnd = newSelEnd
+            selectionForecast.reset(newSelStart, newSelEnd, candidatesStart)
             return
         }
-        val userMove = EditorCursorSync.isUserMove(
+        // The echo of the keyboard's own commit is not a tap, whatever the
+        // composing region did. Checked first and with no editor read.
+        val forecast = selectionForecast.onUpdate(newSelStart, newSelEnd, candidatesStart)
+        val userMove = !forecast && EditorCursorSync.isUserMove(
             oldSelStart,
             oldSelEnd,
             newSelStart,
@@ -600,6 +630,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         lastCandidatesEnd = -1
         lastSelStart = -1
         lastSelEnd = -1
+        selectionForecast.reset(-1, -1)
         caseCycleOriginal = null
         caseCycleEmitted = null
         composingRegionActive = false
@@ -668,7 +699,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 null
             }
             val target = DictationSelection.target(dictationSelection, lastSelStart, lastSelEnd, selectedText)
+            // The commit moves the selection; Undo needs the size it had.
+            val lastSelStartBefore = lastSelStart
+            val lastSelEndBefore = lastSelEnd
             dictationSelection = null
+            selectionForecast.forget()
             replacesSelection.value = false
             val committedText = commitDictationText(
                 connection,
@@ -679,6 +714,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 collapseTo = (target as? DictationSelection.Target.CollapseTo)?.position ?: -1,
             )
             val committed = committedText != null
+            val insertionStart = when (target) {
+                DictationSelection.Target.AsIs ->
+                    if (lastSelStart >= 0 && lastSelEnd >= 0) minOf(lastSelStart, lastSelEnd) else -1
+                is DictationSelection.Target.CollapseTo -> target.position
+            }
             // The composing region was finished before the commit, so the
             // half-typed word stays in the field and the keyboard has to drop
             // it. Cleared here rather than left to onUpdateSelection, whose
@@ -691,13 +731,63 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 followDictationForCorrections(committedText)
                 syncShiftFromCursor()
                 refreshEditorText()
-                InsertionReport(InsertionOutcome.INSERTED)
+                insertionSession = editorSession
+                InsertionReport(
+                    InsertionOutcome.INSERTED,
+                    applied = AppliedInsertion(
+                        currentInputEditorInfo?.packageName,
+                        insertionStart,
+                        committedText,
+                        replaced = DictationUndo.replacedSelection(
+                            replacesSelection = target == DictationSelection.Target.AsIs && hasSelection,
+                            selectedText = selectedText,
+                            selectionLength = kotlin.math.abs(lastSelEndBefore - lastSelStartBefore),
+                        ),
+                    ),
+                )
             } else {
                 InsertionReport(InsertionOutcome.UNSUPPORTED_EDITOR)
             }
         }
 
-    override suspend fun undo(insertion: AppliedInsertion): Boolean = false
+    /**
+     * Removes the last dictation this keyboard typed, if it is still exactly
+     * where it was put: same field, cursor right after it, nothing selected.
+     * One bounded read, only when asked.
+     */
+    override suspend fun undo(insertion: AppliedInsertion): Boolean =
+        withContext(Dispatchers.Main.immediate) {
+            if (insertionSession != editorSession) return@withContext false
+            if (insertion.packageName != currentInputEditorInfo?.packageName) return@withContext false
+            if (lastSelStart != lastSelEnd) return@withContext false
+            // A selection was replaced but could not be read whole: taking the
+            // transcript out would lose it, so Undo is not offered.
+            val replaced = insertion.replaced ?: return@withContext false
+            val connection = currentInputConnection ?: return@withContext false
+            val before = runCatching {
+                connection.getTextBeforeCursor(insertion.inserted.length, 0)?.toString()
+            }.getOrNull()
+            if (!DictationUndo.matches(insertion.inserted, insertion.insertionStart, before, lastSelStart)) {
+                return@withContext false
+            }
+            selectionForecast.forget()
+            connection.beginBatchEdit()
+            if (composingRegionActive) connection.finishComposingText()
+            val deleted = connection.deleteSurroundingText(insertion.inserted.length, 0)
+            if (deleted && replaced.isNotEmpty()) {
+                // Put the selection back, selected, as the editor's own Undo would.
+                connection.commitText(replaced, 1)
+                val start = insertion.insertionStart
+                if (start >= 0) connection.setSelection(start, start + replaced.length)
+            }
+            connection.endBatchEdit()
+            composingRegionActive = false
+            insertionSession = -1
+            editorConfig = editorConfig.copy(cursorSync = editorConfig.cursorSync + 1)
+            syncShiftFromCursor()
+            scheduleEditorTextRefresh()
+            deleted
+        }
 
     override fun currentTargetPackage(): String? = currentInputEditorInfo?.packageName
 
@@ -706,6 +796,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         when (command) {
             is KeyboardCommand.CommitText -> {
                 if (connection == null) return
+                selectionForecast.commit(command.text.length)
                 if (composingRegionActive) {
                     connection.beginBatchEdit()
                     connection.finishComposingText()
@@ -717,11 +808,15 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 composingRegionActive = false
             }
             is KeyboardCommand.SetComposingText -> {
+                if (connection != null && (composingRegionActive || command.text.isNotEmpty())) {
+                    selectionForecast.compose(command.text.length)
+                }
                 connection?.setComposingText(command.text, 1)
                 composingRegionActive = command.text.isNotEmpty()
             }
             is KeyboardCommand.ReplaceBeforeCursor -> {
                 if (connection == null) return
+                selectionForecast.commit(command.text.length, deleteBefore = command.length.coerceAtLeast(0))
                 connection.beginBatchEdit()
                 if (composingRegionActive) connection.finishComposingText()
                 if (command.length > 0) connection.deleteSurroundingText(command.length, 0)
@@ -730,15 +825,22 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 composingRegionActive = false
             }
             KeyboardCommand.FinishComposing -> {
+                if (composingRegionActive && connection != null) selectionForecast.finishComposing()
                 if (composingRegionActive) connection?.finishComposingText()
                 composingRegionActive = false
             }
             KeyboardCommand.DeleteBackward -> {
+                // One key event, but how many characters it takes (a surrogate
+                // pair, a whole emoji sequence) is the editor's call.
+                selectionForecast.forget()
                 sendKey(KeyEvent.KEYCODE_DEL)
                 composingRegionActive = false
             }
             is KeyboardCommand.DeleteSurrounding -> {
                 if (connection == null) return
+                // Left to the editor on purpose: a delete that reaches the
+                // start of a sentence should re-read the caps mode there.
+                selectionForecast.forget()
                 connection.beginBatchEdit()
                 if (composingRegionActive) connection.finishComposingText()
                 if (command.before > 0 || command.after > 0) {
@@ -748,11 +850,13 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
                 composingRegionActive = false
             }
             KeyboardCommand.PerformEditorAction -> {
+                selectionForecast.forget()
                 if (composingRegionActive) connection?.finishComposingText()
                 composingRegionActive = false
                 performEditorAction()
             }
             is KeyboardCommand.MoveCursor -> {
+                selectionForecast.forget()
                 if (composingRegionActive) connection?.finishComposingText()
                 composingRegionActive = false
                 moveCursor(command.positions)
@@ -760,6 +864,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             }
             is KeyboardCommand.ReplaceLastCommitted -> {
                 if (connection == null) return
+                selectionForecast.commit(command.text.length, deleteBefore = 1)
                 connection.beginBatchEdit()
                 if (composingRegionActive) connection.finishComposingText()
                 connection.deleteSurroundingText(1, 0)
@@ -769,12 +874,19 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             }
             KeyboardCommand.DoubleSpacePeriod -> {
                 if (connection == null) return
+                selectionForecast.commit(2, deleteBefore = 1)
                 connection.beginBatchEdit()
                 if (composingRegionActive) connection.finishComposingText()
                 connection.deleteSurroundingText(1, 0)
                 connection.commitText(". ", 1)
                 connection.endBatchEdit()
                 composingRegionActive = false
+            }
+            is KeyboardCommand.EditText -> {
+                selectionForecast.forget()
+                if (composingRegionActive) connection?.finishComposingText()
+                composingRegionActive = false
+                editText(command.action, command.selecting)
             }
             KeyboardCommand.CycleSelectionCase -> cycleSelectionCase()
             KeyboardCommand.ShiftTap -> {
@@ -801,6 +913,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     private fun commitSuggestion(word: String, replaceWord: Boolean) {
         val connection = currentInputConnection ?: return
+        selectionForecast.forget()
         var after = runCatching {
             connection.getTextAfterCursor(32, 0)?.toString().orEmpty()
         }.getOrDefault("")
@@ -828,6 +941,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     private fun commitEmojiSuggestion(emoji: String) {
         val connection = currentInputConnection ?: return
+        selectionForecast.forget()
         connection.finishComposingText()
         val before = runCatching {
             connection.getTextBeforeCursor(32, 0)?.toString().orEmpty()
@@ -852,6 +966,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     private fun pasteClipboard(text: String = visibleClipboard.value?.fullText.orEmpty()) {
         if (text.isEmpty()) return
+        selectionForecast.forget()
         currentInputConnection?.finishComposingText()
         val image = ClipboardHistory.parseImage(text)
         val pasted = if (image != null) {
@@ -903,6 +1018,27 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         persistPreference { container.settings.clearClipboardHistory() }
     }
 
+    /** Not [persistPreference]: two layout swipes in a row must both land. */
+    private fun setActiveLayout(id: String) {
+        scope.launch { container.settings.setActiveKeyboardLayout(id) }
+    }
+
+    private fun pinClipboardHistory(text: String, pinned: Boolean) {
+        persistPreference { container.settings.setClipboardPinned(text, pinned) }
+    }
+
+    /**
+     * Deletes clips past the retention limit, and their cached images, at
+     * most once a minute as the keyboard comes up. Reading already hides
+     * them; this is what removes them from the phone.
+     */
+    private fun pruneClipboardHistory() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastClipboardPrune < CLIPBOARD_PRUNE_INTERVAL_MS) return
+        lastClipboardPrune = now
+        scope.launch { runCatching { container.settings.pruneClipboardHistory() } }
+    }
+
     private fun recordEmojiRecent(emoji: String) {
         persistPreference { container.settings.recordEmojiRecent(emoji) }
     }
@@ -928,6 +1064,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             start = start,
             composingActive = composingRegionActive,
         ) ?: return false
+        selectionForecast.forget()
         connection.beginBatchEdit()
         if (plan.restoreSelectionAfterFinish) {
             connection.finishComposingText()
@@ -1210,6 +1347,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         fresh: WritingCheckSession.Field,
         fixes: List<WritingFix>,
     ): WritingCommit {
+        selectionForecast.forget()
         val commit = commitWritingFixes(connection, fixes, fresh.offset + fresh.cursor, composingRegionActive)
         composingRegionActive = false
         writingCheck.applied(commit.applied.mapNotNull { it.suggestion })
@@ -1253,6 +1391,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         // The occurrence that was fixed, still as the fix left it, with the
         // cursor still where the fix put it; anything else is left alone.
         val undo = fix.undoIn(field) ?: return
+        selectionForecast.forget()
         val commit = commitWritingFixes(connection, listOf(undo), field.offset + field.cursor, composingRegionActive)
         composingRegionActive = false
         // Undone means "I meant that": the same fix is not made again here,
@@ -1288,6 +1427,17 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private fun learnTypingPick(typed: String, picked: String) {
         if (!visibleSettings.value.learnTypingFixes || !editorConfig.learningAllowed || editorConfig.sensitive) return
         scope.launch { container.typingFixes.recordPick(typed, picked) }
+    }
+
+    /** A word long-pressed off the strip: never suggested or corrected to again. */
+    private fun blockSuggestion(word: String) {
+        // Not persistPreference, for the same reason as addPersonalWord.
+        scope.launch { container.settings.addBlockedSuggestion(word) }
+    }
+
+    /** Undo on the notice a long press leaves: the word is suggested again. */
+    private fun unblockSuggestion(word: String) {
+        scope.launch { container.settings.removeBlockedSuggestion(word) }
     }
 
     /** An automatic fix taken back: undone twice, it is not made again. */
@@ -1339,29 +1489,57 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
             ?.removePrimaryClipChangedListener(clipboardListener)
     }
 
-    private fun refreshClipboard() {
+    /**
+     * [changed] is true when the system just told us the primary clip changed,
+     * as opposed to the keyboard re-reading it on show or on a settings update.
+     */
+    private fun refreshClipboard(changed: Boolean = false) {
         if (destroyed) return
         mainHandler.post {
             // The settings collector and the clipboard listener can both get
             // here in the frame onDestroy runs; the post then lands after it.
             if (destroyed) return@post
             val settings = visibleSettings.value
+            val manager = getSystemService(ClipboardManager::class.java)
+            val description = manager?.primaryClipDescription
             if (editorConfig.sensitive) {
+                // A copy made while a password field has the keyboard came
+                // from the secret: remember that, so moving to a normal field
+                // does not record it. Only on a change, so merely tapping
+                // into a password field does not taint an older clip.
+                if (changed && description != null) {
+                    val text = runCatching {
+                        manager?.primaryClip?.getItemAt(0)?.let { it.text?.toString() ?: it.uri?.toString() }
+                    }.getOrNull()
+                    sensitiveClips.mark(SensitiveClips.of(description.timestamp, text))
+                }
                 visibleClipboard.value = null
                 return@post
             }
-            val manager = getSystemService(ClipboardManager::class.java)
-            val description = manager?.primaryClipDescription
+            if (ClipboardPrivacy.markedSensitive(clipSensitiveExtra(description))) {
+                visibleClipboard.value = null
+                return@post
+            }
             val clip = manager?.primaryClip
+            val firstItem = runCatching { clip?.getItemAt(0) }.getOrNull()
+            if (
+                description != null &&
+                sensitiveClips.contains(
+                    SensitiveClips.of(description.timestamp, firstItem?.let { it.text?.toString() ?: it.uri?.toString() }),
+                )
+            ) {
+                visibleClipboard.value = null
+                return@post
+            }
             val imageMime = clipImageMime(description)
             val rawText = runCatching {
-                clip?.getItemAt(0)?.coerceToText(this)?.toString()
+                firstItem?.coerceToText(this)?.toString()
             }.getOrNull()?.trim().orEmpty()
             val text = rawText.takeIf { it.isNotEmpty() && !isImageUriText(it, imageMime != null) }
             when {
                 !text.isNullOrEmpty() -> showClipboardText(text, settings)
                 imageMime != null -> {
-                    val uri = clip?.getItemAt(0)?.uri
+                    val uri = firstItem?.uri
                     if (uri != null) showClipboardImage(uri, imageMime, settings)
                     else visibleClipboard.value = null
                 }
@@ -1388,7 +1566,14 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
     private fun showClipboardImage(uri: Uri, mime: String, settings: VocaPhoneSettings) {
         val source = uri.toString()
         val reused = lastRecordedClip
-        if (source == lastImageSource && reused != null && ClipboardHistory.isImage(reused)) {
+        // The cached copy can be gone: history pruning deletes images it no
+        // longer lists, and with history off it lists none. Reuse only a
+        // copy that is still on disk, or the chip would offer a paste that
+        // cannot happen; otherwise cache the clip again below.
+        val reusable = reused?.takeIf { ClipboardHistory.isImage(it) }?.let { clip ->
+            ClipboardHistory.parseImage(clip)?.second?.takeIf { ClipboardImages.file(this, it).exists() }
+        }
+        if (source == lastImageSource && reused != null && reusable != null) {
             visibleClipboard.value = reused.takeIf {
                 KeyboardChrome.offersClipboardChip(it, dismissedClip(settings), settings.clipboardChipEnabled)
             }?.let {
@@ -1423,6 +1608,11 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         }
     }
 
+    /** The raw [ClipboardPrivacy.EXTRA_IS_SENSITIVE] value, whatever type the copying app used. */
+    @Suppress("DEPRECATION")
+    private fun clipSensitiveExtra(description: ClipDescription?): Any? =
+        runCatching { description?.extras?.get(ClipboardPrivacy.EXTRA_IS_SENSITIVE) }.getOrNull()
+
     private fun clipImageMime(description: ClipDescription?): String? {
         if (description == null) return null
         for (index in 0 until description.mimeTypeCount) {
@@ -1453,6 +1643,52 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         if (lines == 0) return
         val keyCode = if (lines > 0) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP
         repeat(abs(lines).coerceAtMost(MAX_CURSOR_STEPS_PER_EVENT)) { sendKey(keyCode) }
+    }
+
+    /**
+     * The text-editing panel. Context-menu actions first (what TextView
+     * understands), the desktop shortcut when the editor declines; arrows
+     * as key events, and left/right with Select on as an exact range from
+     * where selecting started. See [TextEditing].
+     */
+    private fun editText(action: TextEditAction, selecting: Boolean) {
+        val connection = currentInputConnection ?: return
+        TextEditing.contextMenuId(action)?.let { id ->
+            val handled = runCatching { connection.performContextMenuAction(id) }.getOrDefault(false)
+            if (!handled) TextEditing.shortcut(action)?.let { sendKey(it.keyCode, it.metaState) }
+            editSelectionAnchor = null
+            return
+        }
+        val sideways = action == TextEditAction.LEFT || action == TextEditAction.RIGHT
+        if (selecting && sideways && lastSelStart >= 0 && lastSelEnd >= 0) {
+            val current = setOf(lastSelStart, lastSelEnd)
+            val anchor = editSelectionAnchor
+            val focus = editSelectionFocus
+            val (from, to) = if (anchor != null && focus != null && current == setOf(anchor, focus)) {
+                anchor to focus
+            } else {
+                lastSelStart to lastSelEnd
+            }
+            // A little text either side of the selection, to find where the
+            // next whole character ends.
+            val around = runCatching { connection.getSurroundingText(16, 16, 0) }.getOrNull()
+            TextEditing.extend(from, to, action, around?.text, around?.offset ?: -1)?.let { (start, end) ->
+                editSelectionAnchor = start
+                editSelectionFocus = end
+                connection.setSelection(start, end)
+                return
+            }
+        } else if (!selecting) {
+            editSelectionAnchor = null
+        }
+        TextEditing.movement(action, selecting)?.let { sendKey(it.keyCode, it.metaState) }
+    }
+
+    private fun sendKey(keyCode: Int, metaState: Int) {
+        val connection = currentInputConnection ?: return
+        val now = android.os.SystemClock.uptimeMillis()
+        connection.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, metaState))
+        connection.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, metaState))
     }
 
     private fun sendKey(keyCode: Int) {
@@ -1588,6 +1824,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
         val transcript = state.transcript?.let(TranscriptSanitizer::clean)?.takeIf { it.isNotBlank() } ?: return
         if (!ImeInputPolicy.acceptsDictation(currentInputType)) return
         val connection = currentInputConnection ?: return
+        selectionForecast.forget()
         val committedText = commitDictationText(connection, transcript, composingRegionActive, lastSelStart, lastSelEnd)
         composingRegionActive = false
         editorConfig = editorConfig.copy(cursorSync = editorConfig.cursorSync + 1)
@@ -1863,6 +2100,7 @@ class VocaPhoneInputMethodService : LifecycleInputMethodService(), TranscriptIns
 
     private companion object {
         const val MAX_CURSOR_STEPS_PER_EVENT = 12
+        const val CLIPBOARD_PRUNE_INTERVAL_MS = 60_000L
         /** Enough text for the words a delete slide can reach. */
         const val DELETE_SLIDE_CONTEXT = 1_000
 

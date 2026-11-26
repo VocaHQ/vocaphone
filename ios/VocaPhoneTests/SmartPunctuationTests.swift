@@ -93,6 +93,21 @@ struct SentenceBoundaryTests {
     @Test func aNumberedListItemDoesNotEndASentence() {
         #expect(!SentenceBoundary.endsSentence("3. "))
         #expect(!SentenceBoundary.endsSentence("first\n12. "))
+        #expect(!SentenceBoundary.endsSentence("first\n  4. "))
+    }
+
+    /// A number that ends a sentence is not a list item: only the first
+    /// token on its line is.
+    @Test func aNumberMidLineEndsASentence() {
+        #expect(SentenceBoundary.endsSentence("I'm 25. "))
+        #expect(SentenceBoundary.endsSentence("It costs 40. "))
+        #expect(SentenceBoundary.endsSentence("first\nWe won 3. "))
+    }
+
+    /// "no" is far likelier the word than the abbreviation.
+    @Test func noIsAWordNotAnAbbreviation() {
+        #expect(SentenceBoundary.endsSentence("I said no. "))
+        #expect(SentenceBoundary.endsSentence("No. "))
     }
 
     @Test func midSentenceIsNotASentenceStart() {
@@ -225,6 +240,112 @@ struct AutomaticShiftTests {
                 autocapitalization: .allCharacters,
                 current: .off
             ) == .locked
+        )
+    }
+
+    /// The switch in Settings. Off means Shift never arms itself, wherever the
+    /// cursor is, while a field that demands capitals is still obeyed.
+    @Test func theSwitchTurnsSentenceCapitalsOff() {
+        let off = AutomaticShift.Context(isEnabled: false)
+        for before in ["", "Done. ", "line\n"] {
+            #expect(
+                AutomaticShift.state(
+                    documentBefore: before,
+                    autocapitalization: .sentences,
+                    current: .on,
+                    context: off
+                ) == .off
+            )
+        }
+        #expect(
+            AutomaticShift.state(
+                documentBefore: "John ",
+                autocapitalization: .words,
+                current: .on,
+                context: off
+            ) == .off
+        )
+        #expect(
+            AutomaticShift.state(
+                documentBefore: "",
+                autocapitalization: .allCharacters,
+                current: .off,
+                context: off
+            ) == .locked
+        )
+    }
+
+    /// The keyboard opening over a draft. The host has not said where the
+    /// cursor is, the field has text in it, and Shift used to stay on from
+    /// wherever it was last: a capital in the middle of a sentence.
+    @Test func arrivingInAFieldWithTextAndNoAnswerDoesNotCapitalise() {
+        #expect(
+            AutomaticShift.state(
+                documentBefore: nil,
+                autocapitalization: .sentences,
+                current: .on,
+                context: .init(isArrival: true, documentHasText: true)
+            ) == .off
+        )
+    }
+
+    /// An empty field hands back `nil` too, and that one is a sentence start.
+    @Test func arrivingInAnEmptyFieldCapitalises() {
+        #expect(
+            AutomaticShift.state(
+                documentBefore: nil,
+                autocapitalization: .sentences,
+                current: .off,
+                context: .init(isArrival: true, documentHasText: false)
+            ) == .on
+        )
+        // Text after the cursor and none before: the top of the document.
+        #expect(
+            AutomaticShift.state(
+                documentBefore: nil,
+                autocapitalization: .sentences,
+                current: .off,
+                context: .init(isArrival: true, documentHasText: true, documentAfter: "world")
+            ) == .on
+        )
+        // Mid-typing, "no text" from a proxy that has stopped answering is not
+        // believed. That inference is what capitalised "how Are you".
+        #expect(
+            AutomaticShift.state(
+                documentBefore: nil,
+                autocapitalization: .sentences,
+                current: .off,
+                context: .init(documentHasText: false)
+            ) == nil
+        )
+    }
+
+    /// A lock set for an all-capitals field ends with that field. A lock the
+    /// user set does not.
+    @Test func aLockTheFieldAskedForDoesNotFollowTheUser() {
+        #expect(
+            AutomaticShift.state(
+                documentBefore: "hello ",
+                autocapitalization: .sentences,
+                current: .locked,
+                context: .init(lockIsAutomatic: true)
+            ) == .off
+        )
+        #expect(
+            AutomaticShift.state(
+                documentBefore: nil,
+                autocapitalization: .sentences,
+                current: .locked,
+                context: .init(lockIsAutomatic: true)
+            ) == .off
+        )
+        #expect(
+            AutomaticShift.state(
+                documentBefore: "hello ",
+                autocapitalization: .sentences,
+                current: .locked,
+                context: .init(isEnabled: false)
+            ) == nil
         )
     }
 

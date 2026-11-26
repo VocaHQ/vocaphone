@@ -57,6 +57,86 @@ struct LearnedWords: Codable, Equatable, Sendable {
     static let fixesBeforeLearning = 2
     static let fixCapacity = 500
 
+    /// Words the user long-pressed off the suggestion strip, by lowercase
+    /// word, with when. Optional so files written before it decode.
+    ///
+    /// Kept here rather than in a file of its own because it is the same kind
+    /// of thing — what this user has taught the keyboard — and it lives and
+    /// dies with the same Full Access. Never listed in the app, for the same
+    /// reason the learned words are not: a count and a reset are the feature.
+    private(set) var blocked: [String: Date]?
+
+    /// Enough for every word anyone would bother to block; the oldest go first.
+    static let blockedCapacity = 500
+
+    var blockedCount: Int { blocked?.count ?? 0 }
+
+    /// Every blocked word, lowercased, for a keyboard to hold as a set rather
+    /// than build one per keystroke.
+    var blockedWords: Set<String> { blocked.map { Set($0.keys) } ?? [] }
+
+    func isBlocked(_ word: String) -> Bool {
+        blocked?[Self.key(word)] != nil
+    }
+
+    /// Never offer `word` again, and never correct to it.
+    ///
+    /// It also stops being a word this keyboard learned, and any typo fix that
+    /// led to it is forgotten: a word the user asked not to see must not come
+    /// back as a completion three sentences later because they once typed it.
+    mutating func block(_ word: String, now: Date = Date()) {
+        let key = Self.key(word)
+        guard !key.isEmpty else { return }
+        var all = blocked ?? [:]
+        all[key] = now
+        if all.count > Self.blockedCapacity {
+            let doomed = all.sorted { $0.value < $1.value }.prefix(all.count - Self.blockedCapacity)
+            for (word, _) in doomed { all.removeValue(forKey: word) }
+        }
+        blocked = all
+        entries.removeValue(forKey: key)
+        fixes = fixes?.filter { Self.key($0.value.fix) != key }
+    }
+
+    mutating func removeAllBlocked() {
+        blocked = nil
+    }
+
+    /// What blocking a word took away, so Undo can put it back exactly: the
+    /// learned entry and the typo fixes that led to it.
+    struct Blocking: Equatable, Sendable {
+        let word: String
+        let entry: Entry?
+        let fixes: [String: Fix]
+        let wasBlocked: Bool
+    }
+
+    /// What ``block(_:now:)`` would take away, read before it does.
+    func blocking(_ word: String) -> Blocking {
+        let key = Self.key(word)
+        return Blocking(
+            word: word,
+            entry: entries[key],
+            fixes: fixes?.filter { Self.key($0.value.fix) == key } ?? [:],
+            wasBlocked: isBlocked(word)
+        )
+    }
+
+    /// Undo for a block: the word can be offered again, and what it took
+    /// away comes back.
+    mutating func undo(_ blocking: Blocking) {
+        let key = Self.key(blocking.word)
+        guard !key.isEmpty else { return }
+        if !blocking.wasBlocked {
+            blocked?.removeValue(forKey: key)
+            if blocked?.isEmpty == true { blocked = nil }
+        }
+        if let entry = blocking.entry { entries[key] = entry }
+        if !blocking.fixes.isEmpty {
+            fixes = (fixes ?? [:]).merging(blocking.fixes) { _, restored in restored }
+        }
+    }
+
     private var learned: some Collection<Entry> {
         entries.values.lazy.filter { $0.count >= Self.repetitionsBeforeLearning }
     }
@@ -101,6 +181,9 @@ struct LearnedWords: Codable, Equatable, Sendable {
     mutating func learn(_ word: String, now: Date = Date()) {
         let key = Self.key(word)
         guard !key.isEmpty else { return }
+        // Asserting a word is the opposite of blocking it, and the newer of
+        // the two instructions is the one that stands.
+        blocked?.removeValue(forKey: key)
         var entry = entries[key] ?? Entry(word: word, count: 0, lastUsedAt: now)
         entry.word = word
         entry.count = max(entry.count, Self.repetitionsBeforeLearning)
@@ -109,6 +192,8 @@ struct LearnedWords: Codable, Equatable, Sendable {
         evictIfNeeded()
     }
 
+    /// Forgets learned words and fixes. Blocked words stay: "Reset learned
+    /// words" promises nothing else is affected, and they have their own reset.
     mutating func removeAll() {
         entries.removeAll()
         fixes = nil
@@ -255,13 +340,55 @@ final class LearnedWordStore: @unchecked Sendable {
     /// Unlike a learned word, this is something the user asked for and was
     /// told had happened. Queued like a word, a reset the app was suspended
     /// before writing left the old file in place, and every word came back.
+    ///
+    /// Starts from the file, not from this store's copy: Settings loads its
+    /// store when it opens, and the keyboard may have blocked or learned
+    /// words since. Writing the stale copy back would undo those.
     func removeAll() {
-        queue.sync {
-            cached.removeAll()
-            pending = nil
+        rewrite { $0.removeAll() }
+    }
+
+    /// Unblocks every word, the same way: on disk before it returns, and
+    /// starting from the file, so words learned since are not lost.
+    func removeAllBlocked() {
+        rewrite { $0.removeAllBlocked() }
+    }
+
+    /// Applies `change` to the file as it is now and writes the result,
+    /// behind any write already queued so an older list cannot land after.
+    private func rewrite(_ change: (inout LearnedWords) -> Void) {
+        writer.sync {
+            let onDisk = Self.read(from: fileURL)
+            let remaining = queue.sync { () -> LearnedWords in
+                var words = onDisk ?? cached
+                change(&words)
+                cached = words
+                pending = nil
+                return words
+            }
+            write(remaining)
         }
-        // Behind any write already queued, so an older list cannot land after.
-        writer.sync { write(LearnedWords()) }
+    }
+
+    /// Picks up what another process wrote — Settings' resets above — so a
+    /// long-lived keyboard does not write its old copy back over them.
+    ///
+    /// Read on the writer queue, behind any write of this store's own, and
+    /// handed back on the main queue. Skipped while a change of this store's
+    /// is still waiting to be written: that change is newer than the file.
+    func reload(_ completion: @escaping @Sendable (LearnedWords) -> Void) {
+        writer.async { [self] in
+            // No file (no Full Access, or nothing written yet): the copy in
+            // memory is all there is.
+            guard let onDisk = Self.read(from: fileURL) else { return }
+            let words = queue.sync { () -> LearnedWords? in
+                guard pending == nil else { return nil }
+                cached = onDisk
+                return onDisk
+            }
+            guard let words else { return }
+            DispatchQueue.main.async { completion(words) }
+        }
     }
 
     private func write(_ words: LearnedWords) {

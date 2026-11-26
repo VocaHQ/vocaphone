@@ -8,6 +8,8 @@ protocol DictationBarViewDelegate: AnyObject {
     func dictationBarDidChangePreferences(_ bar: DictationBarView)
     /// A candidate chip was tapped.
     func dictationBar(_ bar: DictationBarView, didChoose candidate: TypingCandidate)
+    /// A word chip was held: never suggest it again.
+    func dictationBar(_ bar: DictationBarView, didBlock candidate: TypingCandidate)
 }
 
 /// The dictation chrome above the keys: one container that morphs between
@@ -63,6 +65,8 @@ final class DictationBarView: UIView, TypingStripViewDelegate {
     private var isNarrow = false
     private var flashWork: DispatchWorkItem?
     private var isFlashing = false
+    /// What tapping the flashed message does, while it has a tap at all.
+    private var flashTap: (() -> Void)?
 
     private var horizontalInsets: [NSLayoutConstraint] = []
     private var topInset: NSLayoutConstraint?
@@ -243,23 +247,40 @@ final class DictationBarView: UIView, TypingStripViewDelegate {
     /// A message that outlives the next poll tick. Direct writes to the status
     /// label used to be erased a quarter of a second later, so the guidance the
     /// user needed most was the guidance they never got to read.
-    func flash(_ message: String) {
+    ///
+    /// `onTap`, when given, makes the message a button for as long as it is
+    /// up — Undo after a word is blocked — and keeps it up a little longer.
+    func flash(_ message: String, onTap: (() -> Void)? = nil) {
         endFlash()
         isFlashing = true
+        flashTap = onTap
+        messageLabel.isUserInteractionEnabled = onTap != nil
+        messageLabel.accessibilityTraits = onTap == nil ? .staticText : .button
         setBody(.message(message), animated: true)
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            isFlashing = false
+            endFlash()
             if let body = renderedModel?.body { setBody(body, animated: true) }
         }
         flashWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.flashDuration, execute: work)
+        let duration = onTap == nil ? Self.flashDuration : Self.flashDuration + 1.4
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
 
     private func endFlash() {
         flashWork?.cancel()
         flashWork = nil
         isFlashing = false
+        flashTap = nil
+        messageLabel.isUserInteractionEnabled = false
+        messageLabel.accessibilityTraits = .staticText
+    }
+
+    @objc private func flashTapped() {
+        guard let tap = flashTap else { return }
+        endFlash()
+        if let body = renderedModel?.body { setBody(body, animated: true) }
+        tap()
     }
 
     /// Switches between the one-row strip and the headline-and-body pair.
@@ -417,6 +438,10 @@ final class DictationBarView: UIView, TypingStripViewDelegate {
     /// controller can rewrite the document.
     func typingStrip(_ strip: TypingStripView, didChoose candidate: TypingCandidate) {
         delegate?.dictationBar(self, didChoose: candidate)
+    }
+
+    func typingStrip(_ strip: TypingStripView, didBlock candidate: TypingCandidate) {
+        delegate?.dictationBar(self, didBlock: candidate)
     }
 
     @objc private func primaryTapped() {
@@ -776,6 +801,7 @@ final class DictationBarView: UIView, TypingStripViewDelegate {
 
         messageLabel.lineBreakMode = .byTruncatingTail
         messageLabel.isAccessibilityElement = true
+        messageLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(flashTapped)))
         // Two lines of transcript preview must not spill over the keys below.
         bodyContainer.clipsToBounds = true
 

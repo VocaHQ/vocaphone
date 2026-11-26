@@ -107,3 +107,31 @@ internal object DictationSelection {
         return target(remembered, current)
     }
 }
+
+/**
+ * Taking back the last dictation this keyboard typed: only while exactly that
+ * text is still right before the cursor, where it was put, with nothing
+ * selected. Any edit since, by the user or the app, leaves it alone.
+ */
+internal object DictationUndo {
+    /**
+     * [before] is the text right before the cursor, read for the length of
+     * the insertion; [cursor] the collapsed cursor the editor last reported,
+     * or -1 when it has not.
+     */
+    fun matches(inserted: String, insertionStart: Int, before: String?, cursor: Int): Boolean {
+        if (inserted.isEmpty() || before != inserted) return false
+        return insertionStart < 0 || cursor < 0 || cursor == insertionStart + inserted.length
+    }
+
+    /**
+     * What Undo should put back for a dictation that [replacesSelection]:
+     * the selected text, only when it was read whole ([selectionLength] is
+     * what the editor reported). Empty when nothing was replaced; null when
+     * something was and Undo could not restore it faithfully.
+     */
+    fun replacedSelection(replacesSelection: Boolean, selectedText: String?, selectionLength: Int): String? {
+        if (!replacesSelection) return ""
+        return selectedText?.takeIf { it.isNotEmpty() && it.length == selectionLength }
+    }
+}

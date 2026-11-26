@@ -216,4 +216,23 @@ class DictationCommitTest {
         assertEquals(DictationSelection.Target.AsIs, DictationSelection.target(started, 4, 9, "quick"))
         assertEquals(DictationSelection.Target.AsIs, DictationSelection.target(started, 7, 7, null))
     }
+
+    @Test
+    fun `dictation undo needs the exact text right before the cursor where it was put`() {
+        assertTrue(DictationUndo.matches("Hello there. ", 5, "Hello there. ", 18))
+        assertTrue(DictationUndo.matches("Hello there. ", -1, "Hello there. ", 40))
+        assertTrue(DictationUndo.matches("Hello there. ", 5, "Hello there. ", -1))
+        assertFalse(DictationUndo.matches("Hello there. ", 5, "Hello there! ", 18))
+        assertFalse(DictationUndo.matches("Hello there. ", 5, "Hello there. ", 20))
+        assertFalse(DictationUndo.matches("Hello there. ", 5, null, 18))
+        assertFalse(DictationUndo.matches("", 5, "", 5))
+    }
+
+    @Test
+    fun `undo puts back a selection only when it was read whole`() {
+        assertEquals("", DictationUndo.replacedSelection(replacesSelection = false, selectedText = null, selectionLength = 0))
+        assertEquals("world", DictationUndo.replacedSelection(replacesSelection = true, selectedText = "world", selectionLength = 5))
+        assertEquals(null, DictationUndo.replacedSelection(replacesSelection = true, selectedText = "wor", selectionLength = 5))
+        assertEquals(null, DictationUndo.replacedSelection(replacesSelection = true, selectedText = null, selectionLength = 5))
+    }
 }

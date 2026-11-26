@@ -84,10 +84,14 @@ import com.vocahq.vocaphone.local.LocalModelDescriptor
 import com.vocahq.vocaphone.local.LocalModelEngine
 import com.vocahq.vocaphone.local.LocalModelState
 import com.vocahq.vocaphone.settings.AudioRetention
+import com.vocahq.vocaphone.settings.AutocorrectStrength
+import com.vocahq.vocaphone.settings.BlockedSuggestions
 import com.vocahq.vocaphone.settings.BubbleBehavior
 import com.vocahq.vocaphone.settings.KeyboardHeight
 import com.vocahq.vocaphone.settings.ModelIdleTimeout
 import com.vocahq.vocaphone.settings.SplitKeyboard
+import com.vocahq.vocaphone.settings.ClipboardRetention
+import com.vocahq.vocaphone.settings.OneHandedMode
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import com.vocahq.vocaphone.telemetry.TelemetryInspectPayload
 import kotlin.math.abs
@@ -134,6 +138,9 @@ data class KeyboardTypingActions(
     val onLearnTypingFixes: (Boolean) -> Unit = {},
     val onForgetTypingFixes: () -> Unit = {},
     val onSuggestSwearWords: (Boolean) -> Unit = {},
+    val onAutocorrectStrength: (AutocorrectStrength) -> Unit = {},
+    val onDoubleSpacePeriod: (Boolean) -> Unit = {},
+    val onResetBlockedSuggestions: () -> Unit = {},
 )
 
 @Composable
@@ -173,6 +180,7 @@ fun SettingsScreen(
     onNumberKeyHints: (Boolean) -> Unit,
     onLongPressSymbols: (Boolean) -> Unit,
     typing: KeyboardTypingActions = KeyboardTypingActions(),
+    surface: KeyboardSurfaceActions = KeyboardSurfaceActions(),
     onAutoCapitalize: (Boolean) -> Unit,
     onPersonalDictionary: (String) -> Unit,
     onAddSnippet: (trigger: String, expansion: String) -> Unit,
@@ -472,6 +480,19 @@ fun SettingsScreen(
                         label = { it.displayName },
                         onSelect = onSplitKeyboard,
                     )
+                    SettingsDivider()
+                    SettingsChoiceRow(
+                        title = "One-handed mode",
+                        options = OneHandedMode.entries,
+                        selected = settings.oneHandedMode,
+                        label = { it.displayName },
+                        supporting = if (settings.oneHandedMode == OneHandedMode.OFF) {
+                            "Off. Also in the keyboard menu. Phones held upright only."
+                        } else {
+                            "${settings.oneHandedMode.displayName} hand. Phones held upright only."
+                        },
+                        onSelect = surface.onOneHandedMode,
+                    )
                 }
                 SettingsGroup(title = "Typing", learnMore = SettingsHelp.typing) {
                     SettingsSwitchRow(
@@ -483,9 +504,37 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsSwitchRow(
                         title = "Corrections",
-                        supporting = "Nearby words in the toolbar.",
+                        supporting = "Space fixes a typo. Delete right after puts back what you typed.",
                         checked = settings.correctionsEnabled,
                         onCheckedChange = onCorrections,
+                    )
+                    SettingsDivider()
+                    SettingsChoiceRow(
+                        title = "Autocorrect strength",
+                        options = AutocorrectStrength.entries,
+                        selected = settings.autocorrectStrength,
+                        label = { it.displayName },
+                        detail = {
+                            when (it) {
+                                AutocorrectStrength.MILD -> "One-letter slips with a clear fix"
+                                AutocorrectStrength.NORMAL -> "Typical typos"
+                                AutocorrectStrength.AGGRESSIVE -> "Fixes more, guesses more"
+                            }
+                        },
+                        enabled = settings.correctionsEnabled && settings.suggestionsEnabled,
+                        onSelect = typing.onAutocorrectStrength,
+                    )
+                    SettingsDivider()
+                    val blockedCount = BlockedSuggestions.count(settings.blockedSuggestions)
+                    SettingsActionRow(
+                        title = "Reset blocked suggestions",
+                        supporting = when (blockedCount) {
+                            0 -> "Long-press a suggestion to never see it again."
+                            1 -> "1 word blocked."
+                            else -> "$blockedCount words blocked."
+                        },
+                        enabled = blockedCount > 0,
+                        onClick = typing.onResetBlockedSuggestions,
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
@@ -512,9 +561,16 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsSwitchRow(
                         title = "Capitalize sentences",
-                        supporting = "Shift turns on at the start of a sentence.",
+                        supporting = "Shift turns on at the start of a sentence, not after e.g. or Mr.",
                         checked = settings.autoCapitalizeEnabled,
                         onCheckedChange = onAutoCapitalize,
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        title = "Double-space period",
+                        supporting = "Two spaces after a word type a period and a space.",
+                        checked = settings.doubleSpacePeriod,
+                        onCheckedChange = typing.onDoubleSpacePeriod,
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
@@ -559,6 +615,8 @@ fun SettingsScreen(
                         onCheckedChange = onAsciiEmoji,
                     )
                 }
+                KeyboardLanguagesSettingsGroup(settings, surface)
+                KeyPressSettingsGroup(settings, surface)
                 WritingCheckSettingsGroup(settings, grammarModel, writing, onCancelGrammarDownload)
                 SettingsGroup(title = "Clipboard", learnMore = SettingsHelp.clipboard) {
                     SettingsSwitchRow(
@@ -570,10 +628,21 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsSwitchRow(
                         title = "Clipboard history",
-                        supporting = "Kept on this phone. Off in passwords.",
+                        supporting = "Kept on this phone. Off in passwords and for clips apps mark sensitive.",
                         checked = settings.clipboardHistoryEnabled,
                         onCheckedChange = onClipboardHistory,
                     )
+                    if (settings.clipboardHistoryEnabled) {
+                        SettingsDivider()
+                        SettingsChoiceRow(
+                            title = "Keep clips for",
+                            options = ClipboardRetention.entries,
+                            selected = settings.clipboardRetention,
+                            label = { it.displayName },
+                            supporting = "${settings.clipboardRetention.displayName}. Pinned clips stay until you unpin them.",
+                            onSelect = surface.onClipboardRetention,
+                        )
+                    }
                 }
             }
 

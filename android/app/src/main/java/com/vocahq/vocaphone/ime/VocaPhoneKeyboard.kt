@@ -23,6 +23,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -104,7 +105,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import com.vocahq.vocaphone.R
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -129,7 +132,13 @@ import com.vocahq.vocaphone.core.ModelTranslationSupport
 import com.vocahq.vocaphone.core.TranscriptionLanguage
 import com.vocahq.vocaphone.core.WritingStyle
 import com.vocahq.vocaphone.writing.WritingSuggestion
+import com.vocahq.vocaphone.settings.BlockedSuggestions
 import com.vocahq.vocaphone.settings.ClipboardHistory
+import com.vocahq.vocaphone.settings.ClipEntry
+import com.vocahq.vocaphone.settings.OneHandedMode
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.customActions
 import com.vocahq.vocaphone.settings.VocaPhoneSettings
 import java.io.File
 import com.vocahq.vocaphone.ui.theme.VocaPhoneTheme
@@ -152,6 +161,8 @@ private enum class PreferencePanel {
     STYLE,
     CLIPBOARD,
     WRITING,
+    /** Gboard's text-editing panel ([TextEditingPanel]). */
+    EDIT,
 }
 
 @Composable
@@ -164,6 +175,8 @@ internal fun VocaPhoneKeyboard(
     editorText: EditorTextWindow,
     suggestions: SuggestionDictionary?,
     emojiCatalog: List<EmojiEntry>,
+    emojiTones: EmojiTones = EmojiTones.EMPTY,
+    onEmojiSkinTone: (Int) -> Unit = {},
     writing: WritingStripState? = null,
     onCommand: (KeyboardCommand) -> Unit,
     onMicTap: () -> Unit,
@@ -181,6 +194,9 @@ internal fun VocaPhoneKeyboard(
     onRemoveClipboardHistory: (String) -> Unit,
     onClearClipboardHistory: () -> Unit,
     onEmojiUsed: (String) -> Unit,
+    onPinClipboardHistory: (String, Boolean) -> Unit = { _, _ -> },
+    onLayoutChanged: (String) -> Unit = {},
+    onOneHandedMode: (OneHandedMode) -> Unit = {},
     onSpaceLongPress: () -> Unit = {},
     onWritingApply: (WritingSuggestion) -> Unit = {},
     onWritingDismiss: (WritingSuggestion) -> Unit = {},
@@ -193,6 +209,8 @@ internal fun VocaPhoneKeyboard(
     typingMemory: AutocorrectMemory = AutocorrectMemory.EMPTY,
     onLearnPick: (typed: String, picked: String) -> Unit = { _, _ -> },
     onRejectFix: (typed: String, fix: String) -> Unit = { _, _ -> },
+    onBlockSuggestion: (String) -> Unit = {},
+    onUnblockSuggestion: (String) -> Unit = {},
     onMicHoldStart: () -> Unit = {},
     onMicHoldEnd: () -> Unit = {},
     readTextBeforeCursor: () -> String? = { null },
@@ -238,9 +256,26 @@ internal fun VocaPhoneKeyboard(
         }
     }
     var emojiCategory by remember { mutableStateOf(EmojiCategory.SMILEYS) }
+    // Emoji search: null when not searching. While searching, the letter keys
+    // type into the query instead of the editor (EmojiSearchPanel).
+    var emojiQuery by remember { mutableStateOf<String?>(null) }
+    var emojiResults by remember { mutableStateOf(emptyList<String>()) }
+    // The emoji whose skin tones are on offer after a hold, if any.
+    var toneTarget by remember { mutableStateOf<String?>(null) }
+    var skinTone by remember { mutableStateOf(settings.emojiSkinTone) }
+    LaunchedEffect(settings.emojiSkinTone) { skinTone = settings.emojiSkinTone }
     var swipeChoices by remember { mutableStateOf<List<String>>(emptyList()) }
     var swipeWord by remember { mutableStateOf<String?>(null) }
     var suggestionStrip by remember { mutableStateOf(SuggestionStrip(emptyList())) }
+    // The word a long press just blocked: the strip says so, with Undo, for a
+    // few seconds or until the next key.
+    var blockedNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(blockedNotice) {
+        if (blockedNotice != null) {
+            delay(BLOCKED_NOTICE_MILLIS)
+            blockedNotice = null
+        }
+    }
     // Words saved this editor session, so the + chip vanishes before DataStore
     // has come back around. Reset with the editor; the persisted list is source of truth.
     var savedThisSession by remember { mutableStateOf(emptyList<String>()) }
@@ -253,8 +288,13 @@ internal fun VocaPhoneKeyboard(
     // kept sending character deletes.
     val deleteHoldBefore = remember { arrayOf("") }
     val keyPreview = remember { mutableStateOf<KeyPreview?>(null) }
+    // "Popup on keypress" off hides the letter balloon; a held key's accent
+    // row still shows, since picking from it needs to be seen.
+    val popupOn = rememberUpdatedState(settings.keyPopupEnabled)
     val onKeyPreview = remember {
-        { preview: KeyPreview? -> keyPreview.value = preview }
+        { preview: KeyPreview? ->
+            keyPreview.value = preview?.takeIf { popupOn.value || it.accentIndex >= 0 }
+        }
     }
     // Where each letter of the composing word was tapped (TapTrace), and the
     // offset of the tap the key being pressed reports on its way to handleKey.
@@ -264,13 +304,17 @@ internal fun VocaPhoneKeyboard(
     // dead zone, and when a key was last touched.
     val keyBounds = remember { mutableMapOf<String, Pair<KeyboardKey, Rect>>() }
     val keyTouch = remember { KeyTouchClock() }
-    // A learned fix the space bar just made, which the next delete takes back.
-    val learnedUndo = remember { arrayOfNulls<LearnedFixUndo>(1) }
+    // The correction a word boundary just made, which the next delete takes back.
+    val corrector = remember { TypingCorrector() }
     // Delete slid left by words, while that press lasts.
     val deleteSlide = remember { arrayOfNulls<DeleteSlide>(1) }
     val context = LocalContext.current
     val keyFeedback = remember { KeyFeedback(context.getSystemService(AudioManager::class.java)) }
-    SideEffect { keyFeedback.soundOn = settings.keySoundEnabled }
+    SideEffect {
+        keyFeedback.soundOn = settings.keySoundEnabled
+        keyFeedback.hapticsOn = settings.keyHapticsEnabled
+        keyFeedback.spaceCursorOn = settings.spaceCursorEnabled
+    }
     // Strip changes cross-fade only once the keyboard has been on screen for a
     // frame: before that, and in every new field, they apply at once, so the
     // capital a field starts with never visibly rolls in.
@@ -299,8 +343,28 @@ internal fun VocaPhoneKeyboard(
         keyPreview.value = null
         deleteHoldBefore[0] = ""
         tapTrace.clear()
-        learnedUndo[0] = null
+        corrector.reset()
         deleteSlide[0] = null
+        emojiQuery = null
+        toneTarget = null
+        blockedNotice = null
+    }
+    LaunchedEffect(keyboardState.layer) {
+        if (keyboardState.layer != KeyboardLayer.EMOJI) {
+            emojiQuery = null
+            toneTarget = null
+        }
+    }
+    // Off the composition thread, like the strip: 3,800 entries per keystroke.
+    LaunchedEffect(emojiQuery, emojiCatalog, emojiTones) {
+        val query = emojiQuery
+        emojiResults = if (query.isNullOrBlank()) {
+            emptyList()
+        } else {
+            withContext(Dispatchers.Default) {
+                EmojiSearch.search(emojiCatalog, query, emojiTones, shouldAbort = { !isActive })
+            }
+        }
     }
 
     LaunchedEffect(dictationState.phase, editor.dictationAllowed) {
@@ -338,9 +402,11 @@ internal fun VocaPhoneKeyboard(
                 composing = "",
                 capitalizeAfterSpace = false,
                 lastWasSpace = false,
+                token = "",
+                lineStart = false,
             )
             tapTrace.clear()
-            learnedUndo[0] = null
+            corrector.forget()
         }
     }
     LaunchedEffect(settings.asciiEmojiEnabled, emojiCategory) {
@@ -349,7 +415,36 @@ internal fun VocaPhoneKeyboard(
         }
     }
 
-    val composeWords = settings.suggestionsEnabled && !editor.sensitive
+    // Typing layouts (KeyboardLanguages). The active one is local state so a
+    // switch shows on the next frame; the store catches up behind it.
+    val languageTags = remember { KeyboardLanguages.deviceLanguageTags() }
+    val enabledLayouts = remember(settings.keyboardLayouts, languageTags) {
+        KeyboardLanguages.enabled(settings.keyboardLayouts, languageTags)
+    }
+    var activeLayoutId by remember { mutableStateOf(settings.activeKeyboardLayout) }
+    LaunchedEffect(settings.activeKeyboardLayout) {
+        if (settings.activeKeyboardLayout.isNotEmpty()) activeLayoutId = settings.activeKeyboardLayout
+    }
+    val activeLayout = KeyboardLanguages.active(activeLayoutId, enabledLayouts)
+    val layoutSwitchable = enabledLayouts.size > 1
+    // The one flag the English-only machinery reads: word-list suggestions,
+    // swipe, autocorrect and learned fixes are off on other layouts.
+    val isEnglishLayout = activeLayout.isEnglish
+    SideEffect { keyFeedback.layoutSwipeOn = layoutSwitchable }
+    val composeWords = settings.suggestionsEnabled && !editor.sensitive && isEnglishLayout
+    // One-handed mode, local so the frame moves on the tap; the store follows.
+    var oneHandedMode by remember { mutableStateOf(settings.oneHandedMode) }
+    LaunchedEffect(settings.oneHandedMode) { oneHandedMode = settings.oneHandedMode }
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val oneHandedAvailable = OneHandedLayout.available(
+        smallestWidthDp = configuration.smallestScreenWidthDp,
+        portrait = configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT,
+    )
+    val oneHandedShown = if (oneHandedAvailable) oneHandedMode else OneHandedMode.OFF
+    fun setOneHanded(mode: OneHandedMode) {
+        oneHandedMode = mode
+        onOneHandedMode(mode)
+    }
     val keyHeight = settings.keyboardHeight.keyHeightDp.dp
     val letterRows = KeyboardLayouts.letterRowCount(settings.numberRowEnabled)
     val keyAreaHeight = keyHeight * letterRows + RowGap * (letterRows - 1)
@@ -382,6 +477,9 @@ internal fun VocaPhoneKeyboard(
     // Learned fixes are learned and made only where suggestions are, and only
     // in fields that allow learning: never a password, a code or an incognito tab.
     val learnsFixes = settings.learnTypingFixes && editor.learningAllowed
+    // Space and `.,!?;:` correct a typo: Corrections on, in a field that allows it.
+    val autocorrects = composeWords && settings.correctionsEnabled && editor.autocorrectAllowed
+    val blockedWords = remember(settings.blockedSuggestions) { BlockedSuggestions.words(settings.blockedSuggestions) }
     // Mid-word the strip is built from [keyboardState.composing]; surrounding
     // editor text is only needed once the word is committed. Keying on
     // editorText during a word ran a second scan ~50ms after every letter.
@@ -396,6 +494,11 @@ internal fun VocaPhoneKeyboard(
         settings.suggestSwearWords,
         typingMemory,
         learnsFixes,
+        autocorrects,
+        settings.autocorrectStrength,
+        corrector.assertedVersion,
+        blockedWords,
+        settings.snippets,
     ) {
         suggestionStrip = if (!composeWords || suggestions == null) {
             SuggestionStrip(emptyList())
@@ -406,17 +509,21 @@ internal fun VocaPhoneKeyboard(
                 memory = typingMemory,
                 learnedFixes = learnsFixes,
                 taps = tapTrace.snapshot(keyboardState.composing),
+                autocorrect = AutocorrectTuning.of(settings.autocorrectStrength).takeIf { autocorrects },
+                asserted = corrector.asserted,
+                blocked = blockedWords,
             )
+            val composing = keyboardState.composing
             withContext(Dispatchers.Default) {
                 suggestions.strip(
-                    composing = keyboardState.composing,
+                    composing = composing,
                     before = editorText.before,
                     after = editorText.after,
                     correctionsEnabled = settings.correctionsEnabled,
                     personalRaw = personalRaw,
                     shouldAbort = { !isActive },
                     options = options,
-                )
+                ).copy(extras = TypingChips.extras(editorText.before, composing, settings.snippets))
             }
         }
     }
@@ -440,7 +547,10 @@ internal fun VocaPhoneKeyboard(
             addAll(swipeChoices.map { SuggestionItem(it) })
         }
     } else {
-        KeyboardChrome.suggestionsForStrip(suggestionStrip.items, startedTyping)
+        // Right after a correction: what was typed, to put back, and the other readings.
+        corrector.undo?.takeIf { keyboardState.composing.isEmpty() }?.strip
+            ?: KeyboardChrome.suggestionsForStrip(suggestionStrip.items, startedTyping)
+                .let { items -> if (settings.emojiSuggestionsEnabled) items else items.filterNot { it.isEmoji } }
     }
     val swipeReplacesWord = swipeChoicesActive
     // The button is there whenever the field has words to check, typing or
@@ -464,17 +574,25 @@ internal fun VocaPhoneKeyboard(
     }
 
     fun handleDelete(heldMs: Long) {
+        blockedNotice = null
+        emojiQuery?.let { query ->
+            if (keyboardState.layer == KeyboardLayer.EMOJI) {
+                emojiQuery = query.dropLast(1)
+                return
+            }
+        }
         if (heldMs == 0L) {
             deleteSlide[0] = null
-            // Right after the space bar made a learned fix: put back what was
-            // typed, and count it against the fix.
-            val undo = learnedUndo[0]
-            learnedUndo[0] = null
+            // Right after a correction: put back what was typed, count it
+            // against the fix, and leave the word alone in this field.
+            val undo = corrector.undo
+            corrector.undo = null
             if (undo != null && keyboardState.composing.isEmpty()) {
                 clearSwipe()
-                keyboardState = keyboardState.copy(lastWasSpace = false, capitalizeAfterSpace = false)
-                onCommand(undo.command())
+                keyboardState = keyboardState.copy(lastWasSpace = false, capitalizeAfterSpace = false, token = undo.typed)
+                onCommand(undo.deleteCommand())
                 onRejectFix(undo.typed, undo.fixed)
+                corrector.assert(undo.typed)
                 deleteHoldBefore[0] = ""
                 return
             }
@@ -532,7 +650,7 @@ internal fun VocaPhoneKeyboard(
         val slide = deleteSlide[0] ?: DeleteSlide(readTextBeforeCursor() ?: return).also {
             deleteSlide[0] = it
             clearSwipe()
-            learnedUndo[0] = null
+            corrector.forget()
             tapTrace.clear()
             keyboardState = keyboardState.copy(composing = "", lastWasSpace = false, capitalizeAfterSpace = false)
         }
@@ -543,6 +661,44 @@ internal fun VocaPhoneKeyboard(
     }
 
     val currentEditorText = rememberUpdatedState(editorText)
+
+    /**
+     * The chips that are not a word to type: put back or replace a correction,
+     * keep a word as typed, expand a snippet, type a sum's result. True when
+     * [item] was one of them; see [SuggestionKind].
+     */
+    fun handleAssistPick(item: SuggestionItem): Boolean {
+        val undo = corrector.undo
+        val commands = TypingAssist.pick(item, undo, currentEditorText.value.after) ?: run {
+            if (item.kind == SuggestionKind.KEEP_TYPED) corrector.assert(item.text)
+            return false
+        }
+        corrector.undo = null
+        clearSwipe()
+        tapTrace.clear()
+        keyboardState = keyboardState.copy(composing = "", lastWasSpace = false, capitalizeAfterSpace = false, token = "", lineStart = false)
+        commands.forEach(onCommand)
+        if (undo != null && (item.kind == SuggestionKind.REVERT || item.kind == SuggestionKind.REPLACE_FIX)) {
+            onRejectFix(undo.typed, undo.fixed)
+            if (item.kind == SuggestionKind.REVERT) corrector.assert(undo.typed)
+            if (item.kind == SuggestionKind.REPLACE_FIX && learnsFixes && LearnedFixes.isCorrection(undo.typed, item.text)) {
+                onLearnPick(undo.typed, item.text)
+            }
+        }
+        return true
+    }
+
+    /** Long press on a word chip: never offered, predicted or corrected to again. */
+    fun blockSuggestion(item: SuggestionItem) {
+        if (!item.kind.blockable || item.isEmoji || item.savesWord) return
+        onBlockSuggestion(item.text)
+        blockedNotice = item.text
+        suggestionStrip = suggestionStrip.without(item.text)
+        swipeChoices = swipeChoices.filterNot { it.equals(item.text, ignoreCase = true) }
+        corrector.undo = corrector.undo?.let { pending ->
+            pending.copy(alternatives = pending.alternatives.filterNot { it.equals(item.text, ignoreCase = true) })
+        }
+    }
 
     /**
      * The learned fix space should make for the word being typed, or null.
@@ -557,17 +713,69 @@ internal fun VocaPhoneKeyboard(
             typed = typed,
             memory = typingMemory,
             isWord = { dictionary.isKnown(it) || it.lowercase() in personalWords },
-            blocked = { !dictionary.allows(it, null, allowSwears, personalWords) },
+            blocked = { !dictionary.allows(it, null, allowSwears, personalWords, blockedWords) },
             personalSpelling = { fix -> PersonalDictionary.terms(personalRaw).firstOrNull { it.equals(fix, ignoreCase = true) } },
         )
     }
 
+    /**
+     * What sits in front of [typed] back to the last whitespace (`@`, `www.`):
+     * from the keyboard's own token while it saw the whole word typed, else
+     * from the last editor read. No editor read here.
+     */
+    fun tokenBefore(typed: String): String =
+        keyboardState.token.takeIf { typed.isNotEmpty() && it.endsWith(typed) }?.dropLast(typed.length)
+            ?: SuggestionEngine.beforeComposing(currentEditorText.value.before, typed).takeLastWhile { !it.isWhitespace() }
+
+    fun switchLayout(forward: Boolean) {
+        val next = KeyboardLanguages.next(activeLayout, enabledLayouts, forward) ?: return
+        clearSwipe()
+        corrector.undo = null
+        tapTrace.clear()
+        if (keyboardState.composing.isNotEmpty()) onCommand(KeyboardCommand.FinishComposing)
+        keyboardState = keyboardState.copy(composing = "", lastWasSpace = false, capitalizeAfterSpace = false)
+        // The old layout's letters must not answer the strip's dead zone
+        // before the new keys have been laid out and recorded.
+        keyBounds.clear()
+        activeLayoutId = next.id
+        onLayoutChanged(next.id)
+    }
+
+    // A blocked word, or a fix undone until unlearned, is never applied —
+    // including by the short-word table when space beats the strip.
+    val refusesFix: (String, String) -> Boolean = { typed, fix ->
+        fix.lowercase() in blockedWords || typingMemory.isRejected(typed, fix)
+    }
+
     fun handleKey(key: KeyboardKey) {
+        blockedNotice = null
         if (key.type == KeyboardKeyType.DELETE) {
             handleDelete(0L)
             return
         }
-        learnedUndo[0] = null
+        if (key.type == KeyboardKeyType.LANGUAGE) {
+            switchLayout(forward = true)
+            return
+        }
+        // Searching emoji: the letter keys type the query, not into the field.
+        // An emoji picked from the results still goes to the field.
+        val query = emojiQuery
+        if (query != null && keyboardState.layer == KeyboardLayer.EMOJI && !key.id.startsWith("emoji-")) {
+            // `?123` and `ABC` close the search and still go where they say,
+            // through the ordinary path below.
+            if (key.type == KeyboardKeyType.LAYER_SWITCH) {
+                emojiQuery = null
+            } else {
+                when (key.type) {
+                    KeyboardKeyType.CHARACTER -> emojiQuery = query + key.output.lowercase()
+                    KeyboardKeyType.SPACE -> if (query.isNotEmpty() && !query.endsWith(" ")) emojiQuery = "$query "
+                    KeyboardKeyType.RETURN -> emojiQuery = null
+                    else -> Unit
+                }
+                return
+            }
+        }
+        corrector.undo = null
         val tapX = tapSink[0]
         val tapY = tapSink[1]
         tapSink[0] = Float.NaN
@@ -582,11 +790,33 @@ internal fun VocaPhoneKeyboard(
         if (key.type == KeyboardKeyType.CHARACTER) {
             swipeSeedShift = keyboardState.shift
         }
-        // Space after a typo the user has fixed the same way twice fixes it.
+        // Space or `.,!?;:` after a typo corrects it: a fix the user taught
+        // first, then the one the strip worked out for this word.
         val typed = keyboardState.composing
-        val fix = if (key.type == KeyboardKeyType.SPACE && !keyboardState.lastWasSpace) learnedFixForSpace(typed) else null
-        if (fix != null && fix != typed) {
-            onCommand(KeyboardCommand.SetComposingText(fix))
+        val boundary = TypingCorrector.boundary(key)
+            ?.takeUnless { key.type == KeyboardKeyType.SPACE && keyboardState.lastWasSpace }
+        val fix = boundary?.let {
+            TypingCorrector.correction(
+                typed, it, learnedFixForSpace(typed), suggestionStrip, autocorrects, corrector.asserted,
+                isPersonal = typed.lowercase() in personalWords,
+                tokenBefore = tokenBefore(typed),
+                refuses = refusesFix,
+            )
+        }
+        if (fix != null) onCommand(KeyboardCommand.SetComposingText(fix))
+        // `?123` finished the word; the `?` it was switched for still corrects it.
+        val held = corrector.takeHeld(boundary)
+        held?.let { (word, heldFix) -> onCommand(KeyboardCommand.ReplaceBeforeCursor(word.length, heldFix)) }
+        if (key.type == KeyboardKeyType.LAYER_SWITCH) {
+            corrector.hold(
+                typed,
+                TypingCorrector.correction(
+                    typed, ",", learnedFixForSpace(typed), suggestionStrip, autocorrects, corrector.asserted,
+                    isPersonal = typed.lowercase() in personalWords,
+                    tokenBefore = tokenBefore(typed),
+                    refuses = refusesFix,
+                ),
+            )
         }
         val text = currentEditorText.value
         val reduction = KeyboardReducer.press(
@@ -596,11 +826,18 @@ internal fun VocaPhoneKeyboard(
             composeWords = composeWords,
             hasSelection = text.hasSelection || text.selected.any { it.isLetter() },
             autoCapitalize = settings.autoCapitalizeEnabled,
+            doubleSpacePeriod = settings.doubleSpacePeriod,
         )
         keyboardState = reduction.state
         reduction.command?.let(onCommand)
-        if (fix != null && fix != typed && reduction.command == KeyboardCommand.CommitText(" ")) {
-            learnedUndo[0] = LearnedFixUndo(typed = typed, fixed = fix)
+        val corrected = if (fix != null) typed to fix else held
+        if (corrected != null && boundary != null && !TypingCorrector.isApostrophe(boundary) && reduction.command == KeyboardCommand.CommitText(boundary)) {
+            corrector.undo = AutocorrectUndo(
+                typed = corrected.first,
+                fixed = corrected.second,
+                boundary = boundary,
+                alternatives = suggestionStrip.words.takeIf { suggestionStrip.forWord == corrected.first }.orEmpty(),
+            )
         }
         val composing = reduction.state.composing
         if (composing.isEmpty()) {
@@ -624,6 +861,13 @@ internal fun VocaPhoneKeyboard(
     }
 
     fun commitLongPressVariant(text: String) {
+        emojiQuery?.let { query ->
+            if (keyboardState.layer == KeyboardLayer.EMOJI) {
+                emojiQuery = query.dropLast(1) + text.lowercase()
+                onKeyPreview(null)
+                return
+            }
+        }
         val reduction = KeyboardReducer.replaceLastCharacter(
             state = keyboardState,
             replacement = text,
@@ -639,7 +883,7 @@ internal fun VocaPhoneKeyboard(
 
     fun applySwipe(matches: List<String>, similar: List<String>) {
         if (matches.isEmpty()) return
-        learnedUndo[0] = null
+        corrector.forget()
         tapTrace.clear()
         KeyboardChrome.swipePrefixCommand(keyboardState.composing)?.let(onCommand)
         val capitalize = keyboardState.shift != ShiftState.OFF
@@ -651,10 +895,7 @@ internal fun VocaPhoneKeyboard(
             swipeMatches = matches.map(::cased),
             similar = similar.map(::cased),
         )
-        keyboardState = keyboardState.copy(
-            composing = "",
-            lastWasSpace = true,
-            capitalizeAfterSpace = false,
+        keyboardState = keyboardState.afterWordAndSpace(SystemClock.uptimeMillis()).copy(
             shift = if (keyboardState.shift == ShiftState.LOCKED) ShiftState.LOCKED else ShiftState.OFF,
         )
         onSuggestionPicked(chosen, false)
@@ -680,7 +921,7 @@ internal fun VocaPhoneKeyboard(
 
     // Swiped words are held back like typed ones; read on the main thread
     // before each swipe is matched.
-    val swipeGate by rememberUpdatedState(settings.suggestSwearWords to personalWords)
+    val swipeGate by rememberUpdatedState(Triple(settings.suggestSwearWords, personalWords, blockedWords))
 
     // The consumer below outlives the composition that started it, so it has to
     // reach the current `applySwipe` rather than the one it closed over: that
@@ -690,7 +931,7 @@ internal fun VocaPhoneKeyboard(
     LaunchedEffect(suggestions) {
         val dictionary = suggestions ?: return@LaunchedEffect
         for (trace in swipePaths) {
-            val (allowSwears, personal) = swipeGate
+            val (allowSwears, personal, blocked) = swipeGate
             val resolved = withContext(Dispatchers.Default) {
                 val abort = { !isActive }
                 val matches = dictionary.swipe(
@@ -698,7 +939,7 @@ internal fun VocaPhoneKeyboard(
                     shouldAbort = abort,
                     points = trace.points,
                     previousWord = trace.previousWord,
-                    allowed = { word -> dictionary.allows(word, trace.previousWord, allowSwears, personal) },
+                    allowed = { word -> dictionary.allows(word, trace.previousWord, allowSwears, personal, blocked) },
                 )
                 // Strip after a swipe is the other same-path words, not
                 // edit-distance cousins of the winner. Those cousins are
@@ -724,9 +965,9 @@ internal fun VocaPhoneKeyboard(
     val latestLongPressVariant by rememberUpdatedState(::commitLongPressVariant)
     val latestCursorMove by rememberUpdatedState<(Int, Int) -> Unit> { positions, lines ->
         clearSwipe()
-        learnedUndo[0] = null
+        corrector.forget()
         tapTrace.clear()
-        keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
+        keyboardState = keyboardState.copy(composing = "", lastWasSpace = false, token = "", lineStart = false)
         onCommand(KeyboardCommand.MoveCursor(positions, lines))
     }
     val latestEmojiUsed by rememberUpdatedState(onEmojiUsed)
@@ -737,6 +978,8 @@ internal fun VocaPhoneKeyboard(
     val onCursorMoveStable = remember { { positions: Int, lines: Int -> latestCursorMove(positions, lines) } }
     val latestDeleteSlide by rememberUpdatedState<(Int) -> Unit>(::handleDeleteSlide)
     val onDeleteSlideStable = remember { { steps: Int -> latestDeleteSlide(steps) } }
+    val latestSwitchLayout by rememberUpdatedState<(Boolean) -> Unit>(::switchLayout)
+    val onLayoutSwipeStable = remember { { direction: Int -> latestSwitchLayout(direction > 0) } }
     // A tap low on the strip just after a key: the top-row letter under it.
     val latestDeadZone by rememberUpdatedState<(Float, Float) -> Boolean> { rootX, yFraction ->
         if (
@@ -775,6 +1018,8 @@ internal fun VocaPhoneKeyboard(
             latestEmojiUsed(glyph)
         }
     }
+    val latestToneTarget by rememberUpdatedState<(String?) -> Unit> { toneTarget = it }
+    val onEmojiHoldStable = remember { { glyph: String -> latestToneTarget(glyph) } }
 
     VocaPhoneTheme(dynamicColor = settings.dynamicColorEnabled) {
         ReportKeyboardSurface(MaterialTheme.colorScheme.surfaceContainerLowest)
@@ -784,7 +1029,9 @@ internal fun VocaPhoneKeyboard(
         ) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val widthDp = maxWidth.value.roundToInt()
-                val splitKeys = SplitKeyboardLayout.shouldSplit(settings.splitKeyboard, widthDp)
+                // One-handed keys are already narrow; splitting them too would not fit a thumb.
+                val splitKeys = oneHandedShown == OneHandedMode.OFF &&
+                    SplitKeyboardLayout.shouldSplit(settings.splitKeyboard, widthDp)
                 val spacerFraction = SplitKeyboardLayout.spacerFraction(widthDp)
                 val hostCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
             Box(
@@ -850,11 +1097,13 @@ internal fun VocaPhoneKeyboard(
                         PreferencePanel.STYLE -> "Style"
                         PreferencePanel.CLIPBOARD -> "Clipboard"
                         PreferencePanel.WRITING -> "Writing check"
+                        PreferencePanel.EDIT -> "Text editing"
                         null -> null
                     },
                     panelActionLabel = if (
                         preferencePanel == PreferencePanel.CLIPBOARD &&
-                            settings.clipboardHistory.isNotEmpty()
+                            // Clear keeps pins, so with only pins there is nothing to clear.
+                            settings.clipboardEntries.any { !it.pinned }
                     ) {
                         if (confirmingClipboardClear) "Clear all?" else "Clear"
                     } else {
@@ -879,8 +1128,17 @@ internal fun VocaPhoneKeyboard(
                     },
                     onPaste = { onPasteClipboard(clipboardChip?.fullText.orEmpty()) },
                     onDismissClipboard = onDismissClipboard,
-                    onSuggestion = { item ->
-                        learnedUndo[0] = null
+                    onSuggestionLongPress = ::blockSuggestion,
+                    blockedNotice = blockedNotice.takeIf {
+                        preferencePanel == null && keyboardState.layer != KeyboardLayer.EMOJI
+                    },
+                    onUndoBlock = {
+                        blockedNotice?.let(onUnblockSuggestion)
+                        blockedNotice = null
+                    },
+                    onSuggestion = onSuggestion@{ item ->
+                        if (handleAssistPick(item)) return@onSuggestion
+                        corrector.undo = null
                         tapTrace.clear()
                         if (item.isEmoji) {
                             clearSwipe()
@@ -894,11 +1152,7 @@ internal fun VocaPhoneKeyboard(
                             onSaveToDictionary(item.text)
                             if (keyboardState.composing.isNotEmpty()) {
                                 clearSwipe()
-                                keyboardState = keyboardState.copy(
-                                    composing = "",
-                                    lastWasSpace = true,
-                                    capitalizeAfterSpace = false,
-                                )
+                                keyboardState = keyboardState.afterWordAndSpace(SystemClock.uptimeMillis())
                                 onSuggestionPicked(item.text, false)
                             }
                         } else {
@@ -924,16 +1178,18 @@ internal fun VocaPhoneKeyboard(
                             }
                             swipeChoices = emptyList()
                             swipeWord = if (replace) item.text else null
-                            keyboardState = keyboardState.copy(
-                                composing = "",
-                                lastWasSpace = true,
-                                capitalizeAfterSpace = false,
-                            )
+                            keyboardState = keyboardState.afterWordAndSpace(SystemClock.uptimeMillis())
                             onSuggestionPicked(item.text, replace)
                         }
                     },
                 )
                 Spacer(Modifier.height(4.dp))
+                OneHandedFrame(
+                    mode = oneHandedShown,
+                    height = keyAreaHeight,
+                    onSwitchSide = { setOneHanded(OneHandedLayout.otherSide(oneHandedMode)) },
+                    onExpand = { setOneHanded(OneHandedMode.OFF) },
+                ) {
                 when (preferencePanel) {
                     PreferencePanel.MENU -> ToolbarMenuPanel(
                         clipboardOn = settings.clipboardHistoryEnabled && !editor.sensitive,
@@ -941,6 +1197,18 @@ internal fun VocaPhoneKeyboard(
                         onLanguage = { preferencePanel = PreferencePanel.LANGUAGE },
                         onStyle = { preferencePanel = PreferencePanel.STYLE },
                         onClipboard = { preferencePanel = PreferencePanel.CLIPBOARD },
+                        onEdit = { preferencePanel = PreferencePanel.EDIT },
+                        oneHandedTile = if (oneHandedAvailable) {
+                            MenuTile(
+                                if (oneHandedMode == OneHandedMode.OFF) "One-handed" else "Full width",
+                                R.drawable.ic_one_handed,
+                            ) {
+                                preferencePanel = null
+                                setOneHanded(OneHandedLayout.toggled(oneHandedMode))
+                            }
+                        } else {
+                            null
+                        },
                         onOpenSettings = { page ->
                             preferencePanel = null
                             onOpenSettings(page)
@@ -948,7 +1216,7 @@ internal fun VocaPhoneKeyboard(
                         onClose = { preferencePanel = null },
                     )
                     PreferencePanel.CLIPBOARD -> ClipboardHistoryPanel(
-                        items = settings.clipboardHistory,
+                        items = settings.clipboardEntries,
                         height = keyAreaHeight,
                         enabled = !isPreferenceWritePending,
                         onPaste = { text ->
@@ -956,6 +1224,7 @@ internal fun VocaPhoneKeyboard(
                             onPasteClipboard(text)
                         },
                         onRemove = onRemoveClipboardHistory,
+                        onPin = onPinClipboardHistory,
                         onClose = { preferencePanel = null },
                     )
                     PreferencePanel.LANGUAGE -> LanguagePreferencePanel(
@@ -981,6 +1250,22 @@ internal fun VocaPhoneKeyboard(
                             onWritingOpenApp()
                         },
                     )
+                    PreferencePanel.EDIT -> TextEditingPanel(
+                        height = keyAreaHeight,
+                        hapticsOn = { keyFeedback.hapticsOn },
+                        onEdit = { action, selecting ->
+                            clearSwipe()
+                            corrector.undo = null
+                            tapTrace.clear()
+                            keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
+                            onCommand(KeyboardCommand.EditText(action, selecting))
+                        },
+                        onDelete = {
+                            keyboardState = keyboardState.copy(composing = "", lastWasSpace = false)
+                            onCommand(KeyboardCommand.DeleteBackward)
+                        },
+                        onClose = { preferencePanel = null },
+                    )
                     PreferencePanel.STYLE -> StylePreferencePanel(
                         selected = settings.style,
                         height = keyAreaHeight,
@@ -991,8 +1276,37 @@ internal fun VocaPhoneKeyboard(
                         },
                         onClose = { preferencePanel = null },
                     )
-                    null -> if (keyboardState.layer == KeyboardLayer.EMOJI) {
+                    null -> if (keyboardState.layer == KeyboardLayer.EMOJI && emojiQuery != null) {
+                        EmojiSearchPanel(
+                            height = keyAreaHeight,
+                            query = emojiQuery.orEmpty(),
+                            results = emojiResults,
+                            tones = emojiTones,
+                            skinTone = skinTone,
+                            editor = editor,
+                            feedback = keyFeedback,
+                            onEmoji = onEmojiStable,
+                            onKey = onKeyStable,
+                            onKeyHold = onKeyHoldStable,
+                            onCursorMove = onCursorMoveStable,
+                            onPreview = onKeyPreview,
+                            onLongPressVariant = onLongPressVariantStable,
+                            onClose = { emojiQuery = null },
+                        )
+                    } else if (keyboardState.layer == KeyboardLayer.EMOJI) {
                         EmojiLayer(
+                            tones = emojiTones,
+                            skinTone = skinTone,
+                            toneTarget = toneTarget,
+                            onEmojiHold = onEmojiHoldStable,
+                            onTonePicked = { base, tone ->
+                                toneTarget = null
+                                skinTone = tone
+                                onEmojiSkinTone(tone)
+                                onEmojiStable(emojiTones.applied(base, tone))
+                            },
+                            onToneDismiss = { toneTarget = null },
+                            onSearch = { emojiQuery = "" },
                             height = keyAreaHeight,
                             keyHeight = keyHeight,
                             editor = editor,
@@ -1020,11 +1334,17 @@ internal fun VocaPhoneKeyboard(
                             editor.returnKey,
                             editor.leadingPunctuation,
                             settings.numberRowEnabled,
+                            editor.initialLayer,
+                            editor.padKind,
+                            activeLayout.id,
+                            layoutSwitchable,
                         ) {
                             KeyboardLayouts.rows(
                                 keyboardState.layer,
                                 editor,
                                 numberRow = settings.numberRowEnabled,
+                                layout = activeLayout,
+                                languageKey = layoutSwitchable,
                             )
                         }
                         val fittedKeyHeight = if (rows.size <= 1) {
@@ -1054,7 +1374,11 @@ internal fun VocaPhoneKeyboard(
                             split = splitKeys,
                             spacerFraction = spacerFraction,
                             swipeEnabled = settings.swipeTypingEnabled &&
+                                editor.swipeAllowed &&
+                                isEnglishLayout &&
                                 keyboardState.layer == KeyboardLayer.LETTERS,
+                            layout = activeLayout,
+                            onLayoutSwipe = onLayoutSwipeStable,
                             onSwipe = onSwipeStable,
                             onSwipeSeedUndo = onUndoSwipeStable,
                             onLongPressVariant = onLongPressVariantStable,
@@ -1065,6 +1389,7 @@ internal fun VocaPhoneKeyboard(
                             onSpaceLongPress = onSpaceLongPressStable,
                         )
                     }
+                }
                 }
             }
             KeyPreviewLayer(preview = keyPreview, hostCoords = hostCoords)
@@ -1196,6 +1521,9 @@ private val MinimumTouchTarget = 48.dp
 /** How long "Clear all?" waits for the second tap before going back to "Clear". */
 private const val CLIPBOARD_CLEAR_CONFIRM_MILLIS = 4_000L
 
+/** How long "“word” won't be suggested · Undo" stays, unless a key comes first. */
+private const val BLOCKED_NOTICE_MILLIS = 4_000L
+
 /** Suggestion-strip slot for a clipboard chip. Short clips pad out; long ones ellipsize. */
 private val ClipboardChipMinWidth = 148.dp
 private val ClipboardChipMaxWidth = 220.dp
@@ -1234,6 +1562,9 @@ private fun DictationBar(
     onPaste: () -> Unit,
     onDismissClipboard: () -> Unit,
     onSuggestion: (SuggestionItem) -> Unit,
+    onSuggestionLongPress: (SuggestionItem) -> Unit = {},
+    blockedNotice: String? = null,
+    onUndoBlock: () -> Unit = {},
     inline: List<View> = emptyList(),
     stripAnimates: Boolean = false,
     replacesSelection: Boolean = false,
@@ -1354,6 +1685,8 @@ private fun DictationBar(
                     onSelect = onEmojiCategory,
                     modifier = Modifier.weight(1f),
                 )
+                // Answers the long press just made, so it outranks the rest.
+                blockedNotice != null -> BlockedSuggestionNotice(word = blockedNotice, onUndo = onUndoBlock)
                 // Ahead of the predictions: they are about what was just
                 // written, and show only between words, when a prediction is
                 // the least of what the strip could say.
@@ -1366,7 +1699,7 @@ private fun DictationBar(
                     WritingFixChip(suggestion = writingChipList.first(), onApply = onWritingApply)
                     if (suggestions.isNotEmpty()) {
                         // Two words beside the fix: three left each too narrow to read.
-                        SuggestionStripRow(suggestions = suggestions.take(2), onSuggestion = onSuggestion)
+                        SuggestionStripRow(suggestions = suggestions.take(2), onSuggestion = onSuggestion, onLongPress = onSuggestionLongPress)
                     } else {
                         Spacer(Modifier.weight(1f))
                     }
@@ -1386,7 +1719,7 @@ private fun DictationBar(
                         label = "strip",
                     ) { shown ->
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                            SuggestionStripRow(suggestions = shown, onSuggestion = onSuggestion)
+                            SuggestionStripRow(suggestions = shown, onSuggestion = onSuggestion, onLongPress = onSuggestionLongPress)
                         }
                     }
                 }
@@ -1775,6 +2108,8 @@ private fun ToolbarMenuPanel(
     onLanguage: () -> Unit,
     onStyle: () -> Unit,
     onClipboard: () -> Unit,
+    onEdit: () -> Unit = {},
+    oneHandedTile: MenuTile? = null,
     onOpenSettings: (String) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -1785,10 +2120,10 @@ private fun ToolbarMenuPanel(
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // Two rows of four: what the keyboard changes in place, then where
-            // in the app to go. About is one tap further, under Settings.
+            // Two rows: what the keyboard changes in place, then where in the
+            // app to go. About is one tap further, under Settings.
             listOf(
-                listOf(
+                listOfNotNull(
                     MenuTile("Language", R.drawable.ic_language, onLanguage),
                     MenuTile("Style", R.drawable.ic_style, onStyle),
                     MenuTile(
@@ -1796,12 +2131,14 @@ private fun ToolbarMenuPanel(
                         R.drawable.ic_clipboard,
                         if (clipboardOn) onClipboard else ({ onOpenSettings("keyboard") }),
                     ),
-                    MenuTile("Models", R.drawable.ic_models) { onOpenSettings("models") },
+                    MenuTile("Edit", R.drawable.ic_text_edit, onEdit),
+                    oneHandedTile,
                 ),
                 listOf(
                     MenuTile("Keyboard", R.drawable.ic_keyboard) { onOpenSettings("keyboard") },
                     MenuTile("Dictation", R.drawable.ic_dictation) { onOpenSettings("dictation") },
                     MenuTile("Speech", R.drawable.ic_connection) { onOpenSettings("connection") },
+                    MenuTile("Models", R.drawable.ic_models) { onOpenSettings("models") },
                     MenuTile("Settings", R.drawable.ic_settings) { onOpenSettings("") },
                 ),
             ).forEach { row ->
@@ -1882,11 +2219,12 @@ private fun RowScope.ToolbarMenuTile(
 
 @Composable
 private fun ClipboardHistoryPanel(
-    items: List<String>,
+    items: List<ClipEntry>,
     height: Dp,
     enabled: Boolean,
     onPaste: (String) -> Unit,
     onRemove: (String) -> Unit,
+    onPin: (String, Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
     PreferencePanelShell(height = height) {
@@ -1915,13 +2253,15 @@ private fun ClipboardHistoryPanel(
             ) {
                 gridItems(
                     items,
-                    key = { it.hashCode().toString() + it.take(12) },
-                ) { stored ->
+                    key = { it.text.hashCode().toString() + it.text.take(12) },
+                ) { entry ->
                     ClipboardHistoryTile(
-                        stored = stored,
+                        stored = entry.text,
+                        pinned = entry.pinned,
                         enabled = enabled,
-                        onPaste = { onPaste(stored) },
-                        onRemove = { onRemove(stored) },
+                        onPaste = { onPaste(entry.text) },
+                        onRemove = { onRemove(entry.text) },
+                        onPin = { onPin(entry.text, !entry.pinned) },
                     )
                 }
             }
@@ -1932,9 +2272,11 @@ private fun ClipboardHistoryPanel(
 @Composable
 private fun ClipboardHistoryTile(
     stored: String,
+    pinned: Boolean,
     enabled: Boolean,
     onPaste: () -> Unit,
     onRemove: () -> Unit,
+    onPin: () -> Unit,
 ) {
     val image = ClipboardHistory.parseImage(stored)
     val preview = if (image != null) {
@@ -1944,10 +2286,40 @@ private fun ClipboardHistoryTile(
             if (short == "Copied JSON") short else ClipboardHistory.preview(stored)
         }
     }
+    // Swipe a tile sideways past a third of its width to delete it, as in
+    // Gboard; the x stays as the explicit way.
+    var dragX by remember(stored) { mutableStateOf(0f) }
     Surface(
-        modifier = Modifier.height(88.dp),
+        modifier = Modifier
+            .height(88.dp)
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(if (pinned) "Unpin" else "Pin") { onPin(); true },
+                    CustomAccessibilityAction("Delete") { onRemove(); true },
+                )
+            }
+            .graphicsLayer {
+                translationX = dragX
+                alpha = 1f - (kotlin.math.abs(dragX) / size.width.coerceAtLeast(1f)).coerceIn(0f, 0.6f)
+            }
+            .pointerInput(stored, enabled) {
+                if (!enabled) return@pointerInput
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (ClipboardSwipe.deletes(dragX, size.width.toFloat())) onRemove() else dragX = 0f
+                    },
+                    onDragCancel = { dragX = 0f },
+                ) { change, amount ->
+                    change.consume()
+                    dragX += amount
+                }
+            },
         shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (pinned) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
         enabled = enabled,
         onClick = onPaste,
     ) {
@@ -1991,6 +2363,30 @@ private fun ClipboardHistoryTile(
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Pinned clips survive Clear and the retention limit.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(MinimumTouchTarget)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = if (pinned) "Unpin" else "Pin"
+                        selected = pinned
+                    }
+                    .clickable(enabled = enabled, onClick = onPin),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_pin),
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = if (pinned) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    },
                 )
             }
         }
@@ -2552,6 +2948,7 @@ private fun ClipboardChipButton(
 private fun RowScope.SuggestionStripRow(
     suggestions: List<SuggestionItem>,
     onSuggestion: (SuggestionItem) -> Unit,
+    onLongPress: (SuggestionItem) -> Unit = {},
 ) {
     if (suggestions.size <= 3) {
         Row(
@@ -2565,6 +2962,7 @@ private fun RowScope.SuggestionStripRow(
                 SuggestionChip(
                     item = item,
                     onClick = { onSuggestion(item) },
+                    onLongClick = { onLongPress(item) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -2600,6 +2998,7 @@ private fun RowScope.SuggestionStripRow(
                 SuggestionChip(
                     item = item,
                     onClick = { onSuggestion(item) },
+                    onLongClick = { onLongPress(item) },
                     modifier = Modifier.widthIn(min = if (item.isEmoji) 44.dp else 72.dp),
                 )
             }
@@ -2621,35 +3020,56 @@ private fun StripDivider() {
 private fun SuggestionChip(
     item: SuggestionItem,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val view = LocalView.current
+    // A word on offer can be blocked with a long press, or TalkBack's action.
+    val blockable = item.kind.blockable && !item.isEmoji && !item.savesWord
     Surface(
         modifier = modifier
             .height(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = if (blockable) {
+                    {
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        onLongClick()
+                    }
+                } else {
+                    null
+                },
+                onLongClickLabel = if (blockable) "Never suggest" else null,
+            )
             .semantics {
                 role = Role.Button
-                contentDescription = if (item.savesWord) {
-                    "Add ${item.text} to dictionary"
-                } else {
-                    item.text
+                contentDescription = suggestionDescription(item)
+                if (blockable) {
+                    customActions = listOf(
+                        CustomAccessibilityAction("Never suggest ${item.text}") {
+                            onLongClick()
+                            true
+                        },
+                    )
                 }
             },
         shape = RoundedCornerShape(10.dp),
         color = Color.Transparent,
         // Adding to the dictionary is an action, not a word: say so in colour
         // rather than with a filled chip.
-        contentColor = if (item.savesWord) {
+        contentColor = if (item.savesWord || item.kind == SuggestionKind.SNIPPET || item.kind == SuggestionKind.RESULT) {
             MaterialTheme.colorScheme.primary
         } else {
             MaterialTheme.colorScheme.onSurface
         },
-        onClick = onClick,
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp)) {
             Text(
-                text = if (item.savesWord) "+ ${item.text}" else item.text,
+                text = suggestionLabel(item),
                 fontSize = if (item.isEmoji) 20.sp else 15.sp,
-                fontWeight = FontWeight.Medium,
+                // What space will type stands out, as on a system keyboard.
+                fontWeight = if (item.kind == SuggestionKind.AUTOCORRECT) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -2694,6 +3114,13 @@ private fun ClipboardThumb(
 
 @Composable
 private fun EmojiLayer(
+    tones: EmojiTones = EmojiTones.EMPTY,
+    skinTone: Int = 0,
+    toneTarget: String? = null,
+    onEmojiHold: (String) -> Unit = {},
+    onTonePicked: (String, Int) -> Unit = { _, _ -> },
+    onToneDismiss: () -> Unit = {},
+    onSearch: () -> Unit = {},
     height: Dp,
     keyHeight: Dp,
     editor: KeyboardEditorConfig,
@@ -2721,17 +3148,35 @@ private fun EmojiLayer(
     val bottomRow = remember(layer, editor.returnKey, editor.leadingPunctuation, numberRow) {
         KeyboardLayouts.rows(KeyboardLayer.EMOJI, editor, numberRow = numberRow)
     }
-    val glyphs = when (category) {
-        EmojiCategory.RECENTS -> recents
-        EmojiCategory.ASCII -> EmojiCatalog.asciiEmoticons
-        else -> EmojiCatalog.inCategory(catalog, category).map { it.glyph }
+    // Toned forms live behind a hold on their base, not in the grid.
+    val glyphs = remember(category, catalog, tones, recents) {
+        when (category) {
+            EmojiCategory.RECENTS -> recents
+            EmojiCategory.ASCII -> EmojiCatalog.asciiEmoticons
+            else -> EmojiCatalog.inCategory(catalog, category).filterNot { tones.isToned(it.glyph) }.map { it.glyph }
+        }
     }
     Column(Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(EmojiTopStripHeight)
+                .padding(horizontal = 4.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (toneTarget != null) {
+                EmojiToneRow(base = toneTarget, tones = tones, selectedTone = skinTone, onPick = onTonePicked, onDismiss = onToneDismiss)
+            } else {
+                EmojiSearchPill(onClick = onSearch)
+            }
+        }
         EmojiGrid(
             glyphs = glyphs,
             modifier = Modifier
                 .fillMaxWidth()
-                .height((height - keyHeight - RowGap).coerceAtLeast(48.dp)),
+                .height((height - keyHeight - RowGap - EmojiTopStripHeight).coerceAtLeast(48.dp)),
+            display = { glyph -> tones.applied(glyph, skinTone) },
+            onHold = { glyph -> if (tones.hasTones(glyph)) onEmojiHold(glyph) },
             onEmoji = onEmoji,
         )
         KeyboardRows(
@@ -2750,6 +3195,216 @@ private fun EmojiLayer(
             onKeyHold = onKeyHold,
             onCursorMove = onCursorMove,
             onSpaceLongPress = onSpaceLongPress,
+            onLongPressVariant = onLongPressVariant,
+        )
+    }
+}
+
+private val EmojiTopStripHeight = 36.dp
+
+@Composable
+private fun EmojiSearchPill(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(30.dp)
+            .semantics { contentDescription = "Search emoji" },
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = onClick,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_search),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("Search emoji", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** The held emoji in its five tones and untoned; the pick becomes the default. */
+@Composable
+private fun EmojiToneRow(
+    base: String,
+    tones: EmojiTones,
+    selectedTone: Int,
+    onPick: (String, Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val options = listOf(base) + tones.variantsOf(base).orEmpty()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        options.forEachIndexed { tone, glyph ->
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(34.dp)
+                    .semantics {
+                        contentDescription = if (tone == 0) "$glyph default" else glyph
+                        selected = tone == selectedTone
+                    },
+                shape = RoundedCornerShape(8.dp),
+                color = if (tone == selectedTone) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                onClick = { onPick(base, tone) },
+            ) {
+                Box(contentAlignment = Alignment.Center) { Text(glyph, fontSize = 22.sp, maxLines = 1) }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Close skin tones"
+                }
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_cancel),
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Emoji search, Gboard-style: results on top, the query under them, and the
+ * English letter keys typing into the query (the catalog's keywords are
+ * English). Picking a result types it into the field; ABC, ?123 or return
+ * leaves the search.
+ */
+@Composable
+private fun EmojiSearchPanel(
+    height: Dp,
+    query: String,
+    results: List<String>,
+    tones: EmojiTones,
+    skinTone: Int,
+    editor: KeyboardEditorConfig,
+    feedback: KeyFeedback?,
+    onEmoji: (String) -> Unit,
+    onKey: (KeyboardKey) -> Unit,
+    onKeyHold: (KeyboardKey, Long) -> Unit,
+    onCursorMove: (Int, Int) -> Unit,
+    onPreview: (KeyPreview?) -> Unit,
+    onLongPressVariant: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val rows = remember(editor.returnKey, editor.leadingPunctuation) {
+        KeyboardLayouts.rows(KeyboardLayer.LETTERS, editor, numberRow = false)
+    }
+    val bounds = remember { mutableMapOf<String, Pair<KeyboardKey, Rect>>() }
+    val resultsHeight = 44.dp
+    val queryHeight = 34.dp
+    val keyHeight = ((height - resultsHeight - queryHeight - 8.dp - RowGap * (rows.size - 1)) / rows.size)
+        .coerceAtLeast(30.dp)
+    Column(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(resultsHeight), contentAlignment = Alignment.CenterStart) {
+            if (results.isEmpty()) {
+                Text(
+                    if (query.isBlank()) "Type to search emoji" else "No emoji for “${query.trim()}”",
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) {
+                    items(results, key = { it }) { glyph ->
+                        val shown = tones.applied(glyph, skinTone)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .semantics {
+                                    role = Role.Button
+                                    contentDescription = shown
+                                }
+                                .clickable { onEmoji(shown) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(shown, fontSize = 24.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(queryHeight)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(queryHeight)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Close emoji search"
+                    }
+                    .clickable(onClick = onClose),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_arrow_back),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(vertical = 2.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+                    Text(
+                        text = if (query.isEmpty()) "Search emoji" else "$query|",
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (query.isEmpty()) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        KeyboardRows(
+            rows = rows,
+            shift = ShiftState.OFF,
+            layer = KeyboardLayer.LETTERS,
+            returnKey = editor.returnKey,
+            keyHeight = keyHeight,
+            keyBounds = bounds,
+            feedback = feedback,
+            onPreview = onPreview,
+            onKey = onKey,
+            onKeyHold = onKeyHold,
+            onCursorMove = onCursorMove,
             onLongPressVariant = onLongPressVariant,
         )
     }
@@ -2800,6 +3455,8 @@ private fun EmojiCategoryRow(
 private fun EmojiGrid(
     glyphs: List<String>,
     modifier: Modifier,
+    display: (String) -> String = { it },
+    onHold: (String) -> Unit = {},
     onEmoji: (String) -> Unit,
 ) {
     LazyVerticalGrid(
@@ -2809,17 +3466,26 @@ private fun EmojiGrid(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         gridItems(glyphs, key = { it }) { glyph ->
+            val shown = display(glyph)
             Box(
                 modifier = Modifier
                     .height(42.dp)
-                    .clickable { onEmoji(glyph) }
+                    // A hold offers the skin tones (when the emoji has them).
+                    .pointerInput(shown) {
+                        detectTapGestures(
+                            onTap = { onEmoji(shown) },
+                            onLongPress = { onHold(glyph) },
+                        )
+                    }
                     .semantics {
                         role = Role.Button
-                        contentDescription = glyph
+                        contentDescription = shown
+                        onClick { onEmoji(shown); true }
+                        onLongClick(label = "Skin tones") { onHold(glyph); true }
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(glyph, fontSize = if (glyph.length > 2) 14.sp else 22.sp, maxLines = 1)
+                Text(shown, fontSize = if (shown.length > 2 && glyph in EmojiCatalog.asciiEmoticons) 14.sp else 22.sp, maxLines = 1)
             }
         }
     }
@@ -2844,6 +3510,8 @@ private fun KeyboardRows(
     split: Boolean = false,
     spacerFraction: Float = SplitKeyboardLayout.MIN_SPACER_FRACTION,
     swipeEnabled: Boolean = false,
+    layout: TypingLayout = KeyboardLanguages.ENGLISH,
+    onLayoutSwipe: (Int) -> Unit = {},
     onSwipe: (SwipeInput) -> Unit = {},
     onSwipeSeedUndo: () -> Unit = {},
     onLongPressVariant: (String) -> Unit = {},
@@ -2957,6 +3625,8 @@ private fun KeyboardRows(
                                     longPressSymbols = longPressSymbols,
                                     quickAccents = quickAccents,
                                     numberRow = numberRow,
+                                    typingLayout = layout,
+                                    onLayoutSwipe = onLayoutSwipe.takeIf { key.type == KeyboardKeyType.SPACE },
                                     tapSink = tapSink.takeIf { key.type == KeyboardKeyType.CHARACTER },
                                     feedback = feedback,
                                     onDeleteSlide = onDeleteSlide.takeIf { key.type == KeyboardKeyType.DELETE },
@@ -3143,6 +3813,8 @@ private fun RowScope.KeyButton(
     numberRow: Boolean = false,
     tapSink: FloatArray? = null,
     feedback: KeyFeedback? = null,
+    typingLayout: TypingLayout = KeyboardLanguages.ENGLISH,
+    onLayoutSwipe: ((Int) -> Unit)? = null,
     onDeleteSlide: ((Int) -> Unit)? = null,
     swipeConsumed: MutableState<Boolean>? = null,
     onPress: () -> Unit,
@@ -3163,12 +3835,13 @@ private fun RowScope.KeyButton(
     var pressed by remember(key.id) { mutableStateOf(false) }
     var accentIndex by remember(key.id) { mutableStateOf(-1) }
     val layout = remember(key.id) { arrayOfNulls<LayoutCoordinates>(1) }
-    val accents = remember(key.id, shift, longPressSymbols, numberRow) {
-        KeyAccents.forKey(key, shift, longPressSymbols, numberRow)
+    val accents = remember(key.id, shift, longPressSymbols, numberRow, typingLayout.id) {
+        KeyAccents.forKey(key, shift, longPressSymbols, numberRow, typingLayout)
     }
     val accentStart = rememberUpdatedState(
-        KeyAccents.preselectIndex(key, accents, quickAccents, longPressSymbols, numberRow),
+        KeyAccents.preselectIndex(key, accents, quickAccents, longPressSymbols, numberRow, typingLayout),
     )
+    val currentOnLayoutSwipe = rememberUpdatedState(onLayoutSwipe)
     val isReturnAction = key.type == KeyboardKeyType.RETURN && returnKey != ReturnKeyKind.ENTER
     val activeShift = key.type == KeyboardKeyType.SHIFT && shift != ShiftState.OFF
     val background = when {
@@ -3217,9 +3890,14 @@ private fun RowScope.KeyButton(
         }
     }
     val haptic = {
-        view.postOnAnimation {
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        if (feedback?.hapticsOn != false) {
+            view.postOnAnimation {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
         }
+    }
+    val longPressHaptic = {
+        if (feedback?.hapticsOn != false) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
     // The key click, with the haptic, on the press only (not on cursor or
     // accent steps). One-way into the audio service, off the down frame.
@@ -3231,9 +3909,12 @@ private fun RowScope.KeyButton(
             pointerKey = key.id,
             onTap = { currentOnPress.value() },
             onCursorMove = { positions, lines -> currentOnCursorMove.value(positions, lines) },
-            onArmed = { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) },
+            cursorEnabled = { feedback?.spaceCursorOn != false },
+            layoutSwipeEnabled = { feedback?.layoutSwipeOn == true && currentOnLayoutSwipe.value != null },
+            onLayoutSwipe = { direction -> currentOnLayoutSwipe.value?.invoke(direction) },
+            onArmed = { longPressHaptic() },
             onLongPress = {
-                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                longPressHaptic()
                 currentOnSpaceLongPress.value()
             },
             onPressedChange = {
@@ -3322,6 +4003,7 @@ private fun RowScope.KeyButton(
                 numberKeyHints = numberKeyHints,
                 longPressSymbols = longPressSymbols,
                 numberRow = numberRow,
+                layout = typingLayout,
             ),
         )
     }
@@ -3413,6 +4095,9 @@ private fun Modifier.spacebarGesture(
     pointerKey: String,
     onTap: () -> Unit,
     onCursorMove: (Int, Int) -> Unit,
+    cursorEnabled: () -> Boolean = { true },
+    layoutSwipeEnabled: () -> Boolean = { false },
+    onLayoutSwipe: (Int) -> Unit = {},
     onArmed: () -> Unit,
     onLongPress: () -> Unit,
     onPressedChange: (Boolean) -> Unit,
@@ -3435,6 +4120,12 @@ private fun Modifier.spacebarGesture(
                 downX = down.position.x,
                 downY = down.position.y,
                 downTimeMs = down.uptimeMillis,
+                cursorEnabled = cursorEnabled(),
+                layoutSwipePx = if (layoutSwipeEnabled()) {
+                    SpacebarGesture.layoutSwipePx(size.width.toFloat(), density)
+                } else {
+                    0f
+                },
             )
             val arm = launch {
                 delay(SpacebarGesture.ARM_MS)
@@ -3456,7 +4147,11 @@ private fun Modifier.spacebarGesture(
                         break
                     }
                     val moved = tracker.move(change.position.x, change.position.y, change.uptimeMillis)
-                    if (!moved.isEmpty) {
+                    if (moved.layout != 0) {
+                        onPressedChange(false)
+                        onHaptic()
+                        onLayoutSwipe(moved.layout)
+                    } else if (!moved.isEmpty) {
                         onCursorMove(moved.characters, moved.lines)
                         onHaptic()
                     }
@@ -3617,8 +4312,19 @@ private fun KeyContent(
             ReturnKeyKind.SEND -> KeyLabel("Send", tint, utility = true)
         }
         KeyboardKeyType.SPACE -> {
-            // Unlabeled, same as the system space bar.
+            // Unlabeled, same as the system space bar, unless several layouts
+            // are on: then it names the one that is up, as Gboard and iOS do.
+            key.caption?.let {
+                Text(
+                    text = it,
+                    color = tint.copy(alpha = 0.6f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
+        KeyboardKeyType.LANGUAGE -> KeyboardIcon(Glyph.GLOBE, tint)
         // Drawn like the other function keys. The label was a ☺ character,
         // which most fonts render as a full-colour emoji: the one coloured
         // glyph on the keyboard, and not the colour of the keys around it.
@@ -3628,7 +4334,18 @@ private fun KeyContent(
             KeyLabel(displayLabel, tint, utility = true)
         }
         KeyboardKeyType.CHARACTER -> {
-            if (hint == null) {
+            if (key.caption != null) {
+                // A dial pad's 2 with ABC under it.
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    KeyLabel(displayLabel, tint, utility = false)
+                    Text(
+                        text = key.caption,
+                        color = tint.copy(alpha = 0.6f),
+                        fontSize = with(LocalDensity.current) { 10.dp.toSp() },
+                        lineHeight = with(LocalDensity.current) { 11.dp.toSp() },
+                    )
+                }
+            } else if (hint == null) {
                 KeyLabel(displayLabel, tint, utility = false)
             } else {
                 Box(Modifier.fillMaxWidth().fillMaxHeight()) {
@@ -3823,6 +4540,7 @@ private fun keyDescription(
         ShiftState.LOCKED -> "Caps lock on"
     }
     KeyboardKeyType.DELETE -> "Delete"
+    KeyboardKeyType.LANGUAGE -> "Next language"
     KeyboardKeyType.SPACE ->
         "Space. Touch and hold, then slide to move the cursor. Keep holding to switch keyboards."
     KeyboardKeyType.RETURN -> when (returnKey) {
@@ -3838,6 +4556,8 @@ private fun keyDescription(
         KeyboardLayer.EMOJI -> "Show emoji keyboard"
         KeyboardLayer.LETTERS -> "Show letters keyboard"
         KeyboardLayer.NUMBERS -> "Show numbers keyboard"
+        KeyboardLayer.PHONE -> "Show phone keypad"
+        KeyboardLayer.NUMPAD -> "Show number pad"
         KeyboardLayer.SYMBOLS -> "Show symbols keyboard"
         null -> "Switch keyboard layer"
     }

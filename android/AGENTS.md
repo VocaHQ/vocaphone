@@ -26,8 +26,12 @@ A press must dirty **one key** and send **one write** to the editor.
 - Swipe trail is a sibling `Canvas` over a `SnapshotStateList`. Never store
   trail points as `var` on the composable that builds the ~40 `KeyButton`s.
 - `KeyboardLayouts.rows()` allocates a new list. Remember it by
-  `(layer, returnKey, leadingPunctuation, numberRow)`. Rebuilding it on every
-  composing letter prevents Compose skip.
+  `(layer, returnKey, leadingPunctuation, numberRow)` plus the typing layout,
+  language key and pad kind. Rebuilding it on every composing letter prevents
+  Compose skip.
+- Settings switches the gestures read on a move (haptics, space-bar cursor,
+  layout swipe) live on `KeyFeedback` as `@Volatile` fields, not as
+  `pointerInput` keys: flipping one must not restart forty gesture blocks.
 - Per-key lambdas must be stable: `remember(key.id) { { currentOnKey.value(key) } }`
   plus `rememberUpdatedState` at the parent. `{ onKey(key) }` inline in
   `KeyboardRows` is a new object every pass and recomposes every key.
@@ -62,8 +66,12 @@ other app’s main thread.
 - Keep `setComposingText` for letters so a suggestion can replace `hel` with
   `hello `. Do not switch letters to `commitText` without measuring Messages
   and Chrome on a phone: composing is what makes the replacement cheap.
-- Caching text-before-cursor and expected selection locally is the next IPC
-  cut; the 50 ms coalesced read is the reconcile, not the source of truth.
+- `SelectionForecast` records where each of the keyboard's own edits leaves
+  the cursor; an `onUpdateSelection` landing there is not a user move (no
+  `finishComposingText` / `getCursorCapsMode`). A new write path must call
+  one of its methods, or `forget()` when the result is the editor's call.
+- Caching text-before-cursor locally is the next IPC cut; the 50 ms
+  coalesced read is the reconcile, not the source of truth.
 
 ## Suggestions and swipe
 

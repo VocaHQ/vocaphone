@@ -104,6 +104,10 @@ enum CursorTrackpad {
 protocol KeyGridViewDelegate: AnyObject {
     func keyGrid(_ grid: KeyGridView, didProduce output: KeyboardOutput)
     func keyGridDidChangeShift(_ grid: KeyGridView)
+    /// The user tapped Shift. Unlike ``keyGridDidChangeShift(_:)`` this is
+    /// never the keyboard changing its own mind, which is what lets the
+    /// controller tell a choice from a guess and stop overruling the choice.
+    func keyGridDidToggleShift(_ grid: KeyGridView)
     /// Whether a held Delete may keep going. Only the controller can see the
     /// document, and the system keyboard stops at the start of a line rather
     /// than eating the paragraph behind it.
@@ -181,6 +185,70 @@ final class KeyGridView: UIView {
         didSet { if showsGlobeKey != oldValue { rebuild() } }
     }
 
+    /// Apple's one-handed keyboard: the keys squeezed toward one thumb, and a
+    /// chevron in the strip left over that puts them back. The controller
+    /// sets this only on an iPhone held upright, as Apple's applies.
+    var oneHandedSide: OneHandedKeyboard = .off {
+        didSet {
+            guard oneHandedSide != oldValue else { return }
+            configureOneHandedButton()
+            setNeedsLayout()
+            layoutIfNeeded()
+        }
+    }
+
+    /// The chevron's tap: back to full width.
+    var onRestoreFullWidth: (() -> Void)?
+
+    /// How wide the strip beside one-handed keys is.
+    ///
+    /// Apple's iPhone one-handed keyboard keeps about 84% of the width for the
+    /// keys (measured off a 402-point iPhone 17: a 64-point strip), which
+    /// keeps every letter wider than a fingertip while bringing the far
+    /// column within reach of the thumb.
+    static func oneHandedGutter(forWidth width: CGFloat) -> CGFloat {
+        (width * 0.16).rounded()
+    }
+
+    private lazy var oneHandedButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.isHidden = true
+        button.addAction(UIAction { [weak self] _ in self?.onRestoreFullWidth?() }, for: .touchUpInside)
+        button.accessibilityLabel = "Full-width keyboard"
+        addSubview(button)
+        return button
+    }()
+
+    private func configureOneHandedButton() {
+        let side = oneHandedSide
+        oneHandedButton.isHidden = side == .off
+        guard side != .off else { return }
+        // Pointing out into the strip, the way the keys will go.
+        let symbol = side == .left ? "chevron.right" : "chevron.left"
+        let configuration = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        oneHandedButton.setImage(UIImage(systemName: symbol, withConfiguration: configuration), for: .normal)
+        oneHandedButton.tintColor = palette.label
+    }
+
+    /// The part of the grid the keys are laid out in: all of it, or all but
+    /// the one-handed strip.
+    var keyArea: CGRect {
+        guard oneHandedSide != .off else { return bounds }
+        let gutter = Self.oneHandedGutter(forWidth: bounds.width)
+        return CGRect(
+            x: oneHandedSide == .right ? gutter : 0,
+            y: 0,
+            width: max(bounds.width - gutter, 0),
+            height: bounds.height
+        )
+    }
+
+    /// Digits above the letters. The grid's height comes from ``metrics``
+    /// (its ``KeyboardMetrics/rowCount``), which the controller sets to match.
+    var showsNumberRow = false {
+        didSet { if showsNumberRow != oldValue { rebuild() } }
+    }
+
     var returnKeyIsProminent = false {
         didSet { if returnKeyIsProminent != oldValue { rebuild() } }
     }
@@ -224,6 +292,11 @@ final class KeyGridView: UIView {
     /// correct failure — a recogniser with nothing to recognise against would
     /// commit nonsense.
     var swipeWordList: TypingWordList?
+
+    /// Whether the field allows swipe typing at all
+    /// (``TypingFieldPolicy/allowsSwipeTyping``): not in a password, a
+    /// one-time code or a card number.
+    var allowsSwipeTyping = true
 
     /// The field's own keyboard type, which decides whether a long press on `.`
     /// offers domains.
@@ -334,6 +407,15 @@ final class KeyGridView: UIView {
     static func stripTouchGoesToKeys(y: CGFloat, bar: CGRect, isTyping: Bool) -> Bool {
         guard isTyping, bar.height > 0, bar.height <= 64 else { return false }
         return y >= bar.midY && y < bar.maxY
+    }
+
+    /// Whether a strip touch at `x` (in the grid's coordinates) sits over the
+    /// keys. Over the one-handed strip there is no key for an "e" aimed high
+    /// to have meant, and the chevron there must not take a touch on the
+    /// suggestion strip above it.
+    func stripTouchHasKeysBelow(atX x: CGFloat) -> Bool {
+        let area = keyArea
+        return x >= area.minX && x <= area.maxX
     }
 
     /// The tap behind the letter just produced, once.
@@ -483,7 +565,17 @@ final class KeyGridView: UIView {
         super.layoutSubviews()
         // The trail is drawn in the grid's own coordinates, so it spans it.
         swipeTrail.frame = bounds
-        let available = bounds.width - 2 * metrics.sideInset
+        let area = keyArea
+        if oneHandedSide != .off {
+            oneHandedButton.frame = CGRect(
+                x: oneHandedSide == .left ? area.maxX : 0,
+                y: 0,
+                width: bounds.width - area.width,
+                height: bounds.height
+            )
+            bringSubviewToFront(oneHandedButton)
+        }
+        let available = area.width - 2 * metrics.sideInset
         // Every row resolves against the width of one letter column from the
         // widest reference row, which is what keeps columns aligned vertically.
         let letterColumns = Self.referenceColumns(for: rows)
@@ -500,11 +592,17 @@ final class KeyGridView: UIView {
         // share of this keyboard's own column keeps the same feel at every
         // height preference and on iPad, where a fixed 8pt would be a much
         // smaller part of a 56pt key.
-        let hysteresis = max(unit * 0.2, metrics.columnGap)
+        // 0.21 rather than 0.2 since the columns took Apple's 32.8 pt width:
+        // it keeps the hysteresis at the 6.8 pt it was on 34 pt columns, just
+        // clear of the 6.67 pt gap, so a roll still stays on its key.
+        let hysteresis = max(unit * 0.21, metrics.columnGap)
 
         var keyIndex = 0
         var targets: [KeyHitMap.Target] = []
         targets.reserveCapacity(keyViews.count)
+        // A plane with fewer rows than the keyboard is tall — the numbers
+        // under a number row — stretches its keys rather than leaving a band.
+        let rowHeight = metrics.keyHeight(forRows: rows.count)
         var y: CGFloat = 0
         for (rowIndex, row) in rows.enumerated() {
             // A row that pins its own reference is measured against that and
@@ -515,9 +613,9 @@ final class KeyGridView: UIView {
             let widths = resolvedWidths(for: row, unit: rowUnit, available: available)
             let span = widths.reduce(0, +)
                 + CGFloat(max(widths.count - 1, 0)) * metrics.columnGap
-            var x = row.alignment == .centered
+            var x = area.minX + (row.alignment == .centered
                 ? metrics.sideInset + (available - span) / 2
-                : metrics.sideInset
+                : metrics.sideInset)
 
             for (column, width) in widths.enumerated() {
                 let key = keyViews[keyIndex]
@@ -525,7 +623,7 @@ final class KeyGridView: UIView {
                     x: x,
                     y: y,
                     width: width,
-                    height: metrics.keyHeight
+                    height: rowHeight
                 )
                 key.frame = visibleFrame(
                     for: slotFrame,
@@ -538,7 +636,8 @@ final class KeyGridView: UIView {
                     isLeading: column == 0,
                     isTrailing: column == widths.count - 1,
                     isTopRow: rowIndex == 0,
-                    isBottomRow: rowIndex == rows.count - 1
+                    isBottomRow: rowIndex == rows.count - 1,
+                    area: area
                 )
                 // The slot, not `key.frame`: Shift and Delete render inset to
                 // leave the native moat around them, and measuring from the
@@ -563,7 +662,7 @@ final class KeyGridView: UIView {
                 x += width + metrics.columnGap
                 keyIndex += 1
             }
-            y += metrics.keyHeight + metrics.rowGap
+            y += rowHeight + metrics.rowGap
         }
 
         hitMap = KeyHitMap(
@@ -689,6 +788,17 @@ final class KeyGridView: UIView {
     /// and the keys underneath it never see one.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard !isHidden, alpha > 0, isUserInteractionEnabled else { return nil }
+        // The one-handed strip is the chevron's, all of it: a thumb reaching
+        // for the far edge of the keys must not land on nothing.
+        if !oneHandedButton.isHidden {
+            let strip = oneHandedButton.frame.inset(by: UIEdgeInsets(
+                top: -KeyboardChrome.gapAboveKeys,
+                left: oneHandedSide == .right ? -KeyboardChrome.sideMargin : 0,
+                bottom: 0,
+                right: oneHandedSide == .left ? -KeyboardChrome.sideMargin : 0
+            ))
+            if strip.contains(point) { return oneHandedButton }
+        }
         return self.point(inside: point, with: event) ? self : nil
     }
 
@@ -722,7 +832,8 @@ final class KeyGridView: UIView {
         isLeading: Bool,
         isTrailing: Bool,
         isTopRow: Bool,
-        isBottomRow: Bool
+        isBottomRow: Bool,
+        area: CGRect
     ) -> CGRect {
         let slot = frame.insetBy(dx: -metrics.columnGap / 2, dy: -metrics.rowGap / 2)
         // Built from edges rather than by adding to a width: an edge key's own
@@ -736,8 +847,10 @@ final class KeyGridView: UIView {
         // it and forwards those touches with the x clamped inside, so widening
         // these rects buys nothing and costs the exact adjacency that keeps the
         // gutter between an edge key and its neighbour owned by one of them.
-        if isLeading { minX = 0 }
-        if isTrailing { maxX = bounds.width }
+        // In one-handed mode the strip belongs to the chevron, so the edge is
+        // the key area's, not the grid's.
+        if isLeading { minX = area.minX }
+        if isTrailing { maxX = area.maxX }
         if isTopRow { minY = -Self.claimedTopMargin }
         if isBottomRow { maxY = bounds.height }
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
@@ -774,6 +887,7 @@ final class KeyGridView: UIView {
         alternativesView = nil
         keyViews.removeAll()
         rows.removeAll()
+        if oneHandedSide != .off { configureOneHandedButton() }
         activatePlane()
     }
 
@@ -852,7 +966,8 @@ final class KeyGridView: UIView {
                 includesGlobe: showsGlobeKey,
                 includesLayoutSwitch: showsLayoutSwitchKey,
                 returnIsProminent: returnKeyIsProminent,
-                punctuation: punctuation
+                punctuation: punctuation,
+                numberRow: showsNumberRow
             )
             var views: [KeyView] = []
             views.reserveCapacity(built.reduce(0) { $0 + $1.keys.count })
@@ -1617,11 +1732,16 @@ final class KeyGridView: UIView {
 
     private var swipeTypingIsAvailable: Bool {
         KeyboardPreferences.swipeTypingEnabled
+            && allowsSwipeTyping
             // Only where there are letters to trace across. On the numbers and
             // symbols planes, and on the numeric keypads, a long drag is a
             // finger changing its mind about a key.
             && plane == .letters
-            && swipeWordList?.isEmpty == false
+            // And only against a word list in the layout's own language. The
+            // shipped list is English, and a swipe on a French or Russian
+            // layout ranked against it can only answer with an English word —
+            // or, across Cyrillic keys, with nothing that makes sense at all.
+            && swipeWordList?.serves(layout) == true
             && !UIAccessibility.isVoiceOverRunning
     }
 
@@ -1777,6 +1897,7 @@ final class KeyGridView: UIView {
         let isDoubleTap = lastShiftTapAt.map { now.timeIntervalSince($0) < 0.35 } ?? false
         lastShiftTapAt = now
         shiftState = isDoubleTap ? .locked : (shiftState == .off ? .on : .off)
+        delegate?.keyGridDidToggleShift(self)
     }
 
     func key(at point: CGPoint, characterOnly: Bool) -> KeyView? {

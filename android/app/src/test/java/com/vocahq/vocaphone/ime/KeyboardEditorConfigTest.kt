@@ -39,13 +39,14 @@ class KeyboardEditorConfigTest {
     }
 
     @Test
-    fun `number fields start on number layer`() {
+    fun `number fields start on the number pad`() {
         val config = KeyboardEditorConfig.from(
             EditorInfo().apply { inputType = InputType.TYPE_CLASS_NUMBER },
             sessionId = 8,
         )
 
-        assertEquals(KeyboardLayer.NUMBERS, config.initialLayer)
+        assertEquals(KeyboardLayer.NUMPAD, config.initialLayer)
+        assertEquals(PadKind.NUMBER, config.padKind)
         assertFalse(config.dictationAllowed)
     }
 
@@ -186,5 +187,15 @@ class KeyboardEditorConfigTest {
         packageName = "com.example.chat"
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         imeOptions = EditorInfo.IME_ACTION_SEND
+    }
+
+    @Test
+    fun `autocorrect is allowed in prose, not in addresses or passwords`() {
+        fun allowed(type: Int) = KeyboardEditorConfig.from(EditorInfo().apply { inputType = type }, sessionId = 1).autocorrectAllowed
+        assertTrue(allowed(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES))
+        assertFalse(allowed(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS))
+        assertFalse(allowed(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD))
+        assertFalse(allowed(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS))
+        assertFalse(allowed(InputType.TYPE_CLASS_PHONE))
     }
 }
